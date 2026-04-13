@@ -1,0 +1,34 @@
+docs/
+*.docx
+*.pdf
+CLAUDE.md
+PROMPTS.md
+.claude/
+
+# .NET build artifacts
+**/bin/
+**/obj/
+
+# Python
+__pycache__/
+*.pyc
+*.pkl
+*.env
+src/ai-service/models/*.pkl
+src/ai-service/models/*.json
+
+# Node
+node_modules/
+
+venv/
+
+# Visual Studio artifacts
+.vs/
+*.csproj.user
+*.suo
+
+# Word temp files
+~WRL*.tmp
+
+# Scripts (local only)
+scripts/

@@ -1,0 +1,114 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Be+Vietnam+Pro:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200');
+
+@layer base {
+  body {
+    font-family: 'Be Vietnam Pro', sans-serif;
+    background-color: #051424;
+    color: #d4e4fa;
+    @apply antialiased;
+    margin: 0;
+  }
+  #root { width: 100%; min-height: 100vh; }
+
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: #051424; }
+  ::-webkit-scrollbar-thumb { background: #273647; border-radius: 10px; }
+}
+
+@layer components {
+  .icon {
+    font-family: 'Material Symbols Outlined';
+    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    font-size: 1.25rem;
+    line-height: 1;
+    user-select: none;
+    display: inline-block;
+  }
+  .icon-fill { font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+  .icon-sm   { font-size: 1rem; }
+  .icon-lg   { font-size: 1.5rem; }
+
+  .glass-card {
+    background: rgba(18, 33, 49, 0.7);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+
+  .kpi-card {
+    @apply bg-surface-container-low rounded-xl p-5
+           ring-1 ring-outline-variant/10
+           hover:bg-surface-container transition-colors duration-200;
+  }
+
+  .nav-item {
+    @apply flex items-center gap-3 py-3 px-4 rounded-lg text-sm
+           text-outline hover:text-primary hover:bg-surface-container-low
+           transition-all duration-200 cursor-pointer select-none;
+  }
+  .nav-item-active {
+    @apply bg-gradient-to-br from-primary-container to-primary
+           text-surface shadow-glow font-bold;
+  }
+  .nav-item-active .icon { color: #051424; }
+
+  .form-input {
+    @apply w-full bg-surface-container-lowest border-0 rounded-lg
+           px-4 py-3 text-sm text-on-surface placeholder-outline
+           focus:ring-2 focus:ring-primary/50 focus:outline-none
+           transition-shadow duration-200;
+  }
+
+  .btn-primary {
+    @apply bg-gradient-to-br from-primary-container to-primary
+           text-surface text-sm font-bold rounded-lg px-5 py-2.5
+           hover:opacity-90 active:scale-95 shadow-glow
+           transition-all duration-150 cursor-pointer;
+  }
+  .btn-secondary {
+    @apply bg-surface-container-high text-on-surface text-sm font-semibold rounded-lg px-5 py-2.5
+           ring-1 ring-outline-variant/20
+           hover:bg-surface-container-highest active:scale-95
+           transition-all duration-150 cursor-pointer;
+  }
+  .btn-danger {
+    @apply bg-error/20 text-error text-sm font-semibold rounded-lg px-5 py-2.5
+           ring-1 ring-error/30
+           hover:bg-error/30 active:scale-95
+           transition-all duration-150 cursor-pointer;
+  }
+
+  /* Mỗi badge-* đã bao gồm base styles (padding, radius, font) */
+  .badge,
+  .badge-success,
+  .badge-warning,
+  .badge-error,
+  .badge-info,
+  .badge-gray,
+  .badge-primary {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold;
+  }
+  .badge-success { @apply bg-tertiary/20 text-tertiary; }
+  .badge-warning { @apply bg-yellow-500/20 text-yellow-400; }
+  .badge-error   { @apply bg-error/20 text-error; }
+  .badge-info    { @apply bg-secondary/20 text-secondary; }
+  .badge-gray    { @apply bg-outline/20 text-outline; }
+  .badge-primary { @apply bg-primary/20 text-primary; }
+
+  .section-title {
+    @apply text-[10px] font-headline font-bold text-outline uppercase tracking-[0.06em];
+  }
+
+  .table-row {
+    @apply grid items-center rounded-lg px-3 py-3
+           hover:bg-surface-container transition-colors duration-150;
+  }
+
+  .page-title {
+    @apply text-xl font-headline font-bold text-on-surface;
+  }
+}

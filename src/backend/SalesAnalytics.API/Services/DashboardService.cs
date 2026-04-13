@@ -1,0 +1,201 @@
+using Npgsql;
+using SalesAnalytics.Core.DTOs;
+
+namespace SalesAnalytics.API.Services;
+
+/// <summary>
+/// Truy vấn Data Warehouse (schema dw) để lấy dữ liệu Dashboard/KPI.
+/// Dùng Npgsql trực tiếp (không qua EF Core) vì DW là read-only analytics queries.
+/// </summary>
+public class DashboardService
+{
+    private readonly string _connStr;
+
+    public DashboardService(IConfiguration config)
+    {
+        _connStr = config.GetConnectionString("Default")!;
+    }
+
+    public async Task<DashboardResponse> GetDashboardAsync(
+        DateOnly from, DateOnly to, string? channel = null)
+    {
+        await using var conn = new NpgsqlConnection(_connStr);
+        await conn.OpenAsync();
+
+        var kpi             = await GetKpiAsync(conn, from, to, channel);
+        var revenueByDay    = await GetRevenueByDayAsync(conn, from, to, channel);
+        var revenueByChannel = await GetRevenueByChannelAsync(conn, from, to);
+        var topProducts     = await GetTopProductsAsync(conn, from, to, channel);
+
+        return new DashboardResponse(kpi, revenueByDay, revenueByChannel, topProducts);
+    }
+
+    // ── KPI Summary ─────────────────────────────────────────────────────────
+
+    private static async Task<KpiSummary> GetKpiAsync(
+        NpgsqlConnection conn, DateOnly from, DateOnly to, string? channel)
+    {
+        var sql = """
+            SELECT
+                COALESCE(SUM(fs.net_revenue), 0)   AS total_revenue,
+                COALESCE(SUM(fs.gross_profit), 0)  AS total_profit,
+                COALESCE(SUM(fs.order_count),  0)  AS total_orders,
+                COALESCE(AVG(fs.net_revenue),  0)  AS avg_order_value,
+                COUNT(DISTINCT fs.customer_id)      AS total_customers
+            FROM dw.fact_sales fs
+            JOIN dw.dim_date    dd ON fs.date_id    = dd.date_id
+            JOIN dw.dim_channel dc ON fs.channel_id = dc.channel_id
+            WHERE dd.full_date BETWEEN @from AND @to
+              AND fs.order_status = 'DELIVERED'
+              AND (@channel IS NULL OR dc.channel_name = @channel)
+            """;
+
+        await using var cmd = new NpgsqlCommand(sql, conn);
+        cmd.Parameters.AddWithValue("from",    from.ToDateTime(TimeOnly.MinValue));
+        cmd.Parameters.AddWithValue("to",      to.ToDateTime(TimeOnly.MinValue));
+        cmd.Parameters.AddWithValue("channel", (object?)channel ?? DBNull.Value);
+
+        await using var reader = await cmd.ExecuteReaderAsync();
+        await reader.ReadAsync();
+
+        var totalRevenue = reader.GetDecimal(0);
+        var totalProfit  = reader.GetDecimal(1);
+        var totalOrders  = reader.GetInt32(2);
+        var avgOrder     = reader.GetDecimal(3);
+        var totalCustomers = reader.GetInt32(4);
+
+        var profitMarginPct = totalRevenue > 0
+            ? Math.Round(totalProfit / totalRevenue * 100, 2)
+            : 0m;
+
+        return new KpiSummary(
+            TotalRevenue:     totalRevenue,
+            TotalProfit:      totalProfit,
+            TotalOrders:      totalOrders,
+            AvgOrderValue:    avgOrder,
+            RevenueGrowthPct: 0,   // Tính riêng bên dưới nếu cần
+            ProfitMarginPct:  profitMarginPct,
+            TotalCustomers:   totalCustomers
+        );
+    }
+
+    // ── Revenue by day ───────────────────────────────────────────────────────
+
+    private static async Task<List<RevenueByDay>> GetRevenueByDayAsync(
+        NpgsqlConnection conn, DateOnly from, DateOnly to, string? channel)
+    {
+        var sql = """
+            SELECT
+                dd.full_date,
+                SUM(fs.net_revenue)  AS net_revenue,
+                SUM(fs.gross_profit) AS gross_profit,
+                SUM(fs.order_count)  AS order_count
+            FROM dw.fact_sales fs
+            JOIN dw.dim_date    dd ON fs.date_id    = dd.date_id
+            JOIN dw.dim_channel dc ON fs.channel_id = dc.channel_id
+            WHERE dd.full_date BETWEEN @from AND @to
+              AND fs.order_status = 'DELIVERED'
+              AND (@channel IS NULL OR dc.channel_name = @channel)
+            GROUP BY dd.full_date
+            ORDER BY dd.full_date
+            """;
+
+        await using var cmd = new NpgsqlCommand(sql, conn);
+        cmd.Parameters.AddWithValue("from",    from.ToDateTime(TimeOnly.MinValue));
+        cmd.Parameters.AddWithValue("to",      to.ToDateTime(TimeOnly.MinValue));
+        cmd.Parameters.AddWithValue("channel", (object?)channel ?? DBNull.Value);
+
+        var result = new List<RevenueByDay>();
+        await using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            result.Add(new RevenueByDay(
+                Date:        DateOnly.FromDateTime(reader.GetDateTime(0)),
+                NetRevenue:  reader.GetDecimal(1),
+                GrossProfit: reader.GetDecimal(2),
+                OrderCount:  reader.GetInt32(3)
+            ));
+        }
+        return result;
+    }
+
+    // ── Revenue by channel ───────────────────────────────────────────────────
+
+    private static async Task<List<RevenueByChannel>> GetRevenueByChannelAsync(
+        NpgsqlConnection conn, DateOnly from, DateOnly to)
+    {
+        var sql = """
+            SELECT
+                dc.channel_name,
+                SUM(fs.net_revenue) AS revenue,
+                SUM(fs.order_count) AS orders
+            FROM dw.fact_sales fs
+            JOIN dw.dim_date    dd ON fs.date_id    = dd.date_id
+            JOIN dw.dim_channel dc ON fs.channel_id = dc.channel_id
+            WHERE dd.full_date BETWEEN @from AND @to
+              AND fs.order_status = 'DELIVERED'
+            GROUP BY dc.channel_name
+            ORDER BY revenue DESC
+            """;
+
+        await using var cmd = new NpgsqlCommand(sql, conn);
+        cmd.Parameters.AddWithValue("from", from.ToDateTime(TimeOnly.MinValue));
+        cmd.Parameters.AddWithValue("to",   to.ToDateTime(TimeOnly.MinValue));
+
+        var rows  = new List<(string, decimal, int)>();
+        await using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+            rows.Add((reader.GetString(0), reader.GetDecimal(1), reader.GetInt32(2)));
+
+        var total = rows.Sum(r => r.Item2);
+        return rows.Select(r => new RevenueByChannel(
+            ChannelName: r.Item1,
+            Revenue:     r.Item2,
+            Orders:      r.Item3,
+            RevenuePct:  total > 0 ? Math.Round(r.Item2 / total * 100, 1) : 0
+        )).ToList();
+    }
+
+    // ── Top products ─────────────────────────────────────────────────────────
+
+    private static async Task<List<TopProduct>> GetTopProductsAsync(
+        NpgsqlConnection conn, DateOnly from, DateOnly to, string? channel)
+    {
+        var sql = """
+            SELECT
+                dp.product_name,
+                dp.sku,
+                SUM(fs.item_quantity) AS qty_sold,
+                SUM(fs.net_revenue)   AS revenue
+            FROM dw.fact_sales fs
+            JOIN dw.dim_date    dd ON fs.date_id    = dd.date_id
+            JOIN dw.dim_product dp ON fs.product_id = dp.product_id
+            JOIN dw.dim_channel dc ON fs.channel_id = dc.channel_id
+            WHERE dd.full_date BETWEEN @from AND @to
+              AND fs.order_status = 'DELIVERED'
+              AND dp.is_current = TRUE
+              AND (@channel IS NULL OR dc.channel_name = @channel)
+            GROUP BY dp.product_name, dp.sku
+            ORDER BY qty_sold DESC
+            LIMIT 10
+            """;
+
+        await using var cmd = new NpgsqlCommand(sql, conn);
+        cmd.Parameters.AddWithValue("from",    from.ToDateTime(TimeOnly.MinValue));
+        cmd.Parameters.AddWithValue("to",      to.ToDateTime(TimeOnly.MinValue));
+        cmd.Parameters.AddWithValue("channel", (object?)channel ?? DBNull.Value);
+
+        var result = new List<TopProduct>();
+        await using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            result.Add(new TopProduct(
+                ProductName: reader.GetString(0),
+                Sku:         reader.GetString(1),
+                QtySold:     reader.GetInt32(2),
+                Revenue:     reader.GetDecimal(3)
+            ));
+        }
+        return result;
+    }
+}

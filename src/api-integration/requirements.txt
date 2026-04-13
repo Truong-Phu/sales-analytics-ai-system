@@ -1,0 +1,29 @@
+# ── HTTP & API ────────────────────────────────────────────────────────────────
+requests==2.31.0          # HTTP client cho tất cả API connectors
+urllib3==2.1.0            # Dependency của requests
+
+# ── Database ──────────────────────────────────────────────────────────────────
+psycopg2-binary==2.9.9    # PostgreSQL adapter (binary = không cần build từ source)
+
+# ── Xử lý dữ liệu ────────────────────────────────────────────────────────────
+pandas==2.2.1             # Đọc Excel/CSV, xử lý DataFrame
+openpyxl==3.1.2           # Đọc file .xlsx (dependency của pandas)
+xlrd==2.0.1               # Đọc file .xls cũ
+
+# ── Environment ───────────────────────────────────────────────────────────────
+python-dotenv==1.0.1      # Đọc biến môi trường từ file .env
+
+# ── Google Analytics ──────────────────────────────────────────────────────────
+google-analytics-data==0.18.9   # GA4 Data API client
+google-auth==2.28.2             # Google OAuth2 Service Account
+
+# ── Testing ───────────────────────────────────────────────────────────────────
+pytest==8.1.1             # Test framework
+pytest-cov==5.0.0         # Coverage report
+pytest-mock==3.14.0       # Mock helpers
+pytest-asyncio==0.23.6    # Async test support
+
+# ── Code quality ──────────────────────────────────────────────────────────────
+black==24.3.0             # Code formatter
+flake8==7.0.0             # Linter
+mypy==1.9.0               # Type checker

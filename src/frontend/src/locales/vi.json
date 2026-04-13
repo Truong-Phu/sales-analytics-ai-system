@@ -1,0 +1,228 @@
+{
+  "common": {
+    "appName": "SalesAnalytics",
+    "loading": "Đang tải...",
+    "error": "Đã xảy ra lỗi",
+    "retry": "Thử lại",
+    "save": "Lưu",
+    "cancel": "Hủy",
+    "delete": "Xóa",
+    "edit": "Chỉnh sửa",
+    "confirm": "Xác nhận",
+    "search": "Tìm kiếm",
+    "filter": "Lọc",
+    "export": "Xuất báo cáo",
+    "refresh": "Làm mới",
+    "noData": "Không có dữ liệu",
+    "all": "Tất cả",
+    "from": "Từ",
+    "to": "Đến",
+    "actions": "Thao tác",
+    "status": "Trạng thái",
+    "createdAt": "Ngày tạo",
+    "updatedAt": "Cập nhật",
+    "language": "Ngôn ngữ",
+    "vietnamese": "Tiếng Việt",
+    "english": "English"
+  },
+  "auth": {
+    "login": "Đăng nhập",
+    "logout": "Đăng xuất",
+    "register": "Đăng ký tài khoản",
+    "email": "Email",
+    "password": "Mật khẩu",
+    "confirmPassword": "Xác nhận mật khẩu",
+    "fullName": "Họ và tên",
+    "forgotPassword": "Quên mật khẩu?",
+    "changePassword": "Đổi mật khẩu",
+    "currentPassword": "Mật khẩu hiện tại",
+    "newPassword": "Mật khẩu mới",
+    "loginSuccess": "Đăng nhập thành công",
+    "loginFailed": "Email hoặc mật khẩu không đúng",
+    "registerSuccess": "Đăng ký thành công. Chờ quản trị viên phê duyệt.",
+    "passwordMismatch": "Mật khẩu xác nhận không khớp",
+    "sessionExpired": "Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.",
+    "unauthorized": "Bạn không có quyền truy cập trang này",
+    "pendingApproval": "Tài khoản đang chờ phê duyệt"
+  },
+  "nav": {
+    "dashboard": "Tổng quan",
+    "forecast": "Dự báo AI",
+    "anomaly": "Phát hiện bất thường",
+    "recommendations": "Đề xuất AI",
+    "orders": "Đơn hàng",
+    "dataSync": "Đồng bộ dữ liệu",
+    "etlMonitor": "ETL Monitor",
+    "report": "Báo cáo",
+    "admin": "Quản trị hệ thống",
+    "settings": "Cài đặt"
+  },
+  "dashboard": {
+    "title": "Tổng quan kinh doanh",
+    "kpi": {
+      "revenue": "Doanh thu thuần",
+      "orders": "Tổng đơn hàng",
+      "aov": "Giá trị đơn TB",
+      "newCustomers": "Khách hàng mới"
+    },
+    "revenueChart": "Doanh thu theo ngày",
+    "channelChart": "Doanh thu theo kênh",
+    "topProducts": "Top sản phẩm bán chạy",
+    "period": {
+      "7d": "7 ngày",
+      "30d": "30 ngày",
+      "90d": "90 ngày",
+      "custom": "Tùy chỉnh"
+    },
+    "channel": {
+      "all": "Tất cả kênh",
+      "shopee": "Shopee",
+      "lazada": "Lazada",
+      "tiktok": "TikTok Shop",
+      "facebook": "Facebook",
+      "website": "Website"
+    },
+    "trend": {
+      "up": "Tăng",
+      "down": "Giảm",
+      "stable": "Ổn định"
+    }
+  },
+  "forecast": {
+    "title": "Dự báo doanh thu AI",
+    "subtitle": "Mô hình Prophet – phân tích xu hướng & tính mùa vụ",
+    "horizon": "Số ngày dự báo",
+    "channel": "Kênh bán hàng",
+    "runForecast": "Chạy dự báo",
+    "confidence": "Khoảng tin cậy 95%",
+    "actual": "Thực tế",
+    "predicted": "Dự báo",
+    "upper": "Ngưỡng trên",
+    "lower": "Ngưỡng dưới",
+    "trend": "Xu hướng",
+    "seasonality": "Tính mùa vụ",
+    "growth": "Tăng trưởng dự kiến"
+  },
+  "anomaly": {
+    "title": "Phát hiện bất thường",
+    "subtitle": "Phân tích Z-score rolling 14 ngày – ngưỡng 2.5σ",
+    "detected": "Bất thường phát hiện",
+    "date": "Ngày",
+    "value": "Giá trị",
+    "zscore": "Z-score",
+    "severity": {
+      "high": "Cao",
+      "medium": "Trung bình",
+      "low": "Thấp"
+    },
+    "noAnomaly": "Không phát hiện bất thường trong khoảng thời gian này"
+  },
+  "recommendations": {
+    "title": "Đề xuất từ AI",
+    "subtitle": "Phân tích tự động từ dữ liệu bán hàng",
+    "type": {
+      "revenue": "Doanh thu",
+      "channel": "Kênh bán hàng",
+      "product": "Sản phẩm",
+      "anomaly": "Bất thường",
+      "general": "Tổng hợp"
+    },
+    "priority": {
+      "high": "Ưu tiên cao",
+      "medium": "Ưu tiên trung bình",
+      "low": "Ưu tiên thấp"
+    },
+    "generated": "Được tạo lúc"
+  },
+  "orders": {
+    "title": "Quản lý đơn hàng",
+    "orderId": "Mã đơn hàng",
+    "customer": "Khách hàng",
+    "channel": "Kênh",
+    "amount": "Giá trị",
+    "status": {
+      "pending": "Chờ xử lý",
+      "confirmed": "Đã xác nhận",
+      "shipping": "Đang giao",
+      "delivered": "Đã giao",
+      "cancelled": "Đã hủy",
+      "returned": "Hoàn trả"
+    },
+    "paymentMethod": "Thanh toán",
+    "shippingPartner": "Vận chuyển"
+  },
+  "dataSync": {
+    "title": "Đồng bộ dữ liệu",
+    "subtitle": "Kết nối và đồng bộ dữ liệu từ các nguồn API",
+    "syncNow": "Đồng bộ ngay",
+    "lastSync": "Lần cuối đồng bộ",
+    "syncStatus": {
+      "idle": "Chờ",
+      "syncing": "Đang đồng bộ",
+      "success": "Thành công",
+      "error": "Lỗi"
+    },
+    "sources": {
+      "shopee": "Shopee",
+      "lazada": "Lazada",
+      "tiktok": "TikTok Shop",
+      "facebook": "Facebook",
+      "ghn": "GHN",
+      "vnpay": "VNPay"
+    }
+  },
+  "etlMonitor": {
+    "title": "ETL Monitor",
+    "subtitle": "Giám sát pipeline xử lý dữ liệu",
+    "pipeline": "Pipeline",
+    "lastRun": "Lần chạy cuối",
+    "duration": "Thời gian",
+    "rowsProcessed": "Bản ghi xử lý",
+    "status": {
+      "running": "Đang chạy",
+      "success": "Thành công",
+      "failed": "Thất bại",
+      "pending": "Chờ chạy"
+    },
+    "runManual": "Chạy thủ công"
+  },
+  "report": {
+    "title": "Xuất báo cáo",
+    "subtitle": "Tạo báo cáo phân tích chuyên nghiệp",
+    "exportPdf": "Xuất PDF",
+    "period": "Khoảng thời gian",
+    "includeCharts": "Bao gồm biểu đồ",
+    "includeAI": "Bao gồm phân tích AI",
+    "generating": "Đang tạo báo cáo...",
+    "success": "Báo cáo đã được tải xuống"
+  },
+  "admin": {
+    "title": "Quản trị hệ thống",
+    "users": "Quản lý người dùng",
+    "pendingApproval": "Chờ phê duyệt",
+    "approve": "Phê duyệt",
+    "deactivate": "Vô hiệu hóa",
+    "activate": "Kích hoạt",
+    "changeRole": "Đổi vai trò",
+    "roles": {
+      "Owner": "Chủ doanh nghiệp",
+      "Manager": "Quản lý",
+      "Staff": "Nhân viên",
+      "DataIT": "Data/IT",
+      "Admin": "Quản trị viên"
+    },
+    "userStatus": {
+      "active": "Hoạt động",
+      "inactive": "Vô hiệu hóa",
+      "pending": "Chờ duyệt"
+    }
+  },
+  "settings": {
+    "title": "Cài đặt",
+    "profile": "Thông tin cá nhân",
+    "security": "Bảo mật",
+    "language": "Ngôn ngữ",
+    "notifications": "Thông báo",
+    "saveSuccess": "Đã lưu cài đặt"
+  }
+}

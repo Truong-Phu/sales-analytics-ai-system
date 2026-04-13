@@ -1,0 +1,228 @@
+{
+  "common": {
+    "appName": "SalesAnalytics",
+    "loading": "Loading...",
+    "error": "An error occurred",
+    "retry": "Retry",
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "confirm": "Confirm",
+    "search": "Search",
+    "filter": "Filter",
+    "export": "Export Report",
+    "refresh": "Refresh",
+    "noData": "No data available",
+    "all": "All",
+    "from": "From",
+    "to": "To",
+    "actions": "Actions",
+    "status": "Status",
+    "createdAt": "Created At",
+    "updatedAt": "Updated",
+    "language": "Language",
+    "vietnamese": "Tiếng Việt",
+    "english": "English"
+  },
+  "auth": {
+    "login": "Sign In",
+    "logout": "Sign Out",
+    "register": "Create Account",
+    "email": "Email",
+    "password": "Password",
+    "confirmPassword": "Confirm Password",
+    "fullName": "Full Name",
+    "forgotPassword": "Forgot password?",
+    "changePassword": "Change Password",
+    "currentPassword": "Current Password",
+    "newPassword": "New Password",
+    "loginSuccess": "Login successful",
+    "loginFailed": "Invalid email or password",
+    "registerSuccess": "Registration successful. Waiting for admin approval.",
+    "passwordMismatch": "Passwords do not match",
+    "sessionExpired": "Session expired. Please sign in again.",
+    "unauthorized": "You do not have permission to access this page",
+    "pendingApproval": "Your account is pending approval"
+  },
+  "nav": {
+    "dashboard": "Overview",
+    "forecast": "AI Forecast",
+    "anomaly": "Anomaly Detection",
+    "recommendations": "AI Recommendations",
+    "orders": "Orders",
+    "dataSync": "Data Sync",
+    "etlMonitor": "ETL Monitor",
+    "report": "Reports",
+    "admin": "System Admin",
+    "settings": "Settings"
+  },
+  "dashboard": {
+    "title": "Business Overview",
+    "kpi": {
+      "revenue": "Net Revenue",
+      "orders": "Total Orders",
+      "aov": "Avg. Order Value",
+      "newCustomers": "New Customers"
+    },
+    "revenueChart": "Revenue by Day",
+    "channelChart": "Revenue by Channel",
+    "topProducts": "Top Selling Products",
+    "period": {
+      "7d": "7 days",
+      "30d": "30 days",
+      "90d": "90 days",
+      "custom": "Custom"
+    },
+    "channel": {
+      "all": "All Channels",
+      "shopee": "Shopee",
+      "lazada": "Lazada",
+      "tiktok": "TikTok Shop",
+      "facebook": "Facebook",
+      "website": "Website"
+    },
+    "trend": {
+      "up": "Up",
+      "down": "Down",
+      "stable": "Stable"
+    }
+  },
+  "forecast": {
+    "title": "AI Revenue Forecast",
+    "subtitle": "Prophet model – trend & seasonality analysis",
+    "horizon": "Forecast days",
+    "channel": "Sales channel",
+    "runForecast": "Run Forecast",
+    "confidence": "95% Confidence Interval",
+    "actual": "Actual",
+    "predicted": "Forecast",
+    "upper": "Upper bound",
+    "lower": "Lower bound",
+    "trend": "Trend",
+    "seasonality": "Seasonality",
+    "growth": "Expected growth"
+  },
+  "anomaly": {
+    "title": "Anomaly Detection",
+    "subtitle": "Rolling 14-day Z-score analysis – threshold 2.5σ",
+    "detected": "Anomalies detected",
+    "date": "Date",
+    "value": "Value",
+    "zscore": "Z-score",
+    "severity": {
+      "high": "High",
+      "medium": "Medium",
+      "low": "Low"
+    },
+    "noAnomaly": "No anomalies detected in this period"
+  },
+  "recommendations": {
+    "title": "AI Recommendations",
+    "subtitle": "Automatic analysis from sales data",
+    "type": {
+      "revenue": "Revenue",
+      "channel": "Channel",
+      "product": "Product",
+      "anomaly": "Anomaly",
+      "general": "General"
+    },
+    "priority": {
+      "high": "High priority",
+      "medium": "Medium priority",
+      "low": "Low priority"
+    },
+    "generated": "Generated at"
+  },
+  "orders": {
+    "title": "Order Management",
+    "orderId": "Order ID",
+    "customer": "Customer",
+    "channel": "Channel",
+    "amount": "Amount",
+    "status": {
+      "pending": "Pending",
+      "confirmed": "Confirmed",
+      "shipping": "Shipping",
+      "delivered": "Delivered",
+      "cancelled": "Cancelled",
+      "returned": "Returned"
+    },
+    "paymentMethod": "Payment",
+    "shippingPartner": "Shipping"
+  },
+  "dataSync": {
+    "title": "Data Sync",
+    "subtitle": "Connect and sync data from API sources",
+    "syncNow": "Sync Now",
+    "lastSync": "Last synced",
+    "syncStatus": {
+      "idle": "Idle",
+      "syncing": "Syncing",
+      "success": "Success",
+      "error": "Error"
+    },
+    "sources": {
+      "shopee": "Shopee",
+      "lazada": "Lazada",
+      "tiktok": "TikTok Shop",
+      "facebook": "Facebook",
+      "ghn": "GHN",
+      "vnpay": "VNPay"
+    }
+  },
+  "etlMonitor": {
+    "title": "ETL Monitor",
+    "subtitle": "Monitor data processing pipeline",
+    "pipeline": "Pipeline",
+    "lastRun": "Last run",
+    "duration": "Duration",
+    "rowsProcessed": "Rows processed",
+    "status": {
+      "running": "Running",
+      "success": "Success",
+      "failed": "Failed",
+      "pending": "Pending"
+    },
+    "runManual": "Run Manually"
+  },
+  "report": {
+    "title": "Export Report",
+    "subtitle": "Generate professional analysis reports",
+    "exportPdf": "Export PDF",
+    "period": "Time period",
+    "includeCharts": "Include charts",
+    "includeAI": "Include AI analysis",
+    "generating": "Generating report...",
+    "success": "Report downloaded successfully"
+  },
+  "admin": {
+    "title": "System Administration",
+    "users": "User Management",
+    "pendingApproval": "Pending Approval",
+    "approve": "Approve",
+    "deactivate": "Deactivate",
+    "activate": "Activate",
+    "changeRole": "Change Role",
+    "roles": {
+      "Owner": "Business Owner",
+      "Manager": "Manager",
+      "Staff": "Staff",
+      "DataIT": "Data/IT",
+      "Admin": "Administrator"
+    },
+    "userStatus": {
+      "active": "Active",
+      "inactive": "Inactive",
+      "pending": "Pending"
+    }
+  },
+  "settings": {
+    "title": "Settings",
+    "profile": "Profile",
+    "security": "Security",
+    "language": "Language",
+    "notifications": "Notifications",
+    "saveSuccess": "Settings saved"
+  }
+}

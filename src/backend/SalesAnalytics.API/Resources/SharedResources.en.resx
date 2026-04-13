@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter</value></resheader>
+
+  <!-- Auth -->
+  <data name="Auth.LoginSuccess"        xml:space="preserve"><value>Login successful.</value></data>
+  <data name="Auth.InvalidCredentials"  xml:space="preserve"><value>Invalid username or password.</value></data>
+  <data name="Auth.AccountInactive"     xml:space="preserve"><value>Account not yet approved. Please contact Admin.</value></data>
+  <data name="Auth.RegisterSuccess"     xml:space="preserve"><value>Registration successful. Please wait for Admin approval.</value></data>
+  <data name="Auth.UsernameExists"      xml:space="preserve"><value>Username already exists.</value></data>
+  <data name="Auth.EmailExists"         xml:space="preserve"><value>Email is already in use.</value></data>
+  <data name="Auth.PasswordChanged"     xml:space="preserve"><value>Password changed successfully.</value></data>
+  <data name="Auth.PasswordWrong"       xml:space="preserve"><value>Old password is incorrect.</value></data>
+  <data name="Auth.TokenInvalid"        xml:space="preserve"><value>Token is invalid or expired.</value></data>
+  <data name="Auth.Unauthorized"        xml:space="preserve"><value>You are not authorized to perform this action.</value></data>
+
+  <!-- Dashboard -->
+  <data name="Dashboard.NoData"         xml:space="preserve"><value>No data available for the selected period.</value></data>
+  <data name="Dashboard.Loading"        xml:space="preserve"><value>Loading data...</value></data>
+
+  <!-- Admin -->
+  <data name="Admin.UserApproved"       xml:space="preserve"><value>User {0} has been approved.</value></data>
+  <data name="Admin.UserDeactivated"    xml:space="preserve"><value>User {0} has been deactivated.</value></data>
+  <data name="Admin.RoleChanged"        xml:space="preserve"><value>Changed {0}'s role to {1}.</value></data>
+  <data name="Admin.InvalidRole"        xml:space="preserve"><value>Invalid role.</value></data>
+
+  <!-- AI Service -->
+  <data name="AI.ServiceUnavailable"    xml:space="preserve"><value>AI service is currently unavailable. Please try again later.</value></data>
+  <data name="AI.ModelNotFound"         xml:space="preserve"><value>AI model not loaded. Please train the model on Google Colab first.</value></data>
+
+  <!-- Report -->
+  <data name="Report.Generating"        xml:space="preserve"><value>Generating PDF report...</value></data>
+  <data name="Report.NoData"            xml:space="preserve"><value>No data available to export.</value></data>
+
+  <!-- Common -->
+  <data name="Common.NotFound"          xml:space="preserve"><value>Resource not found.</value></data>
+  <data name="Common.ServerError"       xml:space="preserve"><value>Server error. Please try again later.</value></data>
+  <data name="Common.ValidationError"   xml:space="preserve"><value>Validation failed.</value></data>
+</root>

@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter</value></resheader>
+
+  <!-- Auth -->
+  <data name="Auth.LoginSuccess"        xml:space="preserve"><value>Đăng nhập thành công.</value></data>
+  <data name="Auth.InvalidCredentials"  xml:space="preserve"><value>Tên đăng nhập hoặc mật khẩu không đúng.</value></data>
+  <data name="Auth.AccountInactive"     xml:space="preserve"><value>Tài khoản chưa được phê duyệt. Vui lòng liên hệ Admin.</value></data>
+  <data name="Auth.RegisterSuccess"     xml:space="preserve"><value>Đăng ký thành công. Vui lòng chờ Admin phê duyệt tài khoản.</value></data>
+  <data name="Auth.UsernameExists"      xml:space="preserve"><value>Tên đăng nhập đã tồn tại.</value></data>
+  <data name="Auth.EmailExists"         xml:space="preserve"><value>Email đã được sử dụng.</value></data>
+  <data name="Auth.PasswordChanged"     xml:space="preserve"><value>Đổi mật khẩu thành công.</value></data>
+  <data name="Auth.PasswordWrong"       xml:space="preserve"><value>Mật khẩu cũ không đúng.</value></data>
+  <data name="Auth.TokenInvalid"        xml:space="preserve"><value>Token không hợp lệ hoặc đã hết hạn.</value></data>
+  <data name="Auth.Unauthorized"        xml:space="preserve"><value>Bạn không có quyền thực hiện thao tác này.</value></data>
+
+  <!-- Dashboard -->
+  <data name="Dashboard.NoData"         xml:space="preserve"><value>Không có dữ liệu trong khoảng thời gian đã chọn.</value></data>
+  <data name="Dashboard.Loading"        xml:space="preserve"><value>Đang tải dữ liệu...</value></data>
+
+  <!-- Admin -->
+  <data name="Admin.UserApproved"       xml:space="preserve"><value>Đã phê duyệt tài khoản {0}.</value></data>
+  <data name="Admin.UserDeactivated"    xml:space="preserve"><value>Đã khóa tài khoản {0}.</value></data>
+  <data name="Admin.RoleChanged"        xml:space="preserve"><value>Đã đổi quyền của {0} thành {1}.</value></data>
+  <data name="Admin.InvalidRole"        xml:space="preserve"><value>Vai trò không hợp lệ.</value></data>
+
+  <!-- AI Service -->
+  <data name="AI.ServiceUnavailable"    xml:space="preserve"><value>Dịch vụ AI hiện không khả dụng. Vui lòng thử lại sau.</value></data>
+  <data name="AI.ModelNotFound"         xml:space="preserve"><value>Model AI chưa được tải. Hãy train model trên Google Colab trước.</value></data>
+
+  <!-- Report -->
+  <data name="Report.Generating"        xml:space="preserve"><value>Đang tạo báo cáo PDF...</value></data>
+  <data name="Report.NoData"            xml:space="preserve"><value>Không có dữ liệu để xuất báo cáo.</value></data>
+
+  <!-- Common -->
+  <data name="Common.NotFound"          xml:space="preserve"><value>Không tìm thấy dữ liệu.</value></data>
+  <data name="Common.ServerError"       xml:space="preserve"><value>Lỗi hệ thống. Vui lòng thử lại sau.</value></data>
+  <data name="Common.ValidationError"   xml:space="preserve"><value>Dữ liệu không hợp lệ.</value></data>
+</root>
