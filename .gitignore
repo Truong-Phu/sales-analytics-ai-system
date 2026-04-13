@@ -21,6 +21,8 @@ src/ai-service/models/*.json
 node_modules/
 
 venv/
+.venv/
+src/.venv/
 
 # Visual Studio artifacts
 .vs/

@@ -1,11 +1,15 @@
-fastapi==0.111.0
-uvicorn[standard]==0.29.0
-prophet==1.1.5
-pandas==2.2.2
-scikit-learn==1.4.2
-numpy==1.26.4
-psycopg2-binary==2.9.9
-python-dotenv==1.0.1
-joblib==1.4.2
-httpx==0.27.0
-pydantic==2.7.1
+# Requires Python 3.13+
+# Cài đặt: pip install -r requirements.txt
+# Môi trường khuyến nghị: python -m venv .venv && .venv\Scripts\activate (Windows)
+
+fastapi>=0.111.0
+uvicorn[standard]>=0.30.0
+prophet>=1.1.5
+pandas>=2.2.0
+scikit-learn>=1.5.0
+numpy>=2.0.0
+psycopg2-binary>=2.9.9
+python-dotenv>=1.0.0
+joblib>=1.4.2
+httpx>=0.27.0
+pydantic>=2.7.1
