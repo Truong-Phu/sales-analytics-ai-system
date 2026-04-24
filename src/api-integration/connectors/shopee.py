@@ -271,3 +271,53 @@ class ShopeeConnector(BaseConnector):
             "is_processed":      False,
             "fetched_at":        datetime.now(timezone.utc),
         }
+
+    # ── Stub & CSV Fallback (dùng khi chưa có API credentials) ───────────────
+
+    def get_orders(self, **kwargs) -> List[Dict]:
+        """
+        Lấy danh sách đơn hàng qua Shopee Open API.
+        Yêu cầu SHOPEE_PARTNER_ID, SHOPEE_PARTNER_KEY, SHOPEE_ACCESS_TOKEN trong .env.
+
+        Raises:
+            NotImplementedError: Khi chưa cấu hình credentials. Dùng get_orders_from_csv()
+                                 để import thủ công từ file export Shopee.
+        """
+        if not self.access_token or not self.partner_id:
+            raise NotImplementedError(
+                "Shopee API chưa được cấu hình. Hướng dẫn:\n"
+                "  1. Đăng ký Shopee Partner tại https://open.shopee.com\n"
+                "  2. Điền SHOPEE_PARTNER_ID, SHOPEE_PARTNER_KEY, SHOPEE_ACCESS_TOKEN vào .env\n"
+                "  3. Hoặc dùng get_orders_from_csv(filepath) để import từ CSV xuất tay"
+            )
+        return []
+
+    def get_orders_from_csv(self, filepath: str) -> List[Dict]:
+        """
+        Fallback: đọc đơn hàng từ file CSV xuất từ Shopee Seller Center.
+        Dùng khi chưa có API credentials.
+
+        Args:
+            filepath: Đường dẫn file CSV xuất từ Shopee.
+
+        Returns:
+            list[dict]: Danh sách đơn hàng đã parse.
+        """
+        import csv as _csv
+        path = __import__('pathlib').Path(filepath)
+        if not path.exists():
+            raise FileNotFoundError(f"File Shopee CSV không tồn tại: {path}")
+
+        orders = []
+        with open(path, encoding="utf-8-sig", newline="") as f:
+            reader = _csv.DictReader(f)
+            for row in reader:
+                orders.append({k.strip(): v.strip() for k, v in row.items() if k})
+        self.logger.info(
+            "Đọc %d đơn hàng Shopee từ CSV: %s", len(orders), path.name
+        )
+        return orders
+
+
+# Alias để test có thể import theo tên đầy đủ
+ShopeeAPIConnector = ShopeeConnector

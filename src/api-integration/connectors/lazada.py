@@ -175,3 +175,51 @@ class LazadaConnector(BaseConnector):
             "is_processed":     False,
             "fetched_at":       datetime.now(timezone.utc),
         }
+
+    # ── Stub & CSV Fallback ───────────────────────────────────────────────────
+
+    def get_orders(self, **kwargs) -> List[Dict]:
+        """
+        Lấy đơn hàng từ Lazada Open Platform API.
+        Yêu cầu LAZADA_APP_KEY, LAZADA_APP_SECRET, LAZADA_ACCESS_TOKEN trong .env.
+
+        Raises:
+            NotImplementedError: Khi chưa cấu hình credentials.
+        """
+        if not self.access_token or not self.app_key:
+            raise NotImplementedError(
+                "Lazada API chưa được cấu hình. Hướng dẫn:\n"
+                "  1. Đăng ký Lazada Open Platform tại https://open.lazada.com\n"
+                "  2. Điền LAZADA_APP_KEY, LAZADA_APP_SECRET, LAZADA_ACCESS_TOKEN vào .env\n"
+                "  3. Hoặc dùng get_orders_from_csv(filepath) để import từ CSV xuất tay"
+            )
+        return []
+
+    def get_orders_from_csv(self, filepath: str) -> List[Dict]:
+        """
+        Fallback: đọc đơn hàng từ file CSV xuất từ Lazada Seller Center.
+
+        Args:
+            filepath: Đường dẫn file CSV.
+
+        Returns:
+            list[dict]: Danh sách đơn hàng đã parse.
+        """
+        import csv as _csv
+        path = __import__('pathlib').Path(filepath)
+        if not path.exists():
+            raise FileNotFoundError(f"File Lazada CSV không tồn tại: {path}")
+
+        orders = []
+        with open(path, encoding="utf-8-sig", newline="") as f:
+            reader = _csv.DictReader(f)
+            for row in reader:
+                orders.append({k.strip(): v.strip() for k, v in row.items() if k})
+        self.logger.info(
+            "Đọc %d đơn hàng Lazada từ CSV: %s", len(orders), path.name
+        )
+        return orders
+
+
+# Alias để test có thể import theo tên đầy đủ
+LazadaAPIConnector = LazadaConnector
