@@ -1,0 +1,150 @@
+# Stopwords tiếng Việt — dùng cho QueryEngine.extract_keywords()
+# Nguồn: tổng hợp từ các danh sách stopwords phổ biến tiếng Việt
+# Mỗi dòng là một từ (hoặc cụm từ ngắn) cần lọc bỏ khi trích xuất keyword
+
+# Đại từ nhân xưng
+tôi
+bạn
+anh
+chị
+em
+mình
+họ
+chúng
+chúng tôi
+các bạn
+
+# Từ nối & liên từ
+và
+hoặc
+hay
+nhưng
+mà
+nên
+vì
+vậy
+thì
+là
+với
+cùng
+cũng
+lại
+còn
+tuy
+dù
+dẫu
+nếu
+thế
+như
+
+# Đại từ chỉ định
+này
+đó
+kia
+ấy
+đây
+đấy
+nào
+gì
+đâu
+sao
+thế nào
+
+# Giới từ
+trong
+ngoài
+trên
+dưới
+trước
+sau
+bên
+cạnh
+giữa
+theo
+về
+từ
+lên
+xuống
+ra
+vào
+cho
+qua
+bởi
+tại
+của
+với
+
+# Trạng từ thời gian & mức độ
+đã
+sẽ
+đang
+chưa
+vừa
+mới
+rồi
+luôn
+thường
+hay
+lại
+sắp
+còn
+vẫn
+cứ
+nữa
+đều
+đang
+hơn
+nhất
+rất
+quá
+khá
+hơi
+cực
+
+# Từ chỉ số lượng
+một
+hai
+ba
+nhiều
+ít
+tất
+cả
+mọi
+các
+những
+một số
+một vài
+đôi
+vài
+
+# Từ hỏi đơn giản (không mang ý nghĩa tìm kiếm)
+ai
+gì
+nào
+đâu
+khi nào
+bao nhiêu
+bao giờ
+
+# Từ phủ định
+không
+chẳng
+chưa
+chưa có
+chưa được
+
+# Từ khác không có nghĩa tìm kiếm
+được
+có thể
+cần
+phải
+muốn
+muốn biết
+hệ
+thống
+giai
+đoạn
+thông tin
+thêm
+cho biết
+tìm hiểu

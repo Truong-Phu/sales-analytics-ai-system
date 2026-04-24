@@ -26,9 +26,9 @@ SQL_DAILY_REVENUE = """
         dd.full_date          AS ds,
         SUM(fs.net_revenue)   AS y
     FROM dw.fact_sales fs
-    JOIN dw.dim_date dd    ON fs.date_id    = dd.date_id
-    JOIN dw.dim_channel dc ON fs.channel_id = dc.channel_id
-    WHERE fs.order_status = 'DELIVERED'
+    JOIN dw.dim_date    dd ON fs.date_key    = dd.date_key
+    JOIN dw.dim_channel dc ON fs.channel_key = dc.channel_key
+    WHERE 1=1
       {channel_filter}
     GROUP BY dd.full_date
     ORDER BY dd.full_date

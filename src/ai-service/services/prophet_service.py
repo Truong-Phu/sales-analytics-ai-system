@@ -85,9 +85,9 @@ def forecast_revenue(
     future   = model.make_future_dataframe(periods=horizon_days)
     forecast = model.predict(future)
 
-    # Chỉ trả về phần tương lai (sau ngày cuối của history)
-    last_date    = df_history["ds"].max()
-    future_only  = forecast[forecast["ds"] > last_date]
+    # Dùng ngày cuối của model (không phải DB) để lấy đúng phần dự báo.
+    # make_future_dataframe thêm đúng horizon_days hàng sau model.history cuối.
+    future_only = forecast.tail(horizon_days)
 
     result = []
     for _, row in future_only.iterrows():
