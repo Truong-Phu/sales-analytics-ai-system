@@ -28,6 +28,38 @@ _model: Optional[Prophet] = None
 _metadata: dict = {}
 
 
+def _retrain_from_sample() -> Prophet:
+    """Train lại Prophet từ sample CSV khi model gốc không load được."""
+    import warnings
+    warnings.filterwarnings("ignore")
+    sample_paths = [
+        "../../notebooks/sample_data/sample_orders.csv",
+        "notebooks/sample_data/sample_orders.csv",
+    ]
+    csv_path = next((p for p in sample_paths if os.path.exists(p)), None)
+    if csv_path is None:
+        raise FileNotFoundError("Không tìm thấy sample_orders.csv để retrain model.")
+
+    df = pd.read_csv(csv_path, parse_dates=["order_date"])
+    df = df[df["status"] == "DELIVERED"].copy()
+    df["revenue"] = df["quantity"] * df["unit_price"] - df["discount_amount"]
+    df_daily = (
+        df.groupby("order_date")["revenue"].sum()
+        .reset_index()
+        .rename(columns={"order_date": "ds", "revenue": "y"})
+        .sort_values("ds")
+    )
+    m = Prophet(
+        yearly_seasonality=True,
+        weekly_seasonality=True,
+        daily_seasonality=False,
+        seasonality_mode="multiplicative",
+        interval_width=0.8,
+    )
+    m.fit(df_daily)
+    return m
+
+
 def _load_model() -> Prophet:
     global _model, _metadata
     if _model is not None:
@@ -40,7 +72,14 @@ def _load_model() -> Prophet:
         )
 
     logger.info(f"Loading Prophet model từ {MODEL_PATH}...")
-    _model = joblib.load(MODEL_PATH)
+    try:
+        _model = joblib.load(MODEL_PATH)
+    except Exception as e:
+        # Model bị corrupt hoặc không tương thích phiên bản → train lại từ sample data
+        logger.warning(f"Không load được model ({e}). Đang train lại từ sample data...")
+        _model = _retrain_from_sample()
+        joblib.dump(_model, MODEL_PATH)
+        logger.info("Đã train lại và lưu model mới.")
 
     if os.path.exists(METADATA_PATH):
         with open(METADATA_PATH, encoding="utf-8") as f:
