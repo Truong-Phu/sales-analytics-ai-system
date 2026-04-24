@@ -34,3 +34,32 @@ src/.venv/
 
 # Scripts (local only)
 scripts/
+
+# Environment secrets (không push lên GitHub)
+# Root
+.env
+
+# Per-service .env files
+src/backend/.env
+src/ai-service/.env
+src/etl/.env
+src/api-integration/.env
+src/frontend/.env
+src/frontend/.env.local
+src/frontend/.env.*.local
+src/mobile/.env
+
+# Credentials (service account JSON, OAuth keys...)
+credentials/
+**/credentials/
+*.credentials.json
+
+# Backup docs
+docs/backups/
+
+# appsettings.Development.json chứa secret thật — KHÔNG commit
+# Dùng appsettings.Development.example.json làm template
+src/backend/SalesAnalytics.API/appsettings.Development.json
+
+# Docker volumes & data
+docker/data/

@@ -37,7 +37,7 @@ Hệ thống thu thập dữ liệu bán hàng từ nhiều kênh (Shopee, Lazad
           ▼                                ▼
 ┌──────────────────┐            ┌──────────────────────┐
 │  AI Service      │            │  ASP.NET Core API    │
-│  FastAPI/Prophet │◄──────────►│  (port 5000)         │
+│  FastAPI/Prophet │◄──────────►│  (port 5136)         │
 │  (port 8001)     │            │  JWT Auth + RBAC     │
 └──────────────────┘            └──────────┬───────────┘
                                            │
@@ -52,7 +52,7 @@ Hệ thống thu thập dữ liệu bán hàng từ nhiều kênh (Shopee, Lazad
 ## Cài đặt và chạy
 
 ### Yêu cầu
-- PostgreSQL 17, Python 3.13, .NET 9 SDK, Node.js 20+, Expo CLI
+- PostgreSQL 17, Python 3.13, .NET 9 SDK, Node.js 20+
 
 ### Step 1 — PostgreSQL
 
@@ -76,7 +76,7 @@ uvicorn main:app --host 0.0.0.0 --port 8001 --reload
 # Docs: http://localhost:8001/docs
 ```
 
-### Step 3 — Backend ASP.NET Core (port 5000)
+### Step 3 — Backend ASP.NET Core (port 5136)
 
 ```bash
 cd src/backend
@@ -84,7 +84,7 @@ cd src/backend
 #   ConnectionStrings.Default -> điền đúng DB_PASSWORD
 #   Jwt.Secret -> đặt chuỗi ngẫu nhiên >= 32 ký tự
 dotnet run --project SalesAnalytics.API
-# Swagger: http://localhost:5000/swagger
+# Swagger: http://localhost:5136/swagger
 ```
 
 ### Step 4 — Frontend React (port 5173)
@@ -92,7 +92,7 @@ dotnet run --project SalesAnalytics.API
 ```bash
 cd src/frontend
 npm install
-cp .env.example .env    # VITE_API_URL=http://localhost:5000
+cp .env.example .env    # VITE_API_URL để trống, dùng Vite proxy → localhost:5136
 npm run dev
 # App: http://localhost:5173
 ```
@@ -102,9 +102,18 @@ npm run dev
 ```bash
 cd src/mobile
 npm install
+# Cấu hình IP backend: copy .env.example → .env, điền IP LAN máy tính
+cp .env.example .env
+
 npx expo start
 # Quét QR bằng Expo Go app (iOS/Android)
+# Điện thoại và máy tính phải cùng WiFi
+
+# Nếu bị lỗi "Internet connection offline" → dùng tunnel:
+npx expo start --tunnel
 ```
+
+> Chi tiết xem: `docs/GhiChu_Mobile.md`
 
 ## Cấu trúc thư mục
 

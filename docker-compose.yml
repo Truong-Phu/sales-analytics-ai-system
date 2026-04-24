@@ -1,0 +1,111 @@
+version: "3.9"
+
+# ============================================================
+# Sales Analytics AI System – Docker Compose
+# Gồm 4 service: postgres, backend, ai-service, frontend
+#
+# Sử dụng:
+#   docker-compose up -d          → chạy tất cả
+#   docker-compose up backend     → chỉ chạy backend
+#   docker-compose logs -f        → xem log
+#   docker-compose down -v        → dừng và xóa volumes
+#
+# Lần đầu: Cần chạy SQL scripts để tạo schema:
+#   docker-compose exec postgres psql -U postgres -d sales_analytics_ai_db
+#   \i /docker-entrypoint-initdb.d/01_create_oltp_tables.sql
+# ============================================================
+
+services:
+
+  # ── PostgreSQL 17 ──────────────────────────────────────────
+  postgres:
+    image: postgres:17-alpine
+    container_name: msas_postgres
+    environment:
+      POSTGRES_DB:       sales_analytics_ai_db
+      POSTGRES_USER:     postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Mount SQL init scripts (chạy tự động lần đầu tạo DB)
+      - ./docs/sql:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d sales_analytics_ai_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - msas_net
+
+  # ── ASP.NET Core Backend ───────────────────────────────────
+  backend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend
+    container_name: msas_backend
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__Default: >
+        Host=postgres;Port=5432;Database=sales_analytics_ai_db;
+        Username=postgres;Password=${POSTGRES_PASSWORD:-postgres}
+      Jwt__Secret:             ${JWT_SECRET:-change-this-secret-in-production-32chars!}
+      Jwt__Issuer:             SalesAnalyticsAPI
+      Jwt__Audience:           SalesAnalyticsClient
+      Jwt__AccessTokenMinutes: "60"
+      Jwt__RefreshTokenDays:   "30"
+      AiService__BaseUrl:      http://ai-service:8001
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - msas_net
+    restart: unless-stopped
+
+  # ── FastAPI AI Service ─────────────────────────────────────
+  ai-service:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.ai-service
+    container_name: msas_ai_service
+    environment:
+      DB_HOST:     postgres
+      DB_PORT:     "5432"
+      DB_NAME:     sales_analytics_ai_db
+      DB_USER:     postgres
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    ports:
+      - "8001:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - msas_net
+    restart: unless-stopped
+
+  # ── React Frontend ─────────────────────────────────────────
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.frontend
+    container_name: msas_frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - msas_net
+    restart: unless-stopped
+
+# ── Volumes & Networks ─────────────────────────────────────────
+volumes:
+  postgres_data:
+    name: msas_postgres_data
+
+networks:
+  msas_net:
+    name: msas_network
+    driver: bridge
