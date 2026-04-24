@@ -1,7 +1,9 @@
 import axios from 'axios'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 
-const BASE_URL = 'http://10.0.2.2:5000' // Android emulator → localhost; thay bằng IP thật khi test device
+// Ưu tiên biến môi trường EXPO_PUBLIC_API_URL từ .env
+// Fallback: IP LAN của máy tính (thay 192.168.1.8 bằng IP thật của bạn)
+const BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://192.168.1.8:5136'
 
 const api = axios.create({
   baseURL: BASE_URL,
