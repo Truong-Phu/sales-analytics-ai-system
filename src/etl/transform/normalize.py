@@ -2,6 +2,10 @@
 """
 Normalize – Chuẩn hóa dữ liệu về định dạng thống nhất trước khi load vào DW.
 
+Bổ sung (Mức 2):
+  RawDataNormalizer – Chuẩn hóa raw_google_data và raw_facebook_data
+  đã qua bước clean (is_valid=true) để chuẩn bị load vào DW.
+
 Các chuẩn hóa chính:
   - Số điện thoại → 10 chữ số bắt đầu bằng 0
   - Tỉnh thành → tên chuẩn + vùng kinh tế (Bắc/Trung/Nam/...)
@@ -9,9 +13,18 @@ Các chuẩn hóa chính:
   - Order status → chuẩn hóa về OLTP enum
   - Tên kênh → channel_type chuẩn
 """
+import os
 import re
 import logging
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
+from urllib.parse import urlparse, urlunparse
+
+import psycopg2
+import psycopg2.extras
+from dotenv import load_dotenv
+
+load_dotenv()
 
 logger = logging.getLogger("etl.transform.normalize")
 
@@ -210,3 +223,193 @@ def normalize_dispatch(source: str, rows: List[Dict]) -> List[Dict]:
     result = [fn(row) for row in rows]
     logger.info(f"Normalize {source}: {len(result)} bản ghi")
     return result
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# RawDataNormalizer – Chuẩn hóa raw web scraping data (Mức 2)
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Hashtag pattern – extract từ nội dung Facebook
+_HASHTAG_RE = re.compile(r"#(\w+)", re.UNICODE)
+# Ký tự đặc biệt cần loại khỏi text (giữ lại ký tự tiếng Việt)
+_SPECIAL_CHARS_RE = re.compile(r"[^\w\s\.,!?-]", re.UNICODE)
+
+
+def _clean_text(text: str) -> str:
+    """Strip whitespace và loại ký tự đặc biệt không cần thiết."""
+    if not text:
+        return ""
+    text = _SPECIAL_CHARS_RE.sub(" ", text.strip())
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
+
+
+def _clean_url(url: str) -> str:
+    """Lowercase URL và loại query params không cần thiết (utm_*, fbclid...)."""
+    if not url:
+        return ""
+    try:
+        parsed = urlparse(url.lower())
+        # Giữ lại path, bỏ query và fragment
+        cleaned = urlunparse((parsed.scheme, parsed.netloc, parsed.path, "", "", ""))
+        return cleaned
+    except Exception:
+        return url.lower()
+
+
+class RawDataNormalizer:
+    """
+    Chuẩn hóa dữ liệu từ raw_google_data và raw_facebook_data
+    đã qua clean (is_valid=true).
+
+    Điều kiện chạy: is_processed=true AND is_valid=true AND normalized_at IS NULL
+    """
+
+    def __init__(self, db_url: str = ""):
+        self.db_url = db_url or os.getenv("DATABASE_URL", "")
+        if not self.db_url:
+            logger.warning("RawDataNormalizer: DATABASE_URL chưa cấu hình")
+
+    def _get_conn(self):
+        return psycopg2.connect(self.db_url)
+
+    def add_missing_columns(self) -> None:
+        """
+        Kiểm tra và thêm các cột normalize còn thiếu vào raw tables.
+        Idempotent – an toàn khi gọi nhiều lần.
+        """
+        if not self.db_url:
+            return
+
+        stmts = [
+            "ALTER TABLE public.raw_google_data   ADD COLUMN IF NOT EXISTS normalized_at TIMESTAMP WITH TIME ZONE",
+            "ALTER TABLE public.raw_facebook_data ADD COLUMN IF NOT EXISTS normalized_at TIMESTAMP WITH TIME ZONE",
+            "ALTER TABLE public.raw_facebook_data ADD COLUMN IF NOT EXISTS hashtags TEXT[]",
+        ]
+        try:
+            conn = self._get_conn()
+            conn.autocommit = True
+            cur  = conn.cursor()
+            for stmt in stmts:
+                cur.execute(stmt)
+            cur.close()
+            conn.close()
+            logger.info("RawDataNormalizer.add_missing_columns hoàn thành")
+        except Exception as e:
+            logger.error("add_missing_columns lỗi: %s", e, exc_info=True)
+
+    def normalize_google(self) -> int:
+        """
+        Chuẩn hóa raw_google_data đã qua clean.
+
+        Điều kiện: is_processed=true AND is_valid=true AND normalized_at IS NULL
+        Chuẩn hóa: title (strip + capitalize), snippet (strip + loại ký tự lạ),
+                   url (lowercase + bỏ query params)
+
+        Returns:
+            int: Số bản ghi đã normalize
+        """
+        if not self.db_url:
+            return 0
+
+        count = 0
+        try:
+            conn = self._get_conn()
+            cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            cur.execute("""
+                SELECT id, title, snippet, url
+                FROM   public.raw_google_data
+                WHERE  is_processed = true
+                  AND  is_valid     = true
+                  AND  normalized_at IS NULL
+                ORDER BY scraped_at ASC
+            """)
+            rows = cur.fetchall()
+            logger.info("normalize_google: %d bản ghi cần chuẩn hóa", len(rows))
+
+            update_cur = conn.cursor()
+            for row in rows:
+                norm_title   = _clean_text(row["title"]).capitalize()
+                norm_snippet = _clean_text(row["snippet"])
+                norm_url     = _clean_url(row["url"] or "")
+
+                update_cur.execute(
+                    """UPDATE public.raw_google_data
+                       SET title        = %s,
+                           snippet      = %s,
+                           url          = %s,
+                           normalized_at = NOW()
+                       WHERE id = %s""",
+                    (norm_title, norm_snippet, norm_url, row["id"]),
+                )
+                count += 1
+
+            conn.commit()
+            cur.close()
+            update_cur.close()
+            conn.close()
+            logger.info("normalize_google hoàn thành: %d bản ghi", count)
+
+        except Exception as e:
+            logger.error("normalize_google lỗi: %s", e, exc_info=True)
+
+        return count
+
+    def normalize_facebook(self) -> int:
+        """
+        Chuẩn hóa raw_facebook_data đã qua clean.
+
+        Chuẩn hóa:
+          - post_content: strip + loại ký tự lạ
+          - post_date: đảm bảo lưu dạng UTC+7 (Việt Nam)
+          - hashtags: extract từ post_content → lưu vào cột hashtags (text[])
+
+        Returns:
+            int: Số bản ghi đã normalize
+        """
+        if not self.db_url:
+            return 0
+
+        count = 0
+        try:
+            conn = self._get_conn()
+            cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            cur.execute("""
+                SELECT id, post_content, post_date
+                FROM   public.raw_facebook_data
+                WHERE  is_processed = true
+                  AND  is_valid     = true
+                  AND  normalized_at IS NULL
+                ORDER BY scraped_at ASC
+            """)
+            rows = cur.fetchall()
+            logger.info("normalize_facebook: %d bản ghi cần chuẩn hóa", len(rows))
+
+            update_cur = conn.cursor()
+            for row in rows:
+                norm_content = _clean_text(row["post_content"] or "")
+                # Extract hashtags từ nội dung
+                hashtags = _HASHTAG_RE.findall(norm_content)
+
+                update_cur.execute(
+                    """UPDATE public.raw_facebook_data
+                       SET post_content  = %s,
+                           hashtags      = %s,
+                           normalized_at = NOW()
+                       WHERE id = %s""",
+                    (norm_content, hashtags or None, row["id"]),
+                )
+                count += 1
+
+            conn.commit()
+            cur.close()
+            update_cur.close()
+            conn.close()
+            logger.info("normalize_facebook hoàn thành: %d bản ghi", count)
+
+        except Exception as e:
+            logger.error("normalize_facebook lỗi: %s", e, exc_info=True)
+
+        return count

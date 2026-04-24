@@ -6,9 +6,25 @@ Quy trình:
   1. Lookup / upsert dim_channel, dim_region, dim_payment_method (SCD Type 1)
   2. Upsert dim_customer, dim_product theo SCD Type 2
      (tạo phiên bản mới nếu thuộc tính thay đổi, đánh dấu cũ is_current=FALSE)
-  3. Lookup dim_date theo date_key (YYYYMMDD)
+  3. Lookup dim_date theo date_key (YYYYMMDD integer – vừa là PK vừa là FK)
   4. INSERT fact_sales với ON CONFLICT (external_order_id) DO NOTHING (dedup)
   5. Đánh dấu staging records là is_processed=TRUE
+
+SCHEMA THỰC TẾ (đã sửa theo PostgreSQL):
+  dim_channel       : channel_key (PK), channel_id, channel_name, channel_type, is_online, is_active
+  dim_region        : region_key (PK), province, region, country
+  dim_payment_method: payment_key (PK), payment_method, payment_type
+  dim_date          : date_key (PK integer YYYYMMDD), full_date, day_of_week, day_name,
+                      week_number, month_number, month_name, quarter, year, is_weekend, is_holiday
+  dim_customer      : customer_key (PK), customer_id, full_name, province, region,
+                      is_current, effective_from, effective_to
+  dim_product       : product_key (PK), product_id, sku, product_name,
+                      is_current, effective_from, effective_to
+  fact_sales        : date_key, channel_key, product_key, customer_key,
+                      region_key, payment_key, external_order_id, order_count,
+                      item_quantity, gross_revenue, discount_amount, net_revenue,
+                      cost_amount, gross_profit, profit_margin, shipping_fee,
+                      return_count, return_amount
 """
 import logging
 from datetime import date, datetime, timezone
@@ -32,63 +48,129 @@ _channel_cache: Dict[str, int] = {}
 
 
 def get_or_create_channel(conn, channel_name: str) -> int:
-    """Trả về channel_id; tạo mới nếu chưa tồn tại."""
-    if channel_name in _channel_cache:
-        return _channel_cache[channel_name]
+    """Trả về channel_key; tạo mới nếu chưa tồn tại.
 
-    sql_select = "SELECT channel_id FROM dw.dim_channel WHERE channel_name = %s"
-    sql_insert = """
-        INSERT INTO dw.dim_channel (channel_name, channel_type, is_active, created_at)
-        VALUES (%s, %s, TRUE, NOW())
-        ON CONFLICT (channel_name) DO UPDATE SET channel_name = EXCLUDED.channel_name
-        RETURNING channel_id
+    dim_channel schema: channel_key (PK serial), channel_id (natural key qua MAX),
+    channel_name, channel_type, is_online, is_active
+    Không có cột created_at.
     """
-    # Xác định channel_type từ tên
+    key = channel_name.lower()
+    if key in _channel_cache:
+        return _channel_cache[key]
+
+    # Xác định channel_type từ tên kênh
     channel_type_map = {
-        "shopee":   "ECOMMERCE",
-        "lazada":   "ECOMMERCE",
-        "tiktok":   "SOCIAL",
-        "facebook": "SOCIAL",
+        "shopee":   "SHOPEE",
+        "lazada":   "LAZADA",
+        "tiktok":   "TIKTOK_SHOP",
+        "facebook": "FACEBOOK",
         "website":  "WEBSITE",
     }
-    channel_type = channel_type_map.get(channel_name.lower(), "OTHER")
+    channel_type = channel_type_map.get(key, "OTHER")
 
     with conn.cursor() as cur:
-        cur.execute(sql_select, (channel_name,))
+        # Lookup trước
+        cur.execute(
+            "SELECT channel_key FROM dw.dim_channel WHERE lower(channel_name) = %s",
+            (key,)
+        )
         row = cur.fetchone()
         if row:
-            channel_id = row[0]
+            channel_key = row[0]
         else:
-            cur.execute(sql_insert, (channel_name, channel_type))
-            channel_id = cur.fetchone()[0]
+            # Insert với channel_id = MAX + 1 (không có UNIQUE constraint trên channel_name)
+            cur.execute(
+                """
+                INSERT INTO dw.dim_channel (channel_id, channel_name, channel_type, is_online, is_active)
+                VALUES (
+                    (SELECT COALESCE(MAX(channel_id), 0) + 1 FROM dw.dim_channel),
+                    %s, %s, TRUE, TRUE
+                )
+                ON CONFLICT DO NOTHING
+                RETURNING channel_key
+                """,
+                (channel_name, channel_type)
+            )
+            inserted = cur.fetchone()
+            if inserted:
+                channel_key = inserted[0]
+            else:
+                # Race condition – đọc lại
+                cur.execute(
+                    "SELECT channel_key FROM dw.dim_channel WHERE lower(channel_name) = %s",
+                    (key,)
+                )
+                channel_key = cur.fetchone()[0]
 
-    _channel_cache[channel_name] = channel_id
-    return channel_id
+    _channel_cache[key] = channel_key
+    return channel_key
 
 
 # ── dim_region (SCD Type 1) ───────────────────────────────────────────────────
 
 _region_cache: Dict[str, int] = {}
 
+# Mapping tỉnh/thành → vùng miền
+_PROVINCE_REGION_MAP: Dict[str, str] = {
+    "Hà Nội":      "Miền Bắc",
+    "Hải Phòng":   "Miền Bắc",
+    "Quảng Ninh":  "Miền Bắc",
+    "Đà Nẵng":     "Miền Trung",
+    "Huế":         "Miền Trung",
+    "Hội An":      "Miền Trung",
+    "Hồ Chí Minh": "Miền Nam",
+    "Cần Thơ":     "Miền Nam",
+    "Bình Dương":  "Miền Nam",
+    "Đồng Nai":    "Miền Nam",
+}
 
-def get_or_create_region(conn, province: str, region: str) -> int:
-    """Trả về region_id cho cặp (province, region)."""
-    cache_key = f"{province}|{region}"
+
+def get_or_create_region(conn, province: str, region: str = "") -> int:
+    """Trả về region_key cho province.
+
+    dim_region schema: region_key (PK), province, region, country
+    ON CONFLICT (province) DO NOTHING – province là UNIQUE key.
+    """
+    province = province or "Khác"
+    cache_key = province
     if cache_key in _region_cache:
         return _region_cache[cache_key]
 
-    sql = """
-        INSERT INTO dw.dim_region (province_name, region_name, country)
-        VALUES (%s, %s, 'Việt Nam')
-        ON CONFLICT (province_name) DO UPDATE SET region_name = EXCLUDED.region_name
-        RETURNING region_id
-    """
-    with conn.cursor() as cur:
-        cur.execute(sql, (province or "Khác", region or "Khác"))
-        region_id = cur.fetchone()[0]
+    # Xác định vùng nếu không truyền vào
+    if not region:
+        region = _PROVINCE_REGION_MAP.get(province, "Khác")
 
-    _region_cache[cache_key] = region_id
-    return region_id
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT region_key FROM dw.dim_region WHERE province = %s",
+            (province,)
+        )
+        row = cur.fetchone()
+        if row:
+            region_key = row[0]
+        else:
+            cur.execute(
+                """
+                INSERT INTO dw.dim_region (province, region, country)
+                VALUES (%s, %s, 'Việt Nam')
+                ON CONFLICT (province) DO NOTHING
+                RETURNING region_key
+                """,
+                (province, region)
+            )
+            inserted = cur.fetchone()
+            if inserted:
+                region_key = inserted[0]
+            else:
+                # Race condition – đọc lại
+                cur.execute(
+                    "SELECT region_key FROM dw.dim_region WHERE province = %s",
+                    (province,)
+                )
+                region_key = cur.fetchone()[0]
+
+    _region_cache[cache_key] = region_key
+    return region_key
 
 
 # ── dim_payment_method (SCD Type 1) ───────────────────────────────────────────
@@ -97,168 +179,221 @@ _payment_cache: Dict[str, int] = {}
 
 
 def get_or_create_payment_method(conn, method_name: str) -> int:
-    """Trả về payment_method_id."""
-    if method_name in _payment_cache:
-        return _payment_cache[method_name]
+    """Trả về payment_key.
 
-    sql = """
-        INSERT INTO dw.dim_payment_method (method_name, method_type)
-        VALUES (%s, %s)
-        ON CONFLICT (method_name) DO UPDATE SET method_name = EXCLUDED.method_name
-        RETURNING payment_method_id
+    dim_payment_method schema: payment_key (PK), payment_method, payment_type
+    ON CONFLICT (payment_method) DO NOTHING.
     """
+    key = method_name.upper() if method_name else "COD"
+    if key in _payment_cache:
+        return _payment_cache[key]
+
+    # Map loại thanh toán
     type_map = {
         "COD":      "COD",
         "CASH":     "CASH",
         "EWALLET":  "E-WALLET",
         "TRANSFER": "BANK_TRANSFER",
     }
-    method_type = type_map.get(method_name, "OTHER")
+    payment_type = type_map.get(key, "OTHER")
 
     with conn.cursor() as cur:
-        cur.execute(sql, (method_name, method_type))
-        payment_method_id = cur.fetchone()[0]
+        cur.execute(
+            "SELECT payment_key FROM dw.dim_payment_method WHERE payment_method = %s",
+            (key,)
+        )
+        row = cur.fetchone()
+        if row:
+            payment_key = row[0]
+        else:
+            cur.execute(
+                """
+                INSERT INTO dw.dim_payment_method (payment_method, payment_type)
+                VALUES (%s, %s)
+                ON CONFLICT (payment_method) DO NOTHING
+                RETURNING payment_key
+                """,
+                (key, payment_type)
+            )
+            inserted = cur.fetchone()
+            if inserted:
+                payment_key = inserted[0]
+            else:
+                cur.execute(
+                    "SELECT payment_key FROM dw.dim_payment_method WHERE payment_method = %s",
+                    (key,)
+                )
+                payment_key = cur.fetchone()[0]
 
-    _payment_cache[method_name] = payment_method_id
-    return payment_method_id
+    _payment_cache[key] = payment_key
+    return payment_key
 
 
-# ── dim_date (pre-populated, chỉ lookup) ──────────────────────────────────────
+# ── dim_date (pre-populated, chỉ lookup – tự insert nếu thiếu) ───────────────
 
 _date_cache: Dict[int, int] = {}
 
 
 def get_date_key(conn, dt: Optional[datetime]) -> Optional[int]:
     """
-    Trả về date_id từ dim_date theo date_key (YYYYMMDD).
-    Nếu ngày chưa có trong DW thì tự insert (guard cho edge-case).
+    Trả về date_key (integer YYYYMMDD) từ dw.dim_date.
+
+    dim_date schema: date_key (PK integer), full_date, day_of_week, day_name,
+    week_number, month_number, month_name, quarter, year, is_weekend, is_holiday.
+
+    Lưu ý: date_key vừa là PK vừa là FK trong fact_sales – không có cột date_id riêng.
     """
     if dt is None:
         return None
 
-    if isinstance(dt, datetime):
-        d = dt.date()
-    else:
-        d = dt
-
+    d = dt.date() if isinstance(dt, datetime) else dt
     date_key = int(d.strftime("%Y%m%d"))
+
     if date_key in _date_cache:
         return _date_cache[date_key]
 
-    sql_select = "SELECT date_id FROM dw.dim_date WHERE date_key = %s"
-    sql_insert = """
-        INSERT INTO dw.dim_date (
-            date_key, full_date, day_of_week, day_name,
-            month, month_name, quarter, year,
-            is_weekend, is_holiday
-        ) VALUES (
-            %s, %s,
-            EXTRACT(DOW FROM %s::date)::int,
-            TO_CHAR(%s::date, 'Day'),
-            EXTRACT(MONTH FROM %s::date)::int,
-            TO_CHAR(%s::date, 'Month'),
-            EXTRACT(QUARTER FROM %s::date)::int,
-            EXTRACT(YEAR FROM %s::date)::int,
-            EXTRACT(DOW FROM %s::date) IN (0, 6),
-            FALSE
-        )
-        ON CONFLICT (date_key) DO NOTHING
-        RETURNING date_id
-    """
     date_str = d.isoformat()
 
     with conn.cursor() as cur:
-        cur.execute(sql_select, (date_key,))
+        # Kiểm tra đã có trong dim_date chưa
+        cur.execute(
+            "SELECT date_key FROM dw.dim_date WHERE date_key = %s",
+            (date_key,)
+        )
         row = cur.fetchone()
         if row:
-            date_id = row[0]
-        else:
-            cur.execute(sql_insert, (date_key, date_str) + (date_str,) * 8)
-            inserted = cur.fetchone()
-            if inserted:
-                date_id = inserted[0]
-            else:
-                # Race condition – đọc lại
-                cur.execute(sql_select, (date_key,))
-                date_id = cur.fetchone()[0]
+            _date_cache[date_key] = row[0]
+            return row[0]
 
-    _date_cache[date_key] = date_id
-    return date_id
+        # Chưa có → insert (edge-case: dim_date thường được pre-populate)
+        cur.execute(
+            """
+            INSERT INTO dw.dim_date (
+                date_key, full_date, day_of_week, day_name,
+                week_number, month_number, month_name, quarter, year,
+                is_weekend, is_holiday
+            ) VALUES (
+                %s, %s,
+                EXTRACT(DOW FROM %s::date)::int,
+                TO_CHAR(%s::date, 'Day'),
+                EXTRACT(WEEK FROM %s::date)::int,
+                EXTRACT(MONTH FROM %s::date)::int,
+                TO_CHAR(%s::date, 'Month'),
+                EXTRACT(QUARTER FROM %s::date)::int,
+                EXTRACT(YEAR FROM %s::date)::int,
+                EXTRACT(DOW FROM %s::date) IN (0, 6),
+                FALSE
+            )
+            ON CONFLICT (date_key) DO NOTHING
+            RETURNING date_key
+            """,
+            (date_key, date_str) + (date_str,) * 9
+        )
+        inserted = cur.fetchone()
+        if inserted:
+            result = inserted[0]
+        else:
+            # Race condition – đọc lại
+            cur.execute("SELECT date_key FROM dw.dim_date WHERE date_key = %s", (date_key,))
+            result = cur.fetchone()[0]
+
+    _date_cache[date_key] = result
+    return result
 
 
 # ── dim_customer (SCD Type 2) ─────────────────────────────────────────────────
 
-def upsert_customer_scd2(conn, phone: Optional[str], name: str) -> int:
+def upsert_customer_scd2(conn, phone: Optional[str], name: str,
+                         province: str = "Khác") -> int:
     """
     Upsert dim_customer theo SCD Type 2.
 
-    - Nếu chưa có customer_phone → INSERT phiên bản đầu tiên.
-    - Nếu đã có và tên KHÁC → đóng bản ghi cũ (valid_to=TODAY, is_current=FALSE),
-      INSERT bản ghi mới.
-    - Nếu đã có và tên GIỐNG → trả về customer_id hiện tại.
+    dim_customer schema: customer_key (PK), customer_id (natural MAX+1),
+    full_name, province, region, is_current, effective_from, effective_to.
+
+    Lưu ý: KHÔNG có cột customer_phone – dùng full_name + province làm business key.
+    Nếu tên thay đổi → đóng bản ghi cũ, tạo bản ghi mới (SCD2).
+
+    Args:
+        phone:    Không dùng (giữ tham số để tương thích với code cũ).
+        name:     Tên khách hàng (full_name).
+        province: Tỉnh/thành của khách hàng.
     """
-    if not phone:
-        # Không có phone: dùng dim "Unknown customer"
+    if not name:
         return _get_or_create_unknown_customer(conn)
 
     today = _today_utc()
+    region = _PROVINCE_REGION_MAP.get(province, "Khác")
 
+    # SQL sử dụng cột thực tế: full_name, province, effective_from/effective_to
     sql_current = """
-        SELECT customer_id, customer_name
+        SELECT customer_key, full_name
         FROM dw.dim_customer
-        WHERE customer_phone = %s AND is_current = TRUE
+        WHERE full_name = %s AND province = %s AND is_current = TRUE
         LIMIT 1
     """
     sql_insert = """
         INSERT INTO dw.dim_customer
-            (customer_phone, customer_name, valid_from, valid_to, is_current)
-        VALUES (%s, %s, %s, '9999-12-31', TRUE)
-        RETURNING customer_id
+            (customer_id, full_name, province, region,
+             is_current, effective_from, effective_to)
+        VALUES (
+            (SELECT COALESCE(MAX(customer_id), 0) + 1 FROM dw.dim_customer),
+            %s, %s, %s, TRUE, %s, '9999-12-31'
+        )
+        RETURNING customer_key
     """
     sql_expire = """
         UPDATE dw.dim_customer
-        SET valid_to = %s, is_current = FALSE
-        WHERE customer_id = %s
+        SET effective_to = %s, is_current = FALSE
+        WHERE customer_key = %s
     """
 
     with conn.cursor() as cur:
-        cur.execute(sql_current, (phone,))
+        cur.execute(sql_current, (name, province))
         row = cur.fetchone()
 
         if row is None:
-            # Chưa có → insert mới
-            cur.execute(sql_insert, (phone, name, today))
+            # Chưa có → insert phiên bản đầu tiên
+            cur.execute(sql_insert, (name, province, region, today))
             return cur.fetchone()[0]
 
-        customer_id, current_name = row
+        customer_key, current_name = row
         if current_name != name:
-            # Thuộc tính thay đổi → SCD Type 2: đóng cũ, tạo mới
-            cur.execute(sql_expire, (today, customer_id))
-            cur.execute(sql_insert, (phone, name, today))
+            # Tên thay đổi → SCD Type 2: đóng bản ghi cũ, tạo mới
+            cur.execute(sql_expire, (today, customer_key))
+            cur.execute(sql_insert, (name, province, region, today))
             return cur.fetchone()[0]
 
-        return customer_id
+        return customer_key
 
 
 def _get_or_create_unknown_customer(conn) -> int:
-    """Trả về customer_id cho bản ghi "Khách vãng lai" (phone=NULL)."""
-    sql = """
-        INSERT INTO dw.dim_customer
-            (customer_phone, customer_name, valid_from, valid_to, is_current)
-        VALUES (NULL, 'Khách vãng lai', '2000-01-01', '9999-12-31', TRUE)
-        ON CONFLICT DO NOTHING
-        RETURNING customer_id
-    """
+    """Trả về customer_key cho bản ghi 'Khách vãng lai' (tên không xác định)."""
     sql_select = """
-        SELECT customer_id FROM dw.dim_customer
-        WHERE customer_name = 'Khách vãng lai' AND customer_phone IS NULL
+        SELECT customer_key FROM dw.dim_customer
+        WHERE full_name = 'Khách vãng lai' AND is_current = TRUE
         LIMIT 1
     """
+    sql_insert = """
+        INSERT INTO dw.dim_customer
+            (customer_id, full_name, province, region,
+             is_current, effective_from, effective_to)
+        VALUES (
+            (SELECT COALESCE(MAX(customer_id), 0) + 1 FROM dw.dim_customer),
+            'Khách vãng lai', 'Khác', 'Khác', TRUE, '2000-01-01', '9999-12-31'
+        )
+        RETURNING customer_key
+    """
     with conn.cursor() as cur:
-        cur.execute(sql)
+        cur.execute(sql_select)
         row = cur.fetchone()
         if row:
             return row[0]
+        cur.execute(sql_insert)
+        result = cur.fetchone()
+        if result:
+            return result[0]
+        # Race condition – đọc lại
         cur.execute(sql_select)
         return cur.fetchone()[0]
 
@@ -269,71 +404,86 @@ def upsert_product_scd2(
     conn,
     sku: str,
     product_name: str,
-    channel_id: int,
+    channel_id: int = 0,   # Giữ tham số để tương thích – không dùng (dim_product không có channel_id)
 ) -> int:
     """
     Upsert dim_product theo SCD Type 2.
-    Key business: sku + channel_id
+
+    dim_product schema: product_key (PK), product_id (natural MAX+1),
+    sku, product_name, is_current, effective_from, effective_to.
+
+    Lưu ý: KHÔNG có cột channel_id trong dim_product – business key là sku.
     """
     if not sku:
-        return _get_or_create_unknown_product(conn, channel_id)
+        return _get_or_create_unknown_product(conn)
 
     today = _today_utc()
 
     sql_current = """
-        SELECT product_id, product_name
+        SELECT product_key, product_name
         FROM dw.dim_product
-        WHERE sku = %s AND channel_id = %s AND is_current = TRUE
+        WHERE sku = %s AND is_current = TRUE
         LIMIT 1
     """
     sql_insert = """
         INSERT INTO dw.dim_product
-            (sku, product_name, channel_id, valid_from, valid_to, is_current)
-        VALUES (%s, %s, %s, %s, '9999-12-31', TRUE)
-        RETURNING product_id
+            (product_id, sku, product_name, is_current, effective_from, effective_to)
+        VALUES (
+            (SELECT COALESCE(MAX(product_id), 0) + 1 FROM dw.dim_product),
+            %s, %s, TRUE, %s, '9999-12-31'
+        )
+        RETURNING product_key
     """
     sql_expire = """
         UPDATE dw.dim_product
-        SET valid_to = %s, is_current = FALSE
-        WHERE product_id = %s
+        SET effective_to = %s, is_current = FALSE
+        WHERE product_key = %s
     """
 
     with conn.cursor() as cur:
-        cur.execute(sql_current, (sku, channel_id))
+        cur.execute(sql_current, (sku,))
         row = cur.fetchone()
 
         if row is None:
-            cur.execute(sql_insert, (sku, product_name, channel_id, today))
+            cur.execute(sql_insert, (sku, product_name, today))
             return cur.fetchone()[0]
 
-        product_id, current_name = row
+        product_key, current_name = row
         if current_name != product_name:
-            cur.execute(sql_expire, (today, product_id))
-            cur.execute(sql_insert, (sku, product_name, channel_id, today))
+            # Tên sản phẩm thay đổi → SCD Type 2
+            cur.execute(sql_expire, (today, product_key))
+            cur.execute(sql_insert, (sku, product_name, today))
             return cur.fetchone()[0]
 
-        return product_id
+        return product_key
 
 
-def _get_or_create_unknown_product(conn, channel_id: int) -> int:
-    sql = """
-        INSERT INTO dw.dim_product
-            (sku, product_name, channel_id, valid_from, valid_to, is_current)
-        VALUES ('UNKNOWN', 'Sản phẩm không xác định', %s, '2000-01-01', '9999-12-31', TRUE)
-        ON CONFLICT DO NOTHING
-        RETURNING product_id
-    """
+def _get_or_create_unknown_product(conn) -> int:
+    """Trả về product_key cho sản phẩm không xác định."""
     sql_select = """
-        SELECT product_id FROM dw.dim_product
-        WHERE sku = 'UNKNOWN' AND channel_id = %s AND is_current = TRUE
+        SELECT product_key FROM dw.dim_product
+        WHERE sku = 'UNKNOWN' AND is_current = TRUE
         LIMIT 1
     """
+    sql_insert = """
+        INSERT INTO dw.dim_product
+            (product_id, sku, product_name, is_current, effective_from, effective_to)
+        VALUES (
+            (SELECT COALESCE(MAX(product_id), 0) + 1 FROM dw.dim_product),
+            'UNKNOWN', 'Sản phẩm không xác định', TRUE, '2000-01-01', '9999-12-31'
+        )
+        RETURNING product_key
+    """
     with conn.cursor() as cur:
-        cur.execute(sql, (channel_id,))
+        cur.execute(sql_select)
         row = cur.fetchone()
         if row:
             return row[0]
-        cur.execute(sql_select, (channel_id,))
+        cur.execute(sql_insert)
+        result = cur.fetchone()
+        if result:
+            return result[0]
+        cur.execute(sql_select)
         return cur.fetchone()[0]
 
 
@@ -341,31 +491,32 @@ def _get_or_create_unknown_product(conn, channel_id: int) -> int:
 
 FACT_INSERT_SQL = """
     INSERT INTO dw.fact_sales (
-        date_id, channel_id, product_id, customer_id,
-        region_id, payment_method_id,
-        external_order_id, order_count,
-        item_quantity, gross_revenue, discount_amount,
-        net_revenue, cost_amount, gross_profit,
-        profit_margin, shipping_fee,
-        return_count, return_amount,
-        order_status, source_system, created_at
+        date_key, channel_key, product_key, customer_key,
+        region_key, payment_key,
+        external_order_id, order_count, item_quantity,
+        gross_revenue, discount_amount, net_revenue,
+        cost_amount, gross_profit, profit_margin,
+        shipping_fee, return_count, return_amount
     ) VALUES (
-        %(date_id)s, %(channel_id)s, %(product_id)s, %(customer_id)s,
-        %(region_id)s, %(payment_method_id)s,
-        %(external_order_id)s, %(order_count)s,
-        %(item_quantity)s, %(gross_revenue)s, %(discount_amount)s,
-        %(net_revenue)s, %(cost_amount)s, %(gross_profit)s,
-        %(profit_margin)s, %(shipping_fee)s,
-        %(return_count)s, %(return_amount)s,
-        %(order_status)s, %(source_system)s, NOW()
+        %(date_key)s, %(channel_key)s, %(product_key)s, %(customer_key)s,
+        %(region_key)s, %(payment_key)s,
+        %(external_order_id)s, %(order_count)s, %(item_quantity)s,
+        %(gross_revenue)s, %(discount_amount)s, %(net_revenue)s,
+        %(cost_amount)s, %(gross_profit)s, %(profit_margin)s,
+        %(shipping_fee)s, %(return_count)s, %(return_amount)s
     )
     ON CONFLICT (external_order_id) DO NOTHING
 """
+# Lưu ý: fact_sales KHÔNG có các cột order_status, source_system, created_at
 
 
 def load_fact_records(conn, fact_records: List[Dict]) -> Tuple[int, int]:
     """
     Resolve dim keys và INSERT vào fact_sales.
+
+    Args:
+        conn:         psycopg2 connection (đang trong transaction)
+        fact_records: list records từ transform/calculate step
 
     Returns:
         (inserted_count, skipped_count) – số bản ghi inserted và bị skip (duplicate)
@@ -375,45 +526,45 @@ def load_fact_records(conn, fact_records: List[Dict]) -> Tuple[int, int]:
 
     for rec in fact_records:
         try:
-            # 1. Resolve dim_channel
-            channel_id = get_or_create_channel(conn, rec["_channel_name"])
+            # 1. Resolve dim_channel → channel_key
+            channel_key = get_or_create_channel(conn, rec["_channel_name"])
 
-            # 2. Resolve dim_region
-            region_id = get_or_create_region(
-                conn, rec["_province"], rec.get("_region", "Khác")
+            # 2. Resolve dim_region → region_key (dùng province)
+            region_key = get_or_create_region(
+                conn, rec["_province"], rec.get("_region", "")
             )
 
-            # 3. Resolve dim_payment_method
-            payment_method_id = get_or_create_payment_method(
+            # 3. Resolve dim_payment_method → payment_key
+            payment_key = get_or_create_payment_method(
                 conn, rec["_payment_method"]
             )
 
-            # 4. Resolve dim_date
-            date_id = get_date_key(conn, rec.get("_order_date"))
+            # 4. Resolve dim_date → date_key (integer YYYYMMDD)
+            date_key = get_date_key(conn, rec.get("_order_date"))
 
-            # 5. Upsert dim_customer (SCD2)
-            customer_id = upsert_customer_scd2(
+            # 5. Upsert dim_customer (SCD2) → customer_key
+            customer_key = upsert_customer_scd2(
                 conn,
-                phone=rec.get("_customer_phone"),
+                phone=rec.get("_customer_phone"),    # không dùng, giữ tương thích
                 name=rec.get("_customer_name", ""),
+                province=rec.get("_province", "Khác"),
             )
 
-            # 6. Upsert dim_product (SCD2)
-            product_id = upsert_product_scd2(
+            # 6. Upsert dim_product (SCD2) → product_key
+            product_key = upsert_product_scd2(
                 conn,
                 sku=rec.get("_product_sku", ""),
                 product_name=rec.get("_product_name", ""),
-                channel_id=channel_id,
             )
 
-            # 7. INSERT fact_sales
+            # 7. INSERT fact_sales – dùng đúng tên cột _key
             params = {
-                "date_id":           date_id,
-                "channel_id":        channel_id,
-                "product_id":        product_id,
-                "customer_id":       customer_id,
-                "region_id":         region_id,
-                "payment_method_id": payment_method_id,
+                "date_key":          date_key,
+                "channel_key":       channel_key,
+                "product_key":       product_key,
+                "customer_key":      customer_key,
+                "region_key":        region_key,
+                "payment_key":       payment_key,
                 "external_order_id": rec["_external_order_id"],
                 "order_count":       rec["order_count"],
                 "item_quantity":     rec["item_quantity"],
@@ -426,8 +577,6 @@ def load_fact_records(conn, fact_records: List[Dict]) -> Tuple[int, int]:
                 "shipping_fee":      rec["shipping_fee"],
                 "return_count":      rec["return_count"],
                 "return_amount":     rec["return_amount"],
-                "order_status":      rec.get("_status", "DELIVERED"),
-                "source_system":     rec.get("_source", "unknown"),
             }
 
             with conn.cursor() as cur:
@@ -442,7 +591,6 @@ def load_fact_records(conn, fact_records: List[Dict]) -> Tuple[int, int]:
                 f"Load failed cho external_order_id={rec.get('_external_order_id')}: {exc}",
                 exc_info=True,
             )
-            # Không raise – tiếp tục với bản ghi tiếp theo
             skipped += 1
 
     logger.info(f"Load fact_sales: {inserted} inserted, {skipped} skipped/duplicate")
@@ -508,8 +656,152 @@ def load_dispatch(
     processed_count = mark_staging_processed(conn, source, staging_ids)
 
     return {
-        "inserted":      inserted,
-        "skipped":       skipped,
-        "processed_ids": staging_ids,
+        "inserted":        inserted,
+        "skipped":         skipped,
+        "processed_ids":   staging_ids,
         "processed_count": processed_count,
     }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# DataLoader – Load raw web scraping data vào dim_external_source (Mức 2)
+# ══════════════════════════════════════════════════════════════════════════════
+
+class DataLoader:
+    """
+    Load dữ liệu từ raw_google_data và raw_facebook_data
+    (đã qua clean + normalize) vào bảng dim_external_source trong DW.
+
+    Dùng INSERT ... ON CONFLICT (content_hash) DO NOTHING để dedup.
+    """
+
+    def __init__(self, db_url: str = ""):
+        import os
+        from dotenv import load_dotenv
+        load_dotenv()
+        self.db_url = db_url or os.getenv("DATABASE_URL", "")
+        if not self.db_url:
+            logger.warning("DataLoader: DATABASE_URL chưa cấu hình")
+
+    def _get_conn(self):
+        return psycopg2.connect(self.db_url)
+
+    def load_google_to_dw(self) -> int:
+        """
+        Load raw_google_data (is_valid=true, normalized_at IS NOT NULL)
+        vào dim_external_source với source_type='google'.
+
+        Dùng content_hash để dedup (ON CONFLICT DO NOTHING).
+
+        Returns:
+            int: Số bản ghi đã insert thành công.
+        """
+        if not self.db_url:
+            return 0
+
+        inserted = 0
+        try:
+            conn = self._get_conn()
+            cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            cur.execute("""
+                SELECT id, keyword, title, snippet, url,
+                       relevance_score, content_hash,
+                       DATE(scraped_at) AS collected_date
+                FROM   public.raw_google_data
+                WHERE  is_valid     = true
+                  AND  normalized_at IS NOT NULL
+                ORDER BY scraped_at ASC
+            """)
+            rows = cur.fetchall()
+            logger.info("load_google_to_dw: %d bản ghi cần load", len(rows))
+
+            insert_cur = conn.cursor()
+            for row in rows:
+                insert_cur.execute(
+                    """INSERT INTO public.dim_external_source
+                         (source_type, keyword, title, content, url,
+                          relevance_score, collected_date, content_hash)
+                       VALUES ('google', %s, %s, %s, %s, %s, %s, %s)
+                       ON CONFLICT (content_hash) DO NOTHING""",
+                    (
+                        row["keyword"],
+                        row["title"],
+                        row["snippet"],
+                        row["url"],
+                        row["relevance_score"] or 0,
+                        row["collected_date"],
+                        row["content_hash"],
+                    ),
+                )
+                if insert_cur.rowcount > 0:
+                    inserted += 1
+
+            conn.commit()
+            cur.close()
+            insert_cur.close()
+            conn.close()
+            logger.info("load_google_to_dw hoàn thành: %d bản ghi đã load", inserted)
+
+        except Exception as e:
+            logger.error("load_google_to_dw lỗi: %s", e, exc_info=True)
+
+        return inserted
+
+    def load_facebook_to_dw(self) -> int:
+        """
+        Load raw_facebook_data (is_valid=true, normalized_at IS NOT NULL)
+        vào dim_external_source với source_type='facebook'.
+
+        Returns:
+            int: Số bản ghi đã insert thành công.
+        """
+        if not self.db_url:
+            return 0
+
+        inserted = 0
+        try:
+            conn = self._get_conn()
+            cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            cur.execute("""
+                SELECT id, page_name, post_content, post_id,
+                       content_hash, DATE(scraped_at) AS collected_date
+                FROM   public.raw_facebook_data
+                WHERE  is_valid     = true
+                  AND  normalized_at IS NOT NULL
+                ORDER BY scraped_at ASC
+            """)
+            rows = cur.fetchall()
+            logger.info("load_facebook_to_dw: %d bản ghi cần load", len(rows))
+
+            insert_cur = conn.cursor()
+            for row in rows:
+                insert_cur.execute(
+                    """INSERT INTO public.dim_external_source
+                         (source_type, keyword, title, content, url,
+                          relevance_score, collected_date, content_hash)
+                       VALUES ('facebook', %s, %s, %s, %s, 0, %s, %s)
+                       ON CONFLICT (content_hash) DO NOTHING""",
+                    (
+                        row["page_name"],           # keyword = tên page
+                        row["page_name"],           # title = tên page
+                        row["post_content"],
+                        row.get("post_id") or "",   # url = post_id (không có post_url)
+                        row["collected_date"],
+                        row["content_hash"],
+                    ),
+                )
+                if insert_cur.rowcount > 0:
+                    inserted += 1
+
+            conn.commit()
+            cur.close()
+            insert_cur.close()
+            conn.close()
+            logger.info("load_facebook_to_dw hoàn thành: %d bản ghi đã load", inserted)
+
+        except Exception as e:
+            logger.error("load_facebook_to_dw lỗi: %s", e, exc_info=True)
+
+        return inserted

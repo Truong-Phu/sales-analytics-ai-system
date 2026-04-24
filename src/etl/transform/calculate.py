@@ -10,9 +10,19 @@ Metrics được tính:
   - gross_profit     = net_revenue - cost_amount
   - profit_margin    = gross_profit / net_revenue × 100  (%)
   - shipping_fee     = từ order-level data
+
+Bổ sung (Mức 2):
+  RelevanceCalculator – Tính relevance_score cho raw_google_data đã normalize.
 """
 import logging
+import os
 from typing import Dict, List, Optional
+
+import psycopg2
+import psycopg2.extras
+from dotenv import load_dotenv
+
+load_dotenv()
 
 logger = logging.getLogger("etl.transform.calculate")
 
@@ -179,3 +189,112 @@ def calculate_dispatch(
         logger.warning(f"Không có calculate function cho source='{source}'")
         return []
     return fn(rows, product_costs)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# RelevanceCalculator – Tính điểm relevance cho raw_google_data (Mức 2)
+# ══════════════════════════════════════════════════════════════════════════════
+
+class RelevanceCalculator:
+    """
+    Tính relevance_score cho raw_google_data đã qua normalize.
+
+    Công thức:
+        +3 nếu keyword xuất hiện trong title
+        +1 nếu keyword xuất hiện trong snippet
+        +2 nếu position <= 3 (top 3 kết quả tìm kiếm)
+    """
+
+    def __init__(self, db_url: str = ""):
+        self.db_url = db_url or os.getenv("DATABASE_URL", "")
+        if not self.db_url:
+            logger.warning("RelevanceCalculator: DATABASE_URL chưa cấu hình")
+
+    def _get_conn(self):
+        return psycopg2.connect(self.db_url)
+
+    def add_missing_columns(self) -> None:
+        """Thêm cột relevance_score int default 0 nếu chưa có."""
+        if not self.db_url:
+            return
+        try:
+            conn = self._get_conn()
+            conn.autocommit = True
+            cur  = conn.cursor()
+            cur.execute(
+                "ALTER TABLE public.raw_google_data "
+                "ADD COLUMN IF NOT EXISTS relevance_score INT DEFAULT 0"
+            )
+            cur.close()
+            conn.close()
+            logger.info("RelevanceCalculator.add_missing_columns hoàn thành")
+        except Exception as e:
+            logger.error("add_missing_columns lỗi: %s", e, exc_info=True)
+
+    def calculate_google_relevance(self, keywords: list) -> int:
+        """
+        Tính relevance_score cho raw_google_data đã normalize.
+
+        Điều kiện: normalized_at IS NOT NULL
+
+        Scoring:
+            +3 nếu keyword trong title
+            +1 nếu keyword trong snippet
+            +2 nếu position <= 3
+
+        Args:
+            keywords: Danh sách từ khóa để tính score.
+
+        Returns:
+            int: Số bản ghi đã tính score.
+        """
+        if not self.db_url or not keywords:
+            return 0
+
+        count = 0
+        try:
+            conn = self._get_conn()
+            cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            cur.execute("""
+                SELECT id, keyword, title, snippet, position
+                FROM   public.raw_google_data
+                WHERE  normalized_at IS NOT NULL
+                ORDER BY scraped_at ASC
+            """)
+            rows = cur.fetchall()
+            logger.info("calculate_google_relevance: %d bản ghi cần tính", len(rows))
+
+            update_cur = conn.cursor()
+            for row in rows:
+                title   = (row["title"]   or "").lower()
+                snippet = (row["snippet"] or "").lower()
+                pos     = row["position"] or 99
+
+                score = 0
+                for kw in keywords:
+                    kw_lower = kw.lower()
+                    if kw_lower in title:
+                        score += 3
+                    if kw_lower in snippet:
+                        score += 1
+                # Bonus top 3
+                if pos <= 3:
+                    score += 2
+
+                update_cur.execute(
+                    "UPDATE public.raw_google_data SET relevance_score = %s WHERE id = %s",
+                    (score, row["id"]),
+                )
+                count += 1
+
+            conn.commit()
+            cur.close()
+            update_cur.close()
+            conn.close()
+            logger.info("calculate_google_relevance hoàn thành: %d bản ghi", count)
+
+        except Exception as e:
+            logger.error("calculate_google_relevance lỗi: %s", e, exc_info=True)
+
+        return count
