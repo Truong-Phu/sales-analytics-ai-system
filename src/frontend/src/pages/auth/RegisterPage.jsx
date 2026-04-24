@@ -109,16 +109,16 @@ export default function RegisterPage() {
             </div>
 
             <div>
-              <label className="block text-sm text-outline mb-1.5">Vai trò</label>
+              <label className="block text-sm text-outline mb-1.5">{t('auth.roleLabel')}</label>
               <select
                 className="form-input"
                 value={form.role}
                 onChange={e => setForm(f => ({ ...f, role: e.target.value }))}
               >
-                <option value="Owner">Chủ doanh nghiệp</option>
-                <option value="Manager">Quản lý</option>
-                <option value="Staff">Nhân viên</option>
-                <option value="DataIT">Data/IT</option>
+                <option value="Owner">{t('admin.roles.Owner')}</option>
+                <option value="Manager">{t('admin.roles.Manager')}</option>
+                <option value="Staff">{t('admin.roles.Staff')}</option>
+                <option value="DataIT">{t('admin.roles.DataIT')}</option>
               </select>
             </div>
 

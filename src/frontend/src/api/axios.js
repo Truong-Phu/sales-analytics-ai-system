@@ -1,10 +1,13 @@
 import axios from 'axios'
+import { showToast } from '../utils/toast'
 
-const BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:5000'
+// Dev: Vite proxy chuyển /api/* → http://localhost:5136 (xem vite.config.js)
+// Production: đặt VITE_API_URL=https://api.yourdomain.com trong .env
+const BASE_URL = import.meta.env.VITE_API_URL ?? ''
 
 const api = axios.create({
   baseURL: BASE_URL,
-  timeout: 30_000,
+  timeout: 10_000,
   headers: { 'Content-Type': 'application/json' },
 })
 
@@ -45,7 +48,7 @@ api.interceptors.response.use(
         const refreshToken = localStorage.getItem('refresh_token')
         if (!refreshToken) throw new Error('No refresh token')
 
-        const { data } = await axios.post(`${BASE_URL}/api/auth/refresh`, { refreshToken })
+        const { data } = await api.post('/api/auth/refresh', { refreshToken })
         const newToken = data.accessToken
 
         sessionStorage.setItem('access_token', newToken)
@@ -67,6 +70,15 @@ api.interceptors.response.use(
         isRefreshing = false
       }
     }
+
+    // Xử lý lỗi HTTP toàn cục
+    const status = err.response?.status
+    if (status === 403) {
+      showToast('Không có quyền truy cập trang này', 'error')
+    } else if (status >= 500) {
+      showToast('Lỗi hệ thống, vui lòng thử lại sau', 'error')
+    }
+
     return Promise.reject(err)
   }
 )

@@ -6,8 +6,8 @@ ChartJS.register(ArcElement, Tooltip, Legend)
 const PALETTE = ['#c4c0ff', '#4ae176', '#adc6ff', '#ffb4ab', '#f59e0b', '#6b7280']
 
 export default function ChannelDonutChart({ channels = [], height = 260 }) {
-  // channels: [{name, revenue, pct}]
-  const labels  = channels.map(c => c.name)
+  // channels: [{channelName, revenue, revenuePct}]  – khớp với DTO backend
+  const labels  = channels.map(c => c.channelName)
   const values  = channels.map(c => c.revenue)
   const total   = values.reduce((a, b) => a + b, 0)
 

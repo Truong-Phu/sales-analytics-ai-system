@@ -3,12 +3,30 @@ import { AuthContext } from '../context/AuthContext'
 
 /**
  * Hook tiện ích để truy cập AuthContext từ bất kỳ component nào.
- * Trả về: { user, loading, login, logout, setLang }
+ * Trả về: { user, loading, login, logout, setLang,
+ *           isAdmin, isOwner, isManager, isStaff,
+ *           canEdit, canViewReport, canManageUsers }
  */
 export function useAuth() {
   const ctx = useContext(AuthContext)
   if (!ctx) throw new Error('useAuth phải được dùng trong AuthProvider')
-  return ctx
+
+  const role = ctx.user?.role ?? ''
+
+  return {
+    ...ctx,
+    // Role shortcuts
+    isAdmin:   role === 'Admin',
+    isOwner:   role === 'Owner',
+    isManager: role === 'Manager',
+    isStaff:   role === 'Staff',
+    isDataIT:  role === 'DataIT',
+    isViewer:  role === 'Viewer',
+    // Permission helpers
+    canEdit:        ['Admin', 'Owner', 'Manager', 'Staff'].includes(role),
+    canViewReport:  ['Admin', 'Owner', 'Manager'].includes(role),
+    canManageUsers: role === 'Admin',
+  }
 }
 
 /**

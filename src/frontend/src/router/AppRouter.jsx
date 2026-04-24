@@ -1,38 +1,41 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { Suspense, lazy } from 'react'
 import { PageSpinner } from '../components/ui/Spinner'
-import Layout from '../components/layout/Layout'
+import AppShell from '../components/layout/AppShell'
 import ProtectedRoute from './ProtectedRoute'
 import LoginPage       from '../pages/auth/LoginPage'
 import RegisterPage    from '../pages/auth/RegisterPage'
 import UnauthorizedPage from '../pages/UnauthorizedPage'
 
 // Lazy load để giảm bundle size
-const DashboardPage       = lazy(() => import('../pages/DashboardPage'))
-const ForecastPage        = lazy(() => import('../pages/ForecastPage'))
-const AnomalyPage         = lazy(() => import('../pages/AnomalyPage'))
-const RecommendationsPage = lazy(() => import('../pages/RecommendationsPage'))
-const OrdersPage          = lazy(() => import('../pages/OrdersPage'))
-const DataSyncPage        = lazy(() => import('../pages/DataSyncPage'))
-const EtlMonitorPage      = lazy(() => import('../pages/EtlMonitorPage'))
-const ReportPage          = lazy(() => import('../pages/ReportPage'))
-const AdminPage           = lazy(() => import('../pages/AdminPage'))
-const SettingsPage        = lazy(() => import('../pages/SettingsPage'))
+const DashboardPage       = lazy(() => import('../pages/dashboard/DashboardPage'))
+const ForecastPage        = lazy(() => import('../pages/ai-forecast/ForecastPage'))
+const AnomalyPage         = lazy(() => import('../pages/anomaly/AnomalyPage'))
+const RecommendationsPage = lazy(() => import('../pages/recommendations/RecommendationsPage'))
+const OrdersPage          = lazy(() => import('../pages/orders/OrdersPage'))
+const ProductsPage        = lazy(() => import('../pages/products/ProductsPage'))
+const CustomersPage       = lazy(() => import('../pages/customers/CustomersPage'))
+const DataSyncPage        = lazy(() => import('../pages/data-sync/DataSyncPage'))
+const EtlMonitorPage      = lazy(() => import('../pages/etl-monitor/EtlMonitorPage'))
+const ReportPage          = lazy(() => import('../pages/report/ReportPage'))
+const AdminPage           = lazy(() => import('../pages/admin/AdminPage'))
+const SettingsPage        = lazy(() => import('../pages/settings/SettingsPage'))
 const ChangePasswordPage  = lazy(() => import('../pages/auth/ChangePasswordPage'))
 
-// Roles tiện ích
-const ALL_ROLES    = ['Owner', 'Manager', 'Staff', 'DataIT', 'Admin']
+// Roles constants
+const ALL_ROLES     = ['Owner', 'Manager', 'Staff', 'DataIT', 'Admin']
 const ANALYST_ROLES = ['Owner', 'Manager', 'DataIT', 'Admin']
-const DATA_ROLES   = ['DataIT', 'Admin']
-const ADMIN_ONLY   = ['Admin']
+const DATA_ROLES    = ['DataIT', 'Admin']
+const ADMIN_ONLY    = ['Admin']
+const VIEWER_ROUTES = [...ALL_ROLES, 'Viewer']
 
-function AppLayout({ children }) {
+function Shell({ children }) {
   return (
-    <Layout>
+    <AppShell>
       <Suspense fallback={<PageSpinner />}>
         {children}
       </Suspense>
-    </Layout>
+    </AppShell>
   )
 }
 
@@ -40,77 +43,94 @@ export default function AppRouter() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* Public routes */}
-        <Route path="/login"    element={<LoginPage />}    />
-        <Route path="/register" element={<RegisterPage />} />
+        {/* Public routes – NO AppShell */}
+        <Route path="/login"        element={<LoginPage />} />
+        <Route path="/register"     element={<RegisterPage />} />
         <Route path="/unauthorized" element={<UnauthorizedPage />} />
 
-        {/* Protected routes – có Layout */}
+        {/* Root redirect */}
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
 
+        {/* Analytics */}
         <Route path="/dashboard" element={
-          <ProtectedRoute roles={ALL_ROLES}>
-            <AppLayout><DashboardPage /></AppLayout>
+          <ProtectedRoute roles={VIEWER_ROUTES}>
+            <Shell><DashboardPage /></Shell>
           </ProtectedRoute>
         } />
 
         <Route path="/forecast" element={
           <ProtectedRoute roles={ANALYST_ROLES}>
-            <AppLayout><ForecastPage /></AppLayout>
+            <Shell><ForecastPage /></Shell>
           </ProtectedRoute>
         } />
 
         <Route path="/anomaly" element={
           <ProtectedRoute roles={ANALYST_ROLES}>
-            <AppLayout><AnomalyPage /></AppLayout>
+            <Shell><AnomalyPage /></Shell>
           </ProtectedRoute>
         } />
 
         <Route path="/recommendations" element={
           <ProtectedRoute roles={ANALYST_ROLES}>
-            <AppLayout><RecommendationsPage /></AppLayout>
+            <Shell><RecommendationsPage /></Shell>
           </ProtectedRoute>
         } />
 
+        {/* Data */}
         <Route path="/orders" element={
-          <ProtectedRoute roles={ALL_ROLES}>
-            <AppLayout><OrdersPage /></AppLayout>
+          <ProtectedRoute roles={VIEWER_ROUTES}>
+            <Shell><OrdersPage /></Shell>
           </ProtectedRoute>
         } />
 
+        <Route path="/products" element={
+          <ProtectedRoute roles={ALL_ROLES}>
+            <Shell><ProductsPage /></Shell>
+          </ProtectedRoute>
+        } />
+
+        <Route path="/customers" element={
+          <ProtectedRoute roles={ANALYST_ROLES}>
+            <Shell><CustomersPage /></Shell>
+          </ProtectedRoute>
+        } />
+
+        {/* Operations */}
         <Route path="/data-sync" element={
           <ProtectedRoute roles={DATA_ROLES}>
-            <AppLayout><DataSyncPage /></AppLayout>
+            <Shell><DataSyncPage /></Shell>
           </ProtectedRoute>
         } />
 
         <Route path="/etl-monitor" element={
           <ProtectedRoute roles={DATA_ROLES}>
-            <AppLayout><EtlMonitorPage /></AppLayout>
+            <Shell><EtlMonitorPage /></Shell>
           </ProtectedRoute>
         } />
 
+        {/* Reports */}
         <Route path="/report" element={
           <ProtectedRoute roles={ANALYST_ROLES}>
-            <AppLayout><ReportPage /></AppLayout>
+            <Shell><ReportPage /></Shell>
           </ProtectedRoute>
         } />
 
+        {/* Admin */}
         <Route path="/admin" element={
           <ProtectedRoute roles={ADMIN_ONLY}>
-            <AppLayout><AdminPage /></AppLayout>
+            <Shell><AdminPage /></Shell>
           </ProtectedRoute>
         } />
 
         <Route path="/settings" element={
-          <ProtectedRoute roles={ALL_ROLES}>
-            <AppLayout><SettingsPage /></AppLayout>
+          <ProtectedRoute roles={VIEWER_ROUTES}>
+            <Shell><SettingsPage /></Shell>
           </ProtectedRoute>
         } />
 
         <Route path="/change-password" element={
-          <ProtectedRoute roles={ALL_ROLES}>
-            <AppLayout><ChangePasswordPage /></AppLayout>
+          <ProtectedRoute roles={VIEWER_ROUTES}>
+            <Shell><ChangePasswordPage /></Shell>
           </ProtectedRoute>
         } />
 

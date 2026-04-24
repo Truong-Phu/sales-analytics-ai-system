@@ -44,7 +44,7 @@ export default function ChangePasswordPage() {
           <div className="mb-4 px-4 py-3 rounded-xl bg-tertiary/10 border border-tertiary/30
                           text-tertiary text-sm flex items-center gap-2">
             <span className="icon text-base">check_circle</span>
-            Đổi mật khẩu thành công. Đang chuyển hướng...
+            {t('auth.changePasswordSuccess')}
           </div>
         )}
 

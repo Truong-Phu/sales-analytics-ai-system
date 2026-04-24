@@ -1,53 +1,57 @@
+import { useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import { useTranslation } from 'react-i18next'
 
+// Cấu trúc nav items – label là i18n key (nav.xxx)
 const NAV_ITEMS = [
   // Analytics
-  { to: '/dashboard',        icon: 'dashboard',     label: 'Dashboard',          roles: ['Owner','Manager','DataIT','Admin'] },
-  { to: '/ai-forecast',      icon: 'trending_up',   label: 'AI Forecast',        roles: ['Owner','Manager','DataIT','Admin'] },
-  { to: '/anomaly',          icon: 'crisis_alert',  label: 'Anomaly Detection',  roles: ['Owner','Manager','DataIT','Admin'] },
-  { to: '/recommendations',  icon: 'psychology',    label: 'Recommendations',    roles: ['Owner','Manager','Admin'] },
+  { to: '/dashboard',       icon: 'dashboard',        labelKey: 'nav.dashboard',       roles: ['Owner','Manager','DataIT','Admin','Viewer'] },
+  { to: '/forecast',        icon: 'trending_up',      labelKey: 'nav.forecast',        roles: ['Owner','Manager','DataIT','Admin'] },
+  { to: '/anomaly',         icon: 'crisis_alert',     labelKey: 'nav.anomaly',         roles: ['Owner','Manager','DataIT','Admin'] },
+  { to: '/recommendations', icon: 'psychology',       labelKey: 'nav.recommendations', roles: ['Owner','Manager','Admin'] },
   // Operations
-  { divider: 'Operations' },
-  { to: '/data-sync',        icon: 'sync',          label: 'Data Sync',          roles: ['DataIT','Admin'] },
-  { to: '/etl-monitor',      icon: 'monitoring',    label: 'ETL Monitor',        roles: ['DataIT','Admin'] },
+  { divider: 'nav.sectionOperations' },
+  { to: '/data-sync',       icon: 'sync',             labelKey: 'nav.dataSync',        roles: ['DataIT','Admin'] },
+  { to: '/etl-monitor',     icon: 'monitoring',       labelKey: 'nav.etlMonitor',      roles: ['DataIT','Admin'] },
   // Data
-  { divider: 'Data' },
-  { to: '/orders',           icon: 'receipt_long',  label: 'Đơn hàng',           roles: ['Staff','Manager','DataIT','Admin'] },
-  { to: '/products',         icon: 'inventory_2',   label: 'Sản phẩm',           roles: ['Staff','Manager','DataIT','Admin'] },
-  { to: '/customers',        icon: 'group',         label: 'Khách hàng',         roles: ['Staff','Manager','DataIT','Admin'] },
+  { divider: 'nav.sectionData' },
+  { to: '/orders',          icon: 'receipt_long',     labelKey: 'nav.orders',          roles: ['Staff','Manager','DataIT','Admin','Viewer'] },
+  { to: '/products',        icon: 'inventory_2',      labelKey: 'nav.products',        roles: ['Staff','Manager','DataIT','Admin','Owner'] },
+  { to: '/customers',       icon: 'people',           labelKey: 'nav.customers',       roles: ['Owner','Manager','DataIT','Admin'] },
   // Reports
-  { divider: 'Reports' },
-  { to: '/report',           icon: 'picture_as_pdf',label: 'Export Report',      roles: ['Owner','Manager','DataIT','Admin'] },
-  { to: '/dw-status',        icon: 'database',      label: 'Data Warehouse',     roles: ['DataIT','Admin'] },
+  { divider: 'nav.sectionReports' },
+  { to: '/report',          icon: 'picture_as_pdf',   labelKey: 'nav.report',          roles: ['Owner','Manager','DataIT','Admin'] },
   // Admin
-  { divider: 'Admin' },
-  { to: '/admin',            icon: 'manage_accounts',label: 'Quản lý Users',    roles: ['Admin'] },
-  { to: '/settings',         icon: 'settings',      label: 'Cài đặt',            roles: ['Owner','Manager','Staff','DataIT','Admin'] },
+  { divider: 'nav.sectionAdmin' },
+  { to: '/admin',           icon: 'manage_accounts',  labelKey: 'nav.admin',           roles: ['Admin'] },
+  { to: '/settings',        icon: 'settings',         labelKey: 'nav.settings',        roles: ['Owner','Manager','Staff','DataIT','Admin','Viewer'] },
 ]
 
 const ROLE_BADGE = {
-  Owner:   { label: 'Chủ doanh nghiệp', color: 'bg-yellow-500/20 text-yellow-400' },
-  Manager: { label: 'Quản lý',          color: 'bg-primary/20 text-primary' },
-  Staff:   { label: 'Nhân viên',        color: 'bg-tertiary/20 text-tertiary' },
-  DataIT:  { label: 'Data / IT',        color: 'bg-secondary/20 text-secondary' },
-  Admin:   { label: 'Admin',            color: 'bg-error/20 text-error' },
+  Owner:   { color: 'bg-yellow-500/20 text-yellow-400' },
+  Manager: { color: 'bg-primary/20 text-primary' },
+  Staff:   { color: 'bg-tertiary/20 text-tertiary' },
+  DataIT:  { color: 'bg-secondary/20 text-secondary' },
+  Admin:   { color: 'bg-error/20 text-error' },
+  Viewer:  { color: 'bg-outline/20 text-outline' },
 }
 
-export default function Sidebar() {
+export default function Sidebar({ isOpen, onClose }) {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
   const { t } = useTranslation()
+  const [collapsed, setCollapsed] = useState(false)
 
   const handleLogout = () => { logout(); navigate('/login') }
 
+  // Lọc nav items theo role
   const visibleItems = NAV_ITEMS.filter(item => {
     if (item.divider) return true
     return item.roles?.includes(user?.role)
   })
 
-  // Remove dangling dividers
+  // Bỏ divider cuối/kề nhau
   const cleanItems = visibleItems.filter((item, i) => {
     if (!item.divider) return true
     const next = visibleItems[i + 1]
@@ -55,61 +59,124 @@ export default function Sidebar() {
   })
 
   const badge = ROLE_BADGE[user?.role] ?? ROLE_BADGE.Staff
+  const w = collapsed ? 'w-[68px]' : 'w-[240px]'
 
   return (
-    <aside className="w-[240px] h-screen fixed left-0 top-0 bg-surface-container-lowest
-                      flex flex-col py-6 px-4 gap-1 z-50 overflow-y-auto">
-      {/* Logo */}
-      <div className="mb-6 px-3 flex items-center gap-2">
-        <span className="icon icon-fill icon-lg text-primary">bar_chart</span>
-        <span className="text-base font-headline font-bold text-primary uppercase tracking-tight">
-          Sales Analytics
-        </span>
-      </div>
+    <>
+      {/* Overlay mobile */}
+      {isOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-40 md:hidden"
+          onClick={onClose}
+        />
+      )}
 
-      {/* Nav */}
-      <nav className="flex flex-col gap-0.5 flex-1">
-        {cleanItems.map((item, i) => {
-          if (item.divider) return (
-            <div key={`div-${i}`} className="section-title px-3 pt-4 pb-1">{item.divider}</div>
-          )
-          return (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              className={({ isActive }) =>
-                `nav-item ${isActive ? 'nav-item-active' : ''}`
-              }
-            >
-              {({ isActive }) => (
-                <>
-                  <span className={`icon ${isActive ? 'icon-fill' : ''}`}>{item.icon}</span>
-                  <span className="text-sm">{item.label}</span>
-                </>
-              )}
-            </NavLink>
-          )
-        })}
-      </nav>
-
-      {/* User profile */}
-      <div className="mt-4 pt-4 border-t border-outline-variant/10">
-        <div className="flex items-center gap-3 px-2 mb-3">
-          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-primary-container to-primary
-                          flex items-center justify-center text-surface text-sm font-bold shrink-0">
-            {user?.fullName?.[0] ?? 'U'}
-          </div>
-          <div className="min-w-0">
-            <p className="text-sm font-semibold text-on-surface truncate">{user?.fullName}</p>
-            <span className={`badge text-[10px] ${badge.color}`}>{badge.label}</span>
-          </div>
+      {/* Sidebar */}
+      <aside
+        className={`
+          ${w} h-screen fixed left-0 top-0
+          bg-surface-container-lowest flex flex-col py-5 gap-1 z-50
+          overflow-y-auto overflow-x-hidden transition-all duration-200
+          ${isOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+        `}
+      >
+        {/* Logo + collapse toggle */}
+        <div className={`flex items-center mb-4 px-4 ${collapsed ? 'justify-center' : 'justify-between'}`}>
+          {!collapsed && (
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="icon icon-fill icon-lg text-primary shrink-0">bar_chart</span>
+              <span className="text-sm font-headline font-bold text-primary uppercase tracking-tight truncate">
+                Sales Analytics
+              </span>
+            </div>
+          )}
+          <button
+            onClick={() => setCollapsed(c => !c)}
+            className="w-8 h-8 flex items-center justify-center rounded-lg
+                       text-outline hover:text-primary hover:bg-surface-container-low
+                       transition-colors shrink-0"
+            title={collapsed ? t('nav.dashboard') : ''}
+          >
+            <span className="icon text-base">
+              {collapsed ? 'menu_open' : 'menu'}
+            </span>
+          </button>
         </div>
-        <button onClick={handleLogout}
-          className="nav-item w-full text-error hover:text-error hover:bg-error/10">
-          <span className="icon">logout</span>
-          <span>Đăng xuất</span>
-        </button>
-      </div>
-    </aside>
+
+        {/* Nav */}
+        <nav className="flex flex-col gap-0.5 flex-1 px-3">
+          {cleanItems.map((item, i) => {
+            if (item.divider) {
+              if (collapsed) return null
+              return (
+                <div key={`div-${i}`} className="section-title px-2 pt-4 pb-1">
+                  {t(item.divider)}
+                </div>
+              )
+            }
+            return (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                onClick={onClose}
+                className={({ isActive }) =>
+                  `nav-item ${isActive ? 'nav-item-active' : ''} ${collapsed ? 'justify-center !px-2' : ''}`
+                }
+                title={collapsed ? t(item.labelKey) : undefined}
+              >
+                {({ isActive }) => (
+                  <>
+                    <span className={`icon shrink-0 ${isActive ? 'icon-fill' : ''}`}>
+                      {item.icon}
+                    </span>
+                    {!collapsed && (
+                      <span className="text-sm truncate">{t(item.labelKey)}</span>
+                    )}
+                  </>
+                )}
+              </NavLink>
+            )
+          })}
+        </nav>
+
+        {/* User profile */}
+        {!collapsed && (
+          <div className="mt-4 pt-4 border-t border-outline-variant/10 px-3">
+            <div className="flex items-center gap-3 px-2 mb-3">
+              <div className="w-9 h-9 rounded-full bg-gradient-to-br from-primary-container to-primary
+                              flex items-center justify-center text-surface text-sm font-bold shrink-0">
+                {user?.fullName?.[0] ?? 'U'}
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-on-surface truncate">{user?.fullName}</p>
+                <span className={`badge text-[10px] ${badge.color}`}>
+                  {t(`admin.roles.${user?.role}`, user?.role)}
+                </span>
+              </div>
+            </div>
+            <button
+              onClick={handleLogout}
+              className="nav-item w-full text-error hover:text-error hover:bg-error/10"
+            >
+              <span className="icon">logout</span>
+              <span>{t('auth.logout')}</span>
+            </button>
+          </div>
+        )}
+
+        {/* Collapsed: chỉ hiện logout icon */}
+        {collapsed && (
+          <div className="pt-4 border-t border-outline-variant/10 px-3 pb-2">
+            <button
+              onClick={handleLogout}
+              className="nav-item w-full text-error hover:text-error hover:bg-error/10 justify-center !px-2"
+              title={t('auth.logout')}
+            >
+              <span className="icon">logout</span>
+            </button>
+          </div>
+        )}
+      </aside>
+    </>
   )
 }

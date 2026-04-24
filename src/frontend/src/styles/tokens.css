@@ -1,0 +1,94 @@
+:root {
+  /* ── Colors: Background ── */
+  --bg-base:     #F8F9FC;
+  --bg-surface:  #FFFFFF;
+  --bg-elevated: #F0F2F8;
+  --bg-overlay:  rgba(15,17,26,0.55);
+
+  /* ── Colors: Primary (Indigo) ── */
+  --primary-50:  #EEF2FF;
+  --primary-100: #E0E7FF;
+  --primary-200: #C7D2FE;
+  --primary-400: #818CF8;
+  --primary-500: #6366F1;
+  --primary-600: #4F46E5;
+  --primary-700: #4338CA;
+
+  /* ── Colors: Accent (Emerald) ── */
+  --accent-50:  #ECFDF5;
+  --accent-400: #34D399;
+  --accent-500: #10B981;
+  --accent-600: #059669;
+
+  /* ── Colors: Semantic ── */
+  --color-success: #10B981;
+  --color-warning: #F59E0B;
+  --color-error:   #EF4444;
+  --color-info:    #3B82F6;
+
+  /* ── Colors: Text ── */
+  --text-primary:   #0F1117;
+  --text-secondary: #4B5563;
+  --text-tertiary:  #9CA3AF;
+  --text-inverse:   #FFFFFF;
+
+  /* ── Colors: Border ── */
+  --border:        #E5E7EB;
+  --border-strong: #D1D5DB;
+
+  /* ── Typography ── */
+  --font-sans: 'Inter', -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  /* ── Spacing (8pt grid) ── */
+  --sp-1: 4px;  --sp-2: 8px;   --sp-3: 12px;
+  --sp-4: 16px; --sp-5: 20px;  --sp-6: 24px;
+  --sp-8: 32px; --sp-10: 40px; --sp-12: 48px;
+  --sp-16: 64px;
+
+  /* ── Border Radius ── */
+  --r-sm:   6px;
+  --r-md:   10px;
+  --r-lg:   16px;
+  --r-xl:   24px;
+  --r-full: 9999px;
+
+  /* ── Shadows ── */
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md: 0 4px 16px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.04);
+  --shadow-lg: 0 20px 40px rgba(0,0,0,0.10), 0 8px 16px rgba(0,0,0,0.06);
+  --shadow-primary: 0 8px 24px rgba(99,102,241,0.28);
+  --shadow-glow:    0 0 40px rgba(99,102,241,0.12);
+
+  /* ── Transitions ── */
+  --t-fast:   100ms ease;
+  --t-normal: 200ms ease;
+  --t-slow:   350ms ease;
+}
+
+/* ── DARK MODE ── */
+.dark {
+  --bg-base:     #0F1117;
+  --bg-surface:  #1A1B23;
+  --bg-elevated: #22232E;
+  --bg-overlay:  rgba(0,0,0,0.72);
+
+  --primary-400: #A5B4FC;
+  --primary-500: #818CF8;
+  --primary-600: #6366F1;
+
+  --accent-400: #6EE7B7;
+  --accent-500: #34D399;
+
+  --text-primary:   #E8E9F0;
+  --text-secondary: #8B8FA8;
+  --text-tertiary:  #5C6080;
+
+  --border:        #252630;
+  --border-strong: #32344A;
+
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.40), 0 0 0 1px rgba(255,255,255,0.03);
+  --shadow-md: 0 4px 16px rgba(0,0,0,0.50), 0 0 0 1px rgba(255,255,255,0.04);
+  --shadow-lg: 0 20px 40px rgba(0,0,0,0.60), 0 0 0 1px rgba(255,255,255,0.05);
+  --shadow-primary: 0 8px 24px rgba(129,140,248,0.20);
+}
