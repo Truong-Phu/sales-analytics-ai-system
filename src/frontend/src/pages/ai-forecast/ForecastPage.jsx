@@ -5,8 +5,15 @@ import {
   ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid,
 } from 'recharts'
 import MockToast from '../../components/ui/MockToast'
-import { getForecast, getTrend } from '../../api/aiApi'
+import { getForecast, getTrend, getForecastMetrics } from '../../api/aiApi'
 import { getMockForecast, MOCK_TREND } from '../../mockData/forecast'
+
+const MOCK_METRICS = {
+  mae: 357188, rmse: 357188, mape_pct: 39.69,
+  train_from: '2025-10-02', train_to: '2025-12-01',
+  test_from: '2025-12-05', test_to: '2025-12-22',
+  n_train: 19, n_test: 5, eval_method: 'hold-out 80/20',
+}
 
 const HORIZONS   = [7, 14, 30, 60, 90]
 const CHANNEL_KEYS = ['all', 'shopee', 'lazada', 'tiktok']
@@ -43,6 +50,7 @@ export default function ForecastPage() {
   const [channel, setChannel] = useState('all')
   const [result,  setResult]  = useState(null)
   const [trend,   setTrend]   = useState(null)
+  const [metrics, setMetrics] = useState(null)
   const [loading, setLoading] = useState(false)
   const [isMock,  setIsMock]  = useState(false)
 
@@ -50,15 +58,18 @@ export default function ForecastPage() {
     setLoading(true)
     setIsMock(false)
     try {
-      const [fc, tr] = await Promise.all([
+      const [fc, tr, mt] = await Promise.all([
         getForecast(horizon, channel),
         getTrend(30, channel),
+        getForecastMetrics().catch(() => MOCK_METRICS),
       ])
       setResult(fc)
       setTrend(tr)
+      setMetrics(mt)
     } catch {
       setResult(getMockForecast(horizon))
       setTrend(MOCK_TREND)
+      setMetrics(MOCK_METRICS)
       setIsMock(true)
     } finally {
       setLoading(false)
@@ -278,6 +289,44 @@ export default function ForecastPage() {
           )}
         </div>
       </div>
+
+      {/* ── Metrics bảng đánh giá độ chính xác ── */}
+      {metrics && (
+        <div className="lcard p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <span className="icon text-base" style={{ color: 'var(--primary-500)' }}>analytics</span>
+            <h2 className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
+              Đánh giá độ chính xác mô hình Prophet
+            </h2>
+            <span className="lbadge lbadge-neutral text-xs ml-auto">{metrics.eval_method}</span>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+            {[
+              { label: 'MAE',  value: metrics.mae  != null ? `${(metrics.mae/1000).toFixed(1)}K ₫` : '–', sub: 'Mean Absolute Error',      color: 'var(--accent-500)' },
+              { label: 'RMSE', value: metrics.rmse != null ? `${(metrics.rmse/1000).toFixed(1)}K ₫` : '–', sub: 'Root Mean Squared Error', color: 'var(--color-warning)' },
+              { label: 'MAPE', value: metrics.mape_pct != null ? `${metrics.mape_pct}%` : '–',             sub: 'Mean Abs. % Error',        color: 'var(--color-error)' },
+              { label: 'Tập test', value: `${metrics.n_test ?? '–'} ngày`, sub: `${metrics.test_from ?? ''} → ${metrics.test_to ?? ''}`, color: 'var(--text-tertiary)' },
+            ].map(({ label, value, sub, color }) => (
+              <div key={label} className="p-3 rounded-xl" style={{ background: 'var(--bg-elevated)' }}>
+                <p className="text-xs mb-1" style={{ color: 'var(--text-tertiary)' }}>{label}</p>
+                <p className="font-mono text-lg font-bold" style={{ color }}>{value}</p>
+                <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>{sub}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="text-xs p-3 rounded-xl" style={{ background: 'var(--bg-elevated)', color: 'var(--text-tertiary)' }}>
+            <strong style={{ color: 'var(--text-secondary)' }}>Dữ liệu train:</strong>{' '}
+            {metrics.n_train} ngày ({metrics.train_from} → {metrics.train_to})
+            {' · '}
+            <strong style={{ color: 'var(--text-secondary)' }}>Nguồn:</strong>{' '}
+            {metrics.source === 'local_sample_data' ? 'Sample data nội bộ' : 'Google Colab'}
+            {' · '}
+            <strong style={{ color: 'var(--text-secondary)' }}>Prophet</strong> {metrics.prophet_version ?? '1.3.0'}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

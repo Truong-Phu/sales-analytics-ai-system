@@ -65,6 +65,10 @@ export const getRecommendations = async () => {
   }
 }
 
+/** Metrics đánh giá độ chính xác model Prophet (MAE, RMSE, MAPE). */
+export const getForecastMetrics = () =>
+  api.get('/api/ai/forecast/metrics').then(r => r.data)
+
 /**
  * Hỏi AI theo câu hỏi tự nhiên.
  * FastAPI trả về { question, recommendation, data_sources, confidence, note }
