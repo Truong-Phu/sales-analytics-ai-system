@@ -23,7 +23,7 @@ public class DashboardService
         _connStr = config.GetConnectionString("Default")!;
     }
 
-    public async Task<DashboardResponse> GetDashboardAsync(
+    public virtual async Task<DashboardResponse> GetDashboardAsync(
         DateOnly from, DateOnly to, string? channel = null)
     {
         await using var conn = new NpgsqlConnection(_connStr);

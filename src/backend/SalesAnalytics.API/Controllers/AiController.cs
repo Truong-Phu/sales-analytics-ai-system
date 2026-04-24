@@ -56,6 +56,15 @@ public class AiController : ControllerBase
         return Ok(result);
     }
 
+    /// <summary>Metrics đánh giá độ chính xác model Prophet (MAE, RMSE, MAPE)</summary>
+    [HttpGet("forecast/metrics")]
+    public async Task<IActionResult> ForecastMetrics()
+    {
+        var result = await _ai.GetForecastMetricsAsync();
+        if (result is null) return StatusCode(503, new { message = "AI Service không khả dụng." });
+        return Ok(result);
+    }
+
     /// <summary>
     /// Hỏi AI bằng câu hỏi tự nhiên – nhận gợi ý dựa trên dữ liệu thực tế.
     /// Pipeline: câu hỏi → QueryEngine → AI (Claude/OpenAI/fallback) → gợi ý.

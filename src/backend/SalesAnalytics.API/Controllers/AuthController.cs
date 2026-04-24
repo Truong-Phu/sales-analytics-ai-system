@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using SalesAnalytics.Core.DTOs;
 using SalesAnalytics.API.Services;
 
@@ -8,6 +9,7 @@ namespace SalesAnalytics.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[EnableRateLimiting("auth")]   // 5 req/phút/IP – chống brute-force
 public class AuthController : ControllerBase
 {
     private readonly AuthService _authService;

@@ -40,6 +40,10 @@ public class AiProxyService
     public async Task<object?> GetRecommendationsAsync()
         => await GetJsonAsync("/recommendation");
 
+    /// <summary>Lấy metrics đánh giá độ chính xác model Prophet (MAE, RMSE, MAPE).</summary>
+    public async Task<object?> GetForecastMetricsAsync()
+        => await GetJsonAsync("/forecast/metrics");
+
     /// <summary>
     /// Forward POST /recommendation lên FastAPI AI Service.
     /// Payload: { question, language } → trả về { recommendation, data_sources, confidence, note }.

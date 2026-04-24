@@ -1,129 +1,196 @@
 using System.Globalization;
 using System.Text;
+using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Localization;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Serilog;
+using Serilog.Events;
 using SalesAnalytics.API.Services;
 using SalesAnalytics.Core.Interfaces;
 using SalesAnalytics.Infrastructure.Data;
 using SalesAnalytics.Infrastructure.Repositories;
 
-var builder = WebApplication.CreateBuilder(args);
-
-// ── 1. Database (EF Core + PostgreSQL) ───────────────────────────────────────
-builder.Services.AddDbContext<AppDbContext>(opt =>
-    opt.UseNpgsql(builder.Configuration.GetConnectionString("Default")));
-
-// ── 2. Authentication – JWT HS256 ────────────────────────────────────────────
-builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer(opt =>
-    {
-        opt.TokenValidationParameters = new TokenValidationParameters
-        {
-            ValidateIssuer           = true,
-            ValidIssuer              = builder.Configuration["Jwt:Issuer"],
-            ValidateAudience         = true,
-            ValidAudience            = builder.Configuration["Jwt:Audience"],
-            ValidateLifetime         = true,
-            IssuerSigningKey         = new SymmetricSecurityKey(
-                Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Secret"]!)
-            ),
-            ValidateIssuerSigningKey = true,
-            ClockSkew                = TimeSpan.Zero,
-        };
-    });
-
-builder.Services.AddAuthorization();
-
-// ── 3. Localization (i18n) ────────────────────────────────────────────────────
-builder.Services.AddLocalization(opt => opt.ResourcesPath = "Resources");
-builder.Services.Configure<RequestLocalizationOptions>(opt =>
-{
-    var supported = new[] { new CultureInfo("vi"), new CultureInfo("en") };
-    opt.DefaultRequestCulture = new RequestCulture("vi");
-    opt.SupportedCultures      = supported;
-    opt.SupportedUICultures    = supported;
-    // Ưu tiên: Accept-Language header → query ?lang= → cookie
-    opt.RequestCultureProviders =
-    [
-        new AcceptLanguageHeaderRequestCultureProvider(),
-        new QueryStringRequestCultureProvider { QueryStringKey = "lang" },
-        new CookieRequestCultureProvider(),
-    ];
-});
-
-// ── 4. CORS ───────────────────────────────────────────────────────────────────
-builder.Services.AddCors(opt =>
-    opt.AddPolicy("AllowFrontend", policy =>
-        policy
-            .WithOrigins(
-                "http://localhost:3000",    // React dev server (CRA)
-                "http://localhost:5173"     // React dev server (Vite)
-            )
-            .AllowAnyHeader()
-            .AllowAnyMethod()
-            .AllowCredentials()
+// ── Serilog: cấu hình sớm để bắt lỗi khởi động ─────────────────────────────
+Log.Logger = new LoggerConfiguration()
+    .MinimumLevel.Information()
+    .MinimumLevel.Override("Microsoft.EntityFrameworkCore.Database.Command", LogEventLevel.Warning)
+    .MinimumLevel.Override("Microsoft.AspNetCore.Routing", LogEventLevel.Warning)
+    .Enrich.FromLogContext()
+    .WriteTo.Console(outputTemplate:
+        "[{Timestamp:HH:mm:ss} {Level:u3}] {SourceContext} {Message:lj}{NewLine}{Exception}")
+    .WriteTo.File(
+        path:              "logs/api-.log",
+        rollingInterval:   RollingInterval.Day,
+        retainedFileCountLimit: 14,
+        outputTemplate:
+            "{Timestamp:yyyy-MM-dd HH:mm:ss.fff} [{Level:u3}] {SourceContext} {Message:lj}{NewLine}{Exception}"
     )
-);
+    .CreateLogger();
 
-// ── 5. HTTP Client cho AI Service ────────────────────────────────────────────
-builder.Services.AddHttpClient<AiProxyService>(client =>
+try
 {
-    var aiBaseUrl = builder.Configuration["AiService:BaseUrl"] ?? "http://localhost:8001";
-    client.BaseAddress = new Uri(aiBaseUrl);
-    client.Timeout     = TimeSpan.FromSeconds(30);
-});
+    var builder = WebApplication.CreateBuilder(args);
 
-// ── 6. Application Services ───────────────────────────────────────────────────
-builder.Services.AddScoped<JwtService>();
-builder.Services.AddScoped<AuthService>();
-builder.Services.AddScoped<DashboardService>();
-builder.Services.AddScoped<ReportService>();
+    // Dùng Serilog thay cho built-in logger
+    builder.Host.UseSerilog();
 
-// ── 7. Repository Pattern (DI) ────────────────────────────────────────────────
-builder.Services.AddScoped<IProductRepository,   ProductRepository>();
-builder.Services.AddScoped<IOrderRepository,     OrderRepository>();
-builder.Services.AddScoped<ICustomerRepository,  CustomerRepository>();
-builder.Services.AddScoped<IChannelRepository,   ChannelRepository>();
-builder.Services.AddScoped<ISalesDataRepository, SalesDataRepository>();
+    // ── 1. Database (EF Core + PostgreSQL) ───────────────────────────────────
+    builder.Services.AddDbContext<AppDbContext>(opt =>
+        opt.UseNpgsql(builder.Configuration.GetConnectionString("Default")));
 
-// ── 7. Controllers + Swagger ─────────────────────────────────────────────────
-builder.Services.AddControllers();
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen(opt =>
-{
-    opt.SwaggerDoc("v1", new() { Title = "Sales Analytics API", Version = "v1" });
+    // ── 2. Authentication – JWT HS256 ────────────────────────────────────────
+    builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+        .AddJwtBearer(opt =>
+        {
+            opt.TokenValidationParameters = new TokenValidationParameters
+            {
+                ValidateIssuer           = true,
+                ValidIssuer              = builder.Configuration["Jwt:Issuer"],
+                ValidateAudience         = true,
+                ValidAudience            = builder.Configuration["Jwt:Audience"],
+                ValidateLifetime         = true,
+                IssuerSigningKey         = new SymmetricSecurityKey(
+                    Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Secret"]!)
+                ),
+                ValidateIssuerSigningKey = true,
+                ClockSkew                = TimeSpan.Zero,
+            };
+        });
 
-    // Thêm JWT Bearer vào Swagger UI để test API trực tiếp
-    opt.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+    builder.Services.AddAuthorization();
+
+    // ── 3. Localization (i18n) ────────────────────────────────────────────────
+    builder.Services.AddLocalization(opt => opt.ResourcesPath = "Resources");
+    builder.Services.Configure<RequestLocalizationOptions>(opt =>
     {
-        Name         = "Authorization",
-        Type         = Microsoft.OpenApi.Models.SecuritySchemeType.Http,
-        Scheme       = "bearer",
-        BearerFormat = "JWT",
-        In           = Microsoft.OpenApi.Models.ParameterLocation.Header,
-        Description  = "Nhập JWT token (không cần gõ 'Bearer ')",
+        var supported = new[] { new CultureInfo("vi"), new CultureInfo("en") };
+        opt.DefaultRequestCulture = new RequestCulture("vi");
+        opt.SupportedCultures      = supported;
+        opt.SupportedUICultures    = supported;
+        opt.RequestCultureProviders =
+        [
+            new AcceptLanguageHeaderRequestCultureProvider(),
+            new QueryStringRequestCultureProvider { QueryStringKey = "lang" },
+            new CookieRequestCultureProvider(),
+        ];
     });
-    opt.AddSecurityRequirement(new Microsoft.OpenApi.Models.OpenApiSecurityRequirement
+
+    // ── 4. CORS ───────────────────────────────────────────────────────────────
+    builder.Services.AddCors(opt =>
+        opt.AddPolicy("AllowFrontend", policy =>
+            policy
+                .WithOrigins(
+                    "http://localhost:3000",
+                    "http://localhost:5173"
+                )
+                .AllowAnyHeader()
+                .AllowAnyMethod()
+                .AllowCredentials()
+        )
+    );
+
+    // ── 5. Rate Limiting (fixed window) ──────────────────────────────────────
+    // Auth endpoint giới hạn chặt hơn (chống brute-force)
+    builder.Services.AddRateLimiter(opt =>
     {
-        [new() { Reference = new() { Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme, Id = "Bearer" } }] = []
+        opt.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+        // Policy mặc định: 100 req / 10 giây / IP
+        opt.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(ctx =>
+            RateLimitPartition.GetFixedWindowLimiter(
+                partitionKey: ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                factory:      _ => new FixedWindowRateLimiterOptions
+                {
+                    Window           = TimeSpan.FromSeconds(10),
+                    PermitLimit      = 100,
+                    QueueLimit       = 0,
+                    QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                }
+            )
+        );
+
+        // Policy chặt cho auth (login/register): 5 req / 1 phút / IP
+        opt.AddFixedWindowLimiter("auth", o =>
+        {
+            o.Window        = TimeSpan.FromMinutes(1);
+            o.PermitLimit   = 5;
+            o.QueueLimit    = 0;
+        });
     });
-});
 
-// ── Build & Configure Pipeline ────────────────────────────────────────────────
-var app = builder.Build();
+    // ── 6. HTTP Client cho AI Service ────────────────────────────────────────
+    builder.Services.AddHttpClient<AiProxyService>(client =>
+    {
+        var aiBaseUrl = builder.Configuration["AiService:BaseUrl"] ?? "http://localhost:8001";
+        client.BaseAddress = new Uri(aiBaseUrl);
+        client.Timeout     = TimeSpan.FromSeconds(30);
+    });
 
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "Sales Analytics API v1"));
+    // ── 7. Application Services ───────────────────────────────────────────────
+    builder.Services.AddScoped<JwtService>();
+    builder.Services.AddScoped<AuthService>();
+    builder.Services.AddScoped<DashboardService>();
+    builder.Services.AddScoped<ReportService>();
+
+    // ── 8. Repository Pattern (DI) ────────────────────────────────────────────
+    builder.Services.AddScoped<IProductRepository,   ProductRepository>();
+    builder.Services.AddScoped<IOrderRepository,     OrderRepository>();
+    builder.Services.AddScoped<ICustomerRepository,  CustomerRepository>();
+    builder.Services.AddScoped<IChannelRepository,   ChannelRepository>();
+    builder.Services.AddScoped<ISalesDataRepository, SalesDataRepository>();
+
+    // ── 9. Controllers + Swagger ─────────────────────────────────────────────
+    builder.Services.AddControllers();
+    builder.Services.AddEndpointsApiExplorer();
+    builder.Services.AddSwaggerGen(opt =>
+    {
+        opt.SwaggerDoc("v1", new() { Title = "Sales Analytics API", Version = "v1" });
+        opt.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+        {
+            Name         = "Authorization",
+            Type         = Microsoft.OpenApi.Models.SecuritySchemeType.Http,
+            Scheme       = "bearer",
+            BearerFormat = "JWT",
+            In           = Microsoft.OpenApi.Models.ParameterLocation.Header,
+            Description  = "Nhập JWT token (không cần gõ 'Bearer ')",
+        });
+        opt.AddSecurityRequirement(new Microsoft.OpenApi.Models.OpenApiSecurityRequirement
+        {
+            [new() { Reference = new() { Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme, Id = "Bearer" } }] = []
+        });
+    });
+
+    // ── Build & Configure Pipeline ────────────────────────────────────────────
+    var app = builder.Build();
+
+    if (app.Environment.IsDevelopment())
+    {
+        app.UseSwagger();
+        app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "Sales Analytics API v1"));
+    }
+
+    app.UseHttpsRedirection();        // Bảo mật: redirect HTTP → HTTPS
+    app.UseRateLimiter();             // Rate limiting trước khi xử lý request
+    app.UseSerilogRequestLogging(opt => // Ghi log mỗi request với thông tin cơ bản
+    {
+        opt.MessageTemplate = "HTTP {RequestMethod} {RequestPath} → {StatusCode} ({Elapsed:0.0}ms)";
+    });
+    app.UseRequestLocalization();
+    app.UseCors("AllowFrontend");
+    app.UseAuthentication();
+    app.UseAuthorization();
+    app.MapControllers();
+
+    app.Run();
 }
-
-app.UseRequestLocalization();   // i18n phải đứng trước Authentication
-app.UseCors("AllowFrontend");
-app.UseAuthentication();
-app.UseAuthorization();
-app.MapControllers();
-
-app.Run();
+catch (Exception ex)
+{
+    Log.Fatal(ex, "Application startup failed");
+}
+finally
+{
+    Log.CloseAndFlush();
+}
