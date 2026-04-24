@@ -15,7 +15,7 @@ public class DashboardController : ControllerBase
 
     /// <summary>Lấy dữ liệu Dashboard (KPI, doanh thu, kênh, sản phẩm)</summary>
     [HttpGet]
-    [Authorize(Roles = "Owner,Manager,DataIT,Admin")]
+    [Authorize(Roles = "Owner,Manager,DataIT,Admin,Viewer")]
     public async Task<IActionResult> GetDashboard(
         [FromQuery] DateOnly? from    = null,
         [FromQuery] DateOnly? to      = null,

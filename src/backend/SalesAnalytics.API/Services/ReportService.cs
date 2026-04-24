@@ -67,7 +67,7 @@ public class ReportService
                         AddKpiRow(table, "Số đơn hàng",       $"{data.Kpi.TotalOrders:N0}");
                         AddKpiRow(table, "Giá trị đơn TB",    $"{data.Kpi.AvgOrderValue:N0} VNĐ");
                         AddKpiRow(table, "Biên lợi nhuận",    $"{data.Kpi.ProfitMarginPct:N1}%");
-                        AddKpiRow(table, "Số khách hàng",     $"{data.Kpi.TotalCustomers:N0}");
+                        AddKpiRow(table, "Số khách hàng",     $"{data.Kpi.NewCustomers:N0}");
                     });
 
                     // Biểu đồ (nếu Frontend gửi base64)

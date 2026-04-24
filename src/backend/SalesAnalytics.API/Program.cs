@@ -5,7 +5,9 @@ using Microsoft.AspNetCore.Localization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using SalesAnalytics.API.Services;
+using SalesAnalytics.Core.Interfaces;
 using SalesAnalytics.Infrastructure.Data;
+using SalesAnalytics.Infrastructure.Repositories;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -78,6 +80,13 @@ builder.Services.AddScoped<JwtService>();
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<DashboardService>();
 builder.Services.AddScoped<ReportService>();
+
+// ── 7. Repository Pattern (DI) ────────────────────────────────────────────────
+builder.Services.AddScoped<IProductRepository,   ProductRepository>();
+builder.Services.AddScoped<IOrderRepository,     OrderRepository>();
+builder.Services.AddScoped<ICustomerRepository,  CustomerRepository>();
+builder.Services.AddScoped<IChannelRepository,   ChannelRepository>();
+builder.Services.AddScoped<ISalesDataRepository, SalesDataRepository>();
 
 // ── 7. Controllers + Swagger ─────────────────────────────────────────────────
 builder.Services.AddControllers();
