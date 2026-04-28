@@ -104,7 +104,9 @@ public class AuthService
                 double.Parse(_config["Jwt:AccessTokenMinutes"] ?? "60")
             ),
             Role:         user.Role.ToString(),
-            FullName:     user.FullName
+            FullName:     user.FullName,
+            UserId:       user.Id,
+            Username:     user.Username
         );
     }
 

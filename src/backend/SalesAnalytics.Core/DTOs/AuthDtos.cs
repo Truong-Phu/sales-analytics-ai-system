@@ -19,7 +19,9 @@ public record AuthResponse(
     string RefreshToken,
     DateTime ExpiresAt,
     string Role,
-    string FullName
+    string FullName,
+    int    UserId   = 0,
+    string Username = ""
 );
 
 public record RefreshRequest(

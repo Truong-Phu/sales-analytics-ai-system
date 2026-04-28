@@ -17,7 +17,9 @@ public class AppDbContext : DbContext
     public DbSet<Order>       Orders       => Set<Order>();
     public DbSet<OrderDetail> OrderDetails => Set<OrderDetail>();
     public DbSet<SalesData>   SalesData    => Set<SalesData>();
-    public DbSet<EtlLog>      EtlLogs      => Set<EtlLog>();
+    public DbSet<EtlLog>         EtlLogs         => Set<EtlLog>();
+    public DbSet<ScraperKeyword> ScraperKeywords => Set<ScraperKeyword>();
+    public DbSet<AuditLog>       AuditLogs       => Set<AuditLog>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -165,6 +167,35 @@ public class AppDbContext : DbContext
             e.Property(l => l.Phase).HasDefaultValue("GENERAL").HasMaxLength(100);
             e.Property(l => l.Level).HasDefaultValue("INFO").HasMaxLength(20);
             e.Property(l => l.CreatedAt).HasDefaultValueSql("NOW()");
+        });
+
+        // ── AuditLog ─────────────────────────────────────────────────────────
+        modelBuilder.Entity<AuditLog>(e =>
+        {
+            e.Property(a => a.Status).HasDefaultValue("SUCCESS").HasMaxLength(20);
+            e.Property(a => a.CreatedAt).HasDefaultValueSql("NOW()");
+            e.HasOne(a => a.User)
+             .WithMany()
+             .HasForeignKey(a => a.UserId)
+             .OnDelete(DeleteBehavior.SetNull);
+            e.HasIndex(a => new { a.UserId, a.CreatedAt });
+            e.HasIndex(a => new { a.Action, a.CreatedAt });
+            e.HasIndex(a => a.CreatedAt);
+        });
+
+        // ── ScraperKeyword ───────────────────────────────────────────────────
+        modelBuilder.Entity<ScraperKeyword>(e =>
+        {
+            e.HasIndex(k => new { k.Keyword, k.SourceType }).IsUnique();
+            e.HasIndex(k => new { k.IsActive, k.SourceType });
+            e.Property(k => k.SourceType).HasDefaultValue("google");
+            e.Property(k => k.IsActive).HasDefaultValue(true);
+            e.Property(k => k.UseCount).HasDefaultValue(0);
+            e.Property(k => k.CreatedAt).HasDefaultValueSql("NOW()");
+            e.HasOne(k => k.Creator)
+             .WithMany()
+             .HasForeignKey(k => k.CreatedBy)
+             .OnDelete(DeleteBehavior.SetNull);
         });
     }
 }

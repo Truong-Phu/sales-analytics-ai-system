@@ -134,6 +134,7 @@ try
     builder.Services.AddScoped<AuthService>();
     builder.Services.AddScoped<DashboardService>();
     builder.Services.AddScoped<ReportService>();
+    builder.Services.AddScoped<IAuditLogService, AuditLogService>();
 
     // ── 8. Repository Pattern (DI) ────────────────────────────────────────────
     builder.Services.AddScoped<IProductRepository,   ProductRepository>();

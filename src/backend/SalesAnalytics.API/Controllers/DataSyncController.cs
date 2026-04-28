@@ -1,6 +1,8 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using SalesAnalytics.API.Services;
 using SalesAnalytics.Infrastructure.Data;
 
 namespace SalesAnalytics.API.Controllers;
@@ -13,13 +15,21 @@ namespace SalesAnalytics.API.Controllers;
 [Authorize(Roles = "Owner,Manager,DataIT,Admin")]
 public class DataSyncController : ControllerBase
 {
-    private readonly AppDbContext _db;
+    private readonly AppDbContext             _db;
     private readonly ILogger<DataSyncController> _logger;
+    private readonly AiProxyService           _ai;
+    private readonly IAuditLogService         _audit;
 
-    public DataSyncController(AppDbContext db, ILogger<DataSyncController> logger)
+    public DataSyncController(
+        AppDbContext db,
+        ILogger<DataSyncController> logger,
+        AiProxyService ai,
+        IAuditLogService audit)
     {
         _db     = db;
         _logger = logger;
+        _ai     = ai;
+        _audit  = audit;
     }
 
     // ── Trạng thái đồng bộ đa nguồn ─────────────────────────────────────────
@@ -87,6 +97,15 @@ public class DataSyncController : ControllerBase
 
         _logger.LogInformation("DataSync trigger: source={Source}", req.Source);
 
+        await _audit.LogAsync(
+            userId:     int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var sid) ? (int?)sid : null,
+            username:   User.FindFirstValue(ClaimTypes.Name) ?? "",
+            action:     "TRIGGER_SYNC",
+            entityType: "DataSync", entityId: req.Source,
+            newValue:   $"{{\"source\":\"{req.Source}\"}}",
+            ipAddress:  HttpContext.Connection.RemoteIpAddress?.ToString(),
+            userAgent:  HttpContext.Request.Headers["User-Agent"].ToString());
+
         return Accepted(new
         {
             message = $"Đã kích hoạt đồng bộ nguồn '{req.Source}'. Kết quả sẽ cập nhật sau vài phút.",
@@ -147,11 +166,39 @@ public class DataSyncController : ControllerBase
 
         _logger.LogInformation("ETL trigger: pipeline={Pipeline}", pipeline);
 
+        await _audit.LogAsync(
+            userId:     int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var eid) ? (int?)eid : null,
+            username:   User.FindFirstValue(ClaimTypes.Name) ?? "",
+            action:     "TRIGGER_ETL",
+            entityType: "ETL", entityId: pipeline,
+            newValue:   $"{{\"pipeline\":\"{pipeline}\"}}",
+            ipAddress:  HttpContext.Connection.RemoteIpAddress?.ToString(),
+            userAgent:  HttpContext.Request.Headers["User-Agent"].ToString());
+
         return Accepted(new
         {
             message  = $"Đã kích hoạt ETL pipeline '{pipeline}'. Tiến trình sẽ cập nhật trong EtlMonitor.",
             pipeline,
         });
+    }
+
+    // ── Connector Health Check ───────────────────────────────────────────────
+
+    /// <summary>
+    /// Trạng thái kết nối thật của tất cả API connector.
+    /// Gọi Python health_check.py qua FastAPI endpoint /health/connectors.
+    /// Trả về trạng thái thật, không hardcode.
+    /// </summary>
+    [HttpGet("api/datasync/connector-health")]
+    public async Task<IActionResult> GetConnectorHealth()
+    {
+        var result = await _ai.GetConnectorHealthAsync();
+        if (result is null)
+            return StatusCode(503, new
+            {
+                message = "AI Service không khả dụng – không thể lấy trạng thái connector.",
+            });
+        return Ok(result);
     }
 
     // ── Helper ───────────────────────────────────────────────────────────────

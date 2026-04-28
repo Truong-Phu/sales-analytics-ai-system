@@ -12,9 +12,14 @@ namespace SalesAnalytics.API.Controllers;
 [EnableRateLimiting("auth")]   // 5 req/phút/IP – chống brute-force
 public class AuthController : ControllerBase
 {
-    private readonly AuthService _authService;
+    private readonly AuthService      _authService;
+    private readonly IAuditLogService _audit;
 
-    public AuthController(AuthService authService) => _authService = authService;
+    public AuthController(AuthService authService, IAuditLogService audit)
+    {
+        _authService = authService;
+        _audit       = audit;
+    }
 
     /// <summary>Đăng nhập – trả về Access Token + Refresh Token</summary>
     [HttpPost("login")]
@@ -23,7 +28,23 @@ public class AuthController : ControllerBase
     {
         var result = await _authService.LoginAsync(req);
         if (result is null)
+        {
+            await _audit.LogAsync(
+                userId: null, username: req.Username ?? "",
+                action: "LOGIN", entityType: "User",
+                status: "FAILED", errorMessage: "Sai tên đăng nhập hoặc mật khẩu",
+                ipAddress: HttpContext.Connection.RemoteIpAddress?.ToString(),
+                userAgent: HttpContext.Request.Headers["User-Agent"].ToString());
+
             return Unauthorized(new { message = "Tên đăng nhập hoặc mật khẩu không đúng." });
+        }
+
+        await _audit.LogAsync(
+            userId: result.UserId, username: result.Username,
+            action: "LOGIN", entityType: "User", entityId: result.UserId.ToString(),
+            status: "SUCCESS",
+            ipAddress: HttpContext.Connection.RemoteIpAddress?.ToString(),
+            userAgent: HttpContext.Request.Headers["User-Agent"].ToString());
 
         return Ok(result);
     }
@@ -55,9 +76,29 @@ public class AuthController : ControllerBase
     [Authorize]
     public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordRequest req)
     {
-        var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
-        var result = await _authService.ChangePasswordAsync(userId, req);
-        if (!result) return BadRequest(new { message = "Mật khẩu cũ không đúng." });
+        var userId   = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        var username = User.FindFirstValue(ClaimTypes.Name) ?? "";
+        var result   = await _authService.ChangePasswordAsync(userId, req);
+
+        if (!result)
+        {
+            await _audit.LogAsync(
+                userId: userId, username: username,
+                action: "CHANGE_PASSWORD", entityType: "User", entityId: userId.ToString(),
+                status: "FAILED", errorMessage: "Mật khẩu cũ không đúng",
+                ipAddress: HttpContext.Connection.RemoteIpAddress?.ToString(),
+                userAgent: HttpContext.Request.Headers["User-Agent"].ToString());
+
+            return BadRequest(new { message = "Mật khẩu cũ không đúng." });
+        }
+
+        await _audit.LogAsync(
+            userId: userId, username: username,
+            action: "CHANGE_PASSWORD", entityType: "User", entityId: userId.ToString(),
+            status: "SUCCESS",
+            ipAddress: HttpContext.Connection.RemoteIpAddress?.ToString(),
+            userAgent: HttpContext.Request.Headers["User-Agent"].ToString());
+
         return Ok(new { message = "Đổi mật khẩu thành công." });
     }
 }

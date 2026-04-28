@@ -1,7 +1,9 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Npgsql;
 using NpgsqlTypes;
+using SalesAnalytics.API.Services;
 using SalesAnalytics.Core.DTOs;
 using SalesAnalytics.Core.Entities;
 using SalesAnalytics.Core.Interfaces;
@@ -16,7 +18,7 @@ namespace SalesAnalytics.API.Controllers;
 [ApiController]
 [Route("api/[controller]")]
 [Authorize]
-public class OrdersController(IConfiguration cfg, IOrderRepository orderRepo) : ControllerBase
+public class OrdersController(IConfiguration cfg, IOrderRepository orderRepo, IAuditLogService audit) : ControllerBase
 {
     private readonly string _connStr = cfg.GetConnectionString("Default")!;
 
@@ -268,6 +270,16 @@ public class OrdersController(IConfiguration cfg, IOrderRepository orderRepo) : 
             };
 
             await orderRepo.AddAsync(order);
+
+            await audit.LogAsync(
+                userId:     int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var cid) ? (int?)cid : null,
+                username:   User.FindFirstValue(ClaimTypes.Name) ?? "",
+                action:     "CREATE_ORDER",
+                entityType: "Order", entityId: order.OrderId.ToString(),
+                newValue:   $"{{\"orderCode\":\"{order.OrderCode}\",\"totalAmount\":{order.TotalAmount}}}",
+                ipAddress:  HttpContext.Connection.RemoteIpAddress?.ToString(),
+                userAgent:  HttpContext.Request.Headers["User-Agent"].ToString());
+
             return CreatedAtAction(nameof(GetOltpOrder), new { id = order.OrderId },
                 new { order.OrderId, order.OrderCode });
         }
@@ -299,6 +311,16 @@ public class OrdersController(IConfiguration cfg, IOrderRepository orderRepo) : 
             order.UpdatedAt = DateTime.UtcNow;
 
             await orderRepo.UpdateAsync(order);
+
+            await audit.LogAsync(
+                userId:     int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var uid) ? (int?)uid : null,
+                username:   User.FindFirstValue(ClaimTypes.Name) ?? "",
+                action:     "UPDATE_ORDER",
+                entityType: "Order", entityId: id.ToString(),
+                newValue:   $"{{\"status\":\"{order.Status}\",\"paymentStatus\":\"{order.PaymentStatus}\"}}",
+                ipAddress:  HttpContext.Connection.RemoteIpAddress?.ToString(),
+                userAgent:  HttpContext.Request.Headers["User-Agent"].ToString());
+
             return NoContent();
         }
         catch (Exception ex)
