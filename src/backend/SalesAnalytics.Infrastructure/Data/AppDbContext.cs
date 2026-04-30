@@ -17,9 +17,11 @@ public class AppDbContext : DbContext
     public DbSet<Order>       Orders       => Set<Order>();
     public DbSet<OrderDetail> OrderDetails => Set<OrderDetail>();
     public DbSet<SalesData>   SalesData    => Set<SalesData>();
-    public DbSet<EtlLog>         EtlLogs         => Set<EtlLog>();
-    public DbSet<ScraperKeyword> ScraperKeywords => Set<ScraperKeyword>();
-    public DbSet<AuditLog>       AuditLogs       => Set<AuditLog>();
+    public DbSet<EtlLog>                 EtlLogs                 => Set<EtlLog>();
+    public DbSet<ScraperKeyword>         ScraperKeywords         => Set<ScraperKeyword>();
+    public DbSet<AuditLog>               AuditLogs               => Set<AuditLog>();
+    public DbSet<LoginHistory>           LoginHistories          => Set<LoginHistory>();
+    public DbSet<NotificationPreference> NotificationPreferences => Set<NotificationPreference>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -40,6 +42,12 @@ public class AppDbContext : DbContext
             e.Property(u => u.LastLoginAt).HasColumnName("last_login_at");
             e.Property(u => u.RefreshToken).HasColumnName("refresh_token");
             e.Property(u => u.RefreshTokenExpiresAt).HasColumnName("refresh_token_expires_at");
+            // Extended profile columns (PROMPT 6)
+            e.Property(u => u.AvatarUrl).HasColumnName("avatar_url").HasMaxLength(500);
+            e.Property(u => u.Phone).HasColumnName("phone").HasMaxLength(20);
+            e.Property(u => u.Birthdate).HasColumnName("birthdate");
+            e.Property(u => u.Timezone).HasColumnName("timezone").HasMaxLength(50).HasDefaultValue("Asia/Ho_Chi_Minh");
+            e.Property(u => u.LangPref).HasColumnName("lang_pref").HasMaxLength(10).HasDefaultValue("vi");
             e.HasIndex(u => u.Username).IsUnique();
             e.HasIndex(u => u.Email).IsUnique();
         });
@@ -196,6 +204,30 @@ public class AppDbContext : DbContext
              .WithMany()
              .HasForeignKey(k => k.CreatedBy)
              .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // ── LoginHistory ─────────────────────────────────────────────────────
+        modelBuilder.Entity<LoginHistory>(e =>
+        {
+            e.Property(l => l.Status).HasDefaultValue("SUCCESS").HasMaxLength(20);
+            e.Property(l => l.LoggedAt).HasDefaultValueSql("NOW()");
+            e.HasOne(l => l.User)
+             .WithMany()
+             .HasForeignKey(l => l.UserId)
+             .OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(l => l.UserId);
+            e.HasIndex(l => l.LoggedAt);
+        });
+
+        // ── NotificationPreference ───────────────────────────────────────────
+        modelBuilder.Entity<NotificationPreference>(e =>
+        {
+            e.Property(n => n.UpdatedAt).HasDefaultValueSql("NOW()");
+            e.HasOne(n => n.User)
+             .WithMany()
+             .HasForeignKey(n => n.UserId)
+             .OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(n => n.UserId).IsUnique();
         });
     }
 }

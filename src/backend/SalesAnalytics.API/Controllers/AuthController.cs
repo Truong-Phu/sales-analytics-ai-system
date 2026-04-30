@@ -26,7 +26,9 @@ public class AuthController : ControllerBase
     [AllowAnonymous]
     public async Task<IActionResult> Login([FromBody] LoginRequest req)
     {
-        var result = await _authService.LoginAsync(req);
+        var ip        = HttpContext.Connection.RemoteIpAddress?.ToString();
+        var userAgent = HttpContext.Request.Headers["User-Agent"].ToString();
+        var result    = await _authService.LoginAsync(req, ip, userAgent);
         if (result is null)
         {
             await _audit.LogAsync(

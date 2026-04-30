@@ -8,7 +8,7 @@ export default function RegisterPage() {
   const navigate = useNavigate()
 
   const [form, setForm] = useState({
-    fullName: '', email: '', password: '', confirmPassword: '', role: 'Staff',
+    username: '', fullName: '', email: '', password: '', confirmPassword: '',
   })
   const [error, setError]     = useState('')
   const [success, setSuccess] = useState(false)
@@ -24,10 +24,10 @@ export default function RegisterPage() {
     setLoading(true)
     try {
       await api.post('/api/auth/register', {
-        fullName:  form.fullName,
-        email:     form.email,
-        password:  form.password,
-        role:      form.role,
+        username: form.username,
+        fullName: form.fullName,
+        email:    form.email,
+        password: form.password,
       })
       setSuccess(true)
     } catch (err) {
@@ -85,6 +85,18 @@ export default function RegisterPage() {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
+              <label className="block text-sm text-outline mb-1.5">{t('auth.username')}</label>
+              <input
+                type="text"
+                required
+                className="form-input"
+                placeholder="nguyenvana"
+                value={form.username}
+                onChange={e => setForm(f => ({ ...f, username: e.target.value }))}
+              />
+            </div>
+
+            <div>
               <label className="block text-sm text-outline mb-1.5">{t('auth.fullName')}</label>
               <input
                 type="text"
@@ -106,20 +118,6 @@ export default function RegisterPage() {
                 value={form.email}
                 onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
               />
-            </div>
-
-            <div>
-              <label className="block text-sm text-outline mb-1.5">{t('auth.roleLabel')}</label>
-              <select
-                className="form-input"
-                value={form.role}
-                onChange={e => setForm(f => ({ ...f, role: e.target.value }))}
-              >
-                <option value="Owner">{t('admin.roles.Owner')}</option>
-                <option value="Manager">{t('admin.roles.Manager')}</option>
-                <option value="Staff">{t('admin.roles.Staff')}</option>
-                <option value="DataIT">{t('admin.roles.DataIT')}</option>
-              </select>
             </div>
 
             <div>

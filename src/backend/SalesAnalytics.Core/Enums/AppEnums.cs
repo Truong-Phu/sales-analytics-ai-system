@@ -6,7 +6,8 @@ public enum UserRole
     Manager,
     Staff,
     DataIT,
-    Admin
+    Admin,
+    Viewer
 }
 
 public enum OrderStatus

@@ -172,8 +172,11 @@ try
         app.UseSwagger();
         app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "Sales Analytics API v1"));
     }
-
-    app.UseHttpsRedirection();        // Bảo mật: redirect HTTP → HTTPS
+    else
+    {
+        // Chỉ redirect HTTPS trên production để tránh break Vite proxy trong dev
+        app.UseHttpsRedirection();
+    }
     app.UseRateLimiter();             // Rate limiting trước khi xử lý request
     app.UseSerilogRequestLogging(opt => // Ghi log mỗi request với thông tin cơ bản
     {

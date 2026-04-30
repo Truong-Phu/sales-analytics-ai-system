@@ -98,17 +98,23 @@ public class UsersController : ControllerBase
     }
 
     // ── GET /api/users/login-history ────────────────────────────────────────
-    /// <summary>Lịch sử đăng nhập gần đây (mock — chưa có bảng login_history).</summary>
+    /// <summary>Lịch sử đăng nhập gần đây (50 bản ghi mới nhất).</summary>
     [HttpGet("login-history")]
-    public IActionResult GetLoginHistory()
+    public async Task<IActionResult> GetLoginHistory()
     {
-        // TODO: Tạo bảng login_history và ghi khi đăng nhập
-        var mock = new[]
-        {
-            new { ip = "14.225.10.xxx", device = "Chrome / Windows 11", time = DateTime.UtcNow.AddHours(-1).ToString("O"), status = "success" },
-            new { ip = "14.225.10.xxx", device = "Chrome / Windows 11", time = DateTime.UtcNow.AddDays(-1).ToString("O"),  status = "success" },
-        };
-        return Ok(mock);
+        var history = await _db.LoginHistories
+            .Where(l => l.UserId == CurrentUserId())
+            .OrderByDescending(l => l.LoggedAt)
+            .Take(50)
+            .Select(l => new {
+                ip        = l.IpAddress,
+                userAgent = l.UserAgent,
+                time      = l.LoggedAt,
+                status    = l.Status
+            })
+            .ToListAsync();
+
+        return Ok(history);
     }
 
     // ── POST /api/users/logout-all ───────────────────────────────────────────
@@ -126,13 +132,56 @@ public class UsersController : ControllerBase
         return Ok(new { message = "Đã đăng xuất tất cả thiết bị." });
     }
 
-    // ── PATCH /api/users/notification-preferences ───────────────────────────
-    /// <summary>Lưu tùy chọn thông báo (lưu tạm theo session, cần bảng notification_preferences).</summary>
-    [HttpPatch("notification-preferences")]
-    public IActionResult UpdateNotifPrefs([FromBody] NotifPrefsRequest req)
+    // ── GET /api/users/notification-preferences ─────────────────────────────
+    /// <summary>Lấy tùy chọn thông báo.</summary>
+    [HttpGet("notification-preferences")]
+    public async Task<IActionResult> GetNotifPrefs()
     {
-        // TODO: Tạo bảng notification_preferences và persist
-        return Ok(new { message = "Đã lưu tùy chọn thông báo.", saved = req });
+        var prefs = await _db.NotificationPreferences
+            .FirstOrDefaultAsync(n => n.UserId == CurrentUserId());
+
+        if (prefs is null)
+            return Ok(new { emailNotify = true, anomalyAlert = true, dailyReport = false, weeklyReport = true });
+
+        return Ok(new {
+            emailNotify  = prefs.EmailNotify,
+            anomalyAlert = prefs.AnomalyAlert,
+            dailyReport  = prefs.DailyReport,
+            weeklyReport = prefs.WeeklyReport,
+        });
+    }
+
+    // ── PUT /api/users/notification-preferences ──────────────────────────────
+    /// <summary>Cập nhật tùy chọn thông báo.</summary>
+    [HttpPut("notification-preferences")]
+    public async Task<IActionResult> UpdateNotifPrefs([FromBody] NotifPrefsRequest req)
+    {
+        var prefs = await _db.NotificationPreferences
+            .FirstOrDefaultAsync(n => n.UserId == CurrentUserId());
+
+        if (prefs is null)
+        {
+            _db.NotificationPreferences.Add(new SalesAnalytics.Core.Entities.NotificationPreference
+            {
+                UserId       = CurrentUserId(),
+                EmailNotify  = req.EmailNotify,
+                AnomalyAlert = req.AnomalyAlert,
+                DailyReport  = req.DailyReport,
+                WeeklyReport = req.WeeklyReport,
+                UpdatedAt    = DateTime.UtcNow,
+            });
+        }
+        else
+        {
+            prefs.EmailNotify  = req.EmailNotify;
+            prefs.AnomalyAlert = req.AnomalyAlert;
+            prefs.DailyReport  = req.DailyReport;
+            prefs.WeeklyReport = req.WeeklyReport;
+            prefs.UpdatedAt    = DateTime.UtcNow;
+        }
+
+        await _db.SaveChangesAsync();
+        return Ok(new { message = "Đã lưu tùy chọn thông báo." });
     }
 }
 

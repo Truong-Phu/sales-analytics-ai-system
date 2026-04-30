@@ -22,15 +22,42 @@ public class AuthService
     }
 
     /// <summary>Đăng nhập – trả về AuthResponse hoặc null nếu thông tin sai</summary>
-    public async Task<AuthResponse?> LoginAsync(LoginRequest req)
+    public async Task<AuthResponse?> LoginAsync(
+        LoginRequest req,
+        string? ipAddress = null,
+        string? userAgent = null)
     {
         var user = await _db.Users
             .FirstOrDefaultAsync(u => u.Username == req.Username && u.IsActive);
 
         if (user is null || !VerifyPassword(req.Password, user.PasswordHash))
+        {
+            // Ghi lịch sử đăng nhập thất bại (không block nếu lỗi)
+            if (user is not null)
+                await RecordLoginHistoryAsync(user.Id, ipAddress, userAgent, "FAILED");
             return null;
+        }
 
-        return await IssueTokensAsync(user);
+        var result = await IssueTokensAsync(user);
+        await RecordLoginHistoryAsync(user.Id, ipAddress, userAgent, "SUCCESS");
+        return result;
+    }
+
+    private async Task RecordLoginHistoryAsync(int userId, string? ip, string? ua, string status)
+    {
+        try
+        {
+            _db.LoginHistories.Add(new Core.Entities.LoginHistory
+            {
+                UserId    = userId,
+                IpAddress = ip,
+                UserAgent = ua,
+                Status    = status,
+                LoggedAt  = DateTime.UtcNow,
+            });
+            await _db.SaveChangesAsync();
+        }
+        catch { /* Không chặn luồng chính nếu ghi lịch sử thất bại */ }
     }
 
     /// <summary>Đăng ký tài khoản mới (chờ Admin phê duyệt)</summary>

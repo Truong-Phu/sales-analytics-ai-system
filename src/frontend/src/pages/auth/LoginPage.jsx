@@ -3,6 +3,7 @@ import { useNavigate, useLocation, Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useAuth } from '../../hooks/useAuth'
 import { useTheme } from '../../hooks/useTheme'
+import i18n from '../../i18n'
 
 // ── Logo SVG ──────────────────────────────────────────────────────────────────
 function LuminaLogoSm({ size = 28, white = false }) {
@@ -57,6 +58,13 @@ export default function LoginPage() {
   const { isDark, toggle } = useTheme()
   const navigate   = useNavigate()
   const location   = useLocation()
+
+  const currentLang = i18n.language?.startsWith('en') ? 'en' : 'vi'
+  const toggleLang = () => {
+    const next = currentLang === 'vi' ? 'en' : 'vi'
+    i18n.changeLanguage(next)
+    localStorage.setItem('lang', next)
+  }
 
   const [form,    setForm]    = useState({ username: '', password: '' })
   const [showPwd, setShowPwd] = useState(false)
@@ -132,17 +140,29 @@ export default function LoginPage() {
         className="flex-1 flex items-center justify-center p-8 relative"
         style={{ background: 'var(--bg-base)' }}
       >
-        {/* Theme toggle */}
-        <button
-          onClick={toggle}
-          className="absolute top-4 right-4 w-9 h-9 flex items-center justify-center
-                     rounded-xl border transition-colors hover:bg-[--bg-elevated]"
-          style={{ borderColor: 'var(--border)', background: 'var(--bg-surface)' }}
-        >
-          <span className="icon text-base" style={{ color: 'var(--text-secondary)' }}>
-            {isDark ? 'light_mode' : 'dark_mode'}
-          </span>
-        </button>
+        {/* Top-right controls: language + theme */}
+        <div className="absolute top-4 right-4 flex items-center gap-2">
+          <button
+            onClick={toggleLang}
+            className="h-9 px-3 flex items-center gap-1.5 rounded-xl border
+                       transition-colors hover:bg-[--bg-elevated] text-sm font-medium"
+            style={{ borderColor: 'var(--border)', background: 'var(--bg-surface)', color: 'var(--text-secondary)' }}
+            title={currentLang === 'vi' ? 'Switch to English' : 'Chuyển sang tiếng Việt'}
+          >
+            <span className="icon text-base">language</span>
+            {currentLang === 'vi' ? 'VI' : 'EN'}
+          </button>
+          <button
+            onClick={toggle}
+            className="w-9 h-9 flex items-center justify-center
+                       rounded-xl border transition-colors hover:bg-[--bg-elevated]"
+            style={{ borderColor: 'var(--border)', background: 'var(--bg-surface)' }}
+          >
+            <span className="icon text-base" style={{ color: 'var(--text-secondary)' }}>
+              {isDark ? 'light_mode' : 'dark_mode'}
+            </span>
+          </button>
+        </div>
 
         <div className="w-full max-w-[360px]">
           {/* Mobile logo */}
