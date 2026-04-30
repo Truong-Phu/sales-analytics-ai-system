@@ -1,8 +1,63 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import MockToast from '../../components/ui/MockToast'
 import { getRecommendations, askRecommendation } from '../../api/aiApi'
 import { MOCK_RECOMMENDATIONS } from '../../mockData/recommendations'
+
+// ── Cấu hình 3 tab nguồn dữ liệu ─────────────────────────────────────────────
+const TABS = [
+  {
+    id:       'business',
+    icon:     'bar_chart',
+    emoji:    '📊',
+    label:    'Dữ liệu Kinh doanh',
+    header:   'Gợi ý từ dữ liệu bán hàng thực tế',
+    sub:      'Phân tích từ đơn hàng, doanh thu, sản phẩm của doanh nghiệp',
+    context:  'business_data',
+    sources:  ['fact_sales', 'oltp'],
+    badge:    '📊 Dữ liệu nội bộ',
+    badgeColor: '#6366F1',
+    samples: [
+      'Sản phẩm nào đang bán chạy nhất tháng này?',
+      'Kênh bán hàng nào hiệu quả nhất?',
+      'Doanh thu tuần này so với tuần trước thế nào?',
+    ],
+  },
+  {
+    id:       'market',
+    icon:     'public',
+    emoji:    '🌐',
+    label:    'Xu hướng Thị trường',
+    header:   'Gợi ý từ xu hướng thị trường',
+    sub:      'Phân tích từ dữ liệu thu thập Google, tin tức thị trường',
+    context:  'market_trends',
+    sources:  ['google', 'external'],
+    badge:    '🌐 Xu hướng thị trường',
+    badgeColor: '#10B981',
+    samples: [
+      'Sản phẩm nào đang trending trên thị trường?',
+      'Xu hướng thương mại điện tử Việt Nam hiện tại?',
+      'Cơ hội kinh doanh nào đang nổi bật?',
+    ],
+  },
+  {
+    id:       'feedback',
+    icon:     'chat_bubble',
+    emoji:    '💬',
+    label:    'Phản hồi Khách hàng',
+    header:   'Gợi ý từ phản hồi mạng xã hội',
+    sub:      'Phân tích sentiment từ Facebook Page, bình luận khách hàng',
+    context:  'customer_feedback',
+    sources:  ['facebook'],
+    badge:    '💬 Phản hồi KH',
+    badgeColor: '#F59E0B',
+    samples: [
+      'Khách hàng đang phàn nàn về vấn đề gì?',
+      'Sản phẩm nào được đánh giá cao nhất?',
+      'Cảm xúc chung của khách hàng như thế nào?',
+    ],
+  },
+]
 
 const TYPE_ICON = {
   revenue: 'payments', channel: 'store', product: 'inventory_2',
@@ -10,16 +65,8 @@ const TYPE_ICON = {
 }
 const PRIORITY_DOT = { high: '#EF4444', medium: '#F59E0B', low: 'var(--primary-500)' }
 const TYPE_FILTER_KEYS = ['all', 'revenue', 'channel', 'product', 'anomaly', 'general']
-const SAMPLE_QS_VI = [
-  'Sản phẩm nào đang bán chạy nhất?',
-  'Doanh thu tuần này so với tuần trước?',
-  'Xu hướng thị trường hiện tại là gì?',
-]
-const SAMPLE_QS_EN = [
-  'Which products are selling best?',
-  'How does this week compare to last week?',
-  'What are current market trends?',
-]
+
+// ── Sub-components ────────────────────────────────────────────────────────────
 
 function ConfidenceBadge({ level }) {
   const map = {
@@ -27,7 +74,7 @@ function ConfidenceBadge({ level }) {
     medium: { bg: 'rgba(245,158,11,0.10)', border: 'rgba(245,158,11,0.30)', color: '#F59E0B',            label: 'Trung bình' },
     low:    { bg: 'rgba(239,68,68,0.10)',  border: 'rgba(239,68,68,0.30)',  color: '#EF4444',            label: 'Thấp' },
   }
-  const c = map[level] ?? map.low
+  const c = map[(level ?? '').toLowerCase()] ?? map.low
   return (
     <span
       className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
@@ -39,24 +86,260 @@ function ConfidenceBadge({ level }) {
   )
 }
 
-export default function RecommendationsPage() {
-  const { t, i18n } = useTranslation()
-  const lang = i18n.language === 'en' ? 'en' : 'vi'
-  const sampleQs = lang === 'en' ? SAMPLE_QS_EN : SAMPLE_QS_VI
+function LoadingSkeleton() {
+  return (
+    <div className="space-y-3 animate-pulse">
+      {[80, 60, 90, 50].map((w, i) => (
+        <div key={i} className="h-3 rounded-full" style={{ width: `${w}%`, background: 'var(--bg-elevated)' }} />
+      ))}
+    </div>
+  )
+}
 
+// Khung chat 1 tab
+function ChatTab({ tab, chatbotOpen, setChatbotOpen }) {
+  const [question, setQuestion]   = useState('')
+  const [loading,  setLoading]    = useState(false)
+  const [history,  setHistory]    = useState([])    // [{question, answer}]
+  const [error,    setError]      = useState('')
+  const bottomRef = useRef(null)
+
+  const clearHistory = () => setHistory([])
+
+  const handleAsk = useCallback(async () => {
+    const q = question.trim()
+    if (!q || loading) return
+    setLoading(true)
+    setError('')
+    try {
+      const res = await askRecommendation({
+        question: q,
+        language: 'vi',
+        context:  tab.context,
+        sources:  tab.sources,
+      })
+      setHistory(prev => [
+        ...prev,
+        { question: q, answer: res },
+      ])
+      setQuestion('')
+      setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
+    } catch {
+      try {
+        // Fallback mock khi API lỗi
+        const mockAnswer = {
+          recommendation: `[Dữ liệu mẫu] Dựa trên phân tích ${tab.label.toLowerCase()}: đây là gợi ý mẫu khi AI Service chưa khả dụng.`,
+          confidence:     'low',
+          sources_used:   tab.sources,
+          context_type:   tab.context,
+          question:       q,
+        }
+        setHistory(prev => [...prev, { question: q, answer: mockAnswer }])
+        setQuestion('')
+      } catch {
+        setError('AI Service tạm thời không khả dụng. Vui lòng thử lại sau.')
+      }
+    } finally {
+      setLoading(false)
+    }
+  }, [question, loading, tab])
+
+  return (
+    <div className="space-y-4">
+      {/* Header tab */}
+      <div>
+        <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+          {tab.header}
+        </p>
+        <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
+          {tab.sub}
+        </p>
+      </div>
+
+      {/* Lịch sử chat */}
+      <div className="space-y-3 min-h-[120px]">
+        {history.length === 0 && !loading && (
+          <div className="flex flex-col items-center justify-center py-10 gap-2"
+               style={{ color: 'var(--text-tertiary)' }}>
+            <span className="icon" style={{ fontSize: 36, opacity: 0.25 }}>chat_bubble_outline</span>
+            <p className="text-xs">Nhập câu hỏi bên dưới để nhận gợi ý</p>
+          </div>
+        )}
+
+        {history.map((item, i) => (
+          <div key={i} className="space-y-2">
+            {/* Câu hỏi */}
+            <div className="flex justify-end">
+              <div className="max-w-[85%] px-3 py-2 rounded-2xl rounded-tr-sm text-sm"
+                   style={{ background: 'var(--primary-500)', color: 'white' }}>
+                {item.question}
+              </div>
+            </div>
+
+            {/* Câu trả lời */}
+            <div className="flex gap-2">
+              <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5"
+                   style={{ background: `${tab.badgeColor}20` }}>
+                <span className="icon" style={{ fontSize: 14, color: tab.badgeColor }}>smart_toy</span>
+              </div>
+              <div className="flex-1 space-y-2">
+                <div className="px-3 py-2 rounded-2xl rounded-tl-sm text-sm"
+                     style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}>
+                  <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed">
+                    {item.answer.recommendation}
+                  </pre>
+                </div>
+                {/* Badges nguồn */}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
+                    style={{
+                      background: `${tab.badgeColor}18`,
+                      border:     `1px solid ${tab.badgeColor}40`,
+                      color:       tab.badgeColor,
+                    }}
+                  >
+                    {tab.badge}
+                  </span>
+                  <ConfidenceBadge level={item.answer.confidence} />
+                </div>
+              </div>
+            </div>
+          </div>
+        ))}
+
+        {/* Loading skeleton */}
+        {loading && (
+          <div className="flex gap-2">
+            <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5"
+                 style={{ background: `${tab.badgeColor}20` }}>
+              <span className="icon" style={{ fontSize: 14, color: tab.badgeColor }}>smart_toy</span>
+            </div>
+            <div className="flex-1 px-3 py-3 rounded-2xl"
+                 style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)' }}>
+              <LoadingSkeleton />
+            </div>
+          </div>
+        )}
+
+        {error && (
+          <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs"
+               style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', color: '#EF4444' }}>
+            <span className="icon" style={{ fontSize: 14 }}>error_outline</span>
+            {error}
+          </div>
+        )}
+
+        <div ref={bottomRef} />
+      </div>
+
+      {/* Sample questions */}
+      <div>
+        <p className="text-xs mb-2" style={{ color: 'var(--text-tertiary)' }}>Câu hỏi gợi ý:</p>
+        <div className="flex flex-col gap-1.5">
+          {tab.samples.map((s, i) => (
+            <button
+              key={i}
+              onClick={() => setQuestion(s)}
+              className="text-left px-3 py-2 rounded-lg text-xs border transition-all"
+              style={{ borderColor: 'var(--border)', background: 'var(--bg-elevated)', color: 'var(--text-secondary)' }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = tab.badgeColor; e.currentTarget.style.color = 'var(--text-primary)' }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-secondary)' }}
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Input box */}
+      <div className="flex gap-2 items-end">
+        <textarea
+          value={question}
+          onChange={e => setQuestion(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleAsk() }}
+          placeholder="Nhập câu hỏi... (Ctrl+Enter để gửi)"
+          rows={2}
+          className="flex-1 rounded-xl border text-sm resize-none px-3 py-2.5 transition-colors"
+          style={{
+            background: 'var(--bg-base)',
+            borderColor: 'var(--border)',
+            color: 'var(--text-primary)',
+            outline: 'none',
+          }}
+          onFocus={e => e.target.style.borderColor = tab.badgeColor}
+          onBlur={e => e.target.style.borderColor = 'var(--border)'}
+        />
+        <button
+          onClick={handleAsk}
+          disabled={!question.trim() || loading}
+          className="h-10 w-10 rounded-xl flex items-center justify-center shrink-0 transition-all"
+          style={{
+            background: question.trim() && !loading ? tab.badgeColor : 'var(--bg-elevated)',
+            color: question.trim() && !loading ? 'white' : 'var(--text-tertiary)',
+          }}
+          title="Gửi (Ctrl+Enter)"
+        >
+          {loading
+            ? <span className="w-4 h-4 border-2 border-current/30 border-t-current rounded-full"
+                    style={{ animation: 'spin 0.7s linear infinite' }} />
+            : <span className="icon" style={{ fontSize: 18 }}>send</span>
+          }
+        </button>
+      </div>
+
+      {/* Xóa lịch sử */}
+      {history.length > 0 && (
+        <div className="flex justify-end">
+          <button
+            onClick={clearHistory}
+            className="text-xs flex items-center gap-1 transition-colors"
+            style={{ color: 'var(--text-tertiary)' }}
+            onMouseEnter={e => e.currentTarget.style.color = '#EF4444'}
+            onMouseLeave={e => e.currentTarget.style.color = 'var(--text-tertiary)'}
+          >
+            <span className="icon" style={{ fontSize: 12 }}>delete_sweep</span>
+            Xóa lịch sử
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Trang chính ───────────────────────────────────────────────────────────────
+
+export default function RecommendationsPage() {
+  const { t } = useTranslation()
+
+  // Trạng thái tab đang active
+  const [activeTab, setActiveTab] = useState('business')
+
+  // Auto-recommendations (danh sách bên dưới)
   const [autoData,    setAutoData]    = useState(null)
   const [autoLoading, setAutoLoading] = useState(true)
   const [isMock,      setIsMock]      = useState(false)
   const [filter,      setFilter]      = useState('all')
-  const [question,    setQuestion]    = useState('')
-  const [answerLang,  setAnswerLang]  = useState(lang)
-  const [askLoading,  setAskLoading]  = useState(false)
-  const [lastAnswer,  setLastAnswer]  = useState(null)
-  const [askError,    setAskError]    = useState('')
-  const [history,     setHistory]     = useState([])
-  const [ctxOpen,     setCtxOpen]     = useState(false)
-  const answerRef = useRef(null)
 
+  // Scroll to top
+  const [showScrollTop, setShowScrollTop] = useState(false)
+
+  // Floating chatbot panel
+  const [chatbotOpen, setChatbotOpen] = useState(false)
+  const [quickQ,      setQuickQ]      = useState('')
+  const [quickLoading, setQuickLoading] = useState(false)
+  const [quickAnswer,  setQuickAnswer]  = useState(null)
+
+  // Scroll tracking
+  useEffect(() => {
+    const onScroll = () => setShowScrollTop(window.scrollY > 300)
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
+
+  const scrollToTop = () => window.scrollTo({ top: 0, behavior: 'smooth' })
+
+  // Fetch auto-recommendations
   const fetchAutoRecs = async () => {
     setAutoLoading(true)
     setIsMock(false)
@@ -71,32 +354,33 @@ export default function RecommendationsPage() {
   }
   useEffect(() => { fetchAutoRecs() }, [])
 
-  const handleAsk = async () => {
-    const q = question.trim()
-    if (!q) return
-    setAskLoading(true)
-    setAskError('')
-    setLastAnswer(null)
-    setCtxOpen(false)
+  // Quick ask (floating chatbot)
+  const handleQuickAsk = async () => {
+    const q = quickQ.trim()
+    if (!q || quickLoading) return
+    setQuickLoading(true)
+    setQuickAnswer(null)
     try {
-      const res = await askRecommendation({ question: q, language: answerLang })
-      setLastAnswer(res)
-      setHistory(prev => [{ question: q, answer: res }, ...prev.filter(h => h.question !== q)].slice(0, 5))
-      setTimeout(() => answerRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
+      const res = await askRecommendation({ question: q, language: 'vi' })
+      setQuickAnswer(res)
     } catch {
-      setAskError('AI Service tạm thời không khả dụng. Vui lòng thử lại sau.')
+      setQuickAnswer({
+        recommendation: '[Dữ liệu mẫu] AI Service chưa khả dụng. Vui lòng thử lại sau.',
+        confidence: 'low',
+      })
     } finally {
-      setAskLoading(false)
+      setQuickLoading(false)
     }
   }
 
   const filtered = autoData?.recommendations?.filter(r => filter === 'all' || r.type === filter) ?? []
+  const currentTab = TABS.find(t => t.id === activeTab)
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 pb-24">
       <MockToast show={isMock} />
 
-      {/* Header */}
+      {/* ── Header ── */}
       <div>
         <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
           {t('recommendations.title')}
@@ -106,238 +390,57 @@ export default function RecommendationsPage() {
         </p>
       </div>
 
-      {/* ── AI Chat 2-col ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-
-        {/* LEFT: Input */}
-        <div className="lcard p-5 space-y-4">
-          <div className="flex items-center gap-2">
-            <span className="icon" style={{ fontSize: 20, color: 'var(--primary-500)' }}>forum</span>
-            <h2 className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>
-              {t('recommendations.askTitle')}
-            </h2>
-          </div>
-
-          <div className="relative">
-            <textarea
-              value={question}
-              onChange={e => setQuestion(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleAsk() }}
-              placeholder={t('recommendations.questionPlaceholder')}
-              rows={4}
-              className="w-full rounded-xl border text-sm resize-none px-4 py-3 transition-colors"
+      {/* ── 3 Tab Chat ── */}
+      <div className="lcard overflow-hidden">
+        {/* Tab headers */}
+        <div className="flex border-b" style={{ borderColor: 'var(--border)' }}>
+          {TABS.map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className="flex-1 flex items-center justify-center gap-1.5 px-3 py-3 text-xs font-medium transition-all"
               style={{
-                background: 'var(--bg-base)',
-                borderColor: 'var(--border)',
-                color: 'var(--text-primary)',
-                outline: 'none',
+                color:       activeTab === tab.id ? tab.badgeColor : 'var(--text-secondary)',
+                borderBottom: activeTab === tab.id ? `2px solid ${tab.badgeColor}` : '2px solid transparent',
+                background:  activeTab === tab.id ? `${tab.badgeColor}08` : 'transparent',
               }}
-              onFocus={e => e.target.style.borderColor = 'var(--primary-500)'}
-              onBlur={e => e.target.style.borderColor = 'var(--border)'}
-            />
-            <span className="absolute bottom-2.5 right-3 text-xs" style={{ color: 'var(--text-tertiary)' }}>
-              Ctrl+Enter
-            </span>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <span className="text-xs whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>
-              {t('recommendations.answerLang')}:
-            </span>
-            <select
-              value={answerLang}
-              onChange={e => setAnswerLang(e.target.value)}
-              className="linput flex-1 text-sm !h-8"
             >
-              <option value="vi">{t('common.vietnamese')}</option>
-              <option value="en">{t('common.english')}</option>
-            </select>
-          </div>
-
-          <button
-            onClick={handleAsk}
-            disabled={askLoading || !question.trim()}
-            className="lbtn lbtn-primary w-full justify-center"
-            style={{ height: 40, opacity: (!question.trim() && !askLoading) ? 0.5 : 1 }}
-          >
-            {askLoading ? (
-              <>
-                <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full"
-                      style={{ animation: 'spin 0.7s linear infinite' }} />
-                {t('recommendations.thinking')}
-              </>
-            ) : (
-              <>
-                <span className="icon text-base">send</span>
-                {t('recommendations.askBtn')}
-              </>
-            )}
-          </button>
-
-          {/* Sample question chips */}
-          <div>
-            <p className="text-xs mb-2" style={{ color: 'var(--text-tertiary)' }}>
-              {t('recommendations.sampleQuestions')}:
-            </p>
-            <div className="flex flex-col gap-1.5">
-              {sampleQs.map((q, i) => (
-                <button
-                  key={i}
-                  onClick={() => setQuestion(q)}
-                  className="text-left px-3 py-2 rounded-lg text-xs border transition-all"
-                  style={{
-                    borderColor: 'var(--border)',
-                    background: 'var(--bg-elevated)',
-                    color: 'var(--text-secondary)',
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--primary-500)'; e.currentTarget.style.color = 'var(--text-primary)' }}
-                  onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-secondary)' }}
-                >
-                  {q}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* History */}
-          {history.length > 0 && (
-            <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12 }}>
-              <p className="text-xs mb-1.5" style={{ color: 'var(--text-tertiary)' }}>
-                {t('recommendations.history')}:
-              </p>
-              {history.map((h, i) => (
-                <button
-                  key={i}
-                  onClick={() => { setQuestion(h.question); setLastAnswer(h.answer) }}
-                  className="w-full text-left text-xs px-2 py-1.5 rounded-lg truncate transition-colors"
-                  style={{ color: 'var(--text-secondary)' }}
-                  onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg-elevated)'; e.currentTarget.style.color = 'var(--text-primary)' }}
-                  onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--text-secondary)' }}
-                >
-                  <span className="icon mr-1" style={{ fontSize: 12 }}>history</span>
-                  {h.question}
-                </button>
-              ))}
-            </div>
-          )}
+              <span className="icon" style={{ fontSize: 15 }}>{tab.icon}</span>
+              <span className="hidden sm:inline">{tab.label}</span>
+              <span className="sm:hidden">{tab.emoji}</span>
+            </button>
+          ))}
         </div>
 
-        {/* RIGHT: Answer */}
-        <div ref={answerRef} className="lcard p-5 space-y-4">
-          <div className="flex items-center gap-2">
-            <span className="icon" style={{ fontSize: 20, color: 'var(--primary-500)' }}>auto_awesome</span>
-            <h2 className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>
-              {t('recommendations.answerTitle')}
-            </h2>
-          </div>
-
-          {!lastAnswer && !askLoading && !askError && (
-            <div className="flex flex-col items-center justify-center py-16 gap-3"
-                 style={{ color: 'var(--text-tertiary)' }}>
-              <span className="icon" style={{ fontSize: 48, opacity: 0.3 }}>chat_bubble_outline</span>
-              <p className="text-sm">{t('recommendations.noAnswer')}</p>
-            </div>
-          )}
-
-          {askLoading && (
-            <div className="flex flex-col items-center justify-center py-16 gap-3">
-              <div className="flex gap-1">
-                {[0, 0.15, 0.3].map((d, i) => (
-                  <span key={i} className="w-2 h-2 rounded-full"
-                        style={{ background: 'var(--primary-500)', animation: `bounce 1s ${d}s infinite` }} />
-                ))}
-              </div>
-              <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>{t('recommendations.thinking')}</p>
-            </div>
-          )}
-
-          {askError && !lastAnswer && !askLoading && (
-            <div className="flex items-start gap-2 px-4 py-3 rounded-xl text-sm"
-                 style={{ background: 'rgba(239,68,68,0.10)', border: '1px solid rgba(239,68,68,0.30)', color: '#EF4444' }}>
-              <span className="icon shrink-0" style={{ fontSize: 18 }}>error_outline</span>
-              {askError}
-            </div>
-          )}
-
-          {lastAnswer && !askLoading && (
-            <div className="space-y-3">
-              {/* Question bubble */}
-              <div className="px-4 py-3 rounded-xl rounded-tl-sm"
-                   style={{ background: 'var(--primary-50, rgba(99,102,241,0.08))', border: '1px solid rgba(99,102,241,0.15)' }}>
-                <p className="text-sm" style={{ color: 'var(--text-primary)' }}>
-                  <span className="icon mr-1 align-middle" style={{ fontSize: 14, color: 'var(--primary-500)' }}>person</span>
-                  {lastAnswer.question}
-                </p>
-              </div>
-
-              {/* Answer bubble */}
-              <div className="px-4 py-3 rounded-xl rounded-tl-sm"
-                   style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)' }}>
-                <pre className="text-sm whitespace-pre-wrap font-sans leading-relaxed"
-                     style={{ color: 'var(--text-primary)' }}>
-                  {lastAnswer.recommendation}
-                </pre>
-              </div>
-
-              {/* Meta badges */}
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Độ tin cậy:</span>
-                <ConfidenceBadge level={lastAnswer.confidence} />
-                {(lastAnswer.data_sources ?? []).map(src => (
-                  <span key={src} className="lbadge lbadge-neutral text-xs">{src}</span>
-                ))}
-              </div>
-
-              {lastAnswer.confidence === 'low' && (
-                <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl text-xs"
-                     style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', color: '#F59E0B' }}>
-                  <span className="icon shrink-0 mt-0.5" style={{ fontSize: 14 }}>warning</span>
-                  {t('recommendations.level1Warning')}
-                </div>
-              )}
-
-              {lastAnswer.note && (
-                <p className="text-xs italic" style={{ color: 'var(--text-tertiary)' }}>{lastAnswer.note}</p>
-              )}
-
-              {lastAnswer._context && (
-                <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border)' }}>
-                  <button
-                    onClick={() => setCtxOpen(v => !v)}
-                    className="w-full flex items-center justify-between px-4 py-2.5 text-sm transition-colors"
-                    style={{ color: 'var(--text-secondary)' }}
-                    onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
-                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                  >
-                    <span>{t('recommendations.viewContext')}</span>
-                    <span className="icon" style={{ fontSize: 18, transform: ctxOpen ? 'rotate(180deg)' : '', transition: 'transform 0.2s' }}>expand_more</span>
-                  </button>
-                  {ctxOpen && (
-                    <div className="px-4 py-3 text-xs overflow-x-auto"
-                         style={{ background: 'var(--bg-elevated)', borderTop: '1px solid var(--border)', color: 'var(--text-tertiary)' }}>
-                      <pre className="whitespace-pre-wrap">{JSON.stringify(lastAnswer._context, null, 2)}</pre>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
+        {/* Tab body */}
+        <div className="p-5">
+          {currentTab && (
+            <ChatTab
+              key={activeTab}
+              tab={currentTab}
+              chatbotOpen={chatbotOpen}
+              setChatbotOpen={setChatbotOpen}
+            />
           )}
         </div>
       </div>
 
-      {/* ── Auto recommendations list ── */}
+      {/* ── Auto recommendations ── */}
       <div className="space-y-4">
         <div className="flex items-center justify-between gap-4">
           <h2 className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>
             Gợi ý tự động từ AI
           </h2>
           <button onClick={fetchAutoRecs} className="lbtn lbtn-secondary !h-8 text-xs" disabled={autoLoading}>
-            <span className="icon text-base" style={{ ...(autoLoading && { animation: 'spin 1s linear infinite' }) }}>refresh</span>
+            <span className="icon text-base"
+                  style={{ ...(autoLoading && { animation: 'spin 1s linear infinite' }) }}>
+              refresh
+            </span>
             {t('common.refresh')}
           </button>
         </div>
 
-        {/* Type filter */}
+        {/* Bộ lọc loại */}
         <div className="flex flex-wrap gap-2">
           {TYPE_FILTER_KEYS.map(type => (
             <button
@@ -345,9 +448,9 @@ export default function RecommendationsPage() {
               onClick={() => setFilter(type)}
               className="px-3 py-1.5 rounded-lg text-xs font-medium border transition-all"
               style={{
-                background: filter === type ? 'var(--primary-500)' : 'transparent',
+                background:  filter === type ? 'var(--primary-500)' : 'transparent',
                 borderColor: filter === type ? 'var(--primary-500)' : 'var(--border)',
-                color: filter === type ? 'white' : 'var(--text-secondary)',
+                color:       filter === type ? 'white' : 'var(--text-secondary)',
               }}
             >
               {type === 'all' ? t('common.all') : t(`recommendations.type.${type}`)}
@@ -368,29 +471,20 @@ export default function RecommendationsPage() {
         ) : (
           <div className="space-y-3">
             {filtered.map((rec, i) => (
-              <div
-                key={i}
-                className="lcard p-4 flex items-start gap-4"
-                style={{
-                  borderLeft: `3px solid ${PRIORITY_DOT[rec.priority] ?? PRIORITY_DOT.low}`,
-                }}
-              >
-                <span
-                  className="icon w-9 h-9 flex items-center justify-center rounded-xl shrink-0"
-                  style={{ fontSize: 20, background: 'var(--bg-elevated)', color: 'var(--primary-500)' }}
-                >
+              <div key={i} className="lcard p-4 flex items-start gap-4"
+                   style={{ borderLeft: `3px solid ${PRIORITY_DOT[rec.priority] ?? PRIORITY_DOT.low}` }}>
+                <span className="icon w-9 h-9 flex items-center justify-center rounded-xl shrink-0"
+                      style={{ fontSize: 20, background: 'var(--bg-elevated)', color: 'var(--primary-500)' }}>
                   {TYPE_ICON[rec.type] ?? 'lightbulb'}
                 </span>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap mb-1.5">
-                    <span
-                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
-                      style={{
-                        background: `${PRIORITY_DOT[rec.priority]}18`,
-                        color: PRIORITY_DOT[rec.priority],
-                        border: `1px solid ${PRIORITY_DOT[rec.priority]}40`,
-                      }}
-                    >
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
+                          style={{
+                            background: `${PRIORITY_DOT[rec.priority]}18`,
+                            color: PRIORITY_DOT[rec.priority],
+                            border: `1px solid ${PRIORITY_DOT[rec.priority]}40`,
+                          }}>
                       <span className="w-1.5 h-1.5 rounded-full" style={{ background: PRIORITY_DOT[rec.priority] }} />
                       {t(`recommendations.priority.${rec.priority}`)}
                     </span>
@@ -414,6 +508,116 @@ export default function RecommendationsPage() {
           </p>
         )}
       </div>
+
+      {/* ── SCROLL TO TOP ── */}
+      {showScrollTop && (
+        <button
+          onClick={scrollToTop}
+          className="fixed right-6 flex items-center justify-center w-10 h-10 rounded-full shadow-lg transition-all"
+          style={{
+            bottom:     chatbotOpen ? '280px' : '76px',
+            background: 'var(--bg-card)',
+            border:     '1px solid var(--border)',
+            color:      'var(--text-secondary)',
+            zIndex:     40,
+          }}
+          title="Lên đầu trang"
+          onMouseEnter={e => { e.currentTarget.style.background = 'var(--primary-500)'; e.currentTarget.style.color = 'white' }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'var(--bg-card)'; e.currentTarget.style.color = 'var(--text-secondary)' }}
+        >
+          <span className="icon" style={{ fontSize: 20 }}>keyboard_arrow_up</span>
+        </button>
+      )}
+
+      {/* ── FLOATING CHATBOT ── */}
+
+      {/* Panel chat nổi */}
+      {chatbotOpen && (
+        <div
+          className="fixed right-6 bottom-20 w-80 rounded-2xl shadow-2xl overflow-hidden"
+          style={{
+            background: 'var(--bg-card)',
+            border:     '1px solid var(--border)',
+            zIndex:     50,
+          }}
+        >
+          {/* Panel header */}
+          <div className="flex items-center justify-between px-4 py-3"
+               style={{ background: 'var(--primary-500)', color: 'white' }}>
+            <div className="flex items-center gap-2">
+              <span className="icon" style={{ fontSize: 18 }}>smart_toy</span>
+              <span className="text-sm font-semibold">AI Trợ lý</span>
+            </div>
+            <button onClick={() => setChatbotOpen(false)}
+                    className="w-6 h-6 rounded-full flex items-center justify-center transition-colors"
+                    style={{ background: 'rgba(255,255,255,0.2)' }}>
+              <span className="icon" style={{ fontSize: 14 }}>close</span>
+            </button>
+          </div>
+
+          {/* Nội dung panel */}
+          <div className="p-4 space-y-3">
+            {quickAnswer && (
+              <div className="px-3 py-2.5 rounded-xl text-xs"
+                   style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}>
+                <pre className="whitespace-pre-wrap font-sans leading-relaxed">
+                  {quickAnswer.recommendation}
+                </pre>
+                <div className="mt-2">
+                  <ConfidenceBadge level={quickAnswer.confidence} />
+                </div>
+              </div>
+            )}
+
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={quickQ}
+                onChange={e => setQuickQ(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') handleQuickAsk() }}
+                placeholder="Hỏi nhanh AI..."
+                className="flex-1 rounded-lg border px-3 py-2 text-xs"
+                style={{
+                  background: 'var(--bg-base)',
+                  borderColor: 'var(--border)',
+                  color: 'var(--text-primary)',
+                  outline: 'none',
+                }}
+              />
+              <button
+                onClick={handleQuickAsk}
+                disabled={!quickQ.trim() || quickLoading}
+                className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                style={{ background: 'var(--primary-500)', color: 'white' }}
+              >
+                {quickLoading
+                  ? <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full"
+                          style={{ animation: 'spin 0.7s linear infinite' }} />
+                  : <span className="icon" style={{ fontSize: 14 }}>send</span>
+                }
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Nút mở/đóng chatbot */}
+      <button
+        onClick={() => setChatbotOpen(v => !v)}
+        className="fixed right-6 bottom-6 w-12 h-12 rounded-full shadow-lg flex items-center justify-center transition-all"
+        style={{
+          background: chatbotOpen ? 'var(--primary-600, #4F46E5)' : 'var(--primary-500)',
+          color:      'white',
+          zIndex:     50,
+          transform:  chatbotOpen ? 'rotate(90deg)' : 'rotate(0deg)',
+          transition: 'transform 0.2s, background 0.2s',
+        }}
+        title={chatbotOpen ? 'Đóng AI Trợ lý' : 'Mở AI Trợ lý'}
+      >
+        <span className="icon" style={{ fontSize: 22 }}>
+          {chatbotOpen ? 'close' : 'smart_toy'}
+        </span>
+      </button>
     </div>
   )
 }

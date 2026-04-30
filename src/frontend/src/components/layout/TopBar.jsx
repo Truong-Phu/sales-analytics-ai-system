@@ -4,6 +4,7 @@ import { useAuth } from '../../hooks/useAuth'
 import { useTheme } from '../../hooks/useTheme'
 import { useTranslation } from 'react-i18next'
 import { useCmdK } from '../ui/CommandPalette'
+import i18n from '../../i18n'
 
 // ── Logo SVG ──────────────────────────────────────────────────────────────────
 function LuminaLogo({ size = 32 }) {
@@ -44,6 +45,29 @@ function ThemeToggle() {
       <span className="icon text-base" style={{ color: 'var(--text-secondary)' }}>
         {isDark ? 'light_mode' : 'dark_mode'}
       </span>
+    </button>
+  )
+}
+
+// ── Language Toggle ────────────────────────────────────────────────────────────
+function LangToggle() {
+  const [lang, setLang] = useState(() =>
+    (i18n.language ?? 'vi').startsWith('en') ? 'en' : 'vi'
+  )
+  const toggle = () => {
+    const next = lang === 'vi' ? 'en' : 'vi'
+    setLang(next)
+    i18n.changeLanguage(next)
+  }
+  return (
+    <button
+      onClick={toggle}
+      className="lbtn lbtn-ghost h-8 px-2 gap-1 rounded-lg text-xs font-bold"
+      title={lang === 'vi' ? 'Switch to English' : 'Chuyển sang Tiếng Việt'}
+      style={{ color: 'var(--text-secondary)', minWidth: 40 }}
+    >
+      <span>{lang === 'vi' ? '🇻🇳' : '🇺🇸'}</span>
+      <span className="hidden sm:inline uppercase">{lang}</span>
     </button>
   )
 }
@@ -296,6 +320,7 @@ export default function TopBar() {
           </kbd>
         </button>
 
+        <LangToggle />
         <ThemeToggle />
 
         {/* Mobile search icon */}

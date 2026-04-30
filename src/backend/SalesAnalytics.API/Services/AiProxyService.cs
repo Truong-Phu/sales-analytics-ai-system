@@ -46,14 +46,25 @@ public class AiProxyService
 
     /// <summary>
     /// Forward POST /recommendation lên FastAPI AI Service.
-    /// Payload: { question, language } → trả về { recommendation, data_sources, confidence, note }.
+    /// Payload: { question, language, context?, sources? }
+    /// → trả về { recommendation, data_sources, confidence, note, sources_used, context_type }.
     /// Nếu FastAPI không khả dụng → trả về null (controller sẽ trả 503).
     /// </summary>
-    public async Task<object?> PostRecommendationAsync(string question, string language = "vi")
+    public async Task<object?> PostRecommendationAsync(
+        string question,
+        string language = "vi",
+        string? context = null,
+        IEnumerable<string>? sources = null)
     {
         try
         {
-            var payload = new { question, language };
+            var payload = new
+            {
+                question,
+                language,
+                context  = context ?? (object?)null,
+                sources  = sources?.ToArray() ?? (object?)null,
+            };
             var json    = JsonSerializer.Serialize(payload);
             var content = new StringContent(json, Encoding.UTF8, "application/json");
 
@@ -66,15 +77,17 @@ public class AiProxyService
         }
         catch (HttpRequestException)
         {
-            // FastAPI service không chạy hoặc lỗi mạng → trả null để controller xử lý 503
             return null;
         }
         catch (TaskCanceledException)
         {
-            // Timeout
             return null;
         }
     }
+
+    /// <summary>Gọi FastAPI /health/connectors → trạng thái tất cả connector.</summary>
+    public async Task<object?> GetConnectorHealthAsync()
+        => await GetJsonAsync("/health/connectors");
 
     // ── Private ─────────────────────────────────────────────────────────────
 

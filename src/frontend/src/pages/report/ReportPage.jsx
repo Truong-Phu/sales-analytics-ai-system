@@ -11,11 +11,13 @@ const QUICK_RANGES = [
 ]
 
 const SECTIONS = [
-  { key: 'includeKpi',      icon: 'analytics',       label: 'Tổng quan KPI',        always: true },
-  { key: 'includeChannel',  icon: 'pie_chart',        label: 'Phân tích kênh',       always: true },
-  { key: 'includeProducts', icon: 'inventory_2',      label: 'Top sản phẩm',         always: true },
-  { key: 'includeCharts',   icon: 'bar_chart',        label: 'Biểu đồ trực quan',    always: false },
-  { key: 'includeAI',       icon: 'auto_awesome',     label: 'Nhận xét AI',          always: false },
+  { key: 'includeOverview',    icon: 'dashboard',       label: 'Tổng quan (KPI, doanh thu, kênh)',           always: true  },
+  { key: 'includeSales',       icon: 'bar_chart',       label: 'Phân tích bán hàng (top sản phẩm, tăng trưởng)', always: true  },
+  { key: 'includeMultichannel',icon: 'hub',             label: 'Phân tích đa kênh (so sánh kênh)',           always: false },
+  { key: 'includeCustomer',    icon: 'people',          label: 'Phân tích khách hàng (CLV, funnel)',         always: false },
+  { key: 'includeMarketing',   icon: 'campaign',        label: 'Marketing & ROI (chi phí vs doanh thu)',     always: false },
+  { key: 'includeInventory',   icon: 'inventory_2',     label: 'Tồn kho & Vận hành (tồn kho, hoàn đơn)',    always: false },
+  { key: 'includeAI',          icon: 'auto_awesome',    label: 'Nhận xét & Insight từ AI',                  always: false },
 ]
 
 function toISO(d) { return d.toISOString().slice(0, 10) }
@@ -23,7 +25,12 @@ function toISO(d) { return d.toISOString().slice(0, 10) }
 function defaultForm() {
   const to   = new Date()
   const from = new Date(Date.now() - 30 * 86_400_000)
-  return { from: toISO(from), to: toISO(to), channel: 'all', includeCharts: true, includeAI: true }
+  return {
+    from: toISO(from), to: toISO(to), channel: 'all',
+    includeOverview: true, includeSales: true,
+    includeMultichannel: false, includeCustomer: false,
+    includeMarketing: false, includeInventory: false, includeAI: true,
+  }
 }
 
 function PreviewSection({ icon, label, enabled = true }) {

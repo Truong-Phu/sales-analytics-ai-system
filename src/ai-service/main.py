@@ -69,6 +69,44 @@ def health_check():
     }
 
 
+@app.get("/health/connectors", tags=["System"])
+def connector_health():
+    """
+    Kiểm tra trạng thái kết nối tất cả API connector.
+    Gọi health_check.py từ api-integration layer.
+    Dùng bởi DataSyncController (GET /api/datasync/connector-health).
+    """
+    import sys
+    import os as _os
+    from pathlib import Path
+
+    # Thêm đường dẫn api-integration/connectors vào sys.path
+    connectors_dir = (
+        Path(__file__).resolve().parents[1]
+        / "api-integration" / "connectors"
+    )
+    api_int_dir = connectors_dir.parent
+    for p in [str(connectors_dir), str(api_int_dir)]:
+        if p not in sys.path:
+            sys.path.insert(0, p)
+
+    try:
+        # Import trực tiếp (không qua package)
+        import importlib.util
+        spec   = importlib.util.spec_from_file_location(
+            "health_check", str(connectors_dir / "health_check.py")
+        )
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module.check_all_connectors()
+    except Exception as e:
+        return {
+            "error":      str(e),
+            "message":    "Không thể load health_check.py",
+            "checked_at": __import__("datetime").datetime.utcnow().isoformat(),
+        }
+
+
 @app.get("/", include_in_schema=False)
 def root():
     return {"message": "Sales Analytics AI Service – truy cập /docs để xem API"}

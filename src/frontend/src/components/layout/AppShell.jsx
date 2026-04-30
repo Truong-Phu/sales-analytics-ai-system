@@ -2,6 +2,7 @@ import { useTheme } from '../../hooks/useTheme'
 import { CommandPaletteProvider } from '../ui/CommandPalette'
 import TopBar from './TopBar'
 import MobileBottomNav from './MobileBottomNav'
+import FloatingActions from '../ui/FloatingActions'
 
 export default function AppShell({ children }) {
   const { isDark } = useTheme()
@@ -28,6 +29,7 @@ export default function AppShell({ children }) {
         </main>
 
         <MobileBottomNav />
+        <FloatingActions />
       </CommandPaletteProvider>
     </div>
   )

@@ -4,6 +4,199 @@ import MockToast from '../../components/ui/MockToast'
 import { getSyncStatus, triggerSync } from '../../api/syncApi'
 import { MOCK_DATA_SYNC } from '../../mockData/dataSync'
 
+const API_BASE = import.meta.env.VITE_API_URL ?? ''
+
+async function fetchKeywords() {
+  const r = await fetch(`${API_BASE}/api/scraper/keywords`, {
+    headers: { Authorization: `Bearer ${localStorage.getItem('token') ?? ''}` },
+  })
+  if (!r.ok) throw new Error('Lỗi tải keywords')
+  return (await r.json()).keywords
+}
+
+async function addKeyword(keyword, sourceType = 'google') {
+  const r = await fetch(`${API_BASE}/api/scraper/keywords`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${localStorage.getItem('token') ?? ''}`,
+    },
+    body: JSON.stringify({ keyword, sourceType }),
+  })
+  if (!r.ok) {
+    const data = await r.json().catch(() => ({}))
+    throw new Error(data.message ?? 'Lỗi thêm keyword')
+  }
+}
+
+async function toggleKeyword(id) {
+  const r = await fetch(`${API_BASE}/api/scraper/keywords/${id}/toggle`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${localStorage.getItem('token') ?? ''}` },
+  })
+  if (!r.ok) throw new Error('Lỗi toggle keyword')
+}
+
+async function deleteKeyword(id) {
+  const r = await fetch(`${API_BASE}/api/scraper/keywords/${id}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${localStorage.getItem('token') ?? ''}` },
+  })
+  if (!r.ok) throw new Error('Lỗi xóa keyword')
+}
+
+function KeywordManager() {
+  const [keywords, setKeywords] = useState([])
+  const [loading,  setLoading]  = useState(true)
+  const [input,    setInput]    = useState('')
+  const [srcType,  setSrcType]  = useState('google')
+  const [busy,     setBusy]     = useState(false)
+  const [error,    setError]    = useState('')
+
+  const load = async () => {
+    setLoading(true)
+    try { setKeywords(await fetchKeywords()) } catch { /* ignore — không crash */ }
+    finally { setLoading(false) }
+  }
+
+  useEffect(() => { load() }, [])
+
+  const handleAdd = async () => {
+    if (!input.trim()) return
+    setBusy(true); setError('')
+    try {
+      await addKeyword(input.trim(), srcType)
+      setInput('')
+      await load()
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handleToggle = async id => {
+    setBusy(true)
+    try { await toggleKeyword(id); await load() } catch { /* ignore */ }
+    finally { setBusy(false) }
+  }
+
+  const handleDelete = async id => {
+    if (!confirm('Xóa từ khóa này?')) return
+    setBusy(true)
+    try { await deleteKeyword(id); await load() } catch { /* ignore */ }
+    finally { setBusy(false) }
+  }
+
+  return (
+    <div className="lcard p-5 space-y-4">
+      <div className="flex items-center gap-2">
+        <span className="icon" style={{ fontSize: 20, color: 'var(--primary-500)' }}>search</span>
+        <h2 className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>
+          Từ khóa tìm kiếm Scraper
+        </h2>
+        <span className="text-xs ml-1 px-2 py-0.5 rounded-full"
+              style={{ background: 'rgba(100,116,139,0.10)', color: 'var(--text-tertiary)' }}>
+          {keywords.filter(k => k.isActive).length} active
+        </span>
+      </div>
+
+      {/* Add form */}
+      <div className="flex gap-2 flex-wrap">
+        <input
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && handleAdd()}
+          placeholder="Nhập từ khóa tìm kiếm..."
+          className="lbtn flex-1 min-w-0 !h-9 !px-3 text-sm border"
+          style={{ background: 'var(--bg-elevated)', borderColor: 'var(--border-default)' }}
+        />
+        <select
+          value={srcType}
+          onChange={e => setSrcType(e.target.value)}
+          className="lbtn !h-9 !px-2 text-xs border"
+          style={{ background: 'var(--bg-elevated)', borderColor: 'var(--border-default)' }}
+        >
+          <option value="google">Google</option>
+          <option value="facebook">Facebook</option>
+        </select>
+        <button
+          onClick={handleAdd}
+          disabled={busy || !input.trim()}
+          className="lbtn lbtn-primary !h-9 !px-4 disabled:opacity-50"
+        >
+          <span className="icon text-base">add</span>
+          Thêm
+        </button>
+      </div>
+
+      {error && (
+        <div className="text-xs px-3 py-2 rounded-lg"
+             style={{ background: 'rgba(239,68,68,0.08)', color: '#EF4444' }}>
+          {error}
+        </div>
+      )}
+
+      {/* Keyword list */}
+      {loading ? (
+        <div className="flex justify-center py-4">
+          <span className="w-5 h-5 border-2 rounded-full"
+                style={{ borderColor: 'var(--border-strong)', borderTopColor: 'var(--primary-500)', animation: 'spin 0.8s linear infinite' }} />
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {keywords.length === 0 ? (
+            <p className="text-xs text-center py-4" style={{ color: 'var(--text-tertiary)' }}>
+              Chưa có từ khóa nào. Thêm từ khóa để bắt đầu scrape.
+            </p>
+          ) : keywords.map(kw => (
+            <div key={kw.id}
+                 className="flex items-center gap-3 px-3 py-2 rounded-lg text-xs"
+                 style={{
+                   background: kw.isActive ? 'var(--bg-elevated)' : 'rgba(100,116,139,0.06)',
+                   opacity: kw.isActive ? 1 : 0.6,
+                 }}>
+              <span className="flex-1 font-medium truncate" style={{ color: 'var(--text-primary)' }}>
+                {kw.keyword}
+              </span>
+              <span className="px-1.5 py-0.5 rounded text-xs"
+                    style={{ background: 'rgba(46,117,182,0.10)', color: 'var(--primary-500)' }}>
+                {kw.sourceType}
+              </span>
+              <span className="px-1.5 py-0.5 rounded text-xs"
+                    style={{ background: 'rgba(100,116,139,0.10)', color: 'var(--text-tertiary)' }}>
+                {kw.useCount} lần
+              </span>
+              {/* Toggle */}
+              <button
+                onClick={() => handleToggle(kw.id)}
+                disabled={busy}
+                title={kw.isActive ? 'Tắt' : 'Bật'}
+                className="w-8 h-5 rounded-full relative transition-colors shrink-0"
+                style={{
+                  background: kw.isActive ? 'var(--accent-500)' : 'var(--border-strong)',
+                }}
+              >
+                <span className="absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all"
+                      style={{ left: kw.isActive ? '14px' : '2px' }} />
+              </button>
+              {/* Delete */}
+              <button
+                onClick={() => handleDelete(kw.id)}
+                disabled={busy}
+                className="shrink-0 hover:opacity-70"
+                title="Xóa"
+              >
+                <span className="icon text-base" style={{ color: '#EF4444' }}>delete_outline</span>
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 const SOURCE_ICON = {
   shopee: 'storefront', lazada: 'store', tiktok: 'play_circle',
   facebook: 'thumb_up', ghn: 'local_shipping', vnpay: 'payments',
@@ -198,6 +391,9 @@ export default function DataSyncPage() {
           ))}
         </div>
       )}
+
+      {/* Keyword Management */}
+      <KeywordManager />
     </div>
   )
 }

@@ -12,7 +12,7 @@ Cấu hình qua biến môi trường:
 Jobs đang chạy:
   1. etl_main          – ETL pipeline chính (mỗi 6 tiếng, configurable)
   2. google_scraper    – Google Search scraping (mỗi 2 tiếng)
-  3. facebook_scraper  – Facebook page scraping (mỗi 4 tiếng)
+  3. facebook_daily_scrape – Facebook page scraping (6:00 sáng mỗi ngày)
 
   ETL Mức 2 (sau mỗi lần scrape – clean → normalize → calculate → load DW):
   4. raw_clean         – Lọc raw data theo rules chất lượng (30 phút sau scrape)
@@ -116,9 +116,10 @@ def google_scraper_job() -> None:
 
 def facebook_scraper_job() -> None:
     """
-    Job scrape bài đăng từ Facebook page mỗi 4 tiếng.
-    Chỉ scrape page do người dùng tự tạo và kiểm soát.
-    Lỗi job này không ảnh hưởng đến các job khác.
+    Job scrape bài đăng Facebook Page qua Graph API.
+    Chạy lúc 6:00 sáng mỗi ngày (xem lịch trong main()).
+    Token và Page ID đọc từ .env: FACEBOOK_PAGE_TOKEN, FACEBOOK_PAGE_ID.
+    Khi thiếu token → log hướng dẫn chi tiết, không crash job.
     """
     logger.info("=== FacebookScraper Job bắt đầu ===")
     try:
@@ -132,17 +133,9 @@ def facebook_scraper_job() -> None:
 
         from connectors.facebook_scraper import FacebookScraper
 
-        # Đọc danh sách URL từ biến môi trường (ngăn cách bằng dấu phẩy)
-        raw_urls  = os.getenv("FACEBOOK_PAGE_URLS", "")
-        page_urls = [u.strip() for u in raw_urls.split(",") if u.strip()]
-
-        if not page_urls:
-            logger.warning(
-                "FacebookScraper Job: FACEBOOK_PAGE_URLS chưa được cấu hình – bỏ qua"
-            )
-            return
-
-        scraper = FacebookScraper(page_urls=page_urls)
+        # FacebookScraper đọc FACEBOOK_PAGE_TOKEN + FACEBOOK_PAGE_ID từ .env
+        # run() xử lý gracefully khi thiếu token (log hướng dẫn, trả về empty)
+        scraper = FacebookScraper()
         result  = scraper.run()
         logger.info(
             "=== FacebookScraper Job hoàn thành: scrape=%d | lưu=%d | bỏ qua=%d ===",
@@ -153,7 +146,7 @@ def facebook_scraper_job() -> None:
     except ImportError as e:
         logger.error(
             "FacebookScraper Job: thiếu thư viện – %s. "
-            "Chạy: pip install requests beautifulsoup4 lxml psycopg2-binary",
+            "Chạy: pip install requests psycopg2-binary python-dotenv",
             e,
         )
     except Exception as exc:
@@ -274,12 +267,12 @@ def main() -> None:
         misfire_grace_time=300,
     )
 
-    # Job 3: Facebook page scraper – chạy mỗi 4 tiếng
+    # Job 3: Facebook Page scraper – chạy lúc 6:00 sáng mỗi ngày
     scheduler.add_job(
         facebook_scraper_job,
-        trigger=CronTrigger(hour="*/4", timezone=cfg["timezone"]),
-        id="facebook_scraper",
-        name="Facebook Page Scraper",
+        trigger=CronTrigger(hour=6, minute=0, timezone=cfg["timezone"]),
+        id="facebook_daily_scrape",
+        name="Facebook Page Scraper (6:00 sáng hàng ngày)",
         max_instances=1,
         coalesce=True,
         misfire_grace_time=300,
@@ -332,7 +325,7 @@ def main() -> None:
 
     logger.info(
         "Scheduler khởi động | cron='%s' | timezone=%s | batch_size=%d\n"
-        "Jobs: etl_main | google_scraper | facebook_scraper | "
+        "Jobs: etl_main | google_scraper (*/2h) | facebook_daily_scrape (6:00) | "
         "raw_clean | raw_normalize | raw_load_dw",
         cfg["cron"], cfg["timezone"], cfg["batch_size"],
     )

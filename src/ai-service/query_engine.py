@@ -531,6 +531,173 @@ class QueryEngine:
 
         return results
 
+    # ── Tìm kiếm fact_sales trong DW ─────────────────────────────────────────────
+
+    def search_fact_sales(self, keywords: list[str]) -> list[dict]:
+        """
+        Truy vấn dữ liệu doanh thu theo kênh từ dw.fact_sales + dim_channel.
+
+        Dùng cho context 'business_data' để cung cấp số liệu kênh bán hàng
+        cho AI phân tích và đưa ra gợi ý chiến lược.
+
+        Returns:
+            List[dict]: [{channel_name, revenue, orders, avg_margin}]
+        """
+        if not self.db_url:
+            return []
+
+        results = []
+        try:
+            conn = self._get_conn()
+            cur  = conn.cursor()
+            cur.execute("""
+                SELECT
+                    dc.channel_name,
+                    SUM(fs.net_revenue)::float   AS revenue,
+                    SUM(fs.order_count)          AS orders,
+                    AVG(fs.profit_margin)::float AS avg_margin
+                FROM dw.fact_sales  fs
+                JOIN dw.dim_date    dd ON fs.date_key    = dd.date_key
+                JOIN dw.dim_channel dc ON fs.channel_key = dc.channel_key
+                WHERE dd.full_date >= CURRENT_DATE - INTERVAL '30 days'
+                GROUP BY dc.channel_name
+                ORDER BY revenue DESC
+                LIMIT 10
+            """)
+            rows    = cur.fetchall()
+            results = [dict(r) for r in rows]
+            cur.close()
+            conn.close()
+            logger.debug("search_fact_sales: %d kênh", len(results))
+        except Exception as e:
+            logger.debug("search_fact_sales không khả dụng (DW chưa có dữ liệu): %s", e)
+
+        return results
+
+    def search_dw_external_by_type(self, keywords: list[str], source_type: str) -> list[dict]:
+        """
+        Tìm kiếm dim_external_source lọc theo source_type: "google" | "facebook".
+
+        Returns:
+            List[dict]: giống search_dw_external nhưng lọc theo loại nguồn.
+        """
+        if not self.db_url:
+            return []
+
+        results = []
+        try:
+            conn    = self._get_conn()
+            cur     = conn.cursor()
+            kw_list = keywords[:5] if keywords else []
+            params  = [source_type]
+
+            if kw_list:
+                conditions = []
+                for kw in kw_list:
+                    conditions.append("(title ILIKE %s OR content ILIKE %s OR keyword ILIKE %s)")
+                    params += [f"%{kw}%", f"%{kw}%", f"%{kw}%"]
+                where_kw = " OR ".join(conditions)
+                sql = f"""
+                    SELECT source_id, source_type, keyword, title,
+                           LEFT(content, 300) AS content, url,
+                           relevance_score, collected_date::text AS collected_date
+                    FROM public.dim_external_source
+                    WHERE source_type = %s AND ({where_kw})
+                      AND collected_date >= CURRENT_DATE - INTERVAL '30 days'
+                    ORDER BY relevance_score DESC, collected_date DESC LIMIT 10
+                """
+            else:
+                sql = """
+                    SELECT source_id, source_type, keyword, title,
+                           LEFT(content, 300) AS content, url,
+                           relevance_score, collected_date::text AS collected_date
+                    FROM public.dim_external_source
+                    WHERE source_type = %s
+                      AND collected_date >= CURRENT_DATE - INTERVAL '30 days'
+                    ORDER BY relevance_score DESC, collected_date DESC LIMIT 10
+                """
+
+            cur.execute(sql, params)
+            rows    = cur.fetchall()
+            results = [dict(r) for r in rows]
+            cur.close()
+            conn.close()
+            logger.debug("search_dw_external_by_type(%s): %d kết quả", source_type, len(results))
+        except Exception as e:
+            logger.debug("search_dw_external_by_type không khả dụng: %s", e)
+
+        return results
+
+    def get_context_for_recommendation(
+        self,
+        question: str,
+        context_type: "str | None",
+        sources: list[str],
+    ) -> dict:
+        """
+        Lấy context phân biệt theo context_type và sources.
+
+        context_type = "business_data"     → fact_sales + sales_summary
+        context_type = "market_trends"     → google DW + raw google
+        context_type = "customer_feedback" → facebook DW + raw facebook
+        Khác / None                        → get_context() thông thường
+
+        Args:
+            question:     Câu hỏi của người dùng.
+            context_type: Loại context (xem trên).
+            sources:      List nguồn cụ thể.
+
+        Returns:
+            dict: context đã chọn lọc theo nguồn.
+        """
+        keywords = self.extract_keywords(question)
+        data: dict = {
+            "question":           question,
+            "keywords":           keywords,
+            "dw_results":         [],
+            "google_results":     [],
+            "facebook_results":   [],
+            "fact_sales_results": [],
+            "sales_summary":      {},
+            "data_level":         "level0",
+            "retrieved_at":       datetime.now(timezone.utc).isoformat(),
+        }
+
+        if context_type == "business_data" or any(s in sources for s in ["fact_sales", "oltp"]):
+            data["fact_sales_results"] = self.search_fact_sales(keywords)
+            data["sales_summary"]      = self.search_sales_data(keywords)
+            data["data_level"] = "level2" if data["fact_sales_results"] else "level1"
+
+        if context_type == "market_trends" or any(s in sources for s in ["google", "external"]):
+            dw = self.search_dw_external_by_type(keywords, "google")
+            if dw:
+                data["dw_results"] = dw
+                data["data_level"] = "level2"
+            else:
+                data["google_results"] = self.search_google_data(keywords)
+                if data["google_results"]:
+                    data["data_level"] = "level1"
+
+        if context_type == "customer_feedback" or "facebook" in sources:
+            dw_fb = self.search_dw_external_by_type(keywords, "facebook")
+            if dw_fb:
+                data["dw_results"] = dw_fb
+                data["data_level"] = "level2"
+            else:
+                data["facebook_results"] = self.search_facebook_data(keywords)
+                if data["facebook_results"]:
+                    data["data_level"] = "level1"
+
+        logger.info(
+            "get_context_for_recommendation '%s': ctx=%s | fact_sales=%d | "
+            "dw=%d | google=%d | fb=%d | sales=%s",
+            question[:50], context_type,
+            len(data["fact_sales_results"]), len(data["dw_results"]),
+            len(data["google_results"]), len(data["facebook_results"]),
+            "có" if data["sales_summary"] else "rỗng",
+        )
+        return data
+
     # ── Entry point ──────────────────────────────────────────────────────────
 
     def get_context(self, question: str) -> dict:

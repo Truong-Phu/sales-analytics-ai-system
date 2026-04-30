@@ -41,16 +41,20 @@ class RecommendationResponse(BaseModel):
 # ── Models cho POST /recommendation (AI chatbot) ─────────────────────────────
 
 class AskRequest(BaseModel):
-    question: str                   # Câu hỏi tự nhiên của người dùng
-    language: str = "vi"            # Ngôn ngữ trả về: "vi" hoặc "en"
+    question: str                           # Câu hỏi tự nhiên của người dùng
+    language: str = "vi"                    # Ngôn ngữ trả về: "vi" hoặc "en"
+    context:  Optional[str]  = None         # "business_data"|"market_trends"|"customer_feedback"
+    sources:  Optional[List[str]] = None    # ["fact_sales","oltp"|"google","external"|"facebook"]
 
 
 class AskResponse(BaseModel):
     question:       str
     recommendation: str             # Gợi ý text từ AI hoặc rule-based fallback
     data_sources:   List[str]       # Nguồn dữ liệu đã dùng
-    confidence:     str             # "low" | "medium" | "high"
+    confidence:     str             # "LOW" | "MEDIUM" | "HIGH"
     note:           str             # Ghi chú về nguồn dữ liệu
+    sources_used:   List[str] = []  # Tên nguồn thực tế đã truy vấn
+    context_type:   str = ""        # Context đã dùng
 
 
 # ── Rule-based fallback ──────────────────────────────────────────────────────
@@ -323,176 +327,191 @@ def get_recommendations():
 )
 async def ask_recommendation(body: AskRequest):
     """
-    Pipeline xử lý:
-        1. Gọi QueryEngine.get_context(question) → thu thập context
-        2. Gọi AI (Claude → OpenAI → rule-based fallback)
-        3. Trả về gợi ý text + metadata nguồn dữ liệu
+    Pipeline xử lý (hỗ trợ context/sources):
+        1. Xác định context type: business_data | market_trends | customer_feedback
+        2. Gọi QueryEngine.get_context_for_recommendation() → thu thập context theo nguồn
+        3. Gọi AI (Claude → OpenAI → rule-based fallback) với system prompt theo context
+        4. Trả về gợi ý text + metadata nguồn dữ liệu
 
-    Confidence:
-        - Nếu có AI thật → "medium"
-        - Nếu dùng rule-based → "low" (Mức 1 – dữ liệu chưa kiểm chứng)
+    Context rules:
+        business_data   → truy vấn fact_sales + OLTP
+        market_trends   → truy vấn google data (DW + raw)
+        customer_feedback → truy vấn facebook data
+        None (mặc định) → truy vấn tất cả (get_context cũ)
     """
-    question = (body.question or "").strip()
-    language = body.language or "vi"
+    question     = (body.question or "").strip()
+    language     = body.language or "vi"
+    ctx_type     = (body.context or "").strip() or None
+    sources_req  = body.sources or []
 
     if not question:
         raise HTTPException(status_code=400, detail="question không được để trống")
 
-    # Bước 1: Lấy context từ QueryEngine
+    # Bước 1: Lấy context từ QueryEngine theo context/sources
     try:
-        # Import lazy để không crash khi module chưa sẵn sàng
         import sys
         import os as _os
         ai_service_dir = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
         if ai_service_dir not in sys.path:
             sys.path.insert(0, ai_service_dir)
         from query_engine import QueryEngine
-        context = QueryEngine().get_context(question)
+        engine = QueryEngine()
+
+        if ctx_type or sources_req:
+            # Chế độ có context/sources → gọi hàm định tuyến nguồn dữ liệu
+            context = engine.get_context_for_recommendation(question, ctx_type, sources_req)
+        else:
+            # Backward compat: không có context → dùng get_context cũ
+            context = engine.get_context(question)
     except Exception as e:
         logger.error("Lỗi QueryEngine: %s", e)
         context = {
-            "question":         question,
-            "keywords":         [],
-            "google_results":   [],
-            "facebook_results": [],
-            "sales_summary":    {},
-            "retrieved_at":     datetime.now(timezone.utc).isoformat(),
+            "question": question, "keywords": [],
+            "google_results": [], "facebook_results": [],
+            "fact_sales_results": [], "sales_summary": {},
+            "retrieved_at": datetime.now(timezone.utc).isoformat(),
         }
 
     # Xác định nguồn dữ liệu đã dùng
-    data_sources = []
-    dw_results       = context.get("dw_results", [])
-    google_results   = context.get("google_results", [])
-    facebook_results = context.get("facebook_results", [])
-    sales_summary    = context.get("sales_summary", {})
-    data_level       = context.get("data_level", "level1")
+    data_sources: List[str] = []
+    sources_used: List[str] = []
 
-    if dw_results:
+    dw_results          = context.get("dw_results", [])
+    google_results      = context.get("google_results", [])
+    facebook_results    = context.get("facebook_results", [])
+    fact_sales_results  = context.get("fact_sales_results", [])
+    sales_summary       = context.get("sales_summary", {})
+    data_level          = context.get("data_level", "level1")
+
+    if dw_results or fact_sales_results:
         data_sources.append("Data Warehouse")
+        sources_used.append("fact_sales")
     if google_results:
         data_sources.append("Google Search")
+        sources_used.append("google")
     if facebook_results:
         data_sources.append("Facebook")
+        sources_used.append("facebook")
     if sales_summary:
-        data_sources.append("Bán hàng")
+        if "Bán hàng" not in data_sources:
+            data_sources.append("Bán hàng")
+        if "oltp" not in sources_used:
+            sources_used.append("oltp")
 
-    # Tính confidence score trước khi gọi AI
-    # Logic Mức 2: nhiều nguồn sạch → confidence cao hơn
+    # Confidence score
     _conf_score = 0
-    if len(dw_results) >= 5:
-        _conf_score += 1    # DW có ít nhất 5 bản ghi đã clean
+    if len(dw_results) >= 5 or len(fact_sales_results) >= 3:
+        _conf_score += 1
     if facebook_results:
-        _conf_score += 1    # Có cả dữ liệu Facebook
+        _conf_score += 1
     if sales_summary.get("order_count_30d", 0) > 0:
-        _conf_score += 1    # Có dữ liệu bán hàng thực
+        _conf_score += 1
 
-    # Bước 2: Gọi AI hoặc fallback
+    # Bước 2: System prompt theo context type
+    def _build_system_prompt(ctx: str, lang: str) -> str:
+        lang_str = "tiếng Việt" if lang == "vi" else "English"
+        base = f"Trả lời bằng {lang_str}. Ngắn gọn, thực tế, phù hợp SME Việt Nam."
+        if ctx == "business_data":
+            return (
+                "Bạn là chuyên gia phân tích dữ liệu bán hàng. "
+                "Dựa trên doanh thu, đơn hàng, sản phẩm được cung cấp, "
+                "hãy phân tích và đưa ra gợi ý chiến lược kinh doanh cụ thể. " + base
+            )
+        if ctx == "market_trends":
+            return (
+                "Bạn là chuyên gia phân tích thị trường. "
+                "Dựa trên dữ liệu xu hướng từ Google Search và thị trường online, "
+                "hãy chỉ ra các cơ hội kinh doanh và sản phẩm trending. " + base
+            )
+        if ctx == "customer_feedback":
+            return (
+                "Bạn là chuyên gia phân tích trải nghiệm khách hàng. "
+                "Dựa trên bình luận và phản hồi từ mạng xã hội, "
+                "hãy tóm tắt cảm xúc khách hàng và đưa ra gợi ý cải thiện dịch vụ/sản phẩm. " + base
+            )
+        return (
+            "Bạn là trợ lý phân tích kinh doanh cho SME Việt Nam. "
+            "Dựa trên dữ liệu được cung cấp, hãy đưa ra gợi ý ngắn gọn, thực tế. " + base
+        )
+
+    # Bước 3: Gọi AI hoặc fallback
     recommendation_text = ""
-    confidence          = "low"
+    confidence          = "LOW"
     ai_used             = "fallback"
 
     anthropic_key = os.getenv("ANTHROPIC_API_KEY", "")
     openai_key    = os.getenv("OPENAI_API_KEY", "")
 
     if anthropic_key:
-        # Ưu tiên Claude API
         try:
             import anthropic
-            client = anthropic.Anthropic(api_key=anthropic_key)
-
-            sys_prompt = (
-                "Bạn là trợ lý phân tích kinh doanh cho doanh nghiệp vừa và nhỏ (SME) Việt Nam. "
-                "Dựa trên dữ liệu được cung cấp, hãy đưa ra gợi ý ngắn gọn, thực tế. "
-                f"Trả lời bằng {'tiếng Việt' if language == 'vi' else 'tiếng Anh'}."
-            )
+            client       = anthropic.Anthropic(api_key=anthropic_key)
+            sys_prompt   = _build_system_prompt(ctx_type or "", language)
             context_text = json.dumps(context, ensure_ascii=False, indent=2, default=str)
             user_prompt  = f"Câu hỏi: {question}\n\nDữ liệu:\n{context_text[:3000]}"
 
             msg = client.messages.create(
-                model="claude-haiku-4-5-20251001",   # Dùng Haiku cho tốc độ nhanh
+                model="claude-haiku-4-5-20251001",
                 max_tokens=500,
                 system=sys_prompt,
                 messages=[{"role": "user", "content": user_prompt}],
             )
             recommendation_text = msg.content[0].text
-            confidence          = "medium"
+            confidence          = "MEDIUM"
             ai_used             = "claude"
-            logger.info("Đã dùng Claude API để sinh gợi ý")
+            logger.info("Đã dùng Claude API, context=%s", ctx_type)
         except ImportError:
             logger.warning("anthropic chưa được cài – fallback sang OpenAI")
         except Exception as e:
             logger.error("Lỗi Claude API: %s – fallback", e)
 
     if not recommendation_text and openai_key:
-        # Fallback sang OpenAI
         try:
             import openai
-            client     = openai.OpenAI(api_key=openai_key)
-            sys_prompt = (
-                "Bạn là trợ lý phân tích kinh doanh cho SME Việt Nam. "
-                "Dựa trên dữ liệu, đưa ra gợi ý ngắn gọn, thực tế. "
-                f"Trả lời bằng {'tiếng Việt' if language == 'vi' else 'English'}."
-            )
+            client       = openai.OpenAI(api_key=openai_key)
+            sys_prompt   = _build_system_prompt(ctx_type or "", language)
             context_text = json.dumps(context, ensure_ascii=False, indent=2, default=str)
             user_prompt  = f"Câu hỏi: {question}\n\nDữ liệu:\n{context_text[:3000]}"
 
             resp = client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                max_tokens=500,
+                model="gpt-3.5-turbo", max_tokens=500,
                 messages=[
                     {"role": "system", "content": sys_prompt},
                     {"role": "user",   "content": user_prompt},
                 ],
             )
             recommendation_text = resp.choices[0].message.content
-            confidence          = "medium"
+            confidence          = "MEDIUM"
             ai_used             = "openai"
-            logger.info("Đã dùng OpenAI API để sinh gợi ý")
+            logger.info("Đã dùng OpenAI API, context=%s", ctx_type)
         except ImportError:
-            logger.warning("openai chưa được cài – dùng rule-based fallback")
+            logger.warning("openai chưa được cài – rule-based fallback")
         except Exception as e:
-            logger.error("Lỗi OpenAI API: %s – dùng rule-based fallback", e)
+            logger.error("Lỗi OpenAI API: %s – rule-based fallback", e)
 
     if not recommendation_text:
-        # Rule-based fallback – không cần API key
-        recommendation_text = rule_based_recommendation(question, context, language)
-        # Confidence dựa trên dữ liệu đầu vào, không phải AI model
+        # Rule-based fallback phân biệt theo context
+        recommendation_text = _rule_based_by_context(question, context, ctx_type, language)
         if _conf_score == 0:
-            confidence = "low"
+            confidence = "LOW"
         elif _conf_score <= 2:
-            confidence = "medium"
+            confidence = "MEDIUM"
         else:
-            confidence = "high"
+            confidence = "HIGH"
         ai_used = "rule-based"
-        logger.info(
-            "Dùng rule-based fallback | conf_score=%d → confidence=%s",
-            _conf_score, confidence,
-        )
-    elif confidence == "medium" and _conf_score >= 2:
-        # AI đã được dùng + dữ liệu tốt → nâng lên high
-        confidence = "high"
+        logger.info("Rule-based fallback: context=%s, conf=%s", ctx_type, confidence)
+    elif confidence == "MEDIUM" and _conf_score >= 2:
+        confidence = "HIGH"
 
-    # Bước 3: Trả về kết quả
-    if data_level == "level2":
-        note_vi = (
-            f"Gợi ý dựa trên dữ liệu Mức 2 (đã qua clean/normalize) "
-            f"– được tạo bởi {'AI (' + ai_used + ')' if ai_used != 'rule-based' else 'rule-based engine'}"
-        )
-        note_en = (
-            f"Recommendation based on Level 2 data (cleaned/normalized) "
-            f"– generated by {'AI (' + ai_used + ')' if ai_used != 'rule-based' else 'rule-based engine'}"
-        )
-    else:
-        note_vi = (
-            "Gợi ý từ dữ liệu Mức 1 (web scraping) – chưa qua kiểm chứng"
-            if ai_used == "rule-based"
-            else f"Gợi ý được tạo bởi AI ({ai_used}) dựa trên dữ liệu Mức 1"
-        )
-        note_en = (
-            "Recommendation from Level 1 data (web scraping) – not yet verified"
-            if ai_used == "rule-based"
-            else f"Recommendation generated by AI ({ai_used}) from Level 1 data"
-        )
+    # Bước 4: Ghi chú nguồn
+    ctx_label = {
+        "business_data":    "dữ liệu kinh doanh nội bộ",
+        "market_trends":    "xu hướng thị trường (Google)",
+        "customer_feedback":"phản hồi khách hàng (Facebook)",
+    }.get(ctx_type or "", "dữ liệu tổng hợp")
+
+    note_vi = f"Gợi ý từ {ctx_label} – {ai_used}"
+    note_en = f"Recommendation from {ctx_label} – {ai_used}"
 
     return AskResponse(
         question=question,
@@ -500,4 +519,123 @@ async def ask_recommendation(body: AskRequest):
         data_sources=data_sources,
         confidence=confidence,
         note=note_vi if language == "vi" else note_en,
+        sources_used=sources_used,
+        context_type=ctx_type or "general",
     )
+
+
+def _rule_based_by_context(question: str, context: dict, ctx_type: Optional[str], language: str = "vi") -> str:
+    """
+    Rule-based fallback phân biệt theo context type.
+
+    business_data   → phân tích fact_sales + OLTP → top sản phẩm, kênh, doanh thu
+    market_trends   → phân tích google data → xu hướng từ khóa, sản phẩm trending
+    customer_feedback → phân tích facebook data → sentiment, sản phẩm được nhắc
+    None            → tổng hợp tất cả (rule_based_recommendation cũ)
+    """
+    is_vi = language.lower() != "en"
+
+    if ctx_type == "business_data":
+        return _rule_business(context, is_vi)
+    if ctx_type == "market_trends":
+        return _rule_market(context, is_vi)
+    if ctx_type == "customer_feedback":
+        return _rule_feedback(context, is_vi)
+    # General fallback
+    return rule_based_recommendation(question, context, language)
+
+
+def _rule_business(context: dict, is_vi: bool) -> str:
+    parts = []
+    sales = context.get("sales_summary", {})
+    fact  = context.get("fact_sales_results", [])
+
+    if sales:
+        header = "**Dữ liệu kinh doanh thực tế:**" if is_vi else "**Business data:**"
+        parts.append(header)
+        if sales.get("total_revenue_30d"):
+            label = "Doanh thu" if is_vi else "Revenue"
+            parts.append(f"- {label}: {sales['total_revenue_30d']:,.0f} VNĐ")
+        if sales.get("order_count_30d"):
+            label = "Đơn hàng" if is_vi else "Orders"
+            parts.append(f"- {label}: {sales['order_count_30d']}")
+        top = sales.get("top_products", [])
+        if top:
+            header2 = "\n**Top sản phẩm bán chạy:**" if is_vi else "\n**Top products:**"
+            parts.append(header2)
+            for i, p in enumerate(top[:5], 1):
+                parts.append(f"{i}. {p['name']} – {p.get('qty_sold', 0)} sp")
+
+    if fact:
+        label = "\n**Dữ liệu kho DW:**" if is_vi else "\n**DW data:**"
+        parts.append(label)
+        for r in fact[:3]:
+            parts.append(f"- {r.get('channel_name', '')} | {r.get('revenue', 0):,.0f} VNĐ")
+
+    if not parts:
+        return ("Chưa có dữ liệu kinh doanh. Vui lòng chạy ETL pipeline." if is_vi
+                else "No business data available. Please run the ETL pipeline.")
+    parts.append("\n⚠️ Dữ liệu nội bộ – có thể tham khảo để quyết định chiến lược." if is_vi
+                 else "\n⚠️ Internal data – use for strategic decisions.")
+    return "\n".join(parts)
+
+
+def _rule_market(context: dict, is_vi: bool) -> str:
+    parts = []
+    google  = context.get("google_results", [])
+    dw      = context.get("dw_results", [])
+
+    data = dw if dw else google
+    if data:
+        header = "**Xu hướng thị trường từ Google Search:**" if is_vi else "**Market trends from Google:**"
+        parts.append(header)
+        for r in data[:5]:
+            title   = r.get("title", "")
+            snippet = r.get("snippet") or r.get("content", "")
+            if title:
+                line = f"- {title}"
+                if snippet:
+                    line += f": {snippet[:120]}..."
+                parts.append(line)
+
+    if not parts:
+        return ("Chưa có dữ liệu xu hướng. Vui lòng chạy Google Scraper." if is_vi
+                else "No trend data. Please run the Google Scraper.")
+    parts.append("\n⚠️ Dữ liệu thị trường – mang tính tham khảo." if is_vi
+                 else "\n⚠️ Market data – for reference only.")
+    return "\n".join(parts)
+
+
+def _rule_feedback(context: dict, is_vi: bool) -> str:
+    parts = []
+    fb = context.get("facebook_results", [])
+
+    if fb:
+        pos = sum(1 for r in fb if "positive" in str(r.get("sentiment", "")))
+        neg = sum(1 for r in fb if "negative" in str(r.get("sentiment", "")))
+        total = len(fb)
+
+        header = f"**Phân tích {total} bài đăng Facebook:**" if is_vi else f"**Analyzed {total} Facebook posts:**"
+        parts.append(header)
+        if is_vi:
+            parts.append(f"- Tích cực: {pos}/{total} bài ({pos/total*100:.0f}%)")
+            parts.append(f"- Tiêu cực: {neg}/{total} bài ({neg/total*100:.0f}%)")
+        else:
+            parts.append(f"- Positive: {pos}/{total} ({pos/total*100:.0f}%)")
+            parts.append(f"- Negative: {neg}/{total} ({neg/total*100:.0f}%)")
+
+        # Trích dẫn bài đăng tiêu biểu
+        header2 = "\n**Bài đăng tiêu biểu:**" if is_vi else "\n**Sample posts:**"
+        parts.append(header2)
+        for r in fb[:3]:
+            content = r.get("post_content", "")[:120]
+            page    = r.get("page_name", "")
+            if content:
+                parts.append(f"- [{page}] {content}...")
+
+    if not parts:
+        return ("Chưa có dữ liệu phản hồi Facebook. Vui lòng cấu hình FACEBOOK_PAGE_TOKEN." if is_vi
+                else "No Facebook data. Please configure FACEBOOK_PAGE_TOKEN.")
+    parts.append("\n⚠️ Sentiment dựa trên từ khóa đơn giản – tham khảo thêm." if is_vi
+                 else "\n⚠️ Sentiment based on keyword matching – verify further.")
+    return "\n".join(parts)

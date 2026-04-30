@@ -82,7 +82,9 @@ public class AiController : ControllerBase
 
         var result = await _ai.PostRecommendationAsync(
             question: request.Question,
-            language: request.Language ?? "vi"
+            language: request.Language ?? "vi",
+            context:  request.Context,
+            sources:  request.Sources
         );
 
         if (result is null)
@@ -103,4 +105,10 @@ public class AskRecommendationRequest
 
     /// <summary>Ngôn ngữ trả về: "vi" (mặc định) hoặc "en"</summary>
     public string? Language { get; set; } = "vi";
+
+    /// <summary>Loại context: "business_data" | "market_trends" | "customer_feedback"</summary>
+    public string? Context { get; set; }
+
+    /// <summary>Danh sách nguồn: ["fact_sales","oltp"] | ["google","external"] | ["facebook"]</summary>
+    public string[]? Sources { get; set; }
 }

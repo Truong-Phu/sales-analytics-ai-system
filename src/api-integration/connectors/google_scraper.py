@@ -1,21 +1,24 @@
 # -*- coding: utf-8 -*-
 """
-GoogleScraper – Scrape kết quả tìm kiếm để thu thập xu hướng thị trường.
+GoogleScraper – Thu thập xu hướng thị trường bằng Google Search trực tiếp.
 
 DISCLAIMER:
     Chỉ dùng cho mục đích nghiên cứu khóa luận tốt nghiệp.
     Dữ liệu thu thập ở mức thông tin công khai (kết quả tìm kiếm).
 
-Engine sử dụng:
-    DuckDuckGo Lite (lite.duckduckgo.com) – trả về HTML thuần túy,
-    không cần JavaScript rendering, phù hợp với requests + BeautifulSoup.
-    Google Search hiện render kết quả hoàn toàn qua JavaScript (cần Selenium/
-    Playwright), không dùng được với requests thuần.
+CHIẾN LƯỢC 2 BƯỚC:
+    Bước 1: Gửi search query đến https://www.google.com/search?q=KEYWORD&num=20
+            với User-Agent hợp lệ, lấy danh sách URL kết quả.
+    Bước 2: Truy cập từng URL, crawl nội dung thực tế (title, giá, mô tả...).
 
-Kỹ thuật tránh bị chặn:
-    - Random User-Agent mỗi request
-    - Random delay giữa các request
-    - Dùng DuckDuckGo Lite endpoint
+XỬ LÝ BỊ CHẶN:
+    Nếu Google trả về 429 hoặc CAPTCHA:
+    - Log rõ lý do vào ETL log
+    - KHÔNG tạo mock data
+    - Trả về empty DataFrame / raise exception để caller biết
+
+OFFLINE MODE (SCRAPER_MODE=offline):
+    Bỏ qua scrape, đọc CSV mẫu từ notebooks/sample_data/sample_google_data.csv
 """
 
 import csv
@@ -23,11 +26,15 @@ import hashlib
 import logging
 import os
 import random
+import re
 import time
 import unicodedata
+import urllib.parse
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Optional
 
+import pandas as pd
 import psycopg2
 import psycopg2.extras
 import requests
@@ -38,404 +45,541 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-# ── OFFLINE MODE ──────────────────────────────────────────────────────────────
-# SCRAPER_MODE=offline → bỏ qua scrape, dùng CSV mẫu (phù hợp khi mạng bị block)
-# SCRAPER_MODE=online  → scrape thật (mặc định)
+# ── MODE ──────────────────────────────────────────────────────────────────────
 _SCRAPER_MODE = os.getenv("SCRAPER_MODE", "online").lower()
 
-# Đường dẫn CSV mẫu (tương đối so với repo root)
-_SAMPLE_CSV = Path(__file__).resolve().parents[3] / "notebooks" / "sample_data" / "sample_google_data.csv"
+# Đường dẫn sample CSV (fallback offline)
+_REPO_ROOT   = Path(__file__).resolve().parents[3]
+_SAMPLE_CSV  = _REPO_ROOT / "notebooks" / "sample_data" / "sample_google_data.csv"
+_OUTPUT_DIR  = _REPO_ROOT / "notebooks" / "sample_data"
 
-# ── Danh sách User-Agent để xoay vòng ──────────────────────────────────────
+# UTC+7 (Vietnam)
+_TZ_VN = timezone(timedelta(hours=7))
+
+# ── User-Agents xoay vòng ──────────────────────────────────────────────────
 _USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 "
     "(KHTML, like Gecko) Version/17.4 Safari/605.1.15",
     "Mozilla/5.0 (X11; Linux x86_64; rv:125.0) Gecko/20100101 Firefox/125.0",
-    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 "
-    "(KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1",
-    "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/124.0.6367.82 Mobile Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:126.0) "
+    "Gecko/20100101 Firefox/126.0",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 14.5) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
 ]
 
-# Từ khóa mặc định – từ khóa ngắn (DuckDuckGo ít chặn hơn với query ngắn)
+# ── Keywords xoay theo ngày (5 keywords, mỗi keyword 10-20 URL) ──────────
 DEFAULT_KEYWORDS = [
-    "bán hàng online 2024",
-    "sản phẩm bán chạy shopee",
-    "thương mại điện tử việt nam",
-    "xu hướng mua sắm online",
-    "top sản phẩm tiktok shop",
-    "doanh thu bán lẻ",
-    "khuyến mãi lazada shopee",
+    "xu hướng sản phẩm bán chạy online Việt Nam 2025",
+    "trending products Vietnam ecommerce 2025",
+    "sản phẩm hot Shopee Lazada TikTok 2025",
+    "thị trường bán lẻ online Việt Nam xu hướng",
+    "top sản phẩm bán chạy thương mại điện tử Việt Nam",
 ]
 
-# Số lần retry tối đa khi nhận HTTP 202 (bot detection)
-_MAX_RETRIES = 2
-# Delay khi bị 202: ngẫu nhiên trong khoảng này (giây)
-_RETRY_DELAY = (3, 5)
-# Timeout cho mỗi HTTP request (giây) — giảm để không block quá lâu
-_REQUEST_TIMEOUT = 8
+_REQUEST_TIMEOUT    = 10
+_CRAWL_TIMEOUT      = 8
+_MAX_URLS_PER_KW    = 20  # số URL lấy mỗi keyword (theo yêu cầu num=20)
+_MAX_CRAWL_PER_RUN  = 80  # giới hạn crawl để tránh chạy quá lâu
+
+
+class GoogleBlockedError(Exception):
+    """Raised khi Google trả về 429 / CAPTCHA — caller cần biết để log ETL."""
+    pass
 
 
 class GoogleScraper:
     """
-    Scrape kết quả Google Search và lưu vào bảng raw_google_data.
+    Thu thập xu hướng thị trường từ Google Search.
 
     Luồng:
-        1. Với mỗi keyword → gọi scrape_keyword()
-        2. Tính content_hash = md5(title + snippet)
-        3. Lưu vào DB, bỏ qua nếu trùng hash (dedup)
+        1. search_google(keyword) → danh sách URL từ trang SERP
+        2. crawl_url(url)         → extract nội dung thực tế từng trang
+        3. save_to_db(records)    → INSERT vào raw_google_data (dedup by hash)
+        4. export_csv(records)    → lưu CSV notebooks/sample_data/
     """
 
     def __init__(
         self,
         keywords: Optional[list] = None,
         delay_range: tuple = (2, 5),
+        crawl_delay_range: tuple = (1, 3),
     ):
-        """
-        Khởi tạo scraper.
+        self.delay_range       = delay_range
+        self.crawl_delay_range = crawl_delay_range
+        self.db_url            = os.getenv("DATABASE_URL", "")
+        self._session          = requests.Session()
 
-        Args:
-            keywords:    Danh sách từ khóa cần scrape. Mặc định dùng DEFAULT_KEYWORDS.
-            delay_range: (min, max) giây delay ngẫu nhiên giữa các request.
-        """
-        self.keywords    = keywords if keywords is not None else DEFAULT_KEYWORDS
-        self.delay_range = delay_range
-        self.db_url      = os.getenv("DATABASE_URL", "")
-        self._session    = requests.Session()
-        self._ddg_ready  = False  # Cờ đánh dấu đã khởi tạo session DuckDuckGo chưa
+        # Ưu tiên keywords truyền vào; nếu không thì đọc từ DB → fallback DEFAULT
+        if keywords is not None:
+            self.keywords = keywords
+        else:
+            self.keywords = self.load_keywords_from_db()
+
         logger.info(
-            "GoogleScraper khởi tạo: %d từ khóa, delay=%s giây",
-            len(self.keywords),
-            delay_range,
+            "GoogleScraper khởi tạo: %d từ khóa, delay=%s",
+            len(self.keywords), delay_range,
         )
 
-    def _init_ddg_session(self) -> None:
+    # ── DB Keyword Management ─────────────────────────────────────────────────
+
+    def load_keywords_from_db(self, limit: int = 5) -> list[str]:
         """
-        Khởi tạo session với DuckDuckGo Lite bằng cách GET trang chủ.
-        Cần thiết để lấy cookies trước khi POST query.
-        Chỉ chạy 1 lần (lazy init).
+        Đọc keywords từ bảng scraper_keywords.
+        Ưu tiên keyword ít dùng nhất (ORDER BY last_used_at ASC NULLS FIRST).
+        Fallback về DEFAULT_KEYWORDS nếu DB chưa sẵn sàng hoặc bảng trống.
         """
-        if self._ddg_ready:
+        if not self.db_url:
+            logger.warning("DATABASE_URL chưa cấu hình — dùng DEFAULT_KEYWORDS")
+            return DEFAULT_KEYWORDS
+        try:
+            conn = psycopg2.connect(self.db_url)
+            cur  = conn.cursor()
+            cur.execute(
+                """
+                SELECT keyword FROM scraper_keywords
+                WHERE is_active = TRUE AND source_type = 'google'
+                ORDER BY last_used_at ASC NULLS FIRST
+                LIMIT %s
+                """,
+                (limit,),
+            )
+            rows = cur.fetchall()
+            cur.close()
+            conn.close()
+            if rows:
+                kws = [r[0] for r in rows]
+                logger.info("Đọc %d keywords từ DB scraper_keywords", len(kws))
+                return kws
+            logger.warning("scraper_keywords trống hoặc không có keyword active — dùng DEFAULT_KEYWORDS")
+            return DEFAULT_KEYWORDS
+        except Exception as e:
+            logger.error("Lỗi đọc keywords từ DB: %s — dùng DEFAULT_KEYWORDS", e)
+            return DEFAULT_KEYWORDS
+
+    def update_keyword_usage(self, keyword: str) -> None:
+        """Cập nhật last_used_at + use_count sau mỗi lần dùng keyword."""
+        if not self.db_url:
             return
         try:
-            headers = {
-                "User-Agent":      self._random_ua(),
-                "Accept-Language": "vi-VN,vi;q=0.9,en;q=0.8",
-            }
-            self._session.get(
-                "https://lite.duckduckgo.com/",
-                headers=headers,
-                timeout=_REQUEST_TIMEOUT,
+            conn = psycopg2.connect(self.db_url)
+            cur  = conn.cursor()
+            cur.execute(
+                """
+                UPDATE scraper_keywords
+                SET last_used_at = NOW(),
+                    use_count    = use_count + 1
+                WHERE keyword = %s AND source_type = 'google'
+                """,
+                (keyword,),
             )
-            self._ddg_ready = True
-            logger.debug("DuckDuckGo Lite session khởi tạo thành công")
+            conn.commit()
+            cur.close()
+            conn.close()
         except Exception as e:
-            logger.warning("Không thể khởi tạo DuckDuckGo session: %s", e)
+            logger.debug("Không cập nhật được keyword usage: %s", e)
 
-    # ── Helpers ─────────────────────────────────────────────────────────────
+    # ── Helpers ───────────────────────────────────────────────────────────────
 
     def _random_ua(self) -> str:
-        """Chọn User-Agent ngẫu nhiên để tránh fingerprinting."""
         return random.choice(_USER_AGENTS)
 
-    def _sleep(self) -> None:
-        """Dừng ngẫu nhiên trong delay_range giây để không bị rate-limit."""
-        secs = random.uniform(*self.delay_range)
-        logger.debug("Đang chờ %.1f giây...", secs)
+    def _sleep(self, range_: tuple = None) -> None:
+        r = range_ or self.delay_range
+        secs = random.uniform(*r)
+        logger.debug("Chờ %.1f giây...", secs)
         time.sleep(secs)
 
     @staticmethod
-    def _to_ascii(text: str) -> str:
-        """
-        Chuyển tiếng Việt có dấu sang ASCII không dấu.
-        Ví dụ: 'bán hàng online' → 'ban hang online'
-        Dùng để fallback khi search engine chặn query có dấu.
-        """
-        # unicodedata.normalize NFKD tách base char + combining marks
-        nfkd = unicodedata.normalize("NFKD", text)
-        # Loại combining characters (dấu phụ)
-        return "".join(c for c in nfkd if not unicodedata.combining(c))
+    def _now_vn() -> str:
+        """Timestamp hiện tại theo UTC+7, format ISO."""
+        return datetime.now(_TZ_VN).isoformat()
 
     @staticmethod
     def _content_hash(title: str, snippet: str) -> str:
-        """Tính MD5 từ title + snippet để phát hiện bản ghi trùng lặp."""
         raw = (title or "") + (snippet or "")
         return hashlib.md5(raw.encode("utf-8")).hexdigest()
 
-    # ── Core scraping ────────────────────────────────────────────────────────
+    @staticmethod
+    def _extract_domain(url: str) -> str:
+        try:
+            return urllib.parse.urlparse(url).netloc
+        except Exception:
+            return ""
 
-    def _parse_ddg_html(self, html: str) -> list[dict]:
+    @staticmethod
+    def _normalize_price(text: str) -> Optional[int]:
         """
-        Parse HTML từ DuckDuckGo Lite thành list kết quả.
+        Chuẩn hóa chuỗi giá về số nguyên VND.
+        Ví dụ: "150.000đ" → 150000, "1,200,000 VND" → 1200000
+        """
+        if not text:
+            return None
+        # Loại bỏ mọi thứ trừ chữ số và dấu phân cách
+        digits = re.sub(r"[^\d]", "", text)
+        if digits:
+            try:
+                return int(digits)
+            except ValueError:
+                return None
+        return None
+
+    @staticmethod
+    def _is_blocked_response(resp: requests.Response) -> bool:
+        """Kiểm tra Google có trả về trang CAPTCHA / bot detection không."""
+        if resp.status_code in (429, 503):
+            return True
+        # Google redirect sang /sorry/ khi phát hiện bot
+        if "/sorry/" in resp.url:
+            return True
+        body_lower = resp.text.lower()
+        if "unusual traffic" in body_lower or "captcha" in body_lower:
+            return True
+        return False
+
+    # ── BƯỚC 1: Lấy URL từ Google SERP ───────────────────────────────────────
+
+    def search_google(self, keyword: str, num: int = _MAX_URLS_PER_KW) -> list[str]:
+        """
+        Gửi query đến Google Search, parse HTML lấy danh sách URL kết quả.
+
+        Args:
+            keyword: Từ khóa tìm kiếm.
+            num:     Số kết quả yêu cầu (max 20 mỗi request).
 
         Returns:
-            List[dict]: [{title, snippet, url, position}]
+            List[str]: Danh sách URL kết quả (bỏ URL nội bộ Google).
+
+        Raises:
+            GoogleBlockedError: Khi Google trả về 429 hoặc CAPTCHA.
         """
-        soup     = BeautifulSoup(html, "html.parser")
-        links    = soup.select("a.result-link")
-        snippets = soup.select("td.result-snippet")
-        results  = []
-        position = 0
-
-        for i, link_el in enumerate(links[:10]):
-            title   = link_el.get_text(strip=True)
-            url     = link_el.get("href", "")
-            snippet = snippets[i].get_text(strip=True) if i < len(snippets) else ""
-
-            if not title:
-                continue
-
-            position += 1
-            results.append({
-                "title":    title,
-                "snippet":  snippet,
-                "url":      url,
-                "position": position,
-            })
-
-        return results
-
-    def scrape_keyword(self, keyword: str) -> list[dict]:
-        """
-        Scrape kết quả tìm kiếm cho 1 từ khóa qua DuckDuckGo Lite.
-
-        Retry tối đa _MAX_RETRIES lần nếu nhận HTTP 202 (bot detection).
-        Nếu DuckDuckGo thất bại sau retry → fallback sang Bing.
-
-        Returns:
-            List[dict]: Mỗi phần tử gồm {title, snippet, url, position}
-        """
-        # Khởi tạo session DuckDuckGo nếu chưa làm
-        self._init_ddg_session()
-
+        params = {
+            "q":    keyword,
+            "num":  num,
+            "hl":   "vi",
+            "gl":   "vn",
+            "safe": "off",
+        }
         headers = {
             "User-Agent":      self._random_ua(),
             "Accept-Language": "vi-VN,vi;q=0.9,en;q=0.8",
-            "Accept":          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Referer":         "https://lite.duckduckgo.com/",
-            "Origin":          "https://lite.duckduckgo.com",
-            "Content-Type":    "application/x-www-form-urlencoded",
+            "Accept":          "text/html,application/xhtml+xml,*/*;q=0.8",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Referer":         "https://www.google.com/",
+            "DNT":             "1",
         }
-        data = {"q": keyword, "kl": "vn-vi"}
 
-        # Retry loop cho HTTP 202
-        for attempt in range(1, _MAX_RETRIES + 1):
-            try:
-                resp = self._session.post(
-                    "https://lite.duckduckgo.com/lite/",
-                    headers=headers,
-                    data=data,
-                    timeout=_REQUEST_TIMEOUT,
-                )
+        try:
+            resp = self._session.get(
+                "https://www.google.com/search",
+                params=params,
+                headers=headers,
+                timeout=_REQUEST_TIMEOUT,
+                allow_redirects=True,
+            )
+        except requests.Timeout:
+            logger.error("Timeout khi search Google keyword: %s", keyword)
+            return []
+        except requests.ConnectionError as e:
+            logger.error("Lỗi kết nối Google: %s", e)
+            return []
 
-                if resp.status_code == 202:
-                    # Bot detection – reinit session và thử lại
-                    wait = random.uniform(*_RETRY_DELAY)
-                    logger.warning(
-                        "DuckDuckGo HTTP 202 (attempt %d/%d) cho '%s' → chờ %.1f giây",
-                        attempt, _MAX_RETRIES, keyword, wait,
-                    )
-                    self._ddg_ready = False
-                    time.sleep(wait)
-                    self._init_ddg_session()
-                    # Xoay User-Agent cho lần sau
-                    headers["User-Agent"] = self._random_ua()
-                    continue
+        if self._is_blocked_response(resp):
+            msg = (
+                f"Google Search bị chặn (HTTP {resp.status_code}) "
+                f"cho keyword '{keyword}' — cần thử lại sau"
+            )
+            logger.warning(msg)
+            raise GoogleBlockedError(msg)
 
-                if resp.status_code == 429:
-                    logger.warning("DuckDuckGo rate-limit (429) cho keyword: %s", keyword)
-                    break
+        if resp.status_code != 200:
+            logger.warning("Google HTTP %d cho '%s'", resp.status_code, keyword)
+            return []
 
-                if resp.status_code != 200:
-                    logger.warning("HTTP %d khi scrape '%s'", resp.status_code, keyword)
-                    break
+        urls = self._parse_google_serp(resp.text)
+        logger.info("Google SERP '%s': %d URL", keyword, len(urls))
+        return urls
 
-                results = self._parse_ddg_html(resp.text)
-                logger.info("DuckDuckGo '%s': %d kết quả (attempt %d)", keyword, len(results), attempt)
-
-                if not results:
-                    # Không parse được → thử lại
-                    if attempt < _MAX_RETRIES:
-                        time.sleep(random.uniform(2, 4))
-                        continue
-                    break
-
-                return results
-
-            except requests.Timeout:
-                logger.error("Timeout khi scrape keyword: %s (attempt %d)", keyword, attempt)
-                if attempt < _MAX_RETRIES:
-                    time.sleep(random.uniform(2, 3))
-            except requests.ConnectionError as e:
-                logger.error("Lỗi kết nối '%s': %s", keyword, e)
-                break
-            except Exception as e:
-                logger.error("Lỗi không xác định '%s': %s", keyword, e, exc_info=True)
-                break
-
-        # DuckDuckGo thất bại với từ khóa gốc
-        # Thử lại với ASCII không dấu (DuckDuckGo đôi khi chặn query tiếng Việt)
-        ascii_kw = self._to_ascii(keyword)
-        if ascii_kw != keyword:
-            logger.info("Thử DuckDuckGo với ASCII: '%s'", ascii_kw)
-            # Reset session
-            self._ddg_ready = False
-            time.sleep(random.uniform(2, 3))
-            self._init_ddg_session()
-
-            data_ascii = {"q": ascii_kw, "kl": "vn-vi"}
-            headers["User-Agent"] = self._random_ua()
-            try:
-                resp = self._session.post(
-                    "https://lite.duckduckgo.com/lite/",
-                    headers=headers,
-                    data=data_ascii,
-                    timeout=_REQUEST_TIMEOUT,
-                )
-                if resp.status_code == 200:
-                    results = self._parse_ddg_html(resp.text)
-                    if results:
-                        logger.info("DuckDuckGo ASCII '%s': %d kết quả", ascii_kw, len(results))
-                        return results
-            except Exception as e:
-                logger.debug("DDG ASCII fallback lỗi: %s", e)
-
-        # Cuối cùng → fallback Bing
-        logger.warning("DuckDuckGo thất bại cho '%s' → thử Bing fallback", keyword)
-        return self.scrape_bing(keyword)
-
-    def scrape_bing(self, keyword: str) -> list[dict]:
+    def _parse_google_serp(self, html: str) -> list[str]:
         """
-        Fallback scrape kết quả Bing khi DuckDuckGo không trả về dữ liệu.
+        Parse HTML trang Google SERP, trích xuất URL kết quả.
 
-        URL: https://www.bing.com/search?q={keyword}&setlang=vi&cc=VN
+        Google render URL dạng /url?q=ACTUAL_URL&... hoặc href trực tiếp
+        trong thẻ <a> bên trong <div class="g">.
+        """
+        soup = BeautifulSoup(html, "html.parser")
+        urls = []
+        seen = set()
+
+        # Selector chính: thẻ <a> trong các result block
+        for a_tag in soup.select("div.g a, div[data-hveid] a"):
+            href = a_tag.get("href", "")
+            if not href:
+                continue
+
+            # Giải mã /url?q=... format
+            if href.startswith("/url?"):
+                parsed = urllib.parse.parse_qs(urllib.parse.urlparse(href).query)
+                actual = parsed.get("q", [""])[0]
+                if actual and actual.startswith("http"):
+                    href = actual
+
+            # Bỏ URL nội bộ Google, javascript, empty
+            if not href.startswith("http"):
+                continue
+            if "google.com" in href or "googleusercontent" in href:
+                continue
+            if href in seen:
+                continue
+
+            seen.add(href)
+            urls.append(href)
+
+            if len(urls) >= _MAX_URLS_PER_KW:
+                break
+
+        return urls
+
+    # ── BƯỚC 2: Crawl từng URL ────────────────────────────────────────────────
+
+    def crawl_url(self, url: str) -> Optional[dict]:
+        """
+        Truy cập URL và extract thông tin: title, product_name, category,
+        price, sales_count, trend_description, source_domain, crawled_at.
 
         Returns:
-            List[dict]: [{title, snippet, url, position}]
-            Trả về [] nếu lỗi.
+            dict hoặc None nếu crawl thất bại.
         """
-        results = []
+        headers = {
+            "User-Agent":      self._random_ua(),
+            "Accept-Language": "vi-VN,vi;q=0.9,en;q=0.8",
+            "Accept":          "text/html,application/xhtml+xml,*/*;q=0.8",
+        }
         try:
-            import urllib.parse
-            # Thử với từ khóa ASCII nếu gốc là tiếng Việt có dấu
-            ascii_kw = self._to_ascii(keyword)
-            query    = ascii_kw if ascii_kw != keyword else keyword
-
-            url = "https://www.bing.com/search?" + urllib.parse.urlencode({
-                "q":      query,
-                "mkt":    "vi-VN",
-                "setlang":"vi",
-                "cc":     "VN",
-                "count":  "10",
-                "first":  "1",
-            })
-            headers = {
-                "User-Agent":      self._random_ua(),
-                "Accept-Language": "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7",
-                "Accept":          "text/html,application/xhtml+xml,*/*;q=0.8",
-                "Accept-Encoding": "gzip, deflate, br",
-            }
-            resp = requests.get(url, headers=headers, timeout=_REQUEST_TIMEOUT)
-
-            if resp.status_code != 200:
-                logger.warning("Bing HTTP %d cho keyword: %s", resp.status_code, keyword)
-                return []
-
-            soup      = BeautifulSoup(resp.text, "html.parser")
-            # Bing: mỗi kết quả là <li class="b_algo">
-            #   <h2><a href="...">title</a></h2>
-            #   <div class="b_caption"><p>snippet</p></div>
-            algo_items = soup.select("li.b_algo")
-            position   = 0
-
-            for item in algo_items[:10]:
-                a_tag   = item.select_one("h2 a")
-                snippet_el = item.select_one(".b_caption p")
-
-                if not a_tag:
-                    continue
-
-                title   = a_tag.get_text(strip=True)
-                href    = a_tag.get("href", "")
-                snippet = snippet_el.get_text(strip=True) if snippet_el else ""
-
-                if not title:
-                    continue
-
-                position += 1
-                results.append({
-                    "title":    title,
-                    "snippet":  snippet,
-                    "url":      href,
-                    "position": position,
-                })
-
-            logger.info("Bing '%s': %d kết quả", keyword, len(results))
-
-        except requests.Timeout:
-            logger.error("Timeout khi scrape Bing: %s", keyword)
+            resp = requests.get(
+                url,
+                headers=headers,
+                timeout=_CRAWL_TIMEOUT,
+                allow_redirects=True,
+            )
+        except (requests.Timeout, requests.ConnectionError, requests.TooManyRedirects) as e:
+            logger.debug("Crawl thất bại '%s': %s", url[:80], e)
+            return None
         except Exception as e:
-            logger.error("Lỗi Bing scrape '%s': %s", keyword, e)
+            logger.debug("Lỗi crawl '%s': %s", url[:80], e)
+            return None
 
-        return results
+        if resp.status_code != 200:
+            return None
+
+        # Chỉ xử lý HTML
+        content_type = resp.headers.get("Content-Type", "")
+        if "text/html" not in content_type:
+            return None
+
+        return self._extract_page_content(url, resp.text)
+
+    def _extract_page_content(self, url: str, html: str) -> dict:
+        """
+        Extract các trường cần thiết từ HTML của trang.
+        Dùng heuristic để tìm tên sản phẩm, giá, mô tả xu hướng.
+        """
+        soup = BeautifulSoup(html, "html.parser")
+
+        # --- title ---
+        title_tag = soup.find("title")
+        title = title_tag.get_text(strip=True) if title_tag else ""
+
+        # --- meta description (dùng làm trend_description / snippet) ---
+        meta_desc = ""
+        og_desc = soup.find("meta", property="og:description")
+        meta_desc_tag = soup.find("meta", attrs={"name": "description"})
+        if og_desc and og_desc.get("content"):
+            meta_desc = og_desc["content"].strip()
+        elif meta_desc_tag and meta_desc_tag.get("content"):
+            meta_desc = meta_desc_tag["content"].strip()
+
+        # --- product_name: OG title, h1, hoặc lấy từ title ---
+        product_name = ""
+        og_title = soup.find("meta", property="og:title")
+        if og_title and og_title.get("content"):
+            product_name = og_title["content"].strip()
+        if not product_name:
+            h1 = soup.find("h1")
+            if h1:
+                product_name = h1.get_text(strip=True)
+        if not product_name:
+            product_name = title.split("|")[0].split("-")[0].strip()
+
+        # --- category: breadcrumb, og:type, hoặc schema.org ---
+        category = ""
+        breadcrumb = soup.select("nav ol li, .breadcrumb li, [class*=breadcrumb] li")
+        if breadcrumb:
+            crumbs = [el.get_text(strip=True) for el in breadcrumb]
+            # Bỏ phần tử đầu (Home/Trang chủ) và cuối (tên sản phẩm)
+            if len(crumbs) > 2:
+                category = " > ".join(crumbs[1:-1])
+            elif len(crumbs) == 2:
+                category = crumbs[0]
+
+        # --- price: tìm phần tử chứa "đ", "VNĐ", "VND" gần thẻ giá ---
+        price = None
+        price_patterns = [
+            r"\d[\d.,]*\s*(?:đ|vnđ|vnd|₫)",
+            r"(?:giá|price)[:\s]*[\d.,]+",
+        ]
+        price_text = ""
+        for pattern in price_patterns:
+            m = re.search(pattern, html, re.IGNORECASE)
+            if m:
+                price_text = m.group(0)
+                price = self._normalize_price(price_text)
+                if price and price > 100:  # lọc số quá nhỏ
+                    break
+                else:
+                    price = None
+
+        # --- sales_count: tìm "đã bán", "sold", số lượng đánh giá ---
+        sales_count = None
+        sold_m = re.search(
+            r"(?:đã bán|sold)[:\s]*([\d.,]+)",
+            html,
+            re.IGNORECASE,
+        )
+        if sold_m:
+            sales_count = self._normalize_price(sold_m.group(1))
+
+        # --- trend_description: meta description hoặc đoạn text đầu tiên ---
+        trend_description = meta_desc
+        if not trend_description:
+            first_p = soup.find("p")
+            if first_p:
+                trend_description = first_p.get_text(strip=True)[:300]
+
+        return {
+            "title":             title[:500],
+            "snippet":           meta_desc[:500],
+            "product_name":      product_name[:300],
+            "category":          category[:200],
+            "price":             price,
+            "sales_count":       sales_count,
+            "trend_description": trend_description[:500],
+            "source_domain":     self._extract_domain(url),
+            "url":               url,
+            "crawled_at":        self._now_vn(),
+        }
+
+    # ── Luồng chính ───────────────────────────────────────────────────────────
 
     def scrape_all(self) -> list[dict]:
         """
-        Lặp qua tất cả keywords, gọi scrape_keyword cho từng keyword.
+        Bước 1: Lấy URL từ Google (mỗi keyword → 10-20 URL).
+        Bước 2: Crawl từng URL thu được.
 
-        Sau mỗi keyword có random delay để tránh bị Google chặn.
-        Tính content_hash cho mỗi kết quả trước khi trả về.
+        Tổng mục tiêu: 50-100 URL từ 5 keywords.
+        Giới hạn _MAX_CRAWL_PER_RUN để tránh chạy quá lâu.
 
         Returns:
-            List[dict]: Tổng hợp kết quả từ tất cả keywords,
-                        mỗi phần tử có thêm trường 'keyword' và 'content_hash'.
+            List[dict]: Danh sách bản ghi đã crawl.
+
+        Raises:
+            GoogleBlockedError: Nếu TẤT CẢ keywords đều bị chặn.
         """
-        all_results = []
+        all_urls   = []  # (url, keyword)
+        blocked_kw = 0
 
         for i, keyword in enumerate(self.keywords):
-            logger.info(
-                "[%d/%d] Đang scrape keyword: %s",
-                i + 1, len(self.keywords), keyword,
-            )
-            results = self.scrape_keyword(keyword)
+            logger.info("[%d/%d] Tìm kiếm Google: '%s'", i + 1, len(self.keywords), keyword)
+            try:
+                urls = self.search_google(keyword)
+                for u in urls:
+                    all_urls.append((u, keyword))
+                logger.info("  → %d URL", len(urls))
+                self.update_keyword_usage(keyword)
+            except GoogleBlockedError as e:
+                blocked_kw += 1
+                logger.warning("Keyword '%s' bị chặn: %s", keyword, e)
+                self._log_etl_blocked(keyword, str(e))
 
-            # Gắn keyword và tính content_hash cho từng kết quả
-            for r in results:
-                r["keyword"]      = keyword
-                r["content_hash"] = self._content_hash(r["title"], r["snippet"])
-                all_results.append(r)
-
-            # Delay giữa các keyword (trừ lần cuối)
             if i < len(self.keywords) - 1:
                 self._sleep()
 
+        if blocked_kw == len(self.keywords):
+            raise GoogleBlockedError(
+                "Tất cả keywords đều bị Google chặn — cần thử lại sau"
+            )
+
+        # Bỏ URL trùng, giữ mapping keyword
+        seen_urls = {}
+        for url, kw in all_urls:
+            if url not in seen_urls:
+                seen_urls[url] = kw
+
+        logger.info("Tổng %d URL duy nhất từ %d keywords", len(seen_urls), len(self.keywords))
+
+        # Giới hạn số URL crawl
+        urls_to_crawl = list(seen_urls.items())[:_MAX_CRAWL_PER_RUN]
+        records = []
+
+        for j, (url, keyword) in enumerate(urls_to_crawl):
+            logger.debug("[%d/%d] Crawl: %s", j + 1, len(urls_to_crawl), url[:80])
+            data = self.crawl_url(url)
+            if data:
+                data["keyword"]      = keyword
+                data["position"]     = j + 1
+                data["content_hash"] = self._content_hash(
+                    data.get("title", ""), data.get("snippet", "")
+                )
+                records.append(data)
+
+            # Delay nhỏ giữa các crawl
+            if j < len(urls_to_crawl) - 1:
+                self._sleep(self.crawl_delay_range)
+
         logger.info(
-            "scrape_all hoàn thành: %d kết quả từ %d keywords",
-            len(all_results), len(self.keywords),
+            "scrape_all hoàn thành: %d URL crawl → %d bản ghi",
+            len(urls_to_crawl), len(records),
         )
-        return all_results
+        return records
 
-    # ── Database ─────────────────────────────────────────────────────────────
+    # ── Export CSV ────────────────────────────────────────────────────────────
 
-    def save_to_db(self, results: list[dict]) -> tuple[int, int]:
+    def export_csv(self, records: list[dict]) -> Optional[Path]:
         """
-        Lưu kết quả vào bảng raw_google_data.
-
-        Bỏ qua bản ghi nếu content_hash đã tồn tại (dedup đơn giản).
-        Dùng psycopg2, đọc DATABASE_URL từ .env.
+        Xuất DataFrame ra CSV: notebooks/sample_data/google_trends_YYYYMMDD.csv
 
         Returns:
-            (inserted, skipped): Số bản ghi đã lưu và số bản ghi bỏ qua do trùng.
+            Path của file CSV vừa lưu, hoặc None nếu không có dữ liệu.
         """
-        if not results:
-            logger.info("Không có kết quả để lưu.")
+        if not records:
+            return None
+
+        _OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+        date_str   = datetime.now(_TZ_VN).strftime("%Y%m%d")
+        output_csv = _OUTPUT_DIR / f"google_trends_{date_str}.csv"
+
+        df = pd.DataFrame(records)
+        df.to_csv(output_csv, index=False, encoding="utf-8-sig")
+        logger.info("Đã xuất CSV: %s (%d dòng)", output_csv, len(df))
+        return output_csv
+
+    # ── Database ──────────────────────────────────────────────────────────────
+
+    def save_to_db(self, records: list[dict]) -> tuple[int, int]:
+        """
+        INSERT các bản ghi vào raw_google_data, bỏ qua bản ghi trùng hash.
+
+        Returns:
+            (inserted, skipped)
+        """
+        if not records:
+            logger.info("Không có bản ghi để lưu DB.")
             return 0, 0
 
         if not self.db_url:
-            logger.error("DATABASE_URL chưa được cấu hình trong .env – không thể lưu DB.")
-            return 0, len(results)
+            logger.error("DATABASE_URL chưa cấu hình trong .env — không thể lưu DB.")
+            return 0, len(records)
 
         inserted = 0
         skipped  = 0
@@ -444,22 +588,20 @@ class GoogleScraper:
             conn = psycopg2.connect(self.db_url)
             cur  = conn.cursor()
 
-            # Lấy danh sách hash đã tồn tại để tránh N+1 query
-            hashes_to_check = [r["content_hash"] for r in results if r.get("content_hash")]
-            if hashes_to_check:
+            hashes = [r.get("content_hash") for r in records if r.get("content_hash")]
+            if hashes:
                 cur.execute(
                     "SELECT content_hash FROM public.raw_google_data "
                     "WHERE content_hash = ANY(%s)",
-                    (hashes_to_check,),
+                    (hashes,),
                 )
-                existing_hashes = {row[0] for row in cur.fetchall()}
+                existing = {row[0] for row in cur.fetchall()}
             else:
-                existing_hashes = set()
+                existing = set()
 
-            # Insert từng bản ghi
-            for r in results:
+            for r in records:
                 ch = r.get("content_hash")
-                if ch and ch in existing_hashes:
+                if ch and ch in existing:
                     skipped += 1
                     continue
 
@@ -472,7 +614,7 @@ class GoogleScraper:
                     (
                         r.get("keyword"),
                         r.get("title"),
-                        r.get("snippet"),
+                        r.get("snippet") or r.get("trend_description"),
                         r.get("url"),
                         r.get("position"),
                         ch,
@@ -483,84 +625,112 @@ class GoogleScraper:
             conn.commit()
             cur.close()
             conn.close()
+            logger.info("DB: inserted=%d, skipped=%d", inserted, skipped)
 
         except psycopg2.OperationalError as e:
             logger.error("Lỗi kết nối PostgreSQL: %s", e)
-            return 0, len(results)
+            return 0, len(records)
         except Exception as e:
-            logger.error("Lỗi khi lưu DB: %s", e, exc_info=True)
+            logger.error("Lỗi lưu DB: %s", e, exc_info=True)
             return inserted, skipped
 
         return inserted, skipped
 
-    # ── Offline mode ─────────────────────────────────────────────────────────
+    # ── ETL Log ───────────────────────────────────────────────────────────────
+
+    def _log_etl_blocked(self, keyword: str, reason: str) -> None:
+        """Ghi log vào file ETL khi Google chặn — để trace lại sau."""
+        log_dir = _REPO_ROOT / "logs"
+        log_dir.mkdir(exist_ok=True)
+        log_file = log_dir / "etl_google_blocked.log"
+        ts = self._now_vn()
+        with open(log_file, "a", encoding="utf-8") as f:
+            f.write(f"[{ts}] keyword='{keyword}' | {reason}\n")
+
+    # ── Offline mode ──────────────────────────────────────────────────────────
 
     def _load_offline_csv(self) -> list[dict]:
-        """
-        Đọc CSV mẫu từ notebooks/sample_data/sample_google_data.csv.
-        Dùng khi SCRAPER_MODE=offline — bỏ qua scrape mạng.
-
-        Returns:
-            List[dict]: [{keyword, title, snippet, url, position, content_hash}]
-        """
+        """Đọc CSV mẫu khi SCRAPER_MODE=offline."""
         if not _SAMPLE_CSV.exists():
-            logger.error("OFFLINE MODE: Không tìm thấy file CSV mẫu: %s", _SAMPLE_CSV)
+            logger.error("OFFLINE MODE: Không tìm thấy CSV mẫu: %s", _SAMPLE_CSV)
             return []
-
-        results = []
+        records = []
         try:
             with open(_SAMPLE_CSV, encoding="utf-8", newline="") as f:
-                reader = csv.DictReader(f)
-                for row in reader:
-                    row["content_hash"] = self._content_hash(
+                for row in csv.DictReader(f):
+                    row.setdefault("content_hash", self._content_hash(
                         row.get("title", ""), row.get("snippet", "")
-                    )
-                    results.append(row)
-            logger.info("OFFLINE MODE — đọc %d dòng từ CSV mẫu: %s", len(results), _SAMPLE_CSV.name)
+                    ))
+                    records.append(row)
+            logger.info("OFFLINE MODE — %d dòng từ %s", len(records), _SAMPLE_CSV.name)
         except Exception as e:
             logger.error("Lỗi đọc CSV mẫu: %s", e)
+        return records
 
-        return results
-
-    # ── Entry point ──────────────────────────────────────────────────────────
+    # ── Entry points ──────────────────────────────────────────────────────────
 
     def run(self) -> dict:
         """
-        Chạy toàn bộ luồng: scrape_all() → save_to_db().
-
-        Nếu SCRAPER_MODE=offline: bỏ qua scrape, dùng CSV mẫu luôn.
+        Luồng đầy đủ: scrape_all() → export_csv() → save_to_db().
 
         Returns:
-            dict: {total_scraped, inserted, skipped}
+            dict: {total_scraped, inserted, skipped, csv_path}
         """
-        logger.info("=== GoogleScraper bắt đầu chạy (mode=%s) ===", _SCRAPER_MODE)
+        logger.info("=== GoogleScraper bắt đầu (mode=%s) ===", _SCRAPER_MODE)
 
         if _SCRAPER_MODE == "offline":
-            logger.info("OFFLINE MODE — dùng dữ liệu mẫu CSV, bỏ qua scrape mạng")
-            results = self._load_offline_csv()
+            records = self._load_offline_csv()
         else:
-            results = self.scrape_all()
+            records = self.scrape_all()
 
-        inserted, skipped = self.save_to_db(results)
+        csv_path = self.export_csv(records)
+        inserted, skipped = self.save_to_db(records)
 
         summary = {
-            "total_scraped": len(results),
+            "total_scraped": len(records),
             "inserted":      inserted,
             "skipped":       skipped,
+            "csv_path":      str(csv_path) if csv_path else None,
         }
         logger.info(
-            "=== GoogleScraper hoàn thành: scrape=%d | lưu=%d | bỏ qua=%d ===",
-            len(results), inserted, skipped,
+            "=== GoogleScraper xong: scraped=%d | inserted=%d | skipped=%d ===",
+            len(records), inserted, skipped,
         )
         return summary
 
+    def run_with_fallback(self) -> pd.DataFrame:
+        """
+        Wrapper an toàn: thử scrape Google thật.
+        - Nếu bị chặn → log warning + trả về empty DataFrame.
+        - KHÔNG tạo mock data trong bất kỳ trường hợp.
 
-# ── Chạy trực tiếp để test ──────────────────────────────────────────────────
+        Returns:
+            pd.DataFrame: Dữ liệu scrape được (có thể rỗng nếu bị chặn).
+        """
+        try:
+            records  = self.scrape_all()
+            csv_path = self.export_csv(records)
+            self.save_to_db(records)
+            logger.info("run_with_fallback: %d bản ghi thu thập được", len(records))
+            return pd.DataFrame(records) if records else pd.DataFrame()
+        except GoogleBlockedError as e:
+            logger.warning(
+                "Google Search bị chặn — trả về empty DataFrame. Lý do: %s", e
+            )
+            return pd.DataFrame()
+        except Exception as e:
+            logger.error("Lỗi không xác định trong run_with_fallback: %s", e, exc_info=True)
+            return pd.DataFrame()
+
+
+# ── Chạy trực tiếp để test ────────────────────────────────────────────────────
 if __name__ == "__main__":
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s – %(message)s",
     )
     scraper = GoogleScraper()
-    result  = scraper.run()
-    print(f"\nKết quả: {result}")
+    df      = scraper.run_with_fallback()
+    print(f"\nKết quả: {len(df)} bản ghi")
+    if not df.empty:
+        print(df[["keyword", "title", "source_domain"]].head(10).to_string(index=False))

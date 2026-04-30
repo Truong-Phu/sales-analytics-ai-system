@@ -313,4 +313,29 @@ public class CustomersController(IConfiguration cfg, ICustomerRepository custome
             return StatusCode(503, new { message = "Lỗi kết nối database.", detail = ex.Message });
         }
     }
+
+    /// <summary>
+    /// [OLTP] Ẩn khách hàng (soft-delete: set IsActive = false).
+    /// Roles: Manager, Admin
+    /// </summary>
+    [HttpDelete("oltp/{id:int}")]
+    [Authorize(Roles = "Manager,Admin")]
+    public async Task<IActionResult> DeactivateCustomer(int id)
+    {
+        try
+        {
+            var customer = await customerRepo.GetByIdAsync(id);
+            if (customer is null) return NotFound(new { message = "Không tìm thấy khách hàng." });
+
+            customer.IsActive  = false;
+            customer.UpdatedAt = DateTime.UtcNow;
+            await customerRepo.UpdateAsync(customer);
+
+            return Ok(new { message = $"Đã ẩn khách hàng '{customer.FullName}'." });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(503, new { message = "Lỗi kết nối database.", detail = ex.Message });
+        }
+    }
 }

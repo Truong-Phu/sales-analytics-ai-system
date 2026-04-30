@@ -328,4 +328,43 @@ public class OrdersController(IConfiguration cfg, IOrderRepository orderRepo, IA
             return StatusCode(503, new { message = "Lỗi kết nối database.", detail = ex.Message });
         }
     }
+
+    /// <summary>
+    /// [OLTP] Hủy đơn hàng (soft-delete: set Status = CANCELLED).
+    /// Roles: Owner, Manager, Admin
+    /// </summary>
+    [HttpDelete("oltp/{id:int}")]
+    [Authorize(Roles = "Owner,Manager,Admin")]
+    public async Task<IActionResult> CancelOrder(int id)
+    {
+        try
+        {
+            var order = await orderRepo.GetByIdAsync(id);
+            if (order is null) return NotFound(new { message = "Không tìm thấy đơn hàng." });
+
+            if (order.Status == "DELIVERED")
+                return BadRequest(new { message = "Không thể hủy đơn đã giao thành công." });
+
+            var old = order.Status;
+            order.Status    = "CANCELLED";
+            order.UpdatedAt = DateTime.UtcNow;
+            await orderRepo.UpdateAsync(order);
+
+            await audit.LogAsync(
+                userId:     int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var uid) ? (int?)uid : null,
+                username:   User.FindFirstValue(ClaimTypes.Name) ?? "",
+                action:     "CANCEL_ORDER",
+                entityType: "Order", entityId: id.ToString(),
+                oldValue:   $"{{\"status\":\"{old}\"}}",
+                newValue:   "{\"status\":\"CANCELLED\"}",
+                ipAddress:  HttpContext.Connection.RemoteIpAddress?.ToString(),
+                userAgent:  HttpContext.Request.Headers["User-Agent"].ToString());
+
+            return Ok(new { message = "Đã hủy đơn hàng." });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(503, new { message = "Lỗi kết nối database.", detail = ex.Message });
+        }
+    }
 }

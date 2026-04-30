@@ -11,6 +11,19 @@ export default {
         body:     ['"Be Vietnam Pro"', 'sans-serif'],
         label:    ['Inter', 'sans-serif'],
       },
+      // ── Typography Scale (PROMPT 3) ──────────────────────────────────────
+      fontSize: {
+        'display':  ['2.25rem', { lineHeight: '2.75rem', fontWeight: '700' }],
+        'title':    ['1.5rem',  { lineHeight: '2rem',    fontWeight: '600' }],
+        'subtitle': ['1.125rem',{ lineHeight: '1.75rem', fontWeight: '600' }],
+        'body':     ['0.875rem',{ lineHeight: '1.5rem',  fontWeight: '400' }],
+        'caption':  ['0.75rem', { lineHeight: '1.25rem', fontWeight: '400' }],
+      },
+      // ── Spacing 8px grid (PROMPT 3) ─────────────────────────────────────
+      spacing: {
+        '1': '4px', '2': '8px', '3': '12px', '4': '16px',
+        '6': '24px', '8': '32px', '12': '48px', '16': '64px',
+      },
       colors: {
         // ── Lumina tokens ──────────────────────────────────────
         primary: {
@@ -74,6 +87,20 @@ export default {
         'error-container':   '#FEE2E2',
         'on-error':          '#FFFFFF',
         'on-error-container':'#991B1B',
+
+        // ── Chart Palette (PROMPT 2 — mapped to CSS vars) ──
+        'chart-1': 'var(--chart-1)',
+        'chart-2': 'var(--chart-2)',
+        'chart-3': 'var(--chart-3)',
+        'chart-4': 'var(--chart-4)',
+        'chart-5': 'var(--chart-5)',
+        'chart-6': 'var(--chart-6)',
+        'chart-7': 'var(--chart-7)',
+        'chart-8': 'var(--chart-8)',
+
+        // ── Brand tokens ──
+        'brand': 'var(--brand-primary)',
+        'brand-muted': 'var(--brand-muted)',
       },
       borderRadius: {
         DEFAULT: '0.25rem',

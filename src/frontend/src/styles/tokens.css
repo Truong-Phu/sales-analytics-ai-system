@@ -5,6 +5,50 @@
   --bg-elevated: #F0F2F8;
   --bg-overlay:  rgba(15,17,26,0.55);
 
+  /* ── Semantic Aliases (PROMPT 2 tokens) ── */
+  --bg-primary:   #F8F9FC;
+  --bg-secondary: #FFFFFF;
+  --bg-tertiary:  #F0F2F8;
+
+  /* Surface layers */
+  --surface-1: #FFFFFF;
+  --surface-2: #F8F9FC;
+  --surface-3: #F0F2F8;
+
+  /* Brand */
+  --brand-primary:   #6366F1;
+  --brand-secondary: #4F46E5;
+  --brand-muted:     rgba(99,102,241,0.12);
+
+  /* Status backgrounds */
+  --success-bg: rgba(16,185,129,0.10);
+  --warning-bg: rgba(245,158,11,0.10);
+  --error-bg:   rgba(239,68,68,0.10);
+  --info-bg:    rgba(59,130,246,0.10);
+
+  /* Status colors */
+  --success: #10B981;
+  --warning: #F59E0B;
+  --error:   #EF4444;
+  --info:    #3B82F6;
+
+  /* Border aliases */
+  --border-default: #E5E7EB;
+  --divider:        #F3F4F6;
+
+  /* Text disabled */
+  --text-disabled: #D1D5DB;
+
+  /* ── Chart Palette (8 màu pastel không neon) ── */
+  --chart-1: #6366F1;
+  --chart-2: #10B981;
+  --chart-3: #F59E0B;
+  --chart-4: #3B82F6;
+  --chart-5: #EC4899;
+  --chart-6: #8B5CF6;
+  --chart-7: #14B8A6;
+  --chart-8: #F97316;
+
   /* ── Colors: Primary (Indigo) ── */
   --primary-50:  #EEF2FF;
   --primary-100: #E0E7FF;
@@ -72,6 +116,36 @@
   --bg-surface:  #1A1B23;
   --bg-elevated: #22232E;
   --bg-overlay:  rgba(0,0,0,0.72);
+
+  /* Semantic aliases dark */
+  --bg-primary:   #0F1117;
+  --bg-secondary: #1A1B23;
+  --bg-tertiary:  #22232E;
+
+  --surface-1: #1A1B23;
+  --surface-2: #22232E;
+  --surface-3: #2A2D3E;
+
+  --brand-muted: rgba(129,140,248,0.15);
+
+  --success-bg: rgba(16,185,129,0.15);
+  --warning-bg: rgba(245,158,11,0.15);
+  --error-bg:   rgba(239,68,68,0.15);
+  --info-bg:    rgba(59,130,246,0.15);
+
+  --border-default: #252630;
+  --divider:        #1E2030;
+  --text-disabled:  #4B5063;
+
+  /* Chart palette dark (nhẹ hơn một chút) */
+  --chart-1: #818CF8;
+  --chart-2: #34D399;
+  --chart-3: #FCD34D;
+  --chart-4: #60A5FA;
+  --chart-5: #F472B6;
+  --chart-6: #A78BFA;
+  --chart-7: #2DD4BF;
+  --chart-8: #FB923C;
 
   --primary-400: #A5B4FC;
   --primary-500: #818CF8;
