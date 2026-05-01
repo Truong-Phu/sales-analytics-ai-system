@@ -1,5 +1,5 @@
 import React, { createContext, useState, useEffect, useCallback, useContext } from 'react'
-import AsyncStorage from '@react-native-async-storage/async-storage'
+import { storage } from '../api/storage'
 import api from '../api/axios'
 
 const AuthContext = createContext(null)
@@ -7,13 +7,10 @@ const AuthContext = createContext(null)
 function parseJwt(token) {
   try {
     const base64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')
-    return JSON.parse(atob(base64))
+    // Expo SDK 44+ cung cấp globalThis.atob sẵn
+    const json = globalThis.atob(base64)
+    return JSON.parse(json)
   } catch { return null }
-}
-
-// Polyfill atob cho React Native
-function atob(base64) {
-  return Buffer.from(base64, 'base64').toString('binary')
 }
 
 export function AuthProvider({ children }) {
@@ -21,26 +18,30 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    AsyncStorage.getItem('access_token').then(token => {
-      if (token) {
-        const p = parseJwt(token)
-        if (p && p.exp * 1000 > Date.now()) {
-          setUser({
-            id:    p.sub,
-            name:  p['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name'] ?? p.name,
-            email: p['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress'] ?? p.email,
-            role:  p['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'] ?? p.role,
-          })
+    storage.getItem('access_token')
+      .then(token => {
+        if (token) {
+          const p = parseJwt(token)
+          if (p && p.exp * 1000 > Date.now()) {
+            setUser({
+              id:    p.sub,
+              name:  p['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name'] ?? p.name,
+              email: p['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress'] ?? p.email,
+              role:  p['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'] ?? p.role,
+            })
+          } else {
+            storage.removeItem('access_token')
+          }
         }
-      }
-      setLoading(false)
-    })
+      })
+      .catch(err => console.warn('[AuthContext] storage error:', err))
+      .finally(() => setLoading(false))
   }, [])
 
-  const login = useCallback(async (email, password) => {
-    const { data } = await api.post('/api/auth/login', { email, password })
-    await AsyncStorage.setItem('access_token', data.accessToken)
-    await AsyncStorage.setItem('refresh_token', data.refreshToken)
+  const login = useCallback(async (username, password) => {
+    const { data } = await api.post('/api/auth/login', { username, password })
+    await storage.setItem('access_token', data.accessToken)
+    await storage.setItem('refresh_token', data.refreshToken)
     const p = parseJwt(data.accessToken)
     const u = {
       id:    p.sub,
@@ -53,7 +54,7 @@ export function AuthProvider({ children }) {
   }, [])
 
   const logout = useCallback(async () => {
-    await AsyncStorage.multiRemove(['access_token', 'refresh_token'])
+    await storage.multiRemove(['access_token', 'refresh_token'])
     setUser(null)
   }, [])
 

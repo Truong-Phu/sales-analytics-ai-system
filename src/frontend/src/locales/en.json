@@ -64,7 +64,12 @@
     "tagline": "Multi-channel Sales Analytics Platform",
     "roleLabel": "Role",
     "accessDenied": "Access Denied",
-    "backHome": "Back to Home"
+    "backHome": "Back to Home",
+    "welcomeBack": "Welcome back",
+    "loggingIn": "Signing in...",
+    "feature1": "AI Forecasting with Prophet",
+    "feature2": "Multi-channel: Shopee, Lazada, TikTok...",
+    "feature3": "Professional PDF Reports"
   },
   "nav": {
     "dashboard": "Overview",
@@ -276,7 +281,26 @@
     "success": "Report downloaded successfully",
     "error": "Unable to generate report. Please try again.",
     "aiInsight": "AI Insights & Recommendations",
-    "sections": "{{count}}/{{total}} sections selected"
+    "sections": "{{count}}/{{total}} sections selected",
+    "quickRangeTitle": "Quick date range",
+    "reportTitle": "Sales Report",
+    "contentSections": "REPORT CONTENTS",
+    "formatTitle": "EXPORT FORMAT",
+    "formatPdf": "Professional PDF",
+    "formatPdfSub": "A4, with header/footer",
+    "formatTime": "Generation time",
+    "formatTimeSub": "~5–15 seconds",
+    "formatLang": "Language",
+    "formatLangSub": "Vietnamese",
+    "section": {
+      "overview":     "Overview (KPI, revenue, channels)",
+      "sales":        "Sales analysis (top products, growth)",
+      "multichannel": "Multi-channel analysis (channel comparison)",
+      "customer":     "Customer analysis (CLV, funnel)",
+      "marketing":    "Marketing & ROI (cost vs revenue)",
+      "inventory":    "Inventory & Operations (stock, returns)",
+      "ai":           "AI Insights & Recommendations"
+    }
   },
   "admin": {
     "title": "System Administration",
@@ -357,9 +381,14 @@
   "settings": {
     "title": "Settings",
     "profile": "Profile",
+    "account": "Account",
     "security": "Security",
     "language": "Language",
     "notifications": "Notifications",
-    "saveSuccess": "Settings saved"
+    "appearance": "Appearance",
+    "saveSuccess": "Settings saved",
+    "avatarHint": "Max 2MB image",
+    "changeAvatar": "Change Avatar",
+    "avatarFormat": "PNG/JPG, max 2MB"
   }
 }

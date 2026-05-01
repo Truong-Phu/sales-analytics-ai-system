@@ -692,8 +692,18 @@ export default function DashboardPage() {
     try {
       const ch  = channel === 'all' ? null : channel
       const res = await getDashboard(from, to, ch)
-      const hasData = res?.kpi?.totalRevenue > 0
-      if (!hasData) throw new Error('no_data')
+
+      // Kiểm tra backend trả đủ shape mà Dashboard cần.
+      // Backend hiện chưa có: conversionRate, roi, monthlyByChannel,
+      // customerSegments, funnel, heatmap, radarData, inventory → dùng mock.
+      const hasFullData =
+        res?.kpi?.totalRevenue > 0 &&
+        typeof res?.kpi?.conversionRate === 'number' &&
+        Array.isArray(res?.monthlyByChannel) &&
+        Array.isArray(res?.customerSegments) &&
+        Array.isArray(res?.funnel)
+
+      if (!hasFullData) throw new Error('incomplete_data')
       setData(res)
       setIsMock(false)
     } catch {

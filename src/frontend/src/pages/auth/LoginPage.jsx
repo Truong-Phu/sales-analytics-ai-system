@@ -112,15 +112,11 @@ export default function LoginPage() {
           <LuminaLogoSm size={64} white />
           <h1 className="text-white text-3xl font-bold mt-4">MSAS Analytics</h1>
           <p className="text-white/75 text-base mt-2">
-            Phân tích dữ liệu bán hàng thông minh
+            {t('auth.tagline')}
           </p>
 
           <div className="mt-8 flex flex-col gap-3">
-            {[
-              'Dự báo AI với Prophet',
-              'Đa kênh: Shopee, Lazada, TikTok...',
-              'Báo cáo chuyên nghiệp PDF',
-            ].map(f => (
+            {[t('auth.feature1'), t('auth.feature2'), t('auth.feature3')].map(f => (
               <div key={f} className="flex items-center gap-2.5 text-white/85 text-sm">
                 <span
                   className="w-5 h-5 rounded-full flex items-center justify-center shrink-0"
@@ -177,7 +173,7 @@ export default function LoginPage() {
             {t('auth.login')}
           </h2>
           <p className="text-sm mt-1 mb-8" style={{ color: 'var(--text-tertiary)' }}>
-            Chào mừng trở lại
+            {t('auth.welcomeBack')}
           </p>
 
           {/* Error */}
@@ -249,7 +245,7 @@ export default function LoginPage() {
                     className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full"
                     style={{ animation: 'spin 0.7s linear infinite' }}
                   />
-                  Đang đăng nhập...
+                  {t('auth.loggingIn')}
                 </>
               ) : (
                 <>

@@ -64,7 +64,12 @@
     "tagline": "Hệ thống phân tích bán hàng đa kênh",
     "roleLabel": "Vai trò",
     "accessDenied": "Truy cập bị từ chối",
-    "backHome": "Về trang chủ"
+    "backHome": "Về trang chủ",
+    "welcomeBack": "Chào mừng trở lại",
+    "loggingIn": "Đang đăng nhập...",
+    "feature1": "Dự báo AI với Prophet",
+    "feature2": "Đa kênh: Shopee, Lazada, TikTok...",
+    "feature3": "Báo cáo chuyên nghiệp PDF"
   },
   "nav": {
     "dashboard": "Tổng quan",
@@ -276,7 +281,26 @@
     "success": "Báo cáo đã được tải xuống",
     "error": "Không thể tạo báo cáo. Vui lòng thử lại.",
     "aiInsight": "Nhận xét & Insight từ AI",
-    "sections": "{{count}}/{{total}} mục được chọn"
+    "sections": "{{count}}/{{total}} mục được chọn",
+    "quickRangeTitle": "Khoảng thời gian nhanh",
+    "reportTitle": "Báo cáo Bán hàng",
+    "contentSections": "NỘI DUNG BÁO CÁO",
+    "formatTitle": "ĐỊNH DẠNG XUẤT",
+    "formatPdf": "PDF chuyên nghiệp",
+    "formatPdfSub": "A4, có header/footer",
+    "formatTime": "Thời gian tạo",
+    "formatTimeSub": "~5–15 giây",
+    "formatLang": "Ngôn ngữ",
+    "formatLangSub": "Tiếng Việt",
+    "section": {
+      "overview":     "Tổng quan (KPI, doanh thu, kênh)",
+      "sales":        "Phân tích bán hàng (top sản phẩm, tăng trưởng)",
+      "multichannel": "Phân tích đa kênh (so sánh kênh)",
+      "customer":     "Phân tích khách hàng (CLV, phễu)",
+      "marketing":    "Marketing & ROI (chi phí vs doanh thu)",
+      "inventory":    "Tồn kho & Vận hành (tồn kho, hoàn đơn)",
+      "ai":           "Nhận xét & Insight từ AI"
+    }
   },
   "admin": {
     "title": "Quản trị hệ thống",
@@ -357,9 +381,14 @@
   "settings": {
     "title": "Cài đặt",
     "profile": "Thông tin cá nhân",
+    "account": "Tài khoản",
     "security": "Bảo mật",
     "language": "Ngôn ngữ",
     "notifications": "Thông báo",
-    "saveSuccess": "Đã lưu cài đặt"
+    "appearance": "Giao diện",
+    "saveSuccess": "Đã lưu cài đặt",
+    "avatarHint": "Ảnh tối đa 2MB",
+    "changeAvatar": "Đổi ảnh đại diện",
+    "avatarFormat": "PNG/JPG, tối đa 2MB"
   }
 }

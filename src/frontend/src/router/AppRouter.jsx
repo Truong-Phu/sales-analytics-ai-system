@@ -3,6 +3,7 @@ import { Suspense, lazy } from 'react'
 import { PageSpinner } from '../components/ui/Spinner'
 import AppShell from '../components/layout/AppShell'
 import ProtectedRoute from './ProtectedRoute'
+import ErrorBoundary from '../components/ui/ErrorBoundary'
 import LoginPage       from '../pages/auth/LoginPage'
 import RegisterPage    from '../pages/auth/RegisterPage'
 import UnauthorizedPage from '../pages/UnauthorizedPage'
@@ -32,9 +33,11 @@ const VIEWER_ROUTES = [...ALL_ROLES, 'Viewer']
 function Shell({ children }) {
   return (
     <AppShell>
-      <Suspense fallback={<PageSpinner />}>
-        {children}
-      </Suspense>
+      <ErrorBoundary>
+        <Suspense fallback={<PageSpinner />}>
+          {children}
+        </Suspense>
+      </ErrorBoundary>
     </AppShell>
   )
 }

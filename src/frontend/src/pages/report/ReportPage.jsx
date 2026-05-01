@@ -4,20 +4,14 @@ import { exportPdf } from '../../api/reportApi'
 
 const CHANNEL_KEYS = ['all', 'shopee', 'lazada', 'tiktok', 'facebook', 'website']
 
-const QUICK_RANGES = [
-  { label: '7 ngày', days: 7 },
-  { label: '30 ngày', days: 30 },
-  { label: '90 ngày', days: 90 },
-]
-
-const SECTIONS = [
-  { key: 'includeOverview',    icon: 'dashboard',       label: 'Tổng quan (KPI, doanh thu, kênh)',           always: true  },
-  { key: 'includeSales',       icon: 'bar_chart',       label: 'Phân tích bán hàng (top sản phẩm, tăng trưởng)', always: true  },
-  { key: 'includeMultichannel',icon: 'hub',             label: 'Phân tích đa kênh (so sánh kênh)',           always: false },
-  { key: 'includeCustomer',    icon: 'people',          label: 'Phân tích khách hàng (CLV, funnel)',         always: false },
-  { key: 'includeMarketing',   icon: 'campaign',        label: 'Marketing & ROI (chi phí vs doanh thu)',     always: false },
-  { key: 'includeInventory',   icon: 'inventory_2',     label: 'Tồn kho & Vận hành (tồn kho, hoàn đơn)',    always: false },
-  { key: 'includeAI',          icon: 'auto_awesome',    label: 'Nhận xét & Insight từ AI',                  always: false },
+const SECTION_DEFS = [
+  { key: 'includeOverview',     icon: 'dashboard',    sectionKey: 'overview',     always: true  },
+  { key: 'includeSales',        icon: 'bar_chart',    sectionKey: 'sales',        always: true  },
+  { key: 'includeMultichannel', icon: 'hub',          sectionKey: 'multichannel', always: false },
+  { key: 'includeCustomer',     icon: 'people',       sectionKey: 'customer',     always: false },
+  { key: 'includeMarketing',    icon: 'campaign',     sectionKey: 'marketing',    always: false },
+  { key: 'includeInventory',    icon: 'inventory_2',  sectionKey: 'inventory',    always: false },
+  { key: 'includeAI',           icon: 'auto_awesome', sectionKey: 'ai',           always: false },
 ]
 
 function toISO(d) { return d.toISOString().slice(0, 10) }
@@ -71,10 +65,16 @@ export default function ReportPage() {
 
   const set = (key, val) => setForm(f => ({ ...f, [key]: val }))
 
+  const QUICK_RANGES = [
+    { label: t('dashboard.period.7d'),  days: 7  },
+    { label: t('dashboard.period.30d'), days: 30 },
+    { label: t('dashboard.period.90d'), days: 90 },
+  ]
+
   const applyQuickRange = days => {
     const to   = new Date()
     const from = new Date(Date.now() - days * 86_400_000)
-    setForm(f => ({ ...f, from: toISO(from), to: toISO(to) })  )
+    setForm(f => ({ ...f, from: toISO(from), to: toISO(to) }))
   }
 
   const handleExport = async () => {
@@ -91,7 +91,11 @@ export default function ReportPage() {
     }
   }
 
-  const includedCount = SECTIONS.filter(s => s.always || form[s.key]).length
+  const includedCount = SECTION_DEFS.filter(s => s.always || form[s.key]).length
+
+  const channelPreviewLabel = form.channel === 'all'
+    ? t('report.allChannels')
+    : form.channel.charAt(0).toUpperCase() + form.channel.slice(1)
 
   return (
     <div className="space-y-4">
@@ -114,7 +118,7 @@ export default function ReportPage() {
           {/* Quick range */}
           <div>
             <p className="text-xs font-semibold mb-2" style={{ color: 'var(--text-secondary)' }}>
-              Khoảng thời gian nhanh
+              {t('report.quickRangeTitle')}
             </p>
             <div className="flex gap-2 flex-wrap">
               {QUICK_RANGES.map(r => (
@@ -184,7 +188,7 @@ export default function ReportPage() {
               {t('report.content')}
             </label>
             <div className="space-y-2">
-              {SECTIONS.filter(s => !s.always).map(opt => (
+              {SECTION_DEFS.filter(s => !s.always).map(opt => (
                 <label key={opt.key} className="flex items-center gap-3 cursor-pointer group py-1">
                   <button
                     type="button"
@@ -198,7 +202,9 @@ export default function ReportPage() {
                     {form[opt.key] && <span className="icon text-white" style={{ fontSize: 13 }}>check</span>}
                   </button>
                   <span className="icon" style={{ fontSize: 18, color: 'var(--text-tertiary)' }}>{opt.icon}</span>
-                  <span className="text-sm" style={{ color: 'var(--text-primary)' }}>{opt.label}</span>
+                  <span className="text-sm" style={{ color: 'var(--text-primary)' }}>
+                    {t(`report.section.${opt.sectionKey}`)}
+                  </span>
                 </label>
               ))}
             </div>
@@ -262,26 +268,26 @@ export default function ReportPage() {
             >
               <div className="flex items-center gap-2 mb-2">
                 <span className="icon text-white" style={{ fontSize: 20 }}>description</span>
-                <span className="text-sm font-bold text-white">Báo cáo Bán hàng</span>
+                <span className="text-sm font-bold text-white">{t('report.reportTitle')}</span>
               </div>
               <div className="text-xs text-white/80">
                 {form.from} → {form.to}
               </div>
               <div className="text-xs text-white/70 mt-0.5">
-                {form.channel === 'all' ? 'Tất cả kênh' : form.channel.charAt(0).toUpperCase() + form.channel.slice(1)}
+                {channelPreviewLabel}
               </div>
             </div>
 
             {/* Sections preview */}
             <p className="text-xs font-semibold mb-2" style={{ color: 'var(--text-tertiary)' }}>
-              NỘI DUNG BÁO CÁO ({includedCount}/{SECTIONS.length} mục)
+              {t('report.contentSections')} ({includedCount}/{SECTION_DEFS.length})
             </p>
             <div className="space-y-1">
-              {SECTIONS.map(s => (
+              {SECTION_DEFS.map(s => (
                 <PreviewSection
                   key={s.key}
                   icon={s.icon}
-                  label={s.label}
+                  label={t(`report.section.${s.sectionKey}`)}
                   enabled={s.always || form[s.key]}
                 />
               ))}
@@ -291,12 +297,12 @@ export default function ReportPage() {
           {/* Format info */}
           <div className="lcard p-4 space-y-3">
             <p className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>
-              ĐỊNH DẠNG XUẤT
+              {t('report.formatTitle')}
             </p>
             {[
-              { icon: 'picture_as_pdf', label: 'PDF chuyên nghiệp', sub: 'A4, có header/footer, logo' },
-              { icon: 'schedule',       label: 'Thời gian tạo',     sub: '~5–15 giây' },
-              { icon: 'translate',      label: 'Ngôn ngữ',          sub: 'Tiếng Việt' },
+              { icon: 'picture_as_pdf', label: t('report.formatPdf'),  sub: t('report.formatPdfSub') },
+              { icon: 'schedule',       label: t('report.formatTime'), sub: t('report.formatTimeSub') },
+              { icon: 'translate',      label: t('report.formatLang'), sub: t('report.formatLangSub') },
             ].map(item => (
               <div key={item.label} className="flex items-start gap-3">
                 <span className="icon shrink-0 mt-0.5" style={{ fontSize: 18, color: 'var(--primary-500)' }}>

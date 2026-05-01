@@ -332,7 +332,7 @@ export default function AdminPage() {
                   Kiểm tra backend đang chạy và bảng audit_logs đã được tạo (09_audit_log.sql).
                 </p>
                 <button onClick={() => fetchAuditLogs(1)} className="lbtn lbtn-secondary !h-8 !px-4 text-xs mt-3">
-                  Thử lại
+                  {t('common.retry')}
                 </button>
               </div>
             ) : (

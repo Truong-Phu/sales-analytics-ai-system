@@ -8,17 +8,17 @@ import { colors, radius } from '../components/theme'
 
 export default function LoginScreen() {
   const { login } = useAuth()
-  const [email,    setEmail]    = useState('')
+  const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [loading,  setLoading]  = useState(false)
   const [error,    setError]    = useState('')
 
   const handleLogin = async () => {
-    if (!email || !password) { setError('Vui lòng nhập email và mật khẩu'); return }
+    if (!username || !password) { setError('Vui lòng nhập tên đăng nhập và mật khẩu'); return }
     setError('')
     setLoading(true)
     try {
-      await login(email.trim(), password)
+      await login(username.trim(), password)
       // Navigation tự động xử lý bởi AppNavigator khi user !== null
     } catch (err) {
       const msg = err.response?.data?.message
@@ -56,15 +56,15 @@ export default function LoginScreen() {
           </View>
         )}
 
-        <Text style={s.label}>Email</Text>
+        <Text style={s.label}>Tên đăng nhập</Text>
         <TextInput
           style={s.input}
-          placeholder="admin@example.com"
+          placeholder="admin"
           placeholderTextColor={colors.outline}
-          keyboardType="email-address"
           autoCapitalize="none"
-          value={email}
-          onChangeText={setEmail}
+          autoCorrect={false}
+          value={username}
+          onChangeText={setUsername}
         />
 
         <Text style={s.label}>Mật khẩu</Text>

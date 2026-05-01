@@ -203,10 +203,10 @@ const SOURCE_ICON = {
 }
 
 const STATUS_CFG = {
-  idle:    { bg: 'rgba(100,116,139,0.10)', border: 'rgba(100,116,139,0.25)', color: '#64748B',              dot: '#64748B',   icon: 'radio_button_unchecked', label: 'Chờ' },
-  syncing: { bg: 'rgba(245,158,11,0.10)',  border: 'rgba(245,158,11,0.30)',  color: '#F59E0B',              dot: '#F59E0B',   icon: 'sync',                   label: 'Đang đồng bộ' },
-  success: { bg: 'rgba(16,185,129,0.10)',  border: 'rgba(16,185,129,0.30)',  color: 'var(--accent-500)',    dot: 'var(--accent-500)', icon: 'check_circle',   label: 'Thành công' },
-  error:   { bg: 'rgba(239,68,68,0.10)',   border: 'rgba(239,68,68,0.30)',   color: '#EF4444',              dot: '#EF4444',   icon: 'error_outline',          label: 'Lỗi' },
+  idle:    { bg: 'rgba(100,116,139,0.10)', border: 'rgba(100,116,139,0.25)', color: '#64748B',              dot: '#64748B',   icon: 'radio_button_unchecked', labelKey: 'dataSync.syncStatus.idle'    },
+  syncing: { bg: 'rgba(245,158,11,0.10)',  border: 'rgba(245,158,11,0.30)',  color: '#F59E0B',              dot: '#F59E0B',   icon: 'sync',                   labelKey: 'dataSync.syncStatus.syncing' },
+  success: { bg: 'rgba(16,185,129,0.10)',  border: 'rgba(16,185,129,0.30)',  color: 'var(--accent-500)',    dot: 'var(--accent-500)', icon: 'check_circle',   labelKey: 'dataSync.syncStatus.success' },
+  error:   { bg: 'rgba(239,68,68,0.10)',   border: 'rgba(239,68,68,0.30)',   color: '#EF4444',              dot: '#EF4444',   icon: 'error_outline',          labelKey: 'dataSync.syncStatus.error'   },
 }
 
 function SourceCard({ src, syncing, onSync, t }) {
@@ -237,7 +237,7 @@ function SourceCard({ src, syncing, onSync, t }) {
             >
               <span className="w-1.5 h-1.5 rounded-full"
                     style={{ background: s.dot, ...(src.status === 'syncing' && { animation: 'pulse 1s infinite' }) }} />
-              {s.label}
+              {t(s.labelKey)}
             </span>
           </div>
         </div>
@@ -359,14 +359,14 @@ export default function DataSyncPage() {
       {!loading && sources.length > 0 && (
         <div className="lcard px-5 py-3 flex items-center gap-6 flex-wrap">
           {[
-            { label: 'Tổng nguồn',    value: sources.length, color: 'var(--text-primary)' },
-            { label: 'Thành công',     value: successCount,   color: 'var(--accent-500)'  },
-            { label: 'Đang đồng bộ',  value: syncingCount,   color: '#F59E0B'             },
-            { label: 'Lỗi',           value: errorCount,     color: '#EF4444'             },
+            { labelKey: 'common.records',              value: sources.length, color: 'var(--text-primary)' },
+            { labelKey: 'dataSync.syncStatus.success', value: successCount,   color: 'var(--accent-500)'  },
+            { labelKey: 'dataSync.syncStatus.syncing', value: syncingCount,   color: '#F59E0B'             },
+            { labelKey: 'dataSync.syncStatus.error',   value: errorCount,     color: '#EF4444'             },
           ].map(item => (
-            <div key={item.label} className="flex items-center gap-2">
+            <div key={item.labelKey} className="flex items-center gap-2">
               <span className="font-mono text-xl font-bold" style={{ color: item.color }}>{item.value}</span>
-              <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{item.label}</span>
+              <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{t(item.labelKey)}</span>
             </div>
           ))}
         </div>

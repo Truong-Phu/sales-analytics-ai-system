@@ -5,15 +5,9 @@ import { Link } from 'react-router-dom'
 import { useTheme } from '../../hooks/useTheme'
 import axios from '../../api/axios'
 
-const NAV = [
-  { key: 'profile',       icon: 'person',        label: 'Tài khoản' },
-  { key: 'security',      icon: 'lock',           label: 'Bảo mật' },
-  { key: 'notifications', icon: 'notifications',  label: 'Thông báo' },
-  { key: 'appearance',    icon: 'palette',        label: 'Giao diện' },
-]
-
 // ── Avatar component ──────────────────────────────────────────────────────────
 function AvatarSection({ user, onAvatarChange }) {
+  const { t } = useTranslation()
   const fileRef = useRef(null)
   const [preview, setPreview] = useState(null)
   const [uploading, setUploading] = useState(false)
@@ -25,7 +19,7 @@ function AvatarSection({ user, onAvatarChange }) {
     const file = e.target.files[0]
     if (!file) return
     if (file.size > 2 * 1024 * 1024) {
-      alert('Ảnh tối đa 2MB')
+      alert(t('settings.avatarHint'))
       return
     }
     const reader = new FileReader()
@@ -64,9 +58,9 @@ function AvatarSection({ user, onAvatarChange }) {
         <button onClick={() => fileRef.current?.click()}
           className="lbtn lbtn-secondary text-sm" style={{ height: 36 }}>
           <span className="icon icon-sm">upload</span>
-          Đổi ảnh đại diện
+          {t('settings.changeAvatar')}
         </button>
-        <p className="text-caption mt-1.5" style={{ color: 'var(--text-tertiary)' }}>PNG/JPG, tối đa 2MB</p>
+        <p className="text-caption mt-1.5" style={{ color: 'var(--text-tertiary)' }}>{t('settings.avatarFormat')}</p>
       </div>
       <input ref={fileRef} type="file" accept="image/png,image/jpeg" className="hidden" onChange={handleFile} />
     </div>
@@ -98,6 +92,13 @@ export default function SettingsPage() {
   const { t, i18n } = useTranslation()
   const { user } = useAuth()
   const { isDark, toggle } = useTheme()
+
+  const NAV = [
+    { key: 'profile',       icon: 'person',        label: t('settings.account') },
+    { key: 'security',      icon: 'lock',           label: t('settings.security') },
+    { key: 'notifications', icon: 'notifications',  label: t('settings.notifications') },
+    { key: 'appearance',    icon: 'palette',        label: t('settings.appearance') },
+  ]
 
   const [section, setSection] = useState('profile')
   const [saved,   setSaved]   = useState(false)
@@ -186,7 +187,7 @@ export default function SettingsPage() {
             <div className="flex items-center gap-2 px-4 py-3 rounded-xl text-sm slide-up"
               style={{ background: 'rgba(16,185,129,0.10)', border: '1px solid rgba(16,185,129,0.30)', color: 'var(--accent-500)' }}>
               <span className="icon" style={{ fontSize: 18 }}>check_circle</span>
-              Đã lưu thành công
+              {t('settings.saveSuccess')}
             </div>
           )}
           {error && (

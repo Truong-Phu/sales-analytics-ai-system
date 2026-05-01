@@ -21,22 +21,34 @@ public class ReportController : ControllerBase
 
     /// <summary>
     /// Xuất báo cáo PDF.
-    /// Body (JSON, optional): { "chartBase64": "..." } – base64 image của biểu đồ từ Frontend
+    /// Query params: from, to, channel, chart (base64 ảnh biểu đồ, optional),
+    ///               includeOverview, includeSales, includeMultichannel, includeAI
     /// </summary>
     [HttpGet("export-pdf")]
     public async Task<IActionResult> ExportPdf(
-        [FromQuery] DateOnly? from    = null,
-        [FromQuery] DateOnly? to      = null,
-        [FromQuery] string?   channel = null,
-        [FromQuery] string?   chart   = null)   // base64 chart image (URL-encoded)
+        [FromQuery] DateOnly? from                 = null,
+        [FromQuery] DateOnly? to                   = null,
+        [FromQuery] string?   channel              = null,
+        [FromQuery] string?   chart                = null,
+        [FromQuery] bool      includeOverview      = true,
+        [FromQuery] bool      includeSales         = true,
+        [FromQuery] bool      includeMultichannel  = true,
+        [FromQuery] bool      includeAI            = false)
     {
         var dateFrom = from ?? DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-30));
         var dateTo   = to   ?? DateOnly.FromDateTime(DateTime.UtcNow);
 
+        var ch = channel == "all" ? null : channel;
+
         var userId   = int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? (int?)id : null;
         var username = User.FindFirstValue(ClaimTypes.Name) ?? "";
 
-        var pdfBytes = await _report.GenerateReportAsync(dateFrom, dateTo, channel, chart);
+        var pdfBytes = await _report.GenerateReportAsync(
+            dateFrom, dateTo, ch, chart,
+            inclOverview: includeOverview,
+            inclSales:    includeSales,
+            inclChannel:  includeMultichannel,
+            inclAI:       includeAI);
 
         await _audit.LogAsync(
             userId:     userId, username: username,

@@ -1,5 +1,5 @@
 import axios from 'axios'
-import AsyncStorage from '@react-native-async-storage/async-storage'
+import { storage } from './storage'
 
 // Ưu tiên biến môi trường EXPO_PUBLIC_API_URL từ .env
 // Fallback: IP LAN của máy tính (thay 192.168.1.8 bằng IP thật của bạn)
@@ -13,7 +13,7 @@ const api = axios.create({
 
 // Đính kèm access token vào mọi request
 api.interceptors.request.use(async config => {
-  const token = await AsyncStorage.getItem('access_token')
+  const token = await storage.getItem('access_token')
   if (token) config.headers.Authorization = `Bearer ${token}`
   config.headers['Accept-Language'] = 'vi'
   return config
@@ -41,12 +41,12 @@ api.interceptors.response.use(
 
       isRefreshing = true
       try {
-        const refreshToken = await AsyncStorage.getItem('refresh_token')
+        const refreshToken = await storage.getItem('refresh_token')
         if (!refreshToken) throw new Error('No refresh token')
 
         const { data } = await axios.post(`${BASE_URL}/api/auth/refresh`, { refreshToken })
-        await AsyncStorage.setItem('access_token', data.accessToken)
-        await AsyncStorage.setItem('refresh_token', data.refreshToken)
+        await storage.setItem('access_token', data.accessToken)
+        await storage.setItem('refresh_token', data.refreshToken)
 
         queue.forEach(p => p.resolve(data.accessToken))
         queue = []
@@ -55,7 +55,7 @@ api.interceptors.response.use(
       } catch {
         queue.forEach(p => p.reject(err))
         queue = []
-        await AsyncStorage.multiRemove(['access_token', 'refresh_token'])
+        await storage.multiRemove(['access_token', 'refresh_token'])
         return Promise.reject(err)
       } finally {
         isRefreshing = false

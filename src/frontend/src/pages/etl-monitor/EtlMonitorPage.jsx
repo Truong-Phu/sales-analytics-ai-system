@@ -5,20 +5,21 @@ import { getEtlStatus, triggerEtl } from '../../api/syncApi'
 import { MOCK_ETL } from '../../mockData/etlMonitor'
 
 const STATUS_CFG = {
-  running: { bg: 'rgba(245,158,11,0.10)', border: 'rgba(245,158,11,0.30)', color: '#F59E0B',            dot: '#F59E0B',   icon: 'hourglass_top',   label: 'Đang chạy' },
-  success: { bg: 'rgba(16,185,129,0.10)', border: 'rgba(16,185,129,0.30)', color: 'var(--accent-500)',  dot: 'var(--accent-500)', icon: 'check_circle', label: 'Thành công' },
-  failed:  { bg: 'rgba(239,68,68,0.10)',  border: 'rgba(239,68,68,0.30)',  color: '#EF4444',            dot: '#EF4444',   icon: 'cancel',          label: 'Thất bại' },
-  pending: { bg: 'rgba(99,102,241,0.08)', border: 'rgba(99,102,241,0.20)', color: 'var(--primary-500)', dot: 'var(--primary-500)', icon: 'schedule',   label: 'Chờ chạy' },
+  running: { bg: 'rgba(245,158,11,0.10)', border: 'rgba(245,158,11,0.30)', color: '#F59E0B',            dot: '#F59E0B',   icon: 'hourglass_top',   labelKey: 'etlMonitor.status.running' },
+  success: { bg: 'rgba(16,185,129,0.10)', border: 'rgba(16,185,129,0.30)', color: 'var(--accent-500)',  dot: 'var(--accent-500)', icon: 'check_circle', labelKey: 'etlMonitor.status.success' },
+  failed:  { bg: 'rgba(239,68,68,0.10)',  border: 'rgba(239,68,68,0.30)',  color: '#EF4444',            dot: '#EF4444',   icon: 'cancel',          labelKey: 'etlMonitor.status.failed'  },
+  pending: { bg: 'rgba(99,102,241,0.08)', border: 'rgba(99,102,241,0.20)', color: 'var(--primary-500)', dot: 'var(--primary-500)', icon: 'schedule',   labelKey: 'etlMonitor.status.pending' },
 }
 
 function StatusBadge({ status }) {
+  const { t } = useTranslation()
   const c = STATUS_CFG[status] ?? STATUS_CFG.pending
   return (
     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
           style={{ background: c.bg, border: `1px solid ${c.border}`, color: c.color }}>
       <span className="w-1.5 h-1.5 rounded-full"
             style={{ background: c.dot, ...(status === 'running' && { animation: 'pulse 1s infinite' }) }} />
-      {c.label}
+      {t(c.labelKey)}
     </span>
   )
 }
