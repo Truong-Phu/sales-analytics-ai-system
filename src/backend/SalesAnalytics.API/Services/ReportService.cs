@@ -5,7 +5,7 @@ using SalesAnalytics.Core.DTOs;
 
 namespace SalesAnalytics.API.Services;
 
-/// <summary>Xuất báo cáo PDF bằng QuestPDF</summary>
+/// <summary>Xuất báo cáo PDF bằng QuestPDF, biểu đồ native (không dùng ScottPlot)</summary>
 public class ReportService
 {
     private readonly DashboardService _dashboard;
@@ -15,7 +15,7 @@ public class ReportService
     // ── Sample data fallback khi Data Warehouse chưa có dữ liệu thật ──────────
     private static DashboardResponse GenerateSampleData(DateOnly from, DateOnly to)
     {
-        var days = Math.Max(1, to.DayNumber - from.DayNumber + 1);
+        var days         = Math.Max(1, to.DayNumber - from.DayNumber + 1);
         var totalRevenue = 285_000_000m;
         var totalProfit  =  71_250_000m;
         var totalOrders  = 1_240;
@@ -43,40 +43,183 @@ public class ReportService
 
         var products = new List<TopProduct>
         {
-            new(1, "Áo thun Unisex Cotton",  "AT-001", "Shopee",      380, 380, totalRevenue * 0.12m),
-            new(2, "Quần jeans Slim Fit",     "QJ-002", "Lazada",      295, 295, totalRevenue * 0.09m),
-            new(3, "Giày thể thao Nam",       "GT-003", "TikTok Shop", 260, 260, totalRevenue * 0.08m),
-            new(4, "Túi xách Nữ HQ",          "TX-004", "Shopee",      225, 225, totalRevenue * 0.07m),
-            new(5, "Đầm maxi Boho",           "DM-005", "Facebook",    190, 190, totalRevenue * 0.06m),
+            new(1, "Ao thun Unisex Cotton",  "AT-001", "Shopee",      380, 380, totalRevenue * 0.12m),
+            new(2, "Quan jeans Slim Fit",     "QJ-002", "Lazada",      295, 295, totalRevenue * 0.09m),
+            new(3, "Giay the thao Nam",       "GT-003", "TikTok Shop", 260, 260, totalRevenue * 0.08m),
+            new(4, "Tui xach Nu HQ",          "TX-004", "Shopee",      225, 225, totalRevenue * 0.07m),
+            new(5, "Dam maxi Boho",           "DM-005", "Facebook",    190, 190, totalRevenue * 0.06m),
         };
 
-        // Sinh doanh thu theo ngày
         var rand = new Random(42);
         var revenueByDay = new List<RevenueByDay>();
         for (int i = 0; i < days; i++)
         {
-            var d = from.AddDays(i);
-            var rev = 8_000_000m + (decimal)(Math.Sin(i / 10.0) * 3_000_000) + (decimal)(rand.NextDouble() * 2_000_000);
+            var d   = from.AddDays(i);
+            var rev = 8_000_000m + (decimal)(Math.Sin(i / 10.0) * 3_000_000)
+                    + (decimal)(rand.NextDouble() * 2_000_000);
             revenueByDay.Add(new RevenueByDay(d, Math.Round(rev, 0), Math.Round(rev * 0.25m, 0), rand.Next(15, 36)));
         }
 
         return new DashboardResponse(kpi, revenueByDay, channels, products);
     }
 
-    /// <summary>Sinh file PDF báo cáo và trả về byte[]</summary>
+    // ── QuestPDF-native chart helpers ──────────────────────────────────────────
+
+    /// <summary>Horizontal bar chart bằng QuestPDF layout thuần túy</summary>
+    private static void AddHorizontalBarChart(
+        ColumnDescriptor col,
+        IList<(string Label, decimal Value, string HexColor)> items)
+    {
+        if (items.Count == 0) return;
+
+        var max = items.Max(x => x.Value);
+        if (max <= 0) max = 1;
+
+        var palette = new[] { "#6366F1", "#10B981", "#F59E0B", "#3B82F6", "#EC4899" };
+
+        foreach (var (label, value, hex) in items)
+        {
+            var pct  = (float)(value / max);      // 0 → 1
+            var rest = Math.Max(0f, 1f - pct);
+            var color = string.IsNullOrWhiteSpace(hex) ? palette[0] : hex;
+
+            col.Item().PaddingBottom(6).Row(row =>
+            {
+                // Label
+                row.ConstantItem(130)
+                    .AlignMiddle().AlignRight().PaddingRight(8)
+                    .Text(label).FontSize(9).FontColor(Color.FromHex("#374151"));
+
+                // Bar (nền xám + thanh màu)
+                row.RelativeItem().Height(18).Background(Color.FromHex("#F3F4F6")).Row(barRow =>
+                {
+                    if (pct > 0)
+                        barRow.RelativeItem(pct * 100f).Background(Color.FromHex(color));
+                    if (rest > 0)
+                        barRow.RelativeItem(rest * 100f);
+                });
+
+                // Giá trị
+                row.ConstantItem(85).AlignMiddle().PaddingLeft(6)
+                    .Text($"{value / 1_000_000:N0} M").FontSize(9).FontColor(Color.FromHex("#6B7280"));
+            });
+        }
+    }
+
+    /// <summary>Revenue trend bar chart nhỏ theo ngày</summary>
+    private static void AddRevenueTrendBars(ColumnDescriptor col, IList<RevenueByDay> days)
+    {
+        // Lấy tối đa 28 điểm (4 tuần nếu daily)
+        var step    = Math.Max(1, days.Count / 28);
+        var sampled = days.Where((_, i) => i % step == 0).Take(28).ToList();
+        if (sampled.Count == 0) return;
+
+        var maxRev = sampled.Max(d => d.NetRevenue);
+        var maxPro = sampled.Max(d => d.GrossProfit);
+        if (maxRev <= 0) maxRev = 1;
+
+        const float chartH = 60f;
+
+        // Chart title + legend
+        col.Item().PaddingBottom(4).Row(r =>
+        {
+            r.RelativeItem();
+            r.ConstantItem(12).Height(10).Background(Color.FromHex("#6366F1"));
+            r.ConstantItem(50).PaddingLeft(3).Text("Doanh thu").FontSize(8).FontColor(Color.FromHex("#6366F1"));
+            r.ConstantItem(12).Height(10).Background(Color.FromHex("#10B981"));
+            r.ConstantItem(50).PaddingLeft(3).Text("Loi nhuan").FontSize(8).FontColor(Color.FromHex("#10B981"));
+        });
+
+        // Khung chart
+        col.Item().Height(chartH + 14).Border(0.5f).BorderColor(Colors.Grey.Lighten2)
+            .Padding(2).Row(outer =>
+            {
+                // Y-axis min/max label
+                outer.ConstantItem(28).Column(yAxis =>
+                {
+                    yAxis.Item().AlignTop().Text($"{maxRev / 1_000_000:N0}M")
+                        .FontSize(6).FontColor(Color.FromHex("#9CA3AF"));
+                    yAxis.Item().AlignBottom().Text("0")
+                        .FontSize(6).FontColor(Color.FromHex("#9CA3AF"));
+                });
+
+                // Bars
+                outer.RelativeItem().Row(barsRow =>
+                {
+                    foreach (var d in sampled)
+                    {
+                        var revPct = (float)(d.NetRevenue / maxRev);
+                        var proPct = maxPro > 0 ? (float)(d.GrossProfit / maxRev) : 0;
+
+                        barsRow.RelativeItem().Column(c =>
+                        {
+                            // Khoảng trống phía trên (chiều cao phần trống)
+                            var topSpace = chartH * (1f - revPct);
+                            var revH     = chartH * revPct;
+                            var proH     = chartH * proPct;
+
+                            c.Item().Height(topSpace);
+                            // Doanh thu bar
+                            c.Item().Height(revH - proH > 0 ? revH - proH : 0)
+                                .Background(Color.FromHex("#6366F1"));
+                            // Lợi nhuận bar (phần dưới cùng)
+                            c.Item().Height(proH).Background(Color.FromHex("#10B981"));
+                            // Day label
+                            c.Item().Height(14).AlignCenter()
+                                .Text($"{d.Date.Day}").FontSize(5.5f).FontColor(Color.FromHex("#9CA3AF"));
+                        });
+                    }
+                });
+            });
+    }
+
+    // ── QuestPDF helpers ───────────────────────────────────────────────────────
+
+    private static void AddKpiCell(TableDescriptor table, string label, string value, decimal trend)
+    {
+        table.Cell()
+            .Border(0.5f).BorderColor(Colors.Grey.Lighten2)
+            .Background(Color.FromHex("#f8f9fc"))
+            .Padding(8)
+            .Column(c =>
+            {
+                c.Item().Text(label).FontSize(9).FontColor(Colors.Grey.Darken1);
+                c.Item().Text(value).FontSize(13).Bold().FontColor(Color.FromHex("#1a5276"));
+                if (trend != 0)
+                {
+                    var sign  = trend > 0 ? "+" : "";
+                    var color = trend > 0 ? Color.FromHex("#1abc9c") : Color.FromHex("#e74c3c");
+                    c.Item().Text($"{sign}{Math.Abs(trend):N1}% so ky truoc")
+                        .FontSize(8).FontColor(color);
+                }
+            });
+    }
+
+    private static void AddSectionHeader(ColumnDescriptor col, string text)
+    {
+        col.Item().PaddingTop(12).Text(text)
+            .FontSize(13).Bold().FontColor(Color.FromHex("#1a5276"));
+        col.Item().PaddingTop(3).PaddingBottom(5)
+            .LineHorizontal(0.5f).LineColor(Color.FromHex("#DBEAFE"));
+    }
+
+    // ── Main PDF Generator ─────────────────────────────────────────────────────
+
     public async Task<byte[]> GenerateReportAsync(
         DateOnly from, DateOnly to,
         string? channel,
-        string? chartBase64   = null,
-        bool    inclOverview  = true,
-        bool    inclSales     = true,
-        bool    inclChannel   = true,
-        bool    inclAI        = false)
+        string? chartBase64    = null,
+        bool    inclOverview   = true,
+        bool    inclSales      = true,
+        bool    inclChannel    = true,
+        bool    inclAI         = false)
     {
         var data = await _dashboard.GetDashboardAsync(from, to, channel);
 
-        // Fallback: khi DW chưa có dữ liệu thật → dùng sample data để demo
-        var usingSample = data.Kpi.TotalRevenue == 0;
+        // Fallback: dùng sample data nếu bất kỳ section nào thiếu dữ liệu
+        var usingSample = data.Kpi.TotalRevenue == 0
+                       || data.RevenueByChannel.Count == 0
+                       || data.TopProducts.Count == 0;
         if (usingSample) data = GenerateSampleData(from, to);
 
         QuestPDF.Settings.License = LicenseType.Community;
@@ -96,36 +239,36 @@ public class ReportService
                     {
                         row.RelativeItem().Column(c =>
                         {
-                            c.Item().Text("BÁO CÁO PHÂN TÍCH BÁN HÀNG ĐA KÊNH")
+                            c.Item().Text("BAO CAO PHAN TICH BAN HANG DA KENH")
                                 .FontSize(15).Bold().FontColor(Color.FromHex("#1a5276"));
-                            c.Item().Text("MSAS – Multi-channel Sales Analytics System")
+                            c.Item().Text("MSAS - Multi-channel Sales Analytics System")
                                 .FontSize(9).FontColor(Colors.Grey.Medium);
                         });
-                        row.ConstantItem(150).AlignRight().Column(c =>
+                        row.ConstantItem(160).AlignRight().Column(c =>
                         {
-                            c.Item().AlignRight().Text($"Ngày xuất: {DateTime.Now:dd/MM/yyyy HH:mm}")
+                            c.Item().AlignRight().Text($"Ngay xuat: {DateTime.Now:dd/MM/yyyy HH:mm}")
                                 .FontSize(9).FontColor(Colors.Grey.Medium);
                             if (usingSample)
-                                c.Item().AlignRight().Text("⚠ Dữ liệu mẫu (DW chưa có dữ liệu)")
+                                c.Item().AlignRight().Text("(Du lieu mau - chua co du lieu thuc)")
                                     .FontSize(8).FontColor(Colors.Orange.Medium);
                         });
                     });
                     col.Item().PaddingVertical(3)
                         .LineHorizontal(1.5f).LineColor(Color.FromHex("#1a5276"));
                     col.Item().Text(
-                        $"Kỳ báo cáo: {from:dd/MM/yyyy} – {to:dd/MM/yyyy}" +
-                        (channel is not null ? $" | Kênh: {channel}" : " | Tất cả kênh")
+                        $"Ky bao cao: {from:dd/MM/yyyy} - {to:dd/MM/yyyy}" +
+                        (channel is not null ? $" | Kenh: {channel}" : " | Tat ca kenh")
                     ).FontSize(10).Italic().FontColor(Colors.Grey.Darken1);
                 });
 
                 // ── Content ─────────────────────────────────────────────────
                 page.Content().PaddingTop(1, Unit.Centimetre).Column(col =>
                 {
-                    // I. KPI
+                    // ── I. KPI Overview ──────────────────────────────────────
                     if (inclOverview)
                     {
-                        col.Item().Text("I. CHỈ SỐ KINH DOANH TỔNG QUAN")
-                            .FontSize(13).Bold().FontColor(Color.FromHex("#1a5276"));
+                        AddSectionHeader(col, "I. CHI SO KINH DOANH TONG QUAN");
+
                         col.Item().PaddingVertical(5).Table(table =>
                         {
                             table.ColumnsDefinition(c =>
@@ -134,35 +277,52 @@ public class ReportService
                                 c.RelativeColumn(2);
                                 c.RelativeColumn(2);
                             });
-                            // Row 1
-                            AddKpiCell(table, "Doanh thu thuần",  $"{data.Kpi.TotalRevenue:N0} VNĐ",  data.Kpi.RevenueGrowthPct);
-                            AddKpiCell(table, "Lợi nhuận gộp",    $"{data.Kpi.TotalProfit:N0} VNĐ",   data.Kpi.ProfitMarginPct);
-                            AddKpiCell(table, "Số đơn hàng",      $"{data.Kpi.TotalOrders:N0}",        data.Kpi.OrdersGrowthPct);
-                            // Row 2
-                            AddKpiCell(table, "Giá trị đơn TB",   $"{data.Kpi.AvgOrderValue:N0} VNĐ", 0);
-                            AddKpiCell(table, "Biên lợi nhuận",   $"{data.Kpi.ProfitMarginPct:N1}%",   0);
-                            AddKpiCell(table, "Khách hàng mới",   $"{data.Kpi.NewCustomers:N0}",       data.Kpi.CustomersGrowthPct);
+                            AddKpiCell(table, "Doanh thu thuan",  $"{data.Kpi.TotalRevenue:N0} VND", data.Kpi.RevenueGrowthPct);
+                            AddKpiCell(table, "Loi nhuan gop",    $"{data.Kpi.TotalProfit:N0} VND",  data.Kpi.ProfitMarginPct);
+                            AddKpiCell(table, "So don hang",      $"{data.Kpi.TotalOrders:N0}",       data.Kpi.OrdersGrowthPct);
+                            AddKpiCell(table, "Gia tri don TB",   $"{data.Kpi.AvgOrderValue:N0} VND", 0);
+                            AddKpiCell(table, "Bien loi nhuan",   $"{data.Kpi.ProfitMarginPct:N1}%",  0);
+                            AddKpiCell(table, "Khach hang moi",   $"{data.Kpi.NewCustomers:N0}",      data.Kpi.CustomersGrowthPct);
                         });
-                        col.Item().PaddingBottom(10);
+
+                        // Biểu đồ xu hướng doanh thu (QuestPDF native bars)
+                        if (data.RevenueByDay.Count > 0)
+                        {
+                            col.Item().PaddingTop(8).Text("Bieu do xu huong Doanh thu & Loi nhuan (theo ngay):")
+                                .FontSize(10).Bold().FontColor(Color.FromHex("#1a5276"));
+                            col.Item().PaddingTop(4).PaddingBottom(8);
+                            AddRevenueTrendBars(col, data.RevenueByDay);
+                        }
+
+                        col.Item().PaddingBottom(8);
                     }
 
-                    // II. Biểu đồ (nếu Frontend gửi base64)
+                    // ── II. Custom chart từ frontend (nếu có) ───────────────
                     if (!string.IsNullOrEmpty(chartBase64))
                     {
-                        col.Item().Text("II. BIỂU ĐỒ DOANH THU")
-                            .FontSize(13).Bold().FontColor(Color.FromHex("#1a5276"));
+                        AddSectionHeader(col, "II. BIEU DO TU NGUOI DUNG");
                         col.Item().PaddingTop(5).Image(
                             Convert.FromBase64String(chartBase64)
                         ).FitWidth();
                         col.Item().PaddingBottom(15);
                     }
 
-                    // III. Doanh thu theo kênh
+                    // ── III. Doanh thu theo kênh ─────────────────────────────
                     if (inclChannel && data.RevenueByChannel.Count > 0)
                     {
-                        col.Item().Text("III. DOANH THU THEO KÊNH BÁN HÀNG")
-                            .FontSize(13).Bold().FontColor(Color.FromHex("#1a5276"));
-                        col.Item().PaddingTop(5).Table(table =>
+                        AddSectionHeader(col, "III. DOANH THU THEO KENH BAN HANG");
+
+                        col.Item().PaddingTop(6).Text("Ty trong doanh thu theo kenh:")
+                            .FontSize(10).Bold().FontColor(Color.FromHex("#1a5276"));
+                        col.Item().PaddingTop(4).PaddingBottom(4);
+
+                        var channelPalette = new[] { "#6366F1", "#10B981", "#F59E0B", "#3B82F6", "#EC4899" };
+                        var channelBars = data.RevenueByChannel
+                            .Select((ch, i) => (ch.ChannelName, ch.Revenue, channelPalette[i % channelPalette.Length]))
+                            .ToList();
+                        AddHorizontalBarChart(col, channelBars);
+
+                        col.Item().PaddingTop(8).Table(table =>
                         {
                             table.ColumnsDefinition(c =>
                             {
@@ -173,8 +333,8 @@ public class ReportService
                             });
                             table.Header(h =>
                             {
-                                foreach (var title in new[] { "Kênh", "Doanh thu (VNĐ)", "Đơn hàng", "Tỷ trọng" })
-                                    h.Cell().Background(Color.FromHex("#d6eaf8")).Padding(5)
+                                foreach (var title in new[] { "Kenh", "Doanh thu (VND)", "Don hang", "Ty trong" })
+                                    h.Cell().Background(Color.FromHex("#DBEAFE")).Padding(5)
                                         .Text(title).Bold().FontSize(10);
                             });
                             bool alt = false;
@@ -191,12 +351,23 @@ public class ReportService
                         col.Item().PaddingBottom(15);
                     }
 
-                    // IV. Top sản phẩm
+                    // ── IV. Top sản phẩm ─────────────────────────────────────
                     if (inclSales && data.TopProducts.Count > 0)
                     {
-                        col.Item().Text("IV. TOP SẢN PHẨM BÁN CHẠY")
-                            .FontSize(13).Bold().FontColor(Color.FromHex("#1a5276"));
-                        col.Item().PaddingTop(5).Table(table =>
+                        AddSectionHeader(col, "IV. TOP SAN PHAM BAN CHAY");
+
+                        col.Item().PaddingTop(6).Text("Doanh thu Top 5 san pham:")
+                            .FontSize(10).Bold().FontColor(Color.FromHex("#1a5276"));
+                        col.Item().PaddingTop(4).PaddingBottom(4);
+
+                        var productPalette = new[] { "#6366F1", "#10B981", "#F59E0B", "#3B82F6", "#EC4899" };
+                        var productBars = data.TopProducts
+                            .Take(5)
+                            .Select((p, i) => (p.ProductName, p.Revenue, productPalette[i % productPalette.Length]))
+                            .ToList();
+                        AddHorizontalBarChart(col, productBars);
+
+                        col.Item().PaddingTop(8).Table(table =>
                         {
                             table.ColumnsDefinition(c =>
                             {
@@ -208,8 +379,8 @@ public class ReportService
                             });
                             table.Header(h =>
                             {
-                                foreach (var t in new[] { "#", "Sản phẩm", "Kênh", "SL bán", "Doanh thu" })
-                                    h.Cell().Background(Color.FromHex("#d6eaf8")).Padding(5)
+                                foreach (var t in new[] { "#", "San pham", "Kenh", "SL ban", "Doanh thu" })
+                                    h.Cell().Background(Color.FromHex("#DBEAFE")).Padding(5)
                                         .Text(t).Bold().FontSize(10);
                             });
                             int i = 1;
@@ -226,27 +397,29 @@ public class ReportService
                         col.Item().PaddingBottom(15);
                     }
 
-                    // V. Nhận xét AI (đơn giản, rule-based)
+                    // ── V. Nhận xét AI (rule-based) ──────────────────────────
                     if (inclAI)
                     {
-                        col.Item().Text("V. NHẬN XÉT & KHUYẾN NGHỊ")
-                            .FontSize(13).Bold().FontColor(Color.FromHex("#1a5276"));
+                        AddSectionHeader(col, "V. NHAN XET & KHUYEN NGHI");
                         col.Item().PaddingTop(5).Column(ai =>
                         {
                             var topCh = data.RevenueByChannel.FirstOrDefault();
+                            var growthText = data.Kpi.RevenueGrowthPct > 0
+                                ? $"tang truong {data.Kpi.RevenueGrowthPct:N1}% so voi ky truoc."
+                                : $"giam {Math.Abs(data.Kpi.RevenueGrowthPct):N1}% so voi ky truoc.";
+
                             var insights = new List<string>
                             {
-                                $"• Doanh thu kỳ này đạt {data.Kpi.TotalRevenue:N0} VNĐ" +
-                                    (data.Kpi.RevenueGrowthPct > 0
-                                        ? $", tăng trưởng {data.Kpi.RevenueGrowthPct:N1}% so với kỳ trước."
-                                        : $", giảm {Math.Abs(data.Kpi.RevenueGrowthPct):N1}% so với kỳ trước."),
+                                $"• Doanh thu ky nay dat {data.Kpi.TotalRevenue:N0} VND, {growthText}",
                                 topCh is not null
-                                    ? $"• Kênh bán hàng đóng góp cao nhất là {topCh.ChannelName} ({topCh.RevenuePct:N1}% doanh thu)."
+                                    ? $"• Kenh ban hang dong gop cao nhat la {topCh.ChannelName} ({topCh.RevenuePct:N1}% doanh thu)."
                                     : "",
-                                $"• Biên lợi nhuận gộp đạt {data.Kpi.ProfitMarginPct:N1}%.",
+                                $"• Bien loi nhuan gop dat {data.Kpi.ProfitMarginPct:N1}%.",
                                 data.Kpi.ProfitMarginPct < 20
-                                    ? "• Khuyến nghị: Tối ưu chi phí vận hành để cải thiện biên lợi nhuận."
-                                    : "• Biên lợi nhuận ở mức tốt. Có thể đẩy mạnh ngân sách marketing.",
+                                    ? "• Khuyen nghi: Toi uu chi phi van hanh de cai thien bien loi nhuan."
+                                    : "• Bien loi nhuan o muc tot. Co the day manh ngan sach marketing.",
+                                $"• Tong {data.Kpi.TotalOrders:N0} don hang voi gia tri trung binh {data.Kpi.AvgOrderValue:N0} VND/don.",
+                                $"• Tong so khach hang moi trong ky: {data.Kpi.NewCustomers:N0} khach.",
                             };
                             foreach (var line in insights.Where(l => l.Length > 0))
                                 ai.Item().PaddingBottom(4).Text(line).FontSize(10);
@@ -257,7 +430,8 @@ public class ReportService
                 // ── Footer ───────────────────────────────────────────────────
                 page.Footer().AlignCenter().Text(text =>
                 {
-                    text.Span("MSAS – Hệ thống Phân tích Bán hàng Đa kênh  |  Trang ").FontSize(9).FontColor(Colors.Grey.Medium);
+                    text.Span("MSAS - He thong Phan tich Ban hang Da kenh  |  Trang ")
+                        .FontSize(9).FontColor(Colors.Grey.Medium);
                     text.CurrentPageNumber().FontSize(9).FontColor(Colors.Grey.Medium);
                     text.Span(" / ").FontSize(9).FontColor(Colors.Grey.Medium);
                     text.TotalPages().FontSize(9).FontColor(Colors.Grey.Medium);
@@ -266,25 +440,5 @@ public class ReportService
         });
 
         return pdf.GeneratePdf();
-    }
-
-    private static void AddKpiCell(TableDescriptor table, string label, string value, decimal trend)
-    {
-        table.Cell()
-            .Border(0.5f).BorderColor(Colors.Grey.Lighten2)
-            .Background(Color.FromHex("#f8f9fc"))
-            .Padding(8)
-            .Column(c =>
-            {
-                c.Item().Text(label).FontSize(9).FontColor(Colors.Grey.Darken1);
-                c.Item().Text(value).FontSize(13).Bold().FontColor(Color.FromHex("#1a5276"));
-                if (trend != 0)
-                {
-                    var sign  = trend > 0 ? "▲" : "▼";
-                    var color = trend > 0 ? Color.FromHex("#1abc9c") : Color.FromHex("#e74c3c");
-                    c.Item().Text($"{sign} {Math.Abs(trend):N1}% so với kỳ trước")
-                        .FontSize(8).FontColor(color);
-                }
-            });
     }
 }

@@ -94,10 +94,13 @@
   "dashboard": {
     "title": "Tổng quan kinh doanh",
     "kpi": {
-      "revenue": "Doanh thu thuần",
-      "orders": "Tổng đơn hàng",
-      "aov": "Giá trị đơn TB",
-      "newCustomers": "Khách hàng mới"
+      "revenue":        "Doanh thu thuần",
+      "orders":         "Số đơn hàng",
+      "aov":            "Giá trị đơn TB",
+      "newCustomers":   "Khách hàng mới",
+      "conversionRate": "Tỷ lệ chuyển đổi",
+      "profit":         "Lợi nhuận gộp",
+      "roi":            "ROI tổng"
     },
     "revenueChart": "Doanh thu theo ngày",
     "channelChart": "Doanh thu theo kênh",
@@ -106,6 +109,62 @@
     "colChannel": "Kênh",
     "colOrders": "Đơn hàng",
     "colRevenue": "Doanh thu",
+    "compare": "so sánh",
+    "tab": {
+      "overview":     "Tổng quan",
+      "sales":        "Bán hàng",
+      "multichannel": "Đa kênh",
+      "customer":     "Khách hàng",
+      "marketing":    "Marketing & ROI",
+      "inventory":    "Tồn kho & Vận hành"
+    },
+    "preset": {
+      "year2025": "2025",
+      "30d":      "30 ngày",
+      "90d":      "90 ngày",
+      "custom":   "Tùy chọn"
+    },
+    "chart": {
+      "revenueTrend":    "Xu hướng doanh thu & lợi nhuận",
+      "channelShare":    "Tỷ trọng doanh thu theo kênh",
+      "channelMonthly":  "Doanh thu kênh theo tháng (Stacked)",
+      "top5Products":    "Top 5 sản phẩm bán chạy",
+      "revenueGrowth":   "Tăng trưởng doanh thu",
+      "channelCompare":  "So sánh doanh thu kênh theo tháng",
+      "channelProp":     "Tỷ trọng kênh",
+      "radar":           "Hiệu suất đa chiều theo kênh (Radar)",
+      "funnel":          "Phễu chuyển đổi khách hàng",
+      "clv":             "CLV vs Tần suất mua (phân khúc)",
+      "heatmap":         "Thời gian mua hàng (Giờ × Ngày trong tuần)",
+      "marketingCombo":  "Chi phí quảng cáo vs Doanh thu (Combo)",
+      "roas":            "ROAS theo kênh",
+      "cac":             "CAC vs ROAS theo kênh",
+      "inventory":       "Tồn kho hiện tại vs Dự báo nhu cầu",
+      "returnRate":      "Tỷ lệ hoàn trả theo sản phẩm (%)"
+    },
+    "series": {
+      "revenue":       "Doanh thu",
+      "profit":        "Lợi nhuận",
+      "stock":         "Tồn kho hiện tại",
+      "forecast":      "Dự báo nhu cầu",
+      "adCost":        "Chi phí QC",
+      "revenueM":      "Doanh thu (M₫)",
+      "adCostM":       "Chi phí QC (M₫)",
+      "radarCost":     "Chi phí",
+      "radarEngage":   "Tương tác",
+      "radarConv":     "Tỷ lệ chuyển đổi",
+      "radarRevenue":  "Doanh thu"
+    },
+    "invKpi": {
+      "returnRate":       "Tỷ lệ hoàn đơn TB",
+      "cancelRate":       "Tỷ lệ hủy đơn",
+      "deliverySuccess":  "Tỷ lệ giao thành công",
+      "processingTime":   "Tốc độ xử lý đơn"
+    },
+    "heatmap": {
+      "low":  "Ít",
+      "high": "Nhiều"
+    },
     "period": {
       "7d": "7 ngày",
       "30d": "30 ngày",

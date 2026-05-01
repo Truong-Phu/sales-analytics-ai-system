@@ -94,10 +94,13 @@
   "dashboard": {
     "title": "Business Overview",
     "kpi": {
-      "revenue": "Net Revenue",
-      "orders": "Total Orders",
-      "aov": "Avg. Order Value",
-      "newCustomers": "New Customers"
+      "revenue":        "Net Revenue",
+      "orders":         "Total Orders",
+      "aov":            "Avg. Order Value",
+      "newCustomers":   "New Customers",
+      "conversionRate": "Conversion Rate",
+      "profit":         "Gross Profit",
+      "roi":            "Total ROI"
     },
     "revenueChart": "Revenue by Day",
     "channelChart": "Revenue by Channel",
@@ -106,6 +109,62 @@
     "colChannel": "Channel",
     "colOrders": "Orders",
     "colRevenue": "Revenue",
+    "compare": "vs prev.",
+    "tab": {
+      "overview":     "Overview",
+      "sales":        "Sales",
+      "multichannel": "Multi-channel",
+      "customer":     "Customers",
+      "marketing":    "Marketing & ROI",
+      "inventory":    "Inventory & Ops"
+    },
+    "preset": {
+      "year2025": "2025",
+      "30d":      "30 days",
+      "90d":      "90 days",
+      "custom":   "Custom"
+    },
+    "chart": {
+      "revenueTrend":    "Revenue & Profit Trend",
+      "channelShare":    "Revenue Share by Channel",
+      "channelMonthly":  "Channel Revenue by Month (Stacked)",
+      "top5Products":    "Top 5 Best-Selling Products",
+      "revenueGrowth":   "Revenue Growth",
+      "channelCompare":  "Channel Revenue Comparison",
+      "channelProp":     "Channel Proportion",
+      "radar":           "Multi-dimensional Channel Performance (Radar)",
+      "funnel":          "Customer Conversion Funnel",
+      "clv":             "CLV vs Purchase Frequency (Segments)",
+      "heatmap":         "Purchase Time (Hour × Day of Week)",
+      "marketingCombo":  "Ad Spend vs Revenue (Combo)",
+      "roas":            "ROAS by Channel",
+      "cac":             "CAC vs ROAS by Channel",
+      "inventory":       "Current Stock vs Demand Forecast",
+      "returnRate":      "Return Rate by Product (%)"
+    },
+    "series": {
+      "revenue":       "Revenue",
+      "profit":        "Profit",
+      "stock":         "Current Stock",
+      "forecast":      "Demand Forecast",
+      "adCost":        "Ad Cost",
+      "revenueM":      "Revenue (M₫)",
+      "adCostM":       "Ad Cost (M₫)",
+      "radarCost":     "Ad Cost",
+      "radarEngage":   "Engagement",
+      "radarConv":     "Conversion Rate",
+      "radarRevenue":  "Revenue"
+    },
+    "invKpi": {
+      "returnRate":       "Avg. Return Rate",
+      "cancelRate":       "Cancellation Rate",
+      "deliverySuccess":  "Delivery Success Rate",
+      "processingTime":   "Order Processing Time"
+    },
+    "heatmap": {
+      "low":  "Low",
+      "high": "High"
+    },
     "period": {
       "7d": "7 days",
       "30d": "30 days",

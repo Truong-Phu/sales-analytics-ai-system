@@ -19,8 +19,8 @@ function relDate(offsetDays) {
 
 function fmtM(v) {
   if (v >= 1_000_000_000) return `₫${(v / 1_000_000_000).toFixed(1)}B`
-  if (v >= 1_000_000) return `₫${(v / 1_000_000).toFixed(1)}M`
-  if (v >= 1_000) return `₫${(v / 1_000).toFixed(0)}K`
+  if (v >= 1_000_000)     return `₫${(v / 1_000_000).toFixed(1)}M`
+  if (v >= 1_000)         return `₫${(v / 1_000).toFixed(0)}K`
   return `₫${v}`
 }
 
@@ -33,11 +33,7 @@ function generateMockData(from, to) {
     const base = 8_000_000 + Math.sin(i / 10) * 3_000_000
     const netRevenue  = Math.round(base + Math.random() * 2_000_000)
     const grossProfit = Math.round(netRevenue * (0.28 + Math.random() * 0.08))
-    return {
-      date: d.toISOString().slice(0, 10),
-      netRevenue, grossProfit,
-      orderCount: Math.round(15 + Math.random() * 20),
-    }
+    return { date: d.toISOString().slice(0, 10), netRevenue, grossProfit, orderCount: Math.round(15 + Math.random() * 20) }
   })
   const totalRevenue = revenueByDay.reduce((s, d) => s + d.netRevenue, 0)
   const totalProfit  = revenueByDay.reduce((s, d) => s + d.grossProfit, 0)
@@ -45,19 +41,16 @@ function generateMockData(from, to) {
 
   const channels = [
     { channelName: 'Shopee',      pct: 0.35, adSpend: 12_000_000 },
-    { channelName: 'Lazada',      pct: 0.25, adSpend: 9_000_000  },
+    { channelName: 'Lazada',      pct: 0.25, adSpend:  9_000_000 },
     { channelName: 'TikTok Shop', pct: 0.20, adSpend: 15_000_000 },
-    { channelName: 'Facebook',    pct: 0.12, adSpend: 8_000_000  },
-    { channelName: 'Website',     pct: 0.08, adSpend: 3_000_000  },
+    { channelName: 'Facebook',    pct: 0.12, adSpend:  8_000_000 },
+    { channelName: 'Website',     pct: 0.08, adSpend:  3_000_000 },
   ]
 
-  // Monthly grouped data for multi-channel
-  const monthlyByChannel = ['T1','T2','T3','T4','T5','T6'].map((month, mi) => {
+  const monthlyByChannel = ['T1','T2','T3','T4','T5','T6'].map(month => {
     const base = totalRevenue / 6
-    const row = { month }
-    channels.forEach(ch => {
-      row[ch.channelName] = Math.round(base * ch.pct * (0.85 + Math.random() * 0.3))
-    })
+    const row  = { month }
+    channels.forEach(ch => { row[ch.channelName] = Math.round(base * ch.pct * (0.85 + Math.random() * 0.3)) })
     return row
   })
 
@@ -76,12 +69,12 @@ function generateMockData(from, to) {
     revenueByDay,
     revenueByChannel: channels.map(ch => ({
       channelName: ch.channelName,
-      revenue: totalRevenue * ch.pct,
-      orders:  Math.round(totalOrders * ch.pct),
-      revenuePct: ch.pct * 100,
-      adSpend: ch.adSpend,
-      roas: ((totalRevenue * ch.pct) / ch.adSpend).toFixed(1),
-      cac:  Math.round(ch.adSpend / (totalOrders * ch.pct * 0.3)),
+      revenue:     totalRevenue * ch.pct,
+      orders:      Math.round(totalOrders * ch.pct),
+      revenuePct:  ch.pct * 100,
+      adSpend:     ch.adSpend,
+      roas:        ((totalRevenue * ch.pct) / ch.adSpend).toFixed(1),
+      cac:         Math.round(ch.adSpend / (totalOrders * ch.pct * 0.3)),
     })),
     topProducts: [
       { productName: 'Áo thun Unisex Cotton', channel: 'Shopee',      orders: 380, revenue: totalRevenue * 0.12 },
@@ -92,56 +85,45 @@ function generateMockData(from, to) {
     ],
     monthlyByChannel,
     customerSegments: [
-      { name: 'VIP (>10tr)',     value: 120, clv: 25_000_000, freq: 8  },
-      { name: 'Thân thiết',      value: 340, clv: 8_000_000,  freq: 4  },
-      { name: 'Mới',             value: 580, clv: 2_000_000,  freq: 1  },
-      { name: 'Không hoạt động', value: 210, clv: 500_000,    freq: 0.5 },
+      { name: 'VIP (>10tr)',      value: 120, clv: 25_000_000, freq: 8   },
+      { name: 'Thân thiết',       value: 340, clv:  8_000_000, freq: 4   },
+      { name: 'Mới',              value: 580, clv:  2_000_000, freq: 1   },
+      { name: 'Không hoạt động',  value: 210, clv:    500_000, freq: 0.5 },
     ],
     funnel: [
       { stage: 'Lượt truy cập', value: 45000 },
       { stage: 'Xem sản phẩm',  value: 18000 },
-      { stage: 'Thêm giỏ hàng', value: 6200  },
-      { stage: 'Đặt hàng',      value: 2800  },
-      { stage: 'Thanh toán',    value: 2450  },
+      { stage: 'Thêm giỏ hàng', value:  6200 },
+      { stage: 'Đặt hàng',      value:  2800 },
+      { stage: 'Thanh toán',    value:  2450 },
     ],
     heatmap: (() => {
       const rows = []
-      for (let h = 0; h < 24; h += 2) {
-        ['T2','T3','T4','T5','T6','T7','CN'].forEach(day => {
-          rows.push({
-            hour: `${h}:00`, day,
-            orders: Math.round(Math.random() * 60 + (h >= 8 && h <= 20 ? 30 : 5)),
-          })
-        })
-      }
+      for (let h = 0; h < 24; h += 2)
+        ['T2','T3','T4','T5','T6','T7','CN'].forEach(day =>
+          rows.push({ hour: `${h}:00`, day, orders: Math.round(Math.random() * 60 + (h >= 8 && h <= 20 ? 30 : 5)) }))
       return rows
     })(),
+    // Dùng key tiếng Anh để Recharts Radar có thể dùng t() cho name prop
     radarData: channels.map(ch => ({
-      channel: ch.channelName.split(' ')[0],
-      'Chi phí': Math.round(ch.adSpend / 1_000_000 * 10),
-      'Tương tác': Math.round(70 + Math.random() * 30),
-      'Tỷ lệ chuyển đổi': Math.round(ch.pct * 300 + Math.random() * 20),
-      'Doanh thu': Math.round(ch.pct * 100),
+      channel:    ch.channelName.split(' ')[0],
+      adCost:     Math.round(ch.adSpend / 1_000_000 * 10),
+      engagement: Math.round(70 + Math.random() * 30),
+      conversion: Math.round(ch.pct * 300 + Math.random() * 20),
+      revenue:    Math.round(ch.pct * 100),
     })),
     inventory: [
-      { product: 'Áo thun',   stock: 320, forecast: 280, returnRate: 2.1 },
+      { product: 'Áo thun',    stock: 320, forecast: 280, returnRate: 2.1 },
       { product: 'Quần jeans', stock: 180, forecast: 220, returnRate: 3.5 },
-      { product: 'Giày',       stock: 95,  forecast: 150, returnRate: 5.2 },
+      { product: 'Giày',       stock:  95, forecast: 150, returnRate: 5.2 },
       { product: 'Túi xách',   stock: 240, forecast: 200, returnRate: 1.8 },
       { product: 'Đầm maxi',   stock: 160, forecast: 130, returnRate: 4.0 },
     ],
   }
 }
 
-// ── Presets & constants ───────────────────────────────────────────────────────
-const QUICK_PRESETS = [
-  { key: 'year2025', label: '2025',    from: '2025-01-01', to: '2025-12-31' },
-  { key: '30d',      label: '30 ngày', from: () => relDate(-30), to: () => relDate(0) },
-  { key: '90d',      label: '90 ngày', from: () => relDate(-90), to: () => relDate(0) },
-  { key: 'custom',   label: 'Tùy chọn', from: null, to: null },
-]
-const CHANNEL_KEYS = ['all', 'shopee', 'lazada', 'tiktok', 'facebook', 'website']
-const CHART_COLORS = ['#6366F1', '#10B981', '#F59E0B', '#3B82F6', '#EC4899', '#8B5CF6', '#14B8A6', '#F97316']
+const CHANNEL_KEYS  = ['all', 'shopee', 'lazada', 'tiktok', 'facebook', 'website']
+const CHART_COLORS  = ['#6366F1', '#10B981', '#F59E0B', '#3B82F6', '#EC4899', '#8B5CF6', '#14B8A6', '#F97316']
 
 function resolvePreset(p) {
   return {
@@ -159,7 +141,7 @@ function SectionTitle({ children }) {
   )
 }
 
-function KpiCard({ label, value, trend, icon, color = 'var(--primary-500)' }) {
+function KpiCard({ label, value, trend, trendLabel, icon, color = 'var(--primary-500)' }) {
   const up = trend > 0
   return (
     <div className="lcard lcard-hover px-4 py-3 cursor-default flex-shrink-0" style={{ minWidth: 160 }}>
@@ -174,7 +156,7 @@ function KpiCard({ label, value, trend, icon, color = 'var(--primary-500)' }) {
             {up ? 'arrow_upward' : 'arrow_downward'}
           </span>
           <span style={{ color: up ? 'var(--accent-500)' : 'var(--color-error)' }}>{Math.abs(trend)}%</span>
-          <span style={{ color: 'var(--text-tertiary)' }}>so sánh</span>
+          <span style={{ color: 'var(--text-tertiary)' }}>{trendLabel}</span>
         </div>
       )}
     </div>
@@ -203,30 +185,31 @@ function ChartTooltip({ active, payload, label }) {
 
 // ── Tab: 1 — Overview ─────────────────────────────────────────────────────────
 function TabOverview({ data }) {
-  const kpi = data.kpi
+  const { t } = useTranslation()
+  const kpi   = data.kpi
   return (
     <div className="space-y-5">
       {/* KPI strip */}
       <div className="flex gap-3 overflow-x-auto pb-1 scrollbar-none">
-        <KpiCard label="Doanh thu thuần" value={fmtM(kpi.totalRevenue)} trend={kpi.revenueGrowthPct} icon="payments" />
-        <KpiCard label="Số đơn hàng"     value={kpi.totalOrders.toLocaleString('vi-VN')} trend={kpi.ordersGrowthPct} icon="shopping_cart" />
-        <KpiCard label="Giá trị TB đơn"  value={fmtM(kpi.avgOrderValue)} icon="receipt_long" color="var(--accent-500)" />
-        <KpiCard label="Tỷ lệ chuyển đổi" value={`${kpi.conversionRate.toFixed(1)}%`} icon="conversion_path" color="#F59E0B" />
-        <KpiCard label="Lợi nhuận gộp"   value={fmtM(kpi.totalProfit)} trend={kpi.profitMarginPct} icon="percent" color="#8B5CF6" />
-        <KpiCard label="ROI tổng"         value={`${kpi.roi}%`} icon="trending_up" color="#EC4899" />
+        <KpiCard label={t('dashboard.kpi.revenue')}        value={fmtM(kpi.totalRevenue)}                        trend={kpi.revenueGrowthPct}   trendLabel={t('dashboard.compare')} icon="payments" />
+        <KpiCard label={t('dashboard.kpi.orders')}         value={kpi.totalOrders.toLocaleString('vi-VN')}        trend={kpi.ordersGrowthPct}    trendLabel={t('dashboard.compare')} icon="shopping_cart" />
+        <KpiCard label={t('dashboard.kpi.aov')}            value={fmtM(kpi.avgOrderValue)}                        icon="receipt_long"            color="var(--accent-500)" />
+        <KpiCard label={t('dashboard.kpi.conversionRate')} value={`${kpi.conversionRate.toFixed(1)}%`}            icon="conversion_path"         color="#F59E0B" />
+        <KpiCard label={t('dashboard.kpi.profit')}         value={fmtM(kpi.totalProfit)}                          trend={kpi.profitMarginPct}    trendLabel={t('dashboard.compare')} icon="percent" color="#8B5CF6" />
+        <KpiCard label={t('dashboard.kpi.roi')}            value={`${kpi.roi}%`}                                  icon="trending_up"             color="#EC4899" />
       </div>
 
       {/* Hero 2/3 + Donut 1/3 */}
       <div className="grid grid-cols-12 gap-4">
         <div className="lcard p-5 col-span-12 lg:col-span-8">
           <div className="flex items-center justify-between mb-4">
-            <SectionTitle>Xu hướng doanh thu & lợi nhuận</SectionTitle>
+            <SectionTitle>{t('dashboard.chart.revenueTrend')}</SectionTitle>
             <div className="flex items-center gap-3 text-caption" style={{ color: 'var(--text-tertiary)' }}>
               <span className="flex items-center gap-1.5">
-                <span className="w-3 h-0.5 inline-block rounded" style={{ background: '#6366F1' }} />Doanh thu
+                <span className="w-3 h-0.5 inline-block rounded" style={{ background: '#6366F1' }} />{t('dashboard.series.revenue')}
               </span>
               <span className="flex items-center gap-1.5">
-                <span className="w-3 h-0.5 inline-block rounded" style={{ background: '#10B981' }} />Lợi nhuận
+                <span className="w-3 h-0.5 inline-block rounded" style={{ background: '#10B981' }} />{t('dashboard.series.profit')}
               </span>
             </div>
           </div>
@@ -248,23 +231,19 @@ function TabOverview({ data }) {
               <YAxis tick={{ fontSize: 11, fill: 'var(--text-tertiary)' }} axisLine={false} tickLine={false} width={52}
                 tickFormatter={v => v >= 1_000_000 ? `${(v/1_000_000).toFixed(0)}M` : v >= 1000 ? `${(v/1000).toFixed(0)}K` : v} />
               <Tooltip content={<ChartTooltip />} />
-              <Area type="monotone" dataKey="netRevenue"  name="Doanh thu" stroke="#6366F1" strokeWidth={2} fill="url(#revGrad)" dot={false} />
-              <Area type="monotone" dataKey="grossProfit" name="Lợi nhuận" stroke="#10B981" strokeWidth={2} fill="url(#proGrad)" dot={false} />
+              <Area type="monotone" dataKey="netRevenue"  name={t('dashboard.series.revenue')} stroke="#6366F1" strokeWidth={2} fill="url(#revGrad)" dot={false} />
+              <Area type="monotone" dataKey="grossProfit" name={t('dashboard.series.profit')}  stroke="#10B981" strokeWidth={2} fill="url(#proGrad)" dot={false} />
             </AreaChart>
           </ResponsiveContainer>
         </div>
 
         <div className="lcard p-5 col-span-12 lg:col-span-4">
-          <SectionTitle>Tỷ trọng doanh thu theo kênh</SectionTitle>
+          <SectionTitle>{t('dashboard.chart.channelShare')}</SectionTitle>
           <ResponsiveContainer width="100%" height={200}>
             <PieChart>
               <Pie data={data.revenueByChannel} dataKey="revenue" nameKey="channelName"
-                cx="50%" cy="50%" outerRadius={80} innerRadius={48}
-                paddingAngle={3}
-              >
-                {data.revenueByChannel.map((_, i) => (
-                  <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
-                ))}
+                cx="50%" cy="50%" outerRadius={80} innerRadius={48} paddingAngle={3}>
+                {data.revenueByChannel.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
               </Pie>
               <Tooltip formatter={v => fmtM(v)} />
             </PieChart>
@@ -286,11 +265,11 @@ function TabOverview({ data }) {
 
 // ── Tab: 2 — Sales Performance ────────────────────────────────────────────────
 function TabSales({ data }) {
+  const { t } = useTranslation()
   return (
     <div className="space-y-5">
-      {/* Stacked Bar: doanh thu kênh theo tháng — full */}
       <div className="lcard p-5">
-        <SectionTitle>Doanh thu theo kênh & tháng (Stacked Bar)</SectionTitle>
+        <SectionTitle>{t('dashboard.chart.channelMonthly')}</SectionTitle>
         <ResponsiveContainer width="100%" height={280}>
           <BarChart data={data.monthlyByChannel} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
@@ -301,20 +280,19 @@ function TabSales({ data }) {
             <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11, color: 'var(--text-secondary)' }} />
             {data.revenueByChannel.map((ch, i) => (
               <Bar key={ch.channelName} dataKey={ch.channelName} stackId="a"
-                fill={CHART_COLORS[i % CHART_COLORS.length]} radius={i === data.revenueByChannel.length - 1 ? [4,4,0,0] : [0,0,0,0]} />
+                fill={CHART_COLORS[i % CHART_COLORS.length]}
+                radius={i === data.revenueByChannel.length - 1 ? [4,4,0,0] : [0,0,0,0]} />
             ))}
           </BarChart>
         </ResponsiveContainer>
       </div>
 
-      {/* Bar ngang top products + Area tăng trưởng */}
       <div className="grid grid-cols-12 gap-4">
         <div className="lcard p-5 col-span-12 lg:col-span-6">
-          <SectionTitle>Top 5 sản phẩm bán chạy</SectionTitle>
+          <SectionTitle>{t('dashboard.chart.top5Products')}</SectionTitle>
           <div className="space-y-3">
             {data.topProducts.map((p, i) => {
-              const maxRev = data.topProducts[0].revenue
-              const pct = (p.revenue / maxRev) * 100
+              const pct = (p.revenue / data.topProducts[0].revenue) * 100
               return (
                 <div key={i}>
                   <div className="flex justify-between text-caption mb-1" style={{ color: 'var(--text-secondary)' }}>
@@ -332,9 +310,11 @@ function TabSales({ data }) {
         </div>
 
         <div className="lcard p-5 col-span-12 lg:col-span-6">
-          <SectionTitle>Tăng trưởng doanh thu (Area)</SectionTitle>
+          <SectionTitle>{t('dashboard.chart.revenueGrowth')}</SectionTitle>
           <ResponsiveContainer width="100%" height={220}>
-            <AreaChart data={data.revenueByDay.filter((_, i) => i % Math.max(1, Math.floor(data.revenueByDay.length / 30)) === 0).map(d => ({ ...d, date: d.date.slice(5) }))}
+            <AreaChart
+              data={data.revenueByDay.filter((_, i) => i % Math.max(1, Math.floor(data.revenueByDay.length / 30)) === 0)
+                .map(d => ({ ...d, date: d.date.slice(5) }))}
               margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
               <defs>
                 <linearGradient id="growGrad" x1="0" y1="0" x2="0" y2="1">
@@ -348,7 +328,7 @@ function TabSales({ data }) {
               <YAxis tick={{ fontSize: 10, fill: 'var(--text-tertiary)' }} axisLine={false} tickLine={false} width={44}
                 tickFormatter={v => `${(v/1_000_000).toFixed(0)}M`} />
               <Tooltip content={<ChartTooltip />} />
-              <Area type="monotone" dataKey="netRevenue" name="Doanh thu" stroke="#8B5CF6" strokeWidth={2} fill="url(#growGrad)" dot={false} />
+              <Area type="monotone" dataKey="netRevenue" name={t('dashboard.series.revenue')} stroke="#8B5CF6" strokeWidth={2} fill="url(#growGrad)" dot={false} />
             </AreaChart>
           </ResponsiveContainer>
         </div>
@@ -359,12 +339,12 @@ function TabSales({ data }) {
 
 // ── Tab: 3 — Multi-channel ────────────────────────────────────────────────────
 function TabMultiChannel({ data }) {
+  const { t } = useTranslation()
   return (
     <div className="space-y-5">
-      {/* Stacked 3/4 + Donut 1/4 */}
       <div className="grid grid-cols-12 gap-4">
         <div className="lcard p-5 col-span-12 lg:col-span-8">
-          <SectionTitle>So sánh doanh thu kênh theo tháng</SectionTitle>
+          <SectionTitle>{t('dashboard.chart.channelCompare')}</SectionTitle>
           <ResponsiveContainer width="100%" height={280}>
             <BarChart data={data.monthlyByChannel} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
@@ -381,31 +361,28 @@ function TabMultiChannel({ data }) {
         </div>
 
         <div className="lcard p-5 col-span-12 lg:col-span-4">
-          <SectionTitle>Tỷ trọng kênh</SectionTitle>
+          <SectionTitle>{t('dashboard.chart.channelProp')}</SectionTitle>
           <ResponsiveContainer width="100%" height={200}>
             <PieChart>
               <Pie data={data.revenueByChannel} dataKey="orders" nameKey="channelName"
                 cx="50%" cy="50%" outerRadius={75} paddingAngle={4}>
-                {data.revenueByChannel.map((_, i) => (
-                  <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
-                ))}
+                {data.revenueByChannel.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
               </Pie>
-              <Tooltip formatter={v => `${v.toLocaleString('vi-VN')} đơn`} />
+              <Tooltip formatter={v => `${v.toLocaleString('vi-VN')} ${t('dashboard.colOrders').toLowerCase()}`} />
             </PieChart>
           </ResponsiveContainer>
         </div>
       </div>
 
-      {/* Radar: hiệu suất kênh */}
       <div className="lcard p-5">
-        <SectionTitle>Hiệu suất đa chiều theo kênh (Radar)</SectionTitle>
+        <SectionTitle>{t('dashboard.chart.radar')}</SectionTitle>
         <ResponsiveContainer width="100%" height={320}>
           <RadarChart data={data.radarData} cx="50%" cy="50%" outerRadius="70%">
             <PolarGrid stroke="var(--border)" />
             <PolarAngleAxis dataKey="channel" tick={{ fontSize: 11, fill: 'var(--text-secondary)' }} />
-            <Radar name="Chi phí" dataKey="Chi phí" stroke="#6366F1" fill="#6366F1" fillOpacity={0.2} />
-            <Radar name="Tương tác" dataKey="Tương tác" stroke="#10B981" fill="#10B981" fillOpacity={0.2} />
-            <Radar name="Doanh thu" dataKey="Doanh thu" stroke="#F59E0B" fill="#F59E0B" fillOpacity={0.2} />
+            <Radar name={t('dashboard.series.radarCost')}    dataKey="adCost"     stroke="#6366F1" fill="#6366F1" fillOpacity={0.2} />
+            <Radar name={t('dashboard.series.radarEngage')}  dataKey="engagement" stroke="#10B981" fill="#10B981" fillOpacity={0.2} />
+            <Radar name={t('dashboard.series.radarRevenue')} dataKey="revenue"    stroke="#F59E0B" fill="#F59E0B" fillOpacity={0.2} />
             <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
             <Tooltip />
           </RadarChart>
@@ -417,16 +394,16 @@ function TabMultiChannel({ data }) {
 
 // ── Tab: 4 — Customer Analytics ───────────────────────────────────────────────
 function TabCustomer({ data }) {
+  const { t }     = useTranslation()
   const maxFunnel = data.funnel[0].value
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-12 gap-4">
-        {/* Funnel */}
         <div className="lcard p-5 col-span-12 lg:col-span-6">
-          <SectionTitle>Phễu chuyển đổi khách hàng</SectionTitle>
+          <SectionTitle>{t('dashboard.chart.funnel')}</SectionTitle>
           <div className="space-y-2 mt-2">
             {data.funnel.map((stage, i) => {
-              const pct = (stage.value / maxFunnel) * 100
+              const pct      = (stage.value / maxFunnel) * 100
               const convRate = i === 0 ? 100 : (stage.value / data.funnel[i - 1].value * 100).toFixed(1)
               return (
                 <div key={i}>
@@ -437,10 +414,9 @@ function TabCustomer({ data }) {
                       {i > 0 && <span style={{ color: 'var(--text-tertiary)' }}> ({convRate}%)</span>}
                     </span>
                   </div>
-                  <div className="h-6 rounded-lg flex items-center" style={{ background: 'var(--bg-elevated)' }}>
-                    <div className="h-full rounded-lg flex items-center justify-end pr-2 transition-all duration-700"
-                      style={{ width: `${pct}%`, background: CHART_COLORS[i], minWidth: 40 }}>
-                    </div>
+                  <div className="h-6 rounded-lg" style={{ background: 'var(--bg-elevated)' }}>
+                    <div className="h-full rounded-lg transition-all duration-700"
+                      style={{ width: `${pct}%`, background: CHART_COLORS[i], minWidth: 40 }} />
                   </div>
                 </div>
               )
@@ -448,19 +424,16 @@ function TabCustomer({ data }) {
           </div>
         </div>
 
-        {/* CLV Scatter */}
         <div className="lcard p-5 col-span-12 lg:col-span-6">
-          <SectionTitle>CLV vs Tần suất mua (phân khúc)</SectionTitle>
+          <SectionTitle>{t('dashboard.chart.clv')}</SectionTitle>
           <ResponsiveContainer width="100%" height={260}>
             <ScatterChart margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-              <XAxis dataKey="freq" name="Tần suất" unit="lần" tick={{ fontSize: 10, fill: 'var(--text-tertiary)' }} axisLine={false} tickLine={false} />
+              <XAxis dataKey="freq" name={t('dashboard.kpi.orders')} tick={{ fontSize: 10, fill: 'var(--text-tertiary)' }} axisLine={false} tickLine={false} />
               <YAxis dataKey="clv" name="CLV" tick={{ fontSize: 10, fill: 'var(--text-tertiary)' }} axisLine={false} tickLine={false} width={52}
                 tickFormatter={v => fmtM(v)} />
               <ZAxis dataKey="value" range={[40, 280]} />
-              <Tooltip cursor={{ strokeDasharray: '3 3' }} formatter={(v, name) =>
-                name === 'CLV' ? fmtM(v) : v
-              } />
+              <Tooltip cursor={{ strokeDasharray: '3 3' }} formatter={(v, name) => name === 'CLV' ? fmtM(v) : v} />
               {data.customerSegments.map((seg, i) => (
                 <Scatter key={i} name={seg.name} data={[seg]} fill={CHART_COLORS[i]} />
               ))}
@@ -470,9 +443,8 @@ function TabCustomer({ data }) {
         </div>
       </div>
 
-      {/* Heatmap giờ mua hàng */}
       <div className="lcard p-5">
-        <SectionTitle>Thời gian mua hàng (Giờ × Ngày trong tuần)</SectionTitle>
+        <SectionTitle>{t('dashboard.chart.heatmap')}</SectionTitle>
         <div className="overflow-x-auto">
           <HeatmapGrid data={data.heatmap} />
         </div>
@@ -482,13 +454,13 @@ function TabCustomer({ data }) {
 }
 
 function HeatmapGrid({ data }) {
-  const days  = ['T2','T3','T4','T5','T6','T7','CN']
-  const hours = [...new Set(data.map(d => d.hour))].sort()
+  const { t }   = useTranslation()
+  const days    = ['T2','T3','T4','T5','T6','T7','CN']
+  const hours   = [...new Set(data.map(d => d.hour))].sort()
   const maxOrders = Math.max(...data.map(d => d.orders))
 
   return (
     <div>
-      {/* Header */}
       <div className="flex gap-1 mb-1 pl-12">
         {days.map(d => (
           <div key={d} className="w-8 text-center text-caption font-medium" style={{ color: 'var(--text-tertiary)' }}>{d}</div>
@@ -498,12 +470,12 @@ function HeatmapGrid({ data }) {
         <div key={h} className="flex items-center gap-1 mb-1">
           <div className="w-11 text-caption text-right pr-1 shrink-0" style={{ color: 'var(--text-tertiary)' }}>{h}</div>
           {days.map(day => {
-            const cell = data.find(d => d.hour === h && d.day === day)
-            const orders = cell?.orders ?? 0
+            const cell      = data.find(d => d.hour === h && d.day === day)
+            const orders    = cell?.orders ?? 0
             const intensity = maxOrders > 0 ? orders / maxOrders : 0
-            const bg = `rgba(99,102,241,${(intensity * 0.8 + 0.05).toFixed(2)})`
+            const bg        = `rgba(99,102,241,${(intensity * 0.8 + 0.05).toFixed(2)})`
             return (
-              <div key={day} title={`${day} ${h}: ${orders} đơn`}
+              <div key={day} title={`${day} ${h}: ${orders}`}
                 className="w-8 h-6 rounded cursor-default transition-all hover:scale-110"
                 style={{ background: bg }} />
             )
@@ -511,11 +483,11 @@ function HeatmapGrid({ data }) {
         </div>
       ))}
       <div className="flex items-center gap-2 mt-3 justify-end">
-        <span className="text-caption" style={{ color: 'var(--text-tertiary)' }}>Ít</span>
+        <span className="text-caption" style={{ color: 'var(--text-tertiary)' }}>{t('dashboard.heatmap.low')}</span>
         {[0.1,0.3,0.5,0.7,0.9].map(v => (
           <div key={v} className="w-4 h-3 rounded" style={{ background: `rgba(99,102,241,${v})` }} />
         ))}
-        <span className="text-caption" style={{ color: 'var(--text-tertiary)' }}>Nhiều</span>
+        <span className="text-caption" style={{ color: 'var(--text-tertiary)' }}>{t('dashboard.heatmap.high')}</span>
       </div>
     </div>
   )
@@ -523,45 +495,43 @@ function HeatmapGrid({ data }) {
 
 // ── Tab: 5 — Marketing & ROI ──────────────────────────────────────────────────
 function TabMarketing({ data }) {
+  const { t } = useTranslation()
   const comboData = data.revenueByChannel.map(ch => ({
-    name: ch.channelName.split(' ')[0],
+    name:    ch.channelName.split(' ')[0],
     adSpend: ch.adSpend / 1_000_000,
     revenue: ch.revenue / 1_000_000,
-    roas: parseFloat(ch.roas),
+    roas:    parseFloat(ch.roas),
   }))
 
   return (
     <div className="space-y-5">
-      {/* Combo: chi phí vs doanh thu */}
       <div className="grid grid-cols-12 gap-4">
         <div className="lcard p-5 col-span-12 lg:col-span-8">
-          <SectionTitle>Chi phí quảng cáo vs Doanh thu (Combo)</SectionTitle>
+          <SectionTitle>{t('dashboard.chart.marketingCombo')}</SectionTitle>
           <ResponsiveContainer width="100%" height={280}>
             <BarChart data={comboData} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
               <XAxis dataKey="name" tick={{ fontSize: 11, fill: 'var(--text-tertiary)' }} axisLine={false} tickLine={false} />
-              <YAxis yAxisId="left" tick={{ fontSize: 10, fill: 'var(--text-tertiary)' }} axisLine={false} tickLine={false} width={44}
-                tickFormatter={v => `${v.toFixed(0)}M`} />
-              <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10, fill: 'var(--text-tertiary)' }} axisLine={false} tickLine={false} width={40}
-                tickFormatter={v => `${v}x`} />
+              <YAxis yAxisId="left"  tick={{ fontSize: 10, fill: 'var(--text-tertiary)' }} axisLine={false} tickLine={false} width={44} tickFormatter={v => `${v.toFixed(0)}M`} />
+              <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10, fill: 'var(--text-tertiary)' }} axisLine={false} tickLine={false} width={40} tickFormatter={v => `${v}x`} />
               <Tooltip />
               <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
-              <Bar yAxisId="left" dataKey="adSpend" name="Chi phí QC (M₫)" fill="#EC4899" radius={[3,3,0,0]} />
-              <Bar yAxisId="left" dataKey="revenue" name="Doanh thu (M₫)" fill="#6366F1" radius={[3,3,0,0]} />
-              <Line yAxisId="right" type="monotone" dataKey="roas" name="ROAS" stroke="#F59E0B" strokeWidth={2}
-                dot={{ fill: '#F59E0B', r: 4 }} />
+              <Bar  yAxisId="left"  dataKey="adSpend" name={t('dashboard.series.adCostM')}  fill="#EC4899" radius={[3,3,0,0]} />
+              <Bar  yAxisId="left"  dataKey="revenue" name={t('dashboard.series.revenueM')} fill="#6366F1" radius={[3,3,0,0]} />
+              <Line yAxisId="right" type="monotone" dataKey="roas" name="ROAS" stroke="#F59E0B" strokeWidth={2} dot={{ fill: '#F59E0B', r: 4 }} />
             </BarChart>
           </ResponsiveContainer>
         </div>
 
         <div className="lcard p-5 col-span-12 lg:col-span-4">
-          <SectionTitle>ROAS theo kênh</SectionTitle>
+          <SectionTitle>{t('dashboard.chart.roas')}</SectionTitle>
           <div className="space-y-3 mt-2">
-            {comboData.sort((a,b) => b.roas - a.roas).map((ch, i) => (
+            {[...comboData].sort((a,b) => b.roas - a.roas).map((ch, i) => (
               <div key={ch.name}>
                 <div className="flex justify-between text-caption mb-1" style={{ color: 'var(--text-secondary)' }}>
                   <span>{ch.name}</span>
-                  <span className="font-mono font-bold" style={{ color: ch.roas >= 4 ? 'var(--accent-500)' : ch.roas >= 2 ? '#F59E0B' : 'var(--color-error)' }}>
+                  <span className="font-mono font-bold"
+                    style={{ color: ch.roas >= 4 ? 'var(--accent-500)' : ch.roas >= 2 ? '#F59E0B' : 'var(--color-error)' }}>
                     {ch.roas}x
                   </span>
                 </div>
@@ -575,21 +545,21 @@ function TabMarketing({ data }) {
         </div>
       </div>
 
-      {/* CAC vs ROAS bubble */}
       <div className="lcard p-5">
-        <SectionTitle>CAC vs ROAS theo kênh (Bubble Size = Doanh thu)</SectionTitle>
+        <SectionTitle>{t('dashboard.chart.cac')}</SectionTitle>
         <ResponsiveContainer width="100%" height={260}>
           <ScatterChart margin={{ top: 8, right: 24, left: 0, bottom: 8 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-            <XAxis dataKey="cac" name="CAC (₫)" unit="K" tick={{ fontSize: 10, fill: 'var(--text-tertiary)' }} axisLine={false} tickLine={false}
+            <XAxis dataKey="cac" name="CAC" tick={{ fontSize: 10, fill: 'var(--text-tertiary)' }} axisLine={false} tickLine={false}
               tickFormatter={v => `${(v/1000).toFixed(0)}K`} />
             <YAxis dataKey="roas" name="ROAS" unit="x" tick={{ fontSize: 10, fill: 'var(--text-tertiary)' }} axisLine={false} tickLine={false} />
             <ZAxis dataKey="revenue" range={[60, 400]} />
             <Tooltip cursor={{ strokeDasharray: '3 3' }} formatter={(v, name) =>
-              name === 'CAC (₫)' ? `${(v/1000).toFixed(0)}K₫` : name === 'ROAS' ? `${v}x` : fmtM(v)
+              name === 'CAC' ? `${(v/1000).toFixed(0)}K₫` : name === 'ROAS' ? `${v}x` : fmtM(v)
             } />
             {data.revenueByChannel.map((ch, i) => (
-              <Scatter key={i} name={ch.channelName} data={[{ cac: ch.cac, roas: parseFloat(ch.roas), revenue: ch.revenue }]}
+              <Scatter key={i} name={ch.channelName}
+                data={[{ cac: ch.cac, roas: parseFloat(ch.roas), revenue: ch.revenue }]}
                 fill={CHART_COLORS[i]} />
             ))}
             <Legend wrapperStyle={{ fontSize: 11 }} />
@@ -602,24 +572,25 @@ function TabMarketing({ data }) {
 
 // ── Tab: 6 — Inventory & Operations ──────────────────────────────────────────
 function TabInventory({ data }) {
+  const { t } = useTranslation()
+
   const invKpis = [
-    { label: 'Tỷ lệ hoàn đơn TB', value: '3.1%', icon: 'assignment_return', color: '#EC4899' },
-    { label: 'Tỷ lệ hủy đơn',     value: '2.4%', icon: 'cancel',            color: 'var(--color-error)' },
-    { label: 'Tỷ lệ giao thành công', value: '94.5%', icon: 'local_shipping', color: 'var(--accent-500)' },
-    { label: 'Tốc độ xử lý đơn',  value: '2.3 giờ', icon: 'timer',          color: '#F59E0B' },
+    { labelKey: 'invKpi.returnRate',      value: '3.1%',    icon: 'assignment_return', color: '#EC4899' },
+    { labelKey: 'invKpi.cancelRate',      value: '2.4%',    icon: 'cancel',            color: 'var(--color-error)' },
+    { labelKey: 'invKpi.deliverySuccess', value: '94.5%',   icon: 'local_shipping',    color: 'var(--accent-500)' },
+    { labelKey: 'invKpi.processingTime',  value: '2.3h',    icon: 'timer',             color: '#F59E0B' },
   ]
+
   return (
     <div className="space-y-5">
-      {/* KPI row */}
       <div className="flex gap-3 overflow-x-auto pb-1 scrollbar-none">
         {invKpis.map(k => (
-          <KpiCard key={k.label} label={k.label} value={k.value} icon={k.icon} color={k.color} />
+          <KpiCard key={k.labelKey} label={t(`dashboard.${k.labelKey}`)} value={k.value} icon={k.icon} color={k.color} />
         ))}
       </div>
 
-      {/* Column chart: tồn kho vs dự báo */}
       <div className="lcard p-5">
-        <SectionTitle>Tồn kho hiện tại vs Dự báo nhu cầu</SectionTitle>
+        <SectionTitle>{t('dashboard.chart.inventory')}</SectionTitle>
         <ResponsiveContainer width="100%" height={280}>
           <BarChart data={data.inventory} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
@@ -627,15 +598,14 @@ function TabInventory({ data }) {
             <YAxis tick={{ fontSize: 11, fill: 'var(--text-tertiary)' }} axisLine={false} tickLine={false} />
             <Tooltip />
             <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
-            <Bar dataKey="stock"    name="Tồn kho hiện tại" fill="#6366F1" radius={[3,3,0,0]} />
-            <Bar dataKey="forecast" name="Dự báo nhu cầu"   fill="#10B981" radius={[3,3,0,0]} />
+            <Bar dataKey="stock"    name={t('dashboard.series.stock')}    fill="#6366F1" radius={[3,3,0,0]} />
+            <Bar dataKey="forecast" name={t('dashboard.series.forecast')} fill="#10B981" radius={[3,3,0,0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>
 
-      {/* Tỷ lệ hoàn đơn */}
       <div className="lcard p-5">
-        <SectionTitle>Tỷ lệ hoàn trả theo sản phẩm (%)</SectionTitle>
+        <SectionTitle>{t('dashboard.chart.returnRate')}</SectionTitle>
         <div className="space-y-3">
           {data.inventory.map((item, i) => (
             <div key={i}>
@@ -648,7 +618,8 @@ function TabInventory({ data }) {
               </div>
               <div className="h-2 rounded-full" style={{ background: 'var(--bg-elevated)' }}>
                 <div className="h-full rounded-full"
-                  style={{ width: `${item.returnRate / 6 * 100}%`, background: item.returnRate > 4 ? 'var(--color-error)' : item.returnRate > 2.5 ? '#F59E0B' : 'var(--accent-500)' }} />
+                  style={{ width: `${item.returnRate / 6 * 100}%`,
+                    background: item.returnRate > 4 ? 'var(--color-error)' : item.returnRate > 2.5 ? '#F59E0B' : 'var(--accent-500)' }} />
               </div>
             </div>
           ))}
@@ -658,19 +629,9 @@ function TabInventory({ data }) {
   )
 }
 
-// ── TABS CONFIG ───────────────────────────────────────────────────────────────
-const TABS = [
-  { key: 'overview',    label: 'Tổng quan',          icon: 'dashboard' },
-  { key: 'sales',       label: 'Bán hàng',           icon: 'bar_chart' },
-  { key: 'multichannel',label: 'Đa kênh',            icon: 'hub' },
-  { key: 'customer',    label: 'Khách hàng',         icon: 'people' },
-  { key: 'marketing',   label: 'Marketing & ROI',    icon: 'campaign' },
-  { key: 'inventory',   label: 'Tồn kho & Vận hành',icon: 'inventory_2' },
-]
-
 // ── DashboardPage ─────────────────────────────────────────────────────────────
 export default function DashboardPage() {
-  const { t } = useTranslation()
+  const { t }      = useTranslation()
   const [activeTab,  setActiveTab]  = useState('overview')
   const [presetKey,  setPresetKey]  = useState('year2025')
   const [customFrom, setCustomFrom] = useState('2025-01-01')
@@ -679,6 +640,23 @@ export default function DashboardPage() {
   const [data,       setData]       = useState(null)
   const [loading,    setLoading]    = useState(true)
   const [isMock,     setIsMock]     = useState(false)
+
+  // Định nghĩa bên trong component để t() được gọi đúng context
+  const QUICK_PRESETS = [
+    { key: 'year2025', label: t('dashboard.preset.year2025'), from: '2025-01-01',    to: '2025-12-31' },
+    { key: '30d',      label: t('dashboard.preset.30d'),      from: () => relDate(-30), to: () => relDate(0) },
+    { key: '90d',      label: t('dashboard.preset.90d'),      from: () => relDate(-90), to: () => relDate(0) },
+    { key: 'custom',   label: t('dashboard.preset.custom'),   from: null,            to: null },
+  ]
+
+  const TABS = [
+    { key: 'overview',     label: t('dashboard.tab.overview'),     icon: 'dashboard'   },
+    { key: 'sales',        label: t('dashboard.tab.sales'),        icon: 'bar_chart'   },
+    { key: 'multichannel', label: t('dashboard.tab.multichannel'), icon: 'hub'         },
+    { key: 'customer',     label: t('dashboard.tab.customer'),     icon: 'people'      },
+    { key: 'marketing',    label: t('dashboard.tab.marketing'),    icon: 'campaign'    },
+    { key: 'inventory',    label: t('dashboard.tab.inventory'),    icon: 'inventory_2' },
+  ]
 
   function getRange() {
     if (presetKey === 'custom') return { from: customFrom, to: customTo }
@@ -692,17 +670,12 @@ export default function DashboardPage() {
     try {
       const ch  = channel === 'all' ? null : channel
       const res = await getDashboard(from, to, ch)
-
-      // Kiểm tra backend trả đủ shape mà Dashboard cần.
-      // Backend hiện chưa có: conversionRate, roi, monthlyByChannel,
-      // customerSegments, funnel, heatmap, radarData, inventory → dùng mock.
       const hasFullData =
         res?.kpi?.totalRevenue > 0 &&
         typeof res?.kpi?.conversionRate === 'number' &&
         Array.isArray(res?.monthlyByChannel) &&
         Array.isArray(res?.customerSegments) &&
         Array.isArray(res?.funnel)
-
       if (!hasFullData) throw new Error('incomplete_data')
       setData(res)
       setIsMock(false)
@@ -738,8 +711,8 @@ export default function DashboardPage() {
                 className="px-3 py-1.5 rounded-md text-body font-medium transition-all"
                 style={{
                   background: presetKey === p.key ? 'var(--bg-surface)' : 'transparent',
-                  color: presetKey === p.key ? 'var(--primary-600)' : 'var(--text-secondary)',
-                  boxShadow: presetKey === p.key ? 'var(--shadow-sm)' : 'none',
+                  color:      presetKey === p.key ? 'var(--primary-600)' : 'var(--text-secondary)',
+                  boxShadow:  presetKey === p.key ? 'var(--shadow-sm)' : 'none',
                 }}>
                 {p.label}
               </button>
@@ -763,7 +736,7 @@ export default function DashboardPage() {
 
       <MockToast show={isMock} />
 
-      {/* ── 6 Tab navigation ── */}
+      {/* ── Tab navigation ── */}
       <div className="flex items-center gap-1 overflow-x-auto scrollbar-none border-b pb-0" style={{ borderColor: 'var(--border)' }}>
         {TABS.map(tab => (
           <button
@@ -793,12 +766,12 @@ export default function DashboardPage() {
         </div>
       ) : data && (
         <div className="page-enter">
-          {activeTab === 'overview'     && <TabOverview      data={data} />}
-          {activeTab === 'sales'        && <TabSales         data={data} />}
-          {activeTab === 'multichannel' && <TabMultiChannel  data={data} />}
-          {activeTab === 'customer'     && <TabCustomer      data={data} />}
-          {activeTab === 'marketing'    && <TabMarketing     data={data} />}
-          {activeTab === 'inventory'    && <TabInventory     data={data} />}
+          {activeTab === 'overview'     && <TabOverview     data={data} />}
+          {activeTab === 'sales'        && <TabSales        data={data} />}
+          {activeTab === 'multichannel' && <TabMultiChannel data={data} />}
+          {activeTab === 'customer'     && <TabCustomer     data={data} />}
+          {activeTab === 'marketing'    && <TabMarketing    data={data} />}
+          {activeTab === 'inventory'    && <TabInventory    data={data} />}
         </div>
       )}
     </div>
