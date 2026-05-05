@@ -76,14 +76,15 @@ public class UsersController : ControllerBase
             return BadRequest(new { message = "Ảnh tối đa 2MB." });
 
         var ext = Path.GetExtension(avatar.FileName).ToLowerInvariant();
-        if (ext is not (".jpg" or ".jpeg" or ".png"))
-            return BadRequest(new { message = "Chỉ chấp nhận JPG/PNG." });
+        if (ext is not (".jpg" or ".jpeg" or ".png" or ".webp"))
+            return BadRequest(new { message = "Chỉ chấp nhận JPG/PNG/WEBP." });
 
         var user = await _db.Users.FindAsync(CurrentUserId());
         if (user is null) return NotFound();
 
         // Lưu file vào wwwroot/avatars/
-        var uploadsDir = Path.Combine(_env.WebRootPath ?? "wwwroot", "avatars");
+        var webRoot    = _env.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
+        var uploadsDir = Path.Combine(webRoot, "avatars");
         Directory.CreateDirectory(uploadsDir);
         var fileName  = $"user_{user.Id}_{DateTime.UtcNow.Ticks}{ext}";
         var filePath  = Path.Combine(uploadsDir, fileName);

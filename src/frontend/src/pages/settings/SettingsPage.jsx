@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAuth } from '../../hooks/useAuth'
 import { Link } from 'react-router-dom'
@@ -6,11 +6,12 @@ import { useTheme } from '../../hooks/useTheme'
 import axios from '../../api/axios'
 
 // ── Avatar component ──────────────────────────────────────────────────────────
-function AvatarSection({ user, onAvatarChange }) {
+function AvatarSection({ user, avatarUrl, onAvatarChange }) {
   const { t } = useTranslation()
   const fileRef = useRef(null)
-  const [preview, setPreview] = useState(null)
+  const [preview,   setPreview]   = useState(null)
   const [uploading, setUploading] = useState(false)
+  const [uploadErr, setUploadErr] = useState('')
 
   const initials = (user?.fullName ?? user?.name ?? 'U')
     .split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()
@@ -18,29 +19,31 @@ function AvatarSection({ user, onAvatarChange }) {
   const handleFile = async e => {
     const file = e.target.files[0]
     if (!file) return
-    if (file.size > 2 * 1024 * 1024) {
-      alert(t('settings.avatarHint'))
-      return
-    }
-    const reader = new FileReader()
-    reader.onload = ev => setPreview(ev.target.result)
-    reader.readAsDataURL(file)
+    if (file.size > 2 * 1024 * 1024) { setUploadErr('Ảnh tối đa 2MB'); return }
+    const allowed = ['image/png', 'image/jpeg', 'image/webp']
+    if (!allowed.includes(file.type)) { setUploadErr('Chỉ chấp nhận PNG/JPG/WEBP'); return }
 
-    // Upload
+    setUploadErr('')
+    // Hiển thị preview ngay
+    setPreview(URL.createObjectURL(file))
+
     setUploading(true)
     try {
       const fd = new FormData()
       fd.append('avatar', file)
-      const res = await axios.post('/users/avatar', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+      const res = await axios.post('/api/users/avatar', fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
       onAvatarChange?.(res.data.avatarUrl)
-    } catch {
-      // fallback: preview only
+    } catch (err) {
+      setUploadErr(err.response?.data?.message ?? 'Upload thất bại')
+      setPreview(null)
     } finally {
       setUploading(false)
     }
   }
 
-  const src = preview ?? user?.avatarUrl
+  const src = preview ?? avatarUrl ?? user?.avatarUrl
   return (
     <div className="flex items-center gap-5">
       <div className="relative">
@@ -50,19 +53,20 @@ function AvatarSection({ user, onAvatarChange }) {
         </div>
         {uploading && (
           <div className="absolute inset-0 rounded-full flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.5)' }}>
-            <div className="w-5 h-5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+            <div className="w-5 h-5 border-2 border-white/40 border-t-white rounded-full" style={{ animation: 'spin 0.8s linear infinite' }} />
           </div>
         )}
       </div>
-      <div>
+      <div className="space-y-1">
         <button onClick={() => fileRef.current?.click()}
           className="lbtn lbtn-secondary text-sm" style={{ height: 36 }}>
           <span className="icon icon-sm">upload</span>
           {t('settings.changeAvatar')}
         </button>
-        <p className="text-caption mt-1.5" style={{ color: 'var(--text-tertiary)' }}>{t('settings.avatarFormat')}</p>
+        <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>PNG · JPG · WEBP · Tối đa 2MB</p>
+        {uploadErr && <p className="text-xs" style={{ color: '#EF4444' }}>{uploadErr}</p>}
       </div>
-      <input ref={fileRef} type="file" accept="image/png,image/jpeg" className="hidden" onChange={handleFile} />
+      <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={handleFile} />
     </div>
   )
 }
@@ -90,7 +94,7 @@ function NotifToggle({ label, desc, value, onChange }) {
 // ── Main ──────────────────────────────────────────────────────────────────────
 export default function SettingsPage() {
   const { t, i18n } = useTranslation()
-  const { user } = useAuth()
+  const { user, logout } = useAuth()
   const { isDark, toggle } = useTheme()
 
   const NAV = [
@@ -100,9 +104,12 @@ export default function SettingsPage() {
     { key: 'appearance',    icon: 'palette',        label: t('settings.appearance') },
   ]
 
-  const [section, setSection] = useState('profile')
-  const [saved,   setSaved]   = useState(false)
-  const [error,   setError]   = useState('')
+  const [section,    setSection]    = useState('profile')
+  const [saved,      setSaved]      = useState(false)
+  const [error,      setError]      = useState('')
+  const [avatarUrl,  setAvatarUrl]  = useState(user?.avatarUrl ?? null)
+  const [loginHistory, setLoginHistory] = useState([])
+  const [histLoading,  setHistLoading]  = useState(false)
 
   // Profile form state
   const [profile, setProfile] = useState({
@@ -122,41 +129,63 @@ export default function SettingsPage() {
     weeklyReport:  true,
   })
 
+  // Load notification prefs từ API khi mount
+  useEffect(() => {
+    axios.get('/api/users/notification-preferences')
+      .then(r => setNotif(r.data))
+      .catch(() => {})
+  }, [])
+
+  // Load lịch sử đăng nhập thực tế khi vào tab Bảo mật
+  useEffect(() => {
+    if (section !== 'security') return
+    setHistLoading(true)
+    axios.get('/api/users/login-history')
+      .then(r => setLoginHistory(r.data))
+      .catch(() => {})
+      .finally(() => setHistLoading(false))
+  }, [section])
+
   const flash = (err = '') => {
-    if (err) { setError(err); return }
+    if (err) { setError(err); setTimeout(() => setError(''), 4000); return }
     setSaved(true)
     setTimeout(() => setSaved(false), 2500)
   }
 
   const saveProfile = async () => {
     try {
-      await axios.patch('/users/profile', {
-        fullName:  profile.fullName,
-        phone:     profile.phone,
+      await axios.patch('/api/users/profile', {
+        fullName:  profile.fullName || null,
+        phone:     profile.phone     || null,
         birthdate: profile.birthdate || null,
-        timezone:  profile.timezone,
-        langPref:  profile.langPref,
+        timezone:  profile.timezone  || null,
+        langPref:  profile.langPref  || null,
       })
       i18n.changeLanguage(profile.langPref)
       flash()
-    } catch {
-      flash('Không thể lưu. Vui lòng thử lại.')
+    } catch (err) {
+      flash(err.response?.data?.message ?? 'Không thể lưu thông tin. Vui lòng thử lại.')
     }
   }
 
   const saveNotif = async () => {
     try {
-      await axios.patch('/users/notification-preferences', notif)
+      await axios.put('/api/users/notification-preferences', notif)
       flash()
-    } catch { flash() }
+    } catch (err) {
+      flash(err.response?.data?.message ?? 'Lỗi lưu tùy chọn thông báo')
+    }
   }
 
-  // Mock login history
-  const loginHistory = [
-    { ip: '14.225.10.xxx', device: 'Chrome / Windows 11', time: '30/04/2026 09:15', status: 'Thành công' },
-    { ip: '14.225.10.xxx', device: 'Chrome / Windows 11', time: '29/04/2026 18:42', status: 'Thành công' },
-    { ip: '117.3.xxx.xxx', device: 'Mobile Safari / iOS', time: '28/04/2026 11:03', status: 'Thành công' },
-  ]
+  const handleLogoutAll = async () => {
+    if (!window.confirm('Đăng xuất tất cả thiết bị? Bạn sẽ cần đăng nhập lại.')) return
+    try {
+      await axios.post('/api/users/logout-all')
+      logout()
+    } catch (err) {
+      flash(err.response?.data?.message ?? 'Lỗi đăng xuất')
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -204,7 +233,11 @@ export default function SettingsPage() {
               <h2 className="text-subtitle font-semibold" style={{ color: 'var(--text-primary)' }}>Thông tin tài khoản</h2>
 
               {/* Avatar */}
-              <AvatarSection user={user} />
+              <AvatarSection
+                user={user}
+                avatarUrl={avatarUrl}
+                onAvatarChange={url => setAvatarUrl(url)}
+              />
               <div style={{ borderTop: '1px solid var(--border)', paddingTop: 16 }} />
 
               {/* Form */}
@@ -289,7 +322,7 @@ export default function SettingsPage() {
 
                 <button className="w-full flex items-center justify-between p-4 rounded-xl transition-all border text-left"
                   style={{ borderColor: 'var(--border)', background: 'var(--bg-elevated)' }}
-                  onClick={() => alert('Đã đăng xuất tất cả thiết bị')}
+                  onClick={handleLogoutAll}
                   onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--color-error)'}
                   onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border)'}
                 >
@@ -308,21 +341,40 @@ export default function SettingsPage() {
               {/* Login history */}
               <div className="lcard p-5">
                 <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>Lịch sử đăng nhập gần đây</h3>
-                <div className="space-y-2">
-                  {loginHistory.map((log, i) => (
-                    <div key={i} className="flex items-start gap-3 py-2.5" style={{ borderBottom: i < loginHistory.length - 1 ? '1px solid var(--border)' : 'none' }}>
-                      <span className="icon w-8 h-8 flex items-center justify-center rounded-lg shrink-0"
-                        style={{ fontSize: 16, background: 'rgba(16,185,129,0.10)', color: 'var(--accent-500)' }}>
-                        devices
-                      </span>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{log.device}</div>
-                        <div className="text-caption" style={{ color: 'var(--text-tertiary)' }}>IP: {log.ip} · {log.time}</div>
+                {histLoading ? (
+                  <div className="flex justify-center py-6">
+                    <span className="w-5 h-5 border-2 rounded-full"
+                          style={{ borderColor: 'var(--border-strong)', borderTopColor: 'var(--primary-500)', animation: 'spin 0.8s linear infinite' }} />
+                  </div>
+                ) : loginHistory.length === 0 ? (
+                  <p className="text-xs py-4 text-center" style={{ color: 'var(--text-tertiary)' }}>Chưa có lịch sử đăng nhập</p>
+                ) : (
+                  <div className="space-y-2">
+                    {loginHistory.map((log, i) => (
+                      <div key={i} className="flex items-start gap-3 py-2.5"
+                           style={{ borderBottom: i < loginHistory.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                        <span className="icon w-8 h-8 flex items-center justify-center rounded-lg shrink-0"
+                          style={{ fontSize: 16,
+                                   background: log.status === 'SUCCESS' ? 'rgba(16,185,129,0.10)' : 'rgba(239,68,68,0.10)',
+                                   color: log.status === 'SUCCESS' ? 'var(--accent-500)' : '#EF4444' }}>
+                          {log.status === 'SUCCESS' ? 'check_circle' : 'cancel'}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs font-mono truncate" style={{ color: 'var(--text-secondary)' }}>
+                            {log.userAgent ?? 'Thiết bị không rõ'}
+                          </div>
+                          <div className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
+                            IP: {log.ip ?? '—'} · {log.time ? new Date(log.time).toLocaleString('vi-VN') : '—'}
+                          </div>
+                        </div>
+                        <span className="text-xs font-medium shrink-0"
+                              style={{ color: log.status === 'SUCCESS' ? 'var(--accent-500)' : '#EF4444' }}>
+                          {log.status === 'SUCCESS' ? 'Thành công' : 'Thất bại'}
+                        </span>
                       </div>
-                      <span className="text-caption font-medium shrink-0" style={{ color: 'var(--accent-500)' }}>{log.status}</span>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           )}

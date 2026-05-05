@@ -127,6 +127,50 @@ public class ProductsController(IConfiguration cfg, IProductRepository productRe
     }
 
     // ══════════════════════════════════════════════════════════════════════════
+    // 1b. Danh sách danh mục sản phẩm (dropdown cho Create/Edit form)
+    // ══════════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Danh sách danh mục sản phẩm đang hoạt động, dùng cho dropdown.
+    /// </summary>
+    [HttpGet("categories")]
+    [Authorize(Roles = "Owner,Manager,Staff,DataIT,Admin")]
+    public async Task<IActionResult> GetCategories()
+    {
+        try
+        {
+            await using var conn = new NpgsqlConnection(_connStr);
+            await conn.OpenAsync();
+
+            var sql = """
+                SELECT category_id, category_name, parent_id, level
+                FROM public.categories
+                WHERE is_active = TRUE
+                ORDER BY level, category_name
+                """;
+
+            var cats = new List<object>();
+            await using var cmd    = new NpgsqlCommand(sql, conn);
+            await using var reader = await cmd.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                cats.Add(new
+                {
+                    CategoryId   = reader.GetInt32(0),
+                    CategoryName = reader.GetString(1),
+                    ParentId     = reader.IsDBNull(2) ? (int?)null : reader.GetInt32(2),
+                    Level        = reader.GetInt16(3),
+                });
+            }
+            return Ok(cats);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(503, new { message = "Lỗi kết nối database.", detail = ex.Message });
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
     // 2. OLTP – CRUD qua Repository Pattern (public.products)
     // ══════════════════════════════════════════════════════════════════════════
 
@@ -300,6 +344,51 @@ public class ProductsController(IConfiguration cfg, IProductRepository productRe
 
             await productRepo.DeleteAsync(id);
             return NoContent();
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(503, new { message = "Lỗi kết nối database.", detail = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// [OLTP] Upload ảnh sản phẩm (PNG/JPG/WEBP, max 5MB).
+    /// Roles: Manager, DataIT, Admin
+    /// </summary>
+    [HttpPost("oltp/{id:int}/image")]
+    [Authorize(Roles = "Manager,DataIT,Admin")]
+    public async Task<IActionResult> UploadProductImage(int id, IFormFile image)
+    {
+        if (image is null || image.Length == 0)
+            return BadRequest(new { message = "File không hợp lệ." });
+
+        if (image.Length > 5 * 1024 * 1024)
+            return BadRequest(new { message = "Ảnh tối đa 5MB." });
+
+        var ext = Path.GetExtension(image.FileName).ToLowerInvariant();
+        if (ext is not (".jpg" or ".jpeg" or ".png" or ".webp"))
+            return BadRequest(new { message = "Chỉ chấp nhận JPG/PNG/WEBP." });
+
+        try
+        {
+            var product = await productRepo.GetByIdAsync(id);
+            if (product is null) return NotFound(new { message = "Không tìm thấy sản phẩm." });
+
+            var uploadsDir = Path.Combine(
+                cfg["WebRootPath"] ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot"),
+                "uploads", "products");
+            Directory.CreateDirectory(uploadsDir);
+
+            var fileName = $"product_{id}_{DateTime.UtcNow.Ticks}{ext}";
+            var filePath = Path.Combine(uploadsDir, fileName);
+            await using var stream = System.IO.File.Create(filePath);
+            await image.CopyToAsync(stream);
+
+            product.ImageUrl  = $"/uploads/products/{fileName}";
+            product.UpdatedAt = DateTime.UtcNow;
+            await productRepo.UpdateAsync(product);
+
+            return Ok(new { imageUrl = product.ImageUrl });
         }
         catch (Exception ex)
         {

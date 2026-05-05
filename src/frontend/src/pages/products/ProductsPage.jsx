@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import MockToast from '../../components/ui/MockToast'
-import { getProducts, getOltpProduct, createProduct, updateProduct, deleteProduct } from '../../api/dashboardApi'
+import { getProducts, getOltpProduct, createProduct, updateProduct, deleteProduct, getCategories, uploadProductImage } from '../../api/dashboardApi'
 import { MOCK_PRODUCTS } from '../../mockData/products'
 import { useAuth } from '../../hooks/useAuth'
 
@@ -30,20 +30,37 @@ const EMPTY_FORM = { sku: '', productName: '', description: '', basePrice: '', c
 
 // Modal tạo / sửa sản phẩm
 function ProductFormModal({ initial, mode, onClose, onSaved }) {
-  const [form,   setForm]   = useState(initial ?? EMPTY_FORM)
-  const [saving, setSaving] = useState(false)
-  const [err,    setErr]    = useState('')
-  const isEdit = mode === 'edit'
+  const [form,       setForm]       = useState(initial ?? EMPTY_FORM)
+  const [categories, setCategories] = useState([])
+  const [saving,     setSaving]     = useState(false)
+  const [err,        setErr]        = useState('')
+  const [imgFile,    setImgFile]    = useState(null)
+  const [imgPreview, setImgPreview] = useState(initial?.imageUrl ?? null)
+  const fileRef = useRef(null)
+  const isEdit  = mode === 'edit'
+
+  // Load danh mục từ API
+  useEffect(() => {
+    getCategories()
+      .then(data => setCategories(data))
+      .catch(() => setCategories([]))
+  }, [])
 
   const set = (field) => (e) => setForm(f => ({ ...f, [field]: e.target.value }))
 
+  const handleImgSelect = (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+    setImgFile(file)
+    setImgPreview(URL.createObjectURL(file))
+  }
+
   const handleSave = async () => {
     if (!form.sku || !form.productName || !form.basePrice || !form.categoryId) {
-      setErr('Vui lòng nhập đầy đủ SKU, Tên sản phẩm, Giá bán và ID Danh mục')
+      setErr('Vui lòng nhập đầy đủ SKU, Tên sản phẩm, Giá bán và Danh mục')
       return
     }
-    setSaving(true)
-    setErr('')
+    setSaving(true); setErr('')
     try {
       const dto = {
         sku:           form.sku,
@@ -54,8 +71,17 @@ function ProductFormModal({ initial, mode, onClose, onSaved }) {
         stockQuantity: Number(form.stockQuantity) || 0,
         categoryId:    Number(form.categoryId),
       }
-      if (isEdit) await updateProduct(form.productId, dto)
-      else         await createProduct(dto)
+      let savedId = form.productId
+      if (isEdit) {
+        await updateProduct(savedId, dto)
+      } else {
+        const res = await createProduct(dto)
+        savedId = res.productId
+      }
+      // Upload ảnh nếu có chọn
+      if (imgFile && savedId) {
+        await uploadProductImage(savedId, imgFile)
+      }
       onSaved()
     } catch (e) {
       setErr(e.response?.data?.message ?? (isEdit ? 'Lỗi cập nhật' : 'Lỗi tạo sản phẩm'))
@@ -67,17 +93,23 @@ function ProductFormModal({ initial, mode, onClose, onSaved }) {
   const inp = (label, field, type = 'text', required = false) => (
     <div key={field}>
       <label className="block text-xs mb-1" style={{ color: 'var(--text-tertiary)' }}>
-        {label}{required && <span className="text-red-400"> *</span>}
+        {label}{required && <span style={{ color: '#EF4444' }}> *</span>}
       </label>
       <input type={type} className="linput text-sm" value={form[field] ?? ''}
              onChange={set(field)} />
     </div>
   )
 
+  // Nhóm danh mục theo cấp để hiển thị đẹp hơn trong dropdown
+  const catOptions = categories.map(c => ({
+    value: c.categoryId,
+    label: c.level > 1 ? `  └ ${c.categoryName}` : c.categoryName,
+  }))
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
          style={{ background: 'rgba(0,0,0,0.6)' }} onClick={onClose}>
-      <div className="lcard w-full max-w-md p-6 space-y-4 scale-in overflow-y-auto max-h-[90vh]"
+      <div className="lcard w-full max-w-lg p-6 space-y-4 scale-in overflow-y-auto max-h-[90vh]"
            onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between">
           <h2 className="font-bold text-sm" style={{ color: 'var(--text-primary)' }}>
@@ -93,14 +125,53 @@ function ProductFormModal({ initial, mode, onClose, onSaved }) {
 
         {err && <p className="text-xs rounded-lg px-3 py-2" style={{ background: 'rgba(239,68,68,0.1)', color: '#EF4444' }}>{err}</p>}
 
+        {/* Hình ảnh sản phẩm */}
+        <div>
+          <label className="block text-xs mb-2" style={{ color: 'var(--text-tertiary)' }}>Hình ảnh sản phẩm</label>
+          <div className="flex items-center gap-3">
+            <div className="w-16 h-16 rounded-xl border-2 border-dashed flex items-center justify-center overflow-hidden shrink-0"
+                 style={{ borderColor: 'var(--border)', background: 'var(--bg-elevated)' }}>
+              {imgPreview
+                ? <img src={imgPreview} alt="preview" className="w-full h-full object-cover" />
+                : <span className="icon" style={{ fontSize: 24, color: 'var(--text-tertiary)' }}>image</span>
+              }
+            </div>
+            <div>
+              <button type="button" onClick={() => fileRef.current?.click()}
+                      className="lbtn lbtn-secondary !h-8 text-xs">
+                <span className="icon text-sm">upload</span>
+                Chọn ảnh
+              </button>
+              <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>PNG/JPG/WEBP · Tối đa 5MB</p>
+            </div>
+          </div>
+          <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden"
+                 onChange={handleImgSelect} />
+        </div>
+
         <div className="grid grid-cols-2 gap-3">
           {inp('SKU', 'sku', 'text', true)}
           {inp('Tên sản phẩm', 'productName', 'text', true)}
           {inp('Giá bán (₫)', 'basePrice', 'number', true)}
           {inp('Giá vốn (₫)', 'costPrice', 'number')}
           {inp('Tồn kho', 'stockQuantity', 'number')}
-          {inp('ID Danh mục', 'categoryId', 'number', true)}
+
+          {/* Dropdown danh mục */}
+          <div>
+            <label className="block text-xs mb-1" style={{ color: 'var(--text-tertiary)' }}>
+              Danh mục<span style={{ color: '#EF4444' }}> *</span>
+            </label>
+            <select className="linput text-sm"
+                    value={form.categoryId ?? ''}
+                    onChange={set('categoryId')}>
+              <option value="">-- Chọn danh mục --</option>
+              {catOptions.map(o => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+          </div>
         </div>
+
         <div>
           <label className="block text-xs mb-1" style={{ color: 'var(--text-tertiary)' }}>Mô tả</label>
           <textarea className="linput text-sm" rows={2} value={form.description ?? ''}

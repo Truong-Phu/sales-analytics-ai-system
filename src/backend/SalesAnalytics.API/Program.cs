@@ -177,6 +177,7 @@ try
         // Chỉ redirect HTTPS trên production để tránh break Vite proxy trong dev
         app.UseHttpsRedirection();
     }
+    app.UseStaticFiles();             // Serve wwwroot/ (avatars, product images...)
     app.UseRateLimiter();             // Rate limiting trước khi xử lý request
     app.UseSerilogRequestLogging(opt => // Ghi log mỗi request với thông tin cơ bản
     {

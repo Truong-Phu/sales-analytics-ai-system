@@ -97,6 +97,11 @@ export const getCustomers = async (params = {}) => {
   }
 }
 
+// ── Categories (dropdown) ─────────────────────────────────────────────────────
+
+export const getCategories = () =>
+  api.get('/api/products/categories').then(r => r.data)
+
 // ── Orders OLTP CRUD ─────────────────────────────────────────────────────────
 
 export const updateOrderStatus = (id, dto) =>
@@ -131,6 +136,14 @@ export const updateProduct = (id, dto) =>
 
 export const deleteProduct = (id) =>
   api.delete(`/api/products/oltp/${id}`).then(r => r.data)
+
+export const uploadProductImage = (id, file) => {
+  const fd = new FormData()
+  fd.append('image', file)
+  return api.post(`/api/products/oltp/${id}/image`, fd, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }).then(r => r.data)
+}
 
 // ── Customers OLTP CRUD ──────────────────────────────────────────────────────
 
