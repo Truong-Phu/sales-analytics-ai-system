@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import MockToast from '../../components/ui/MockToast'
 import { getSyncStatus, triggerSync } from '../../api/syncApi'
 import { MOCK_DATA_SYNC } from '../../mockData/dataSync'
+import api from '../../api/axios'
 
 const API_BASE = import.meta.env.VITE_API_URL ?? ''
 
@@ -297,8 +298,273 @@ function SourceCard({ src, syncing, onSync, t }) {
   )
 }
 
+// ── Import thủ công CSV ───────────────────────────────────────────────────────
+const IMPORT_TYPES = [
+  { key: 'orders',    label: 'Đơn hàng',   icon: 'receipt_long',  required: ['order_code','customer_email','product_sku','quantity','unit_price','channel','order_date','status'] },
+  { key: 'products',  label: 'Sản phẩm',   icon: 'inventory_2',   required: ['sku','name','category','price','stock_quantity'] },
+  { key: 'customers', label: 'Khách hàng', icon: 'people',         required: ['email','full_name'] },
+  { key: 'sales-data',label: 'Doanh thu',  icon: 'bar_chart',     required: ['date','channel','quantity_sold','revenue'] },
+]
+
+function ImportTab() {
+  const [type,       setType]       = useState('orders')
+  const [file,       setFile]       = useState(null)
+  const [preview,    setPreview]    = useState(null) // { headers, rows, total }
+  const [importing,  setImporting]  = useState(false)
+  const [result,     setResult]     = useState(null) // { success, skipped, errors }
+  const [dragOver,   setDragOver]   = useState(false)
+  const fileRef = useRef(null)
+
+  const selectedType = IMPORT_TYPES.find(t => t.key === type) ?? IMPORT_TYPES[0]
+
+  // Parse CSV preview (chỉ đọc 5 dòng đầu)
+  const parsePreview = (csvFile) => {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const text   = e.target.result
+      const lines  = text.split(/\r?\n/).filter(l => l.trim())
+      const headers = lines[0]?.split(',').map(h => h.trim().replace(/^"|"$/g, '')) ?? []
+      const rows    = lines.slice(1, 6).map(l =>
+        l.split(',').map(c => c.trim().replace(/^"|"$/g, ''))
+      )
+      setPreview({ headers, rows, total: lines.length - 1 })
+    }
+    reader.readAsText(csvFile, 'UTF-8')
+  }
+
+  const handleFileSelect = (f) => {
+    if (!f) return
+    setFile(f)
+    setResult(null)
+    parsePreview(f)
+  }
+
+  const handleDrop = (e) => {
+    e.preventDefault()
+    setDragOver(false)
+    const f = e.dataTransfer.files[0]
+    if (f?.name.endsWith('.csv')) handleFileSelect(f)
+  }
+
+  const handleDownloadTemplate = async () => {
+    try {
+      const res = await api.get(`/api/import/template/${type}`, { responseType: 'blob' })
+      const url  = URL.createObjectURL(new Blob([res.data], { type: 'text/csv' }))
+      const link = document.createElement('a')
+      link.href  = url
+      link.download = `template_${type}.csv`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+    } catch { /* ignore */ }
+  }
+
+  const handleImport = async () => {
+    if (!file) return
+    setImporting(true)
+    setResult(null)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      const res = await api.post(`/api/import/${type}`, fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      setResult(res.data)
+    } catch (err) {
+      setResult({ success: 0, skipped: 0, errors: [{ row: 0, message: err.response?.data?.message ?? 'Lỗi server' }] })
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  const reset = () => { setFile(null); setPreview(null); setResult(null) }
+
+  const missingCols = preview
+    ? selectedType.required.filter(r => !preview.headers.map(h => h.toLowerCase()).includes(r.toLowerCase()))
+    : []
+
+  return (
+    <div className="space-y-5">
+      {/* Section 1: chọn loại */}
+      <div className="lcard p-5">
+        <p className="text-xs font-semibold mb-3" style={{ color: 'var(--text-secondary)' }}>
+          CHỌN LOẠI DỮ LIỆU
+        </p>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {IMPORT_TYPES.map(it => (
+            <button
+              key={it.key}
+              onClick={() => { setType(it.key); reset() }}
+              className="flex flex-col items-center gap-2 p-3 rounded-xl border-2 transition-all"
+              style={{
+                borderColor: type === it.key ? 'var(--primary-500)' : 'var(--border)',
+                background:  type === it.key ? 'rgba(99,102,241,0.06)' : 'var(--bg-elevated)',
+              }}
+            >
+              <span className="icon" style={{ fontSize: 22, color: type === it.key ? 'var(--primary-500)' : 'var(--text-tertiary)' }}>
+                {it.icon}
+              </span>
+              <span className="text-xs font-medium" style={{ color: type === it.key ? 'var(--primary-500)' : 'var(--text-secondary)' }}>
+                {it.label}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Section 2: upload file */}
+      <div className="lcard p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <p className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>TẢI VÀ IMPORT FILE</p>
+          <button onClick={handleDownloadTemplate} className="lbtn lbtn-secondary !h-7 !px-3 text-xs gap-1">
+            <span className="icon" style={{ fontSize: 14 }}>download</span>
+            Tải template mẫu
+          </button>
+        </div>
+
+        {/* Dropzone */}
+        <div
+          onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={handleDrop}
+          onClick={() => fileRef.current?.click()}
+          className="border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all"
+          style={{
+            borderColor: dragOver ? 'var(--primary-500)' : 'var(--border)',
+            background:  dragOver ? 'rgba(99,102,241,0.04)' : 'transparent',
+          }}
+        >
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".csv"
+            className="hidden"
+            onChange={e => handleFileSelect(e.target.files[0])}
+          />
+          <span className="icon text-4xl mb-2 block" style={{ color: 'var(--text-tertiary)' }}>upload_file</span>
+          {file ? (
+            <div>
+              <p className="text-sm font-medium" style={{ color: 'var(--primary-500)' }}>{file.name}</p>
+              <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
+                {(file.size / 1024).toFixed(1)} KB
+              </p>
+            </div>
+          ) : (
+            <div>
+              <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                Kéo thả file CSV vào đây hoặc <span style={{ color: 'var(--primary-500)' }}>chọn file</span>
+              </p>
+              <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>Chỉ chấp nhận .csv</p>
+            </div>
+          )}
+        </div>
+
+        {file && (
+          <button onClick={reset} className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+            ✕ Xóa file
+          </button>
+        )}
+      </div>
+
+      {/* Section 3: preview */}
+      {preview && (
+        <div className="lcard p-5 space-y-3">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <p className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>XEM TRƯỚC</p>
+            <div className="flex items-center gap-3 text-xs" style={{ color: 'var(--text-tertiary)' }}>
+              <span>{preview.total} dòng dữ liệu · {preview.headers.length} cột</span>
+            </div>
+          </div>
+
+          {missingCols.length > 0 && (
+            <div className="px-3 py-2 rounded-lg text-xs"
+                 style={{ background: 'rgba(239,68,68,0.08)', color: '#EF4444', border: '1px solid rgba(239,68,68,0.25)' }}>
+              ⚠ Thiếu cột bắt buộc: <strong>{missingCols.join(', ')}</strong>
+            </div>
+          )}
+
+          <div className="overflow-x-auto rounded-lg border" style={{ borderColor: 'var(--border)' }}>
+            <table className="w-full text-xs">
+              <thead>
+                <tr style={{ background: 'var(--bg-elevated)', borderBottom: '1px solid var(--border)' }}>
+                  {preview.headers.map((h, i) => (
+                    <th key={i} className="px-3 py-2 text-left font-semibold whitespace-nowrap"
+                        style={{ color: 'var(--text-secondary)' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {preview.rows.map((row, ri) => (
+                  <tr key={ri} style={{ borderBottom: '1px solid var(--border)' }}>
+                    {row.map((cell, ci) => (
+                      <td key={ci} className="px-3 py-1.5 whitespace-nowrap"
+                          style={{ color: 'var(--text-primary)' }}>{cell || '—'}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {preview.total > 5 && (
+            <p className="text-xs text-center" style={{ color: 'var(--text-tertiary)' }}>
+              Hiển thị 5/{preview.total} dòng
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Section 4: xác nhận import */}
+      {preview && missingCols.length === 0 && (
+        <div className="lcard p-5 space-y-4">
+          <p className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>XÁC NHẬN VÀ IMPORT</p>
+
+          <button
+            onClick={handleImport}
+            disabled={importing}
+            className="lbtn lbtn-primary w-full justify-center"
+            style={{ height: 44 }}
+          >
+            {importing ? (
+              <>
+                <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full"
+                      style={{ animation: 'spin 0.7s linear infinite' }} />
+                Đang import...
+              </>
+            ) : (
+              <>
+                <span className="icon text-base">upload</span>
+                Import {preview.total} bản ghi
+              </>
+            )}
+          </button>
+
+          {result && (
+            <div className="rounded-xl p-4 space-y-2"
+                 style={{
+                   background: result.errors?.length > 0 ? 'rgba(245,158,11,0.08)' : 'rgba(16,185,129,0.08)',
+                   border: `1px solid ${result.errors?.length > 0 ? 'rgba(245,158,11,0.30)' : 'rgba(16,185,129,0.30)'}`,
+                 }}>
+              <p className="text-sm font-semibold"
+                 style={{ color: result.errors?.length > 0 ? '#F59E0B' : 'var(--accent-500)' }}>
+                Import hoàn tất: {result.success} thành công · {result.skipped} bỏ qua
+              </p>
+              {result.errors?.slice(0, 5).map((e, i) => (
+                <p key={i} className="text-xs" style={{ color: '#EF4444' }}>
+                  Dòng {e.row}: {e.message}
+                </p>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function DataSyncPage() {
   const { t } = useTranslation()
+  const [activeTab, setActiveTab] = useState('sync')
   const [data,    setData]    = useState(null)
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState({})
@@ -334,6 +600,12 @@ export default function DataSyncPage() {
   const errorCount   = sources.filter(s => s.status === 'error').length
   const syncingCount = sources.filter(s => s.status === 'syncing').length
 
+  const TABS = [
+    { key: 'sync',   label: t('dataSync.title'),  icon: 'sync' },
+    { key: 'import', label: t('nav.import'),       icon: 'upload_file' },
+    { key: 'scraper',label: 'Keywords Scraper',   icon: 'search' },
+  ]
+
   return (
     <div className="space-y-4">
       <MockToast show={isMock} />
@@ -344,56 +616,84 @@ export default function DataSyncPage() {
           <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>{t('dataSync.title')}</h1>
           <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>{t('dataSync.subtitle')}</p>
         </div>
-        <div className="flex items-center gap-2">
-          <button onClick={fetchStatus} className="lbtn lbtn-secondary !h-9" disabled={loading}>
-            <span className="icon text-base" style={{ ...(loading && { animation: 'spin 1s linear infinite' }) }}>refresh</span>
-          </button>
-          <button onClick={handleSyncAll} className="lbtn lbtn-primary !h-9">
-            <span className="icon text-base">sync_alt</span>
-            {t('dataSync.syncAll')}
-          </button>
-        </div>
+        {activeTab === 'sync' && (
+          <div className="flex items-center gap-2">
+            <button onClick={fetchStatus} className="lbtn lbtn-secondary !h-9" disabled={loading}>
+              <span className="icon text-base" style={{ ...(loading && { animation: 'spin 1s linear infinite' }) }}>refresh</span>
+            </button>
+            <button onClick={handleSyncAll} className="lbtn lbtn-primary !h-9">
+              <span className="icon text-base">sync_alt</span>
+              {t('dataSync.syncAll')}
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* Summary mini-bar */}
-      {!loading && sources.length > 0 && (
-        <div className="lcard px-5 py-3 flex items-center gap-6 flex-wrap">
-          {[
-            { labelKey: 'common.records',              value: sources.length, color: 'var(--text-primary)' },
-            { labelKey: 'dataSync.syncStatus.success', value: successCount,   color: 'var(--accent-500)'  },
-            { labelKey: 'dataSync.syncStatus.syncing', value: syncingCount,   color: '#F59E0B'             },
-            { labelKey: 'dataSync.syncStatus.error',   value: errorCount,     color: '#EF4444'             },
-          ].map(item => (
-            <div key={item.labelKey} className="flex items-center gap-2">
-              <span className="font-mono text-xl font-bold" style={{ color: item.color }}>{item.value}</span>
-              <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{t(item.labelKey)}</span>
+      {/* Tabs */}
+      <div className="flex gap-0" style={{ borderBottom: '1px solid var(--border)' }}>
+        {TABS.map(tab => (
+          <button
+            key={tab.key}
+            onClick={() => setActiveTab(tab.key)}
+            className="flex items-center gap-1.5 pb-3 px-4 text-sm font-medium transition-all"
+            style={{
+              borderBottom: `2px solid ${activeTab === tab.key ? 'var(--primary-500)' : 'transparent'}`,
+              color: activeTab === tab.key ? 'var(--primary-500)' : 'var(--text-secondary)',
+              marginBottom: -1,
+            }}
+          >
+            <span className="icon" style={{ fontSize: 16 }}>{tab.icon}</span>
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Tab: Đồng bộ tự động */}
+      {activeTab === 'sync' && (
+        <>
+          {/* Summary mini-bar */}
+          {!loading && sources.length > 0 && (
+            <div className="lcard px-5 py-3 flex items-center gap-6 flex-wrap">
+              {[
+                { labelKey: 'common.records',              value: sources.length, color: 'var(--text-primary)' },
+                { labelKey: 'dataSync.syncStatus.success', value: successCount,   color: 'var(--accent-500)'  },
+                { labelKey: 'dataSync.syncStatus.syncing', value: syncingCount,   color: '#F59E0B'             },
+                { labelKey: 'dataSync.syncStatus.error',   value: errorCount,     color: '#EF4444'             },
+              ].map(item => (
+                <div key={item.labelKey} className="flex items-center gap-2">
+                  <span className="font-mono text-xl font-bold" style={{ color: item.color }}>{item.value}</span>
+                  <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{t(item.labelKey)}</span>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
+          )}
+
+          {loading ? (
+            <div className="lcard p-16 flex items-center justify-center">
+              <span className="w-7 h-7 border-2 rounded-full"
+                    style={{ borderColor: 'var(--border-strong)', borderTopColor: 'var(--primary-500)', animation: 'spin 0.8s linear infinite' }} />
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              {sources.map(src => (
+                <SourceCard
+                  key={src.sourceKey}
+                  src={src}
+                  syncing={syncing[src.sourceKey]}
+                  onSync={() => handleSync(src.sourceKey)}
+                  t={t}
+                />
+              ))}
+            </div>
+          )}
+        </>
       )}
 
-      {/* Source cards */}
-      {loading ? (
-        <div className="lcard p-16 flex items-center justify-center">
-          <span className="w-7 h-7 border-2 rounded-full"
-                style={{ borderColor: 'var(--border-strong)', borderTopColor: 'var(--primary-500)', animation: 'spin 0.8s linear infinite' }} />
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {sources.map(src => (
-            <SourceCard
-              key={src.sourceKey}
-              src={src}
-              syncing={syncing[src.sourceKey]}
-              onSync={() => handleSync(src.sourceKey)}
-              t={t}
-            />
-          ))}
-        </div>
-      )}
+      {/* Tab: Import thủ công */}
+      {activeTab === 'import' && <ImportTab />}
 
-      {/* Keyword Management */}
-      <KeywordManager />
+      {/* Tab: Keywords Scraper */}
+      {activeTab === 'scraper' && <KeywordManager />}
     </div>
   )
 }

@@ -6,12 +6,12 @@ import { MOCK_USERS } from '../../mockData/admin'
 
 const ROLE_OPTIONS = ['Owner', 'Manager', 'Staff', 'DataIT', 'Admin', 'Viewer']
 const ROLE_COLOR = {
-  Owner:   { bg: 'rgba(245,158,11,0.12)', color: '#D97706', border: 'rgba(245,158,11,0.35)' },
-  Manager: { bg: 'rgba(99,102,241,0.10)', color: 'var(--primary-500)', border: 'rgba(99,102,241,0.30)' },
-  Staff:   { bg: 'rgba(16,185,129,0.10)', color: 'var(--accent-500)', border: 'rgba(16,185,129,0.30)' },
-  DataIT:  { bg: 'rgba(59,130,246,0.10)', color: '#3B82F6', border: 'rgba(59,130,246,0.30)' },
-  Admin:   { bg: 'rgba(139,92,246,0.10)', color: '#7C3AED', border: 'rgba(139,92,246,0.30)' },
-  Viewer:  { bg: 'rgba(100,116,139,0.10)', color: '#64748B', border: 'rgba(100,116,139,0.30)' },
+  Owner:   { bg: 'rgba(139,92,246,0.10)', color: '#7C3AED', border: 'rgba(139,92,246,0.30)' },  // tím
+  Manager: { bg: 'rgba(59,130,246,0.10)',  color: '#3B82F6', border: 'rgba(59,130,246,0.30)'  }, // xanh dương
+  Staff:   { bg: 'rgba(16,185,129,0.10)',  color: '#10B981', border: 'rgba(16,185,129,0.30)'  }, // xanh lá
+  DataIT:  { bg: 'rgba(59,130,246,0.10)',  color: '#3B82F6', border: 'rgba(59,130,246,0.30)'  }, // xanh dương
+  Admin:   { bg: 'rgba(239,68,68,0.10)',   color: '#EF4444', border: 'rgba(239,68,68,0.30)'   }, // đỏ
+  Viewer:  { bg: 'rgba(100,116,139,0.10)', color: '#64748B', border: 'rgba(100,116,139,0.30)' }, // xám
 }
 const STATUS_CFG = {
   active:   { bg: 'rgba(16,185,129,0.10)', color: 'var(--accent-500)', border: 'rgba(16,185,129,0.30)', dot: 'var(--accent-500)', label: 'Hoạt động' },
@@ -66,7 +66,8 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true)
   const [isMock,  setIsMock]  = useState(false)
   const [tab,     setTab]     = useState('all')
-  const [acting,  setActing]  = useState({})
+  const [acting,       setActing]       = useState({})
+  const [editingRoleId, setEditingRoleId] = useState(null)
 
   // ── Audit log state ────────────────────────────────────────────────────────
   const [auditLogs,    setAuditLogs]    = useState([])
@@ -118,7 +119,10 @@ export default function AdminPage() {
   const act = async (userId, fn) => {
     setActing(a => ({ ...a, [userId]: true }))
     try { await fn(); await fetchUsers() } catch { /* ignore */ }
-    finally { setActing(a => ({ ...a, [userId]: false })) }
+    finally {
+      setActing(a => ({ ...a, [userId]: false }))
+      setEditingRoleId(null)
+    }
   }
 
   const pendingCount = users.filter(u => u.status === 'pending').length
@@ -218,20 +222,30 @@ export default function AdminPage() {
                       <td className="px-4 py-3 font-medium" style={{ color: 'var(--text-primary)' }}>{u.fullName}</td>
                       <td className="px-4 py-3 text-xs" style={{ color: 'var(--text-secondary)' }}>{u.email}</td>
                       <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <RoleBadge role={u.role} label={t(`admin.roles.${u.role}`, u.role)} />
+                        {editingRoleId === u.id ? (
                           <select
                             value={u.role}
                             disabled={acting[u.id]}
+                            autoFocus
                             onChange={e => act(u.id, () => changeRole(u.id, e.target.value))}
+                            onBlur={() => setEditingRoleId(null)}
                             className="linput !h-7 text-xs !px-2 !py-0"
-                            style={{ maxWidth: 100 }}
+                            style={{ maxWidth: 130 }}
                           >
                             {ROLE_OPTIONS.map(r => (
                               <option key={r} value={r}>{t(`admin.roles.${r}`, r)}</option>
                             ))}
                           </select>
-                        </div>
+                        ) : (
+                          <button
+                            onClick={() => !acting[u.id] && setEditingRoleId(u.id)}
+                            disabled={acting[u.id]}
+                            title={t('admin.changeRole')}
+                            className="cursor-pointer disabled:cursor-default"
+                          >
+                            <RoleBadge role={u.role} label={t(`admin.roles.${u.role}`, u.role)} />
+                          </button>
+                        )}
                       </td>
                       <td className="px-4 py-3"><StatusDot status={u.status} /></td>
                       <td className="px-4 py-3">

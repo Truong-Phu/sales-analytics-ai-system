@@ -49,7 +49,7 @@ function ThemeToggle() {
   )
 }
 
-// ── Language Toggle ────────────────────────────────────────────────────────────
+// ── Language Toggle — lưu vào localStorage để giữ sau reload ─────────────────
 function LangToggle() {
   const [lang, setLang] = useState(() =>
     (i18n.language ?? 'vi').startsWith('en') ? 'en' : 'vi'
@@ -58,6 +58,7 @@ function LangToggle() {
     const next = lang === 'vi' ? 'en' : 'vi'
     setLang(next)
     i18n.changeLanguage(next)
+    localStorage.setItem('lang', next)
   }
   return (
     <button
@@ -76,6 +77,7 @@ function LangToggle() {
 function UserAvatar() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
+  const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
 
@@ -93,8 +95,8 @@ function UserAvatar() {
     .toUpperCase()
 
   const menuItems = [
-    { label: 'Đổi mật khẩu', icon: 'lock', href: '/change-password' },
-    { label: 'Cài đặt',      icon: 'settings', href: '/settings' },
+    { label: t('auth.changePassword'), icon: 'lock',     href: '/change-password' },
+    { label: t('nav.settings'),        icon: 'settings', href: '/settings' },
   ]
 
   return (
@@ -113,7 +115,6 @@ function UserAvatar() {
           className="lcard scale-in absolute right-0 top-10 w-56 py-2 z-[200]"
           style={{ boxShadow: 'var(--shadow-lg)' }}
         >
-          {/* Info */}
           <div className="px-4 py-2 border-b" style={{ borderColor: 'var(--border)' }}>
             <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
               {user?.fullName}
@@ -122,7 +123,6 @@ function UserAvatar() {
               {user?.email}
             </p>
           </div>
-          {/* Menu items */}
           <div className="py-1">
             {menuItems.map(item => (
               <button
@@ -147,7 +147,7 @@ function UserAvatar() {
               style={{ color: 'var(--color-error)' }}
             >
               <span className="icon icon-sm">logout</span>
-              Đăng xuất
+              {t('auth.logout')}
             </button>
           </div>
         </div>
@@ -156,38 +156,38 @@ function UserAvatar() {
   )
 }
 
-// ── MegaMenu for "Bán hàng" ───────────────────────────────────────────────────
+// ── MegaMenu cho "Bán hàng" — chỉ Orders/Products/Customers (không có Đồng bộ) ──
 function MegaMenu({ onClose }) {
   const navigate = useNavigate()
+  const { t } = useTranslation()
   const items = [
-    { label: 'Đơn hàng',     desc: 'Quản lý đơn hàng',    icon: 'receipt_long', href: '/orders' },
-    { label: 'Sản phẩm',     desc: 'Quản lý sản phẩm',    icon: 'inventory_2',  href: '/products' },
-    { label: 'Khách hàng',   desc: 'Hồ sơ khách hàng',    icon: 'people',       href: '/customers' },
-    { label: 'Đồng bộ',      desc: 'Kết nối sàn TMĐT',    icon: 'sync',         href: '/data-sync' },
+    { labelKey: 'nav.orders',    descKey: 'nav.ordersDesc',    icon: 'receipt_long', href: '/orders' },
+    { labelKey: 'nav.products',  descKey: 'nav.productsDesc',  icon: 'inventory_2',  href: '/products' },
+    { labelKey: 'nav.customers', descKey: 'nav.customersDesc', icon: 'people',       href: '/customers' },
   ]
 
   return (
     <div
-      className="lcard scale-in absolute top-full left-0 mt-1 w-72 p-3 z-[200]"
+      className="lcard scale-in absolute top-full left-0 mt-1 w-64 p-3 z-[200]"
       style={{ boxShadow: 'var(--shadow-lg)' }}
     >
-      <div className="grid grid-cols-2 gap-1">
+      <div className="flex flex-col gap-0.5">
         {items.map(item => (
           <button
             key={item.href}
             onClick={() => { navigate(item.href); onClose() }}
-            className="flex items-start gap-2 p-3 rounded-lg text-left
+            className="flex items-start gap-2 p-2.5 rounded-lg text-left
                        transition-colors hover:bg-[--bg-elevated] cursor-pointer"
           >
-            <span className="icon icon-sm mt-0.5" style={{ color: 'var(--primary-500)' }}>
+            <span className="icon icon-sm mt-0.5 shrink-0" style={{ color: 'var(--primary-500)' }}>
               {item.icon}
             </span>
             <div>
               <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                {item.label}
+                {t(item.labelKey)}
               </div>
               <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                {item.desc}
+                {t(item.descKey)}
               </div>
             </div>
           </button>
@@ -263,11 +263,13 @@ export default function TopBar() {
   const { t } = useTranslation()
 
   const navTabs = [
-    { href: '/dashboard',       icon: 'dashboard',    label: 'Dashboard' },
-    { href: '/orders',          icon: 'receipt_long', label: 'Bán hàng', hasMega: true },
-    { href: '/forecast',        icon: 'trending_up',  label: 'Phân tích AI' },
-    { href: '/report',          icon: 'picture_as_pdf', label: 'Báo cáo' },
+    { href: '/dashboard', icon: 'dashboard',      label: t('nav.dashboard') },
+    { href: '/orders',    icon: 'receipt_long',   label: t('nav.sales'), hasMega: true },
+    { href: '/forecast',  icon: 'trending_up',    label: t('nav.ai') },
+    { href: '/report',    icon: 'picture_as_pdf', label: t('nav.report') },
   ]
+
+  const showDataSync = ['DataIT', 'Admin', 'Owner'].includes(user?.role)
 
   return (
     <header
@@ -292,8 +294,11 @@ export default function TopBar() {
         {navTabs.map(tab => (
           <NavTab key={tab.href} {...tab} />
         ))}
+        {showDataSync && (
+          <NavTab href="/data-sync" icon="sync" label={t('nav.dataSync')} />
+        )}
         {user?.role === 'Admin' && (
-          <NavTab href="/admin" icon="manage_accounts" label="Quản trị" />
+          <NavTab href="/admin" icon="manage_accounts" label={t('nav.admin')} />
         )}
       </nav>
 
@@ -311,7 +316,7 @@ export default function TopBar() {
           }}
         >
           <span className="icon icon-sm">search</span>
-          <span>Tìm kiếm</span>
+          <span>{t('common.search')}</span>
           <kbd
             className="ml-2 text-[10px] px-1.5 py-0.5 rounded"
             style={{ background: 'var(--bg-elevated)', color: 'var(--text-tertiary)' }}

@@ -12,6 +12,84 @@ public class ReportService
 
     public ReportService(DashboardService dashboard) => _dashboard = dashboard;
 
+    // ── Chuỗi dịch PDF theo ngôn ngữ ─────────────────────────────────────────
+    private static readonly Dictionary<string, Dictionary<string, string>> _strings = new()
+    {
+        ["vi"] = new()
+        {
+            ["reportTitle"]      = "BÁO CÁO PHÂN TÍCH BÁN HÀNG ĐA KÊNH",
+            ["systemName"]       = "MSAS — Hệ thống Phân tích Bán hàng Đa kênh",
+            ["generatedAt"]      = "Ngày xuất",
+            ["period"]           = "Kỳ báo cáo",
+            ["allChannels"]      = "Tất cả kênh",
+            ["channel"]          = "Kênh",
+            ["sampleNotice"]     = "(Dữ liệu mẫu — chưa có dữ liệu thực)",
+            ["secOverview"]      = "I. CHỈ SỐ KINH DOANH TỔNG QUAN",
+            ["secTrend"]         = "Xu hướng Doanh thu & Lợi nhuận (theo ngày):",
+            ["secChart"]         = "II. BIỂU ĐỒ TỪ NGƯỜI DÙNG",
+            ["secChannel"]       = "III. DOANH THU THEO KÊNH BÁN HÀNG",
+            ["channelShare"]     = "Tỷ trọng doanh thu theo kênh:",
+            ["secProducts"]      = "IV. TOP SẢN PHẨM BÁN CHẠY",
+            ["topProductsChart"] = "Doanh thu Top 5 sản phẩm:",
+            ["secAI"]            = "V. NHẬN XÉT & KHUYẾN NGHỊ",
+            ["pageOf"]           = "Trang",
+            ["colRevenue"]       = "Doanh thu (VND)",
+            ["colOrders"]        = "Đơn hàng",
+            ["colShare"]         = "Tỷ trọng",
+            ["colChannel"]       = "Kênh",
+            ["colProduct"]       = "Sản phẩm",
+            ["colQty"]           = "SL bán",
+            ["rank"]             = "#",
+            ["kpiRevenue"]       = "Doanh thu thuần",
+            ["kpiProfit"]        = "Lợi nhuận gộp",
+            ["kpiOrders"]        = "Số đơn hàng",
+            ["kpiAov"]           = "Giá trị đơn TB",
+            ["kpiMargin"]        = "Biên lợi nhuận",
+            ["kpiCustomers"]     = "Khách hàng mới",
+            ["vsLastPeriod"]     = "% so kỳ trước",
+            ["legendRevenue"]    = "Doanh thu",
+            ["legendProfit"]     = "Lợi nhuận",
+        },
+        ["en"] = new()
+        {
+            ["reportTitle"]      = "SALES ANALYTICS REPORT",
+            ["systemName"]       = "MSAS — Multi-channel Sales Analytics System",
+            ["generatedAt"]      = "Generated at",
+            ["period"]           = "Period",
+            ["allChannels"]      = "All channels",
+            ["channel"]          = "Channel",
+            ["sampleNotice"]     = "(Sample data — no real data yet)",
+            ["secOverview"]      = "I. BUSINESS KPI OVERVIEW",
+            ["secTrend"]         = "Revenue & Profit Trend (daily):",
+            ["secChart"]         = "II. USER-PROVIDED CHART",
+            ["secChannel"]       = "III. REVENUE BY SALES CHANNEL",
+            ["channelShare"]     = "Revenue share by channel:",
+            ["secProducts"]      = "IV. TOP SELLING PRODUCTS",
+            ["topProductsChart"] = "Revenue — Top 5 Products:",
+            ["secAI"]            = "V. AI INSIGHTS & RECOMMENDATIONS",
+            ["pageOf"]           = "Page",
+            ["colRevenue"]       = "Revenue (VND)",
+            ["colOrders"]        = "Orders",
+            ["colShare"]         = "Share",
+            ["colChannel"]       = "Channel",
+            ["colProduct"]       = "Product",
+            ["colQty"]           = "Qty Sold",
+            ["rank"]             = "#",
+            ["kpiRevenue"]       = "Net Revenue",
+            ["kpiProfit"]        = "Gross Profit",
+            ["kpiOrders"]        = "Total Orders",
+            ["kpiAov"]           = "Avg. Order Value",
+            ["kpiMargin"]        = "Profit Margin",
+            ["kpiCustomers"]     = "New Customers",
+            ["vsLastPeriod"]     = "% vs last period",
+            ["legendRevenue"]    = "Revenue",
+            ["legendProfit"]     = "Profit",
+        },
+    };
+
+    private static string S(string lang, string key) =>
+        _strings.TryGetValue(lang, out var d) && d.TryGetValue(key, out var v) ? v : key;
+
     // ── Sample data fallback khi Data Warehouse chưa có dữ liệu thật ──────────
     private static DashboardResponse GenerateSampleData(DateOnly from, DateOnly to)
     {
@@ -107,7 +185,7 @@ public class ReportService
     }
 
     /// <summary>Revenue trend bar chart nhỏ theo ngày</summary>
-    private static void AddRevenueTrendBars(ColumnDescriptor col, IList<RevenueByDay> days)
+    private static void AddRevenueTrendBars(ColumnDescriptor col, IList<RevenueByDay> days, string lang = "vi")
     {
         // Lấy tối đa 28 điểm (4 tuần nếu daily)
         var step    = Math.Max(1, days.Count / 28);
@@ -125,9 +203,9 @@ public class ReportService
         {
             r.RelativeItem();
             r.ConstantItem(12).Height(10).Background(Color.FromHex("#6366F1"));
-            r.ConstantItem(50).PaddingLeft(3).Text("Doanh thu").FontSize(8).FontColor(Color.FromHex("#6366F1"));
+            r.ConstantItem(55).PaddingLeft(3).Text(S(lang, "legendRevenue")).FontSize(8).FontColor(Color.FromHex("#6366F1"));
             r.ConstantItem(12).Height(10).Background(Color.FromHex("#10B981"));
-            r.ConstantItem(50).PaddingLeft(3).Text("Loi nhuan").FontSize(8).FontColor(Color.FromHex("#10B981"));
+            r.ConstantItem(50).PaddingLeft(3).Text(S(lang, "legendProfit")).FontSize(8).FontColor(Color.FromHex("#10B981"));
         });
 
         // Khung chart
@@ -209,6 +287,7 @@ public class ReportService
         DateOnly from, DateOnly to,
         string? channel,
         string? chartBase64    = null,
+        string  language       = "vi",
         bool    inclOverview   = true,
         bool    inclSales      = true,
         bool    inclChannel    = true,
@@ -239,25 +318,28 @@ public class ReportService
                     {
                         row.RelativeItem().Column(c =>
                         {
-                            c.Item().Text("BAO CAO PHAN TICH BAN HANG DA KENH")
+                            c.Item().Text(S(language, "reportTitle"))
                                 .FontSize(15).Bold().FontColor(Color.FromHex("#1a5276"));
-                            c.Item().Text("MSAS - Multi-channel Sales Analytics System")
+                            c.Item().Text(S(language, "systemName"))
                                 .FontSize(9).FontColor(Colors.Grey.Medium);
                         });
-                        row.ConstantItem(160).AlignRight().Column(c =>
+                        row.ConstantItem(175).AlignRight().Column(c =>
                         {
-                            c.Item().AlignRight().Text($"Ngay xuat: {DateTime.Now:dd/MM/yyyy HH:mm}")
+                            c.Item().AlignRight()
+                                .Text($"{S(language, "generatedAt")}: {DateTime.Now:dd/MM/yyyy HH:mm}")
                                 .FontSize(9).FontColor(Colors.Grey.Medium);
                             if (usingSample)
-                                c.Item().AlignRight().Text("(Du lieu mau - chua co du lieu thuc)")
+                                c.Item().AlignRight().Text(S(language, "sampleNotice"))
                                     .FontSize(8).FontColor(Colors.Orange.Medium);
                         });
                     });
                     col.Item().PaddingVertical(3)
                         .LineHorizontal(1.5f).LineColor(Color.FromHex("#1a5276"));
                     col.Item().Text(
-                        $"Ky bao cao: {from:dd/MM/yyyy} - {to:dd/MM/yyyy}" +
-                        (channel is not null ? $" | Kenh: {channel}" : " | Tat ca kenh")
+                        $"{S(language, "period")}: {from:dd/MM/yyyy} — {to:dd/MM/yyyy}" +
+                        (channel is not null
+                            ? $" | {S(language, "channel")}: {channel}"
+                            : $" | {S(language, "allChannels")}")
                     ).FontSize(10).Italic().FontColor(Colors.Grey.Darken1);
                 });
 
@@ -267,7 +349,7 @@ public class ReportService
                     // ── I. KPI Overview ──────────────────────────────────────
                     if (inclOverview)
                     {
-                        AddSectionHeader(col, "I. CHI SO KINH DOANH TONG QUAN");
+                        AddSectionHeader(col, S(language, "secOverview"));
 
                         col.Item().PaddingVertical(5).Table(table =>
                         {
@@ -277,21 +359,20 @@ public class ReportService
                                 c.RelativeColumn(2);
                                 c.RelativeColumn(2);
                             });
-                            AddKpiCell(table, "Doanh thu thuan",  $"{data.Kpi.TotalRevenue:N0} VND", data.Kpi.RevenueGrowthPct);
-                            AddKpiCell(table, "Loi nhuan gop",    $"{data.Kpi.TotalProfit:N0} VND",  data.Kpi.ProfitMarginPct);
-                            AddKpiCell(table, "So don hang",      $"{data.Kpi.TotalOrders:N0}",       data.Kpi.OrdersGrowthPct);
-                            AddKpiCell(table, "Gia tri don TB",   $"{data.Kpi.AvgOrderValue:N0} VND", 0);
-                            AddKpiCell(table, "Bien loi nhuan",   $"{data.Kpi.ProfitMarginPct:N1}%",  0);
-                            AddKpiCell(table, "Khach hang moi",   $"{data.Kpi.NewCustomers:N0}",      data.Kpi.CustomersGrowthPct);
+                            AddKpiCell(table, S(language, "kpiRevenue"),   $"{data.Kpi.TotalRevenue:N0} VND",  data.Kpi.RevenueGrowthPct);
+                            AddKpiCell(table, S(language, "kpiProfit"),    $"{data.Kpi.TotalProfit:N0} VND",   data.Kpi.ProfitMarginPct);
+                            AddKpiCell(table, S(language, "kpiOrders"),    $"{data.Kpi.TotalOrders:N0}",        data.Kpi.OrdersGrowthPct);
+                            AddKpiCell(table, S(language, "kpiAov"),       $"{data.Kpi.AvgOrderValue:N0} VND",  0);
+                            AddKpiCell(table, S(language, "kpiMargin"),    $"{data.Kpi.ProfitMarginPct:N1}%",   0);
+                            AddKpiCell(table, S(language, "kpiCustomers"), $"{data.Kpi.NewCustomers:N0}",        data.Kpi.CustomersGrowthPct);
                         });
 
-                        // Biểu đồ xu hướng doanh thu (QuestPDF native bars)
                         if (data.RevenueByDay.Count > 0)
                         {
-                            col.Item().PaddingTop(8).Text("Bieu do xu huong Doanh thu & Loi nhuan (theo ngay):")
+                            col.Item().PaddingTop(8).Text(S(language, "secTrend"))
                                 .FontSize(10).Bold().FontColor(Color.FromHex("#1a5276"));
                             col.Item().PaddingTop(4).PaddingBottom(8);
-                            AddRevenueTrendBars(col, data.RevenueByDay);
+                            AddRevenueTrendBars(col, data.RevenueByDay, language);
                         }
 
                         col.Item().PaddingBottom(8);
@@ -300,7 +381,7 @@ public class ReportService
                     // ── II. Custom chart từ frontend (nếu có) ───────────────
                     if (!string.IsNullOrEmpty(chartBase64))
                     {
-                        AddSectionHeader(col, "II. BIEU DO TU NGUOI DUNG");
+                        AddSectionHeader(col, S(language, "secChart"));
                         col.Item().PaddingTop(5).Image(
                             Convert.FromBase64String(chartBase64)
                         ).FitWidth();
@@ -310,9 +391,9 @@ public class ReportService
                     // ── III. Doanh thu theo kênh ─────────────────────────────
                     if (inclChannel && data.RevenueByChannel.Count > 0)
                     {
-                        AddSectionHeader(col, "III. DOANH THU THEO KENH BAN HANG");
+                        AddSectionHeader(col, S(language, "secChannel"));
 
-                        col.Item().PaddingTop(6).Text("Ty trong doanh thu theo kenh:")
+                        col.Item().PaddingTop(6).Text(S(language, "channelShare"))
                             .FontSize(10).Bold().FontColor(Color.FromHex("#1a5276"));
                         col.Item().PaddingTop(4).PaddingBottom(4);
 
@@ -333,7 +414,12 @@ public class ReportService
                             });
                             table.Header(h =>
                             {
-                                foreach (var title in new[] { "Kenh", "Doanh thu (VND)", "Don hang", "Ty trong" })
+                                foreach (var title in new[] {
+                                    S(language, "colChannel"),
+                                    S(language, "colRevenue"),
+                                    S(language, "colOrders"),
+                                    S(language, "colShare"),
+                                })
                                     h.Cell().Background(Color.FromHex("#DBEAFE")).Padding(5)
                                         .Text(title).Bold().FontSize(10);
                             });
@@ -354,9 +440,9 @@ public class ReportService
                     // ── IV. Top sản phẩm ─────────────────────────────────────
                     if (inclSales && data.TopProducts.Count > 0)
                     {
-                        AddSectionHeader(col, "IV. TOP SAN PHAM BAN CHAY");
+                        AddSectionHeader(col, S(language, "secProducts"));
 
-                        col.Item().PaddingTop(6).Text("Doanh thu Top 5 san pham:")
+                        col.Item().PaddingTop(6).Text(S(language, "topProductsChart"))
                             .FontSize(10).Bold().FontColor(Color.FromHex("#1a5276"));
                         col.Item().PaddingTop(4).PaddingBottom(4);
 
@@ -379,7 +465,13 @@ public class ReportService
                             });
                             table.Header(h =>
                             {
-                                foreach (var t in new[] { "#", "San pham", "Kenh", "SL ban", "Doanh thu" })
+                                foreach (var t in new[] {
+                                    S(language, "rank"),
+                                    S(language, "colProduct"),
+                                    S(language, "colChannel"),
+                                    S(language, "colQty"),
+                                    S(language, "colRevenue"),
+                                })
                                     h.Cell().Background(Color.FromHex("#DBEAFE")).Padding(5)
                                         .Text(t).Bold().FontSize(10);
                             });
@@ -397,30 +489,49 @@ public class ReportService
                         col.Item().PaddingBottom(15);
                     }
 
-                    // ── V. Nhận xét AI (rule-based) ──────────────────────────
+                    // ── V. Nhận xét AI (rule-based, theo ngôn ngữ) ───────────
                     if (inclAI)
                     {
-                        AddSectionHeader(col, "V. NHAN XET & KHUYEN NGHI");
+                        AddSectionHeader(col, S(language, "secAI"));
                         col.Item().PaddingTop(5).Column(ai =>
                         {
                             var topCh = data.RevenueByChannel.FirstOrDefault();
-                            var growthText = data.Kpi.RevenueGrowthPct > 0
-                                ? $"tang truong {data.Kpi.RevenueGrowthPct:N1}% so voi ky truoc."
-                                : $"giam {Math.Abs(data.Kpi.RevenueGrowthPct):N1}% so voi ky truoc.";
+                            bool isEn = language == "en";
 
-                            var insights = new List<string>
-                            {
-                                $"• Doanh thu ky nay dat {data.Kpi.TotalRevenue:N0} VND, {growthText}",
-                                topCh is not null
-                                    ? $"• Kenh ban hang dong gop cao nhat la {topCh.ChannelName} ({topCh.RevenuePct:N1}% doanh thu)."
-                                    : "",
-                                $"• Bien loi nhuan gop dat {data.Kpi.ProfitMarginPct:N1}%.",
-                                data.Kpi.ProfitMarginPct < 20
-                                    ? "• Khuyen nghi: Toi uu chi phi van hanh de cai thien bien loi nhuan."
-                                    : "• Bien loi nhuan o muc tot. Co the day manh ngan sach marketing.",
-                                $"• Tong {data.Kpi.TotalOrders:N0} don hang voi gia tri trung binh {data.Kpi.AvgOrderValue:N0} VND/don.",
-                                $"• Tong so khach hang moi trong ky: {data.Kpi.NewCustomers:N0} khach.",
-                            };
+                            var growthText = data.Kpi.RevenueGrowthPct > 0
+                                ? (isEn ? $"grew {data.Kpi.RevenueGrowthPct:N1}% vs. last period."
+                                        : $"tăng trưởng {data.Kpi.RevenueGrowthPct:N1}% so kỳ trước.")
+                                : (isEn ? $"declined {Math.Abs(data.Kpi.RevenueGrowthPct):N1}% vs. last period."
+                                        : $"giảm {Math.Abs(data.Kpi.RevenueGrowthPct):N1}% so kỳ trước.");
+
+                            var insights = isEn
+                                ? new List<string>
+                                {
+                                    $"• Period revenue: {data.Kpi.TotalRevenue:N0} VND — {growthText}",
+                                    topCh is not null
+                                        ? $"• Top channel: {topCh.ChannelName} contributes {topCh.RevenuePct:N1}% of revenue."
+                                        : "",
+                                    $"• Gross profit margin: {data.Kpi.ProfitMarginPct:N1}%.",
+                                    data.Kpi.ProfitMarginPct < 20
+                                        ? "• Recommendation: Optimize operating costs to improve profit margin."
+                                        : "• Margin is healthy. Consider increasing marketing budget.",
+                                    $"• Total {data.Kpi.TotalOrders:N0} orders, avg. value {data.Kpi.AvgOrderValue:N0} VND.",
+                                    $"• New customers acquired: {data.Kpi.NewCustomers:N0}.",
+                                }
+                                : new List<string>
+                                {
+                                    $"• Doanh thu kỳ này đạt {data.Kpi.TotalRevenue:N0} VND, {growthText}",
+                                    topCh is not null
+                                        ? $"• Kênh bán hàng đóng góp cao nhất: {topCh.ChannelName} ({topCh.RevenuePct:N1}% doanh thu)."
+                                        : "",
+                                    $"• Biên lợi nhuận gộp đạt {data.Kpi.ProfitMarginPct:N1}%.",
+                                    data.Kpi.ProfitMarginPct < 20
+                                        ? "• Khuyến nghị: Tối ưu chi phí vận hành để cải thiện biên lợi nhuận."
+                                        : "• Biên lợi nhuận ở mức tốt. Có thể đẩy mạnh ngân sách marketing.",
+                                    $"• Tổng {data.Kpi.TotalOrders:N0} đơn hàng với giá trị trung bình {data.Kpi.AvgOrderValue:N0} VND/đơn.",
+                                    $"• Tổng số khách hàng mới trong kỳ: {data.Kpi.NewCustomers:N0} khách.",
+                                };
+
                             foreach (var line in insights.Where(l => l.Length > 0))
                                 ai.Item().PaddingBottom(4).Text(line).FontSize(10);
                         });
@@ -430,7 +541,7 @@ public class ReportService
                 // ── Footer ───────────────────────────────────────────────────
                 page.Footer().AlignCenter().Text(text =>
                 {
-                    text.Span("MSAS - He thong Phan tich Ban hang Da kenh  |  Trang ")
+                    text.Span($"{S(language, "systemName")}  |  {S(language, "pageOf")} ")
                         .FontSize(9).FontColor(Colors.Grey.Medium);
                     text.CurrentPageNumber().FontSize(9).FontColor(Colors.Grey.Medium);
                     text.Span(" / ").FontSize(9).FontColor(Colors.Grey.Medium);
