@@ -66,7 +66,7 @@ export default function LoginPage() {
     localStorage.setItem('lang', next)
   }
 
-  const [form,    setForm]    = useState({ username: '', password: '' })
+  const [form,    setForm]    = useState({ email: '', username: '', password: '' })
   const [showPwd, setShowPwd] = useState(false)
   const [error,   setError]   = useState('')
   const [loading, setLoading] = useState(false)
@@ -75,10 +75,14 @@ export default function LoginPage() {
 
   const handleSubmit = async e => {
     e.preventDefault()
+    if (!form.email && !form.username) {
+      setError('Vui lòng nhập Email hoặc Tên đăng nhập')
+      return
+    }
     setError('')
     setLoading(true)
     try {
-      await login(form.username, form.password)
+      await login(form.email || null, form.username || null, form.password)
       navigate(from, { replace: true })
     } catch (err) {
       const msg = err.response?.data?.message
@@ -192,18 +196,45 @@ export default function LoginPage() {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Email / Username */}
+            {/* Chú thích đăng nhập */}
+            <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+              {t('auth.loginHint', 'Nhập Email hoặc Tên đăng nhập (chỉ cần điền một trong hai)')}
+            </p>
+
+            {/* Email */}
+            <div>
+              <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>
+                Email
+              </label>
+              <input
+                type="email"
+                className="linput"
+                placeholder="admin@demo.vn"
+                value={form.email}
+                onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
+                autoComplete="email"
+              />
+            </div>
+
+            {/* Separator */}
+            <div className="flex items-center gap-3">
+              <div className="flex-1 h-px" style={{ background: 'var(--border)' }} />
+              <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>hoặc</span>
+              <div className="flex-1 h-px" style={{ background: 'var(--border)' }} />
+            </div>
+
+            {/* Username */}
             <div>
               <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>
                 {t('auth.username')}
               </label>
               <input
                 type="text"
-                required
                 className="linput"
                 placeholder="admin"
                 value={form.username}
                 onChange={e => setForm(f => ({ ...f, username: e.target.value }))}
+                autoComplete="username"
               />
             </div>
 

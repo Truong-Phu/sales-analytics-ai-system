@@ -27,8 +27,12 @@ public class AuthService
         string? ipAddress = null,
         string? userAgent = null)
     {
-        var user = await _db.Users
-            .FirstOrDefaultAsync(u => u.Username == req.Username && u.IsActive);
+        // Tìm user theo email (ưu tiên) hoặc username
+        User? user = null;
+        if (!string.IsNullOrWhiteSpace(req.Email))
+            user = await _db.Users.FirstOrDefaultAsync(u => u.Email == req.Email && u.IsActive);
+        if (user is null && !string.IsNullOrWhiteSpace(req.Username))
+            user = await _db.Users.FirstOrDefaultAsync(u => u.Username == req.Username && u.IsActive);
 
         if (user is null || !VerifyPassword(req.Password, user.PasswordHash))
         {

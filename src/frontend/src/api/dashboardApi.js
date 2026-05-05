@@ -19,6 +19,11 @@ const normalizeOrder = (o) => ({
   channel:        o.channelName  ?? o.channel  ?? '—',
   totalAmount:    Number(o.totalAmount ?? o.netRevenue ?? 0),
   paymentMethod:  o.paymentMethod ?? '—',
+  paymentStatus:  o.paymentStatus  ?? 'UNPAID',
+  shippingStatus: o.shippingStatus ?? 'NOT_SHIPPED',
+  shippingFee:    Number(o.shippingFee ?? 0),
+  discount:       Number(o.discountAmount ?? o.discount ?? 0),
+  commissionFee:  o.commissionFee ?? null,
   status:         (o.status ?? 'pending').toLowerCase(),
   createdAt:      o.orderDate    ?? o.createdAt ?? o.saleDate,
 })
@@ -91,3 +96,62 @@ export const getCustomers = async (params = {}) => {
     totalPages: res.totalPages ?? 1,
   }
 }
+
+// ── Orders OLTP CRUD ─────────────────────────────────────────────────────────
+
+export const updateOrderStatus = (id, dto) =>
+  api.put(`/api/orders/oltp/${id}`, dto).then(r => r.data)
+
+export const cancelOrder = (id) =>
+  api.delete(`/api/orders/oltp/${id}`).then(r => r.data)
+
+// ── Products OLTP CRUD ───────────────────────────────────────────────────────
+
+export const getOltpProducts = async (params = {}) => {
+  const { limit, ...rest } = params
+  const res = await api.get('/api/products/oltp', {
+    params: { ...rest, pageSize: limit ?? 20 },
+  }).then(r => r.data)
+  return {
+    items:      res.data ?? res.items ?? [],
+    total:      res.total ?? 0,
+    page:       res.page  ?? 1,
+    totalPages: res.totalPages ?? 1,
+  }
+}
+
+export const getOltpProduct = (id) =>
+  api.get(`/api/products/oltp/${id}`).then(r => r.data)
+
+export const createProduct = (dto) =>
+  api.post('/api/products/oltp', dto).then(r => r.data)
+
+export const updateProduct = (id, dto) =>
+  api.put(`/api/products/oltp/${id}`, dto).then(r => r.data)
+
+export const deleteProduct = (id) =>
+  api.delete(`/api/products/oltp/${id}`).then(r => r.data)
+
+// ── Customers OLTP CRUD ──────────────────────────────────────────────────────
+
+export const getOltpCustomers = async (params = {}) => {
+  const { limit, ...rest } = params
+  const res = await api.get('/api/customers/oltp', {
+    params: { ...rest, pageSize: limit ?? 20 },
+  }).then(r => r.data)
+  return {
+    items:      res.data ?? res.items ?? [],
+    total:      res.total ?? 0,
+    page:       res.page  ?? 1,
+    totalPages: res.totalPages ?? 1,
+  }
+}
+
+export const createCustomer = (dto) =>
+  api.post('/api/customers/oltp', dto).then(r => r.data)
+
+export const updateCustomer = (id, dto) =>
+  api.put(`/api/customers/oltp/${id}`, dto).then(r => r.data)
+
+export const deactivateCustomer = (id) =>
+  api.delete(`/api/customers/oltp/${id}`).then(r => r.data)

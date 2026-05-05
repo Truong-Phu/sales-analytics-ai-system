@@ -2,10 +2,16 @@ using System.ComponentModel.DataAnnotations;
 
 namespace SalesAnalytics.Core.DTOs;
 
-public record LoginRequest(
-    [Required] string Username,
-    [Required] string Password
-);
+public class LoginRequest
+{
+    [EmailAddress]
+    public string? Email    { get; set; }
+
+    public string? Username { get; set; }
+
+    [Required(ErrorMessage = "Mật khẩu là bắt buộc")]
+    public string Password { get; set; } = string.Empty;
+}
 
 public record RegisterRequest(
     [Required, MinLength(3)] string Username,

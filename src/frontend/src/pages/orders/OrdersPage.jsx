@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import MockToast from '../../components/ui/MockToast'
 import FilterPill from '../../components/ui/FilterPill'
-import { getOrders } from '../../api/dashboardApi'
+import { getOrders, updateOrderStatus, cancelOrder } from '../../api/dashboardApi'
 import { MOCK_ORDERS } from '../../mockData/orders'
 
 const STATUS_COLOR = {
@@ -34,6 +34,90 @@ function fmtVND(v) {
   return `₫${v.toLocaleString('vi-VN')}`
 }
 
+// Modal cập nhật trạng thái đơn hàng
+function UpdateOrderModal({ order, onClose, onSaved }) {
+  const [form, setForm] = useState({
+    status:        order.status?.toUpperCase() ?? 'PENDING',
+    paymentStatus: order.paymentStatus ?? 'UNPAID',
+    shippingStatus:order.shippingStatus ?? 'NOT_SHIPPED',
+  })
+  const [saving, setSaving] = useState(false)
+  const [err,    setErr]    = useState('')
+
+  const handleSave = async () => {
+    setSaving(true)
+    setErr('')
+    try {
+      await updateOrderStatus(order.orderId, form)
+      onSaved()
+    } catch (e) {
+      setErr(e.response?.data?.message ?? 'Lỗi cập nhật đơn hàng')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const sel = (label, field, options) => (
+    <div key={field}>
+      <label className="block text-xs mb-1" style={{ color: 'var(--text-tertiary)' }}>{label}</label>
+      <select className="linput text-sm"
+              value={form[field]}
+              onChange={e => setForm(f => ({ ...f, [field]: e.target.value }))}>
+        {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+    </div>
+  )
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+         style={{ background: 'rgba(0,0,0,0.6)' }} onClick={onClose}>
+      <div className="lcard w-full max-w-sm p-6 space-y-4 scale-in" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <h2 className="font-bold text-sm" style={{ color: 'var(--text-primary)' }}>
+            Cập nhật đơn hàng #{order.externalOrderId}
+          </h2>
+          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-lg"
+                  style={{ color: 'var(--text-secondary)' }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+            <span className="icon">close</span>
+          </button>
+        </div>
+
+        {err && <p className="text-xs rounded-lg px-3 py-2" style={{ background: 'rgba(239,68,68,0.1)', color: '#EF4444' }}>{err}</p>}
+
+        {sel('Trạng thái đơn', 'status', [
+          { value:'PENDING',   label:'Chờ xác nhận' },
+          { value:'CONFIRMED', label:'Đã xác nhận' },
+          { value:'SHIPPING',  label:'Đang giao' },
+          { value:'DELIVERED', label:'Đã giao' },
+          { value:'CANCELLED', label:'Đã hủy' },
+          { value:'RETURNED',  label:'Hoàn trả' },
+        ])}
+        {sel('Trạng thái thanh toán', 'paymentStatus', [
+          { value:'UNPAID', label:'Chưa thanh toán' },
+          { value:'PAID',   label:'Đã thanh toán' },
+          { value:'REFUNDED',label:'Đã hoàn tiền' },
+        ])}
+        {sel('Trạng thái vận chuyển', 'shippingStatus', [
+          { value:'NOT_SHIPPED', label:'Chưa giao' },
+          { value:'PICKED_UP',   label:'Đã lấy hàng' },
+          { value:'IN_TRANSIT',  label:'Đang vận chuyển' },
+          { value:'DELIVERED',   label:'Đã giao' },
+          { value:'RETURNED',    label:'Hoàn hàng' },
+        ])}
+
+        <div className="flex gap-2 pt-2">
+          <button onClick={onClose} className="lbtn lbtn-secondary flex-1 justify-center">Hủy</button>
+          <button onClick={handleSave} disabled={saving} className="lbtn lbtn-primary flex-1 justify-center">
+            {saving ? 'Đang lưu...' : 'Lưu'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function OrdersPage() {
   const { t } = useTranslation()
   const [data,    setData]    = useState(null)
@@ -44,6 +128,10 @@ export default function OrdersPage() {
   const [channel, setChannel] = useState('all')
   const [page,    setPage]    = useState(1)
   const [expanded, setExpanded] = useState(null)
+  const [editOrder, setEditOrder] = useState(null)  // order đang cập nhật
+  const [toast,    setToast]  = useState('')         // toast message
+
+  const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 3000) }
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -59,6 +147,18 @@ export default function OrdersPage() {
     }
   }, [search, status, page])
 
+  const handleCancel = async (order, e) => {
+    e.stopPropagation()
+    if (!window.confirm(`Hủy đơn hàng #${order.externalOrderId}?`)) return
+    try {
+      await cancelOrder(order.orderId)
+      showToast('Đã hủy đơn hàng thành công')
+      fetchData()
+    } catch (err) {
+      showToast(err.response?.data?.message ?? 'Lỗi hủy đơn hàng')
+    }
+  }
+
   useEffect(() => { fetchData() }, [fetchData])
 
   const statusOpts = [{ value: 'all', label: t('orders.allStatuses') },
@@ -72,6 +172,23 @@ export default function OrdersPage() {
   return (
     <div className="space-y-4">
       <MockToast show={isMock} />
+
+      {/* Toast notification */}
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-xl text-sm font-medium shadow-lg"
+             style={{ background: 'var(--primary-500)', color: 'white' }}>
+          {toast}
+        </div>
+      )}
+
+      {/* Update status modal */}
+      {editOrder && (
+        <UpdateOrderModal
+          order={editOrder}
+          onClose={() => setEditOrder(null)}
+          onSaved={() => { setEditOrder(null); showToast('Cập nhật thành công'); fetchData() }}
+        />
+      )}
 
       {/* Header */}
       <div className="flex items-center justify-between gap-4">
@@ -166,10 +283,36 @@ export default function OrdersPage() {
                         {new Date(order.createdAt).toLocaleDateString('vi-VN')}
                       </td>
                       <td className="px-4 py-3">
-                        <span className="icon text-base" style={{ color: 'var(--text-tertiary)', transition: 'transform 0.2s',
-                          transform: expanded === order.orderId ? 'rotate(180deg)' : '' }}>
-                          expand_more
-                        </span>
+                        <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+                          {!isMock && (
+                            <>
+                              <button
+                                onClick={e => { e.stopPropagation(); setEditOrder(order) }}
+                                title="Cập nhật trạng thái"
+                                className="w-7 h-7 flex items-center justify-center rounded-lg transition-colors"
+                                style={{ color: 'var(--primary-500)' }}
+                                onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
+                                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                                <span className="icon" style={{ fontSize: 16 }}>edit</span>
+                              </button>
+                              {order.status !== 'delivered' && (
+                                <button
+                                  onClick={e => handleCancel(order, e)}
+                                  title="Hủy đơn hàng"
+                                  className="w-7 h-7 flex items-center justify-center rounded-lg transition-colors"
+                                  style={{ color: '#EF4444' }}
+                                  onMouseEnter={e => e.currentTarget.style.background = 'rgba(239,68,68,0.08)'}
+                                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                                  <span className="icon" style={{ fontSize: 16 }}>cancel</span>
+                                </button>
+                              )}
+                            </>
+                          )}
+                          <span className="icon text-base" style={{ color: 'var(--text-tertiary)', transition: 'transform 0.2s',
+                            transform: expanded === order.orderId ? 'rotate(180deg)' : '' }}>
+                            expand_more
+                          </span>
+                        </div>
                       </td>
                     </tr>
                     {expanded === order.orderId && (

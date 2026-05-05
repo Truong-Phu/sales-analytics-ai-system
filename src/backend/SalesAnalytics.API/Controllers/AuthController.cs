@@ -26,13 +26,17 @@ public class AuthController : ControllerBase
     [AllowAnonymous]
     public async Task<IActionResult> Login([FromBody] LoginRequest req)
     {
+        // Phải có ít nhất email hoặc username
+        if (string.IsNullOrWhiteSpace(req.Email) && string.IsNullOrWhiteSpace(req.Username))
+            return BadRequest(new { message = "Vui lòng cung cấp Email hoặc Tên đăng nhập." });
+
         var ip        = HttpContext.Connection.RemoteIpAddress?.ToString();
         var userAgent = HttpContext.Request.Headers["User-Agent"].ToString();
         var result    = await _authService.LoginAsync(req, ip, userAgent);
         if (result is null)
         {
             await _audit.LogAsync(
-                userId: null, username: req.Username ?? "",
+                userId: null, username: req.Username ?? req.Email ?? "",
                 action: "LOGIN", entityType: "User",
                 status: "FAILED", errorMessage: "Sai tên đăng nhập hoặc mật khẩu",
                 ipAddress: HttpContext.Connection.RemoteIpAddress?.ToString(),

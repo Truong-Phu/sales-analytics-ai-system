@@ -38,9 +38,12 @@ export function AuthProvider({ children }) {
     setLoading(false)
   }, [])
 
-  // Đăng nhập
-  const login = useCallback(async (username, password) => {
-    const { data } = await api.post('/api/auth/login', { username, password })
+  // Đăng nhập – nhận email hoặc username (hoặc cả hai)
+  const login = useCallback(async (email, username, password) => {
+    const body = { password }
+    if (email)    body.email    = email
+    if (username) body.username = username
+    const { data } = await api.post('/api/auth/login', body)
     sessionStorage.setItem('access_token', data.accessToken)
     localStorage.setItem('refresh_token', data.refreshToken)
 

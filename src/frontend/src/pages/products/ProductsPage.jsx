@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import MockToast from '../../components/ui/MockToast'
-import { getProducts } from '../../api/dashboardApi'
+import { getProducts, getOltpProduct, createProduct, updateProduct, deleteProduct } from '../../api/dashboardApi'
 import { MOCK_PRODUCTS } from '../../mockData/products'
 import { useAuth } from '../../hooks/useAuth'
 
@@ -26,6 +26,98 @@ function StockBadge({ p, t }) {
          </span>
 }
 
+const EMPTY_FORM = { sku: '', productName: '', description: '', basePrice: '', costPrice: '', stockQuantity: 0, categoryId: '' }
+
+// Modal tạo / sửa sản phẩm
+function ProductFormModal({ initial, mode, onClose, onSaved }) {
+  const [form,   setForm]   = useState(initial ?? EMPTY_FORM)
+  const [saving, setSaving] = useState(false)
+  const [err,    setErr]    = useState('')
+  const isEdit = mode === 'edit'
+
+  const set = (field) => (e) => setForm(f => ({ ...f, [field]: e.target.value }))
+
+  const handleSave = async () => {
+    if (!form.sku || !form.productName || !form.basePrice || !form.categoryId) {
+      setErr('Vui lòng nhập đầy đủ SKU, Tên sản phẩm, Giá bán và ID Danh mục')
+      return
+    }
+    setSaving(true)
+    setErr('')
+    try {
+      const dto = {
+        sku:           form.sku,
+        productName:   form.productName,
+        description:   form.description || null,
+        basePrice:     Number(form.basePrice),
+        costPrice:     form.costPrice ? Number(form.costPrice) : null,
+        stockQuantity: Number(form.stockQuantity) || 0,
+        categoryId:    Number(form.categoryId),
+      }
+      if (isEdit) await updateProduct(form.productId, dto)
+      else         await createProduct(dto)
+      onSaved()
+    } catch (e) {
+      setErr(e.response?.data?.message ?? (isEdit ? 'Lỗi cập nhật' : 'Lỗi tạo sản phẩm'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const inp = (label, field, type = 'text', required = false) => (
+    <div key={field}>
+      <label className="block text-xs mb-1" style={{ color: 'var(--text-tertiary)' }}>
+        {label}{required && <span className="text-red-400"> *</span>}
+      </label>
+      <input type={type} className="linput text-sm" value={form[field] ?? ''}
+             onChange={set(field)} />
+    </div>
+  )
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+         style={{ background: 'rgba(0,0,0,0.6)' }} onClick={onClose}>
+      <div className="lcard w-full max-w-md p-6 space-y-4 scale-in overflow-y-auto max-h-[90vh]"
+           onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <h2 className="font-bold text-sm" style={{ color: 'var(--text-primary)' }}>
+            {isEdit ? 'Sửa sản phẩm' : 'Thêm sản phẩm mới'}
+          </h2>
+          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-lg"
+                  style={{ color: 'var(--text-secondary)' }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+            <span className="icon">close</span>
+          </button>
+        </div>
+
+        {err && <p className="text-xs rounded-lg px-3 py-2" style={{ background: 'rgba(239,68,68,0.1)', color: '#EF4444' }}>{err}</p>}
+
+        <div className="grid grid-cols-2 gap-3">
+          {inp('SKU', 'sku', 'text', true)}
+          {inp('Tên sản phẩm', 'productName', 'text', true)}
+          {inp('Giá bán (₫)', 'basePrice', 'number', true)}
+          {inp('Giá vốn (₫)', 'costPrice', 'number')}
+          {inp('Tồn kho', 'stockQuantity', 'number')}
+          {inp('ID Danh mục', 'categoryId', 'number', true)}
+        </div>
+        <div>
+          <label className="block text-xs mb-1" style={{ color: 'var(--text-tertiary)' }}>Mô tả</label>
+          <textarea className="linput text-sm" rows={2} value={form.description ?? ''}
+                    onChange={set('description')} />
+        </div>
+
+        <div className="flex gap-2 pt-1">
+          <button onClick={onClose} className="lbtn lbtn-secondary flex-1 justify-center">Hủy</button>
+          <button onClick={handleSave} disabled={saving} className="lbtn lbtn-primary flex-1 justify-center">
+            {saving ? 'Đang lưu...' : 'Lưu'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function ProductsPage() {
   const { t } = useTranslation()
   const { user } = useAuth()
@@ -37,8 +129,12 @@ export default function ProductsPage() {
   const [page,     setPage]     = useState(1)
   const [selected, setSelected] = useState(null)
   const [view,     setView]     = useState('table') // 'table' | 'grid'
+  const [formMode, setFormMode] = useState(null)    // 'create' | 'edit'
+  const [formInit, setFormInit] = useState(null)    // dữ liệu ban đầu cho form edit
+  const [toast,    setToast]    = useState('')
 
-  const canEdit = ['Manager', 'Staff', 'DataIT', 'Admin'].includes(user?.role)
+  const canEdit = ['Manager', 'DataIT', 'Admin'].includes(user?.role)
+  const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 3000) }
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -60,6 +156,40 @@ export default function ProductsPage() {
     }
   }, [search, category, page])
 
+  const openCreate = () => { setFormInit(null); setFormMode('create') }
+
+  const openEdit = async (p) => {
+    try {
+      // Lấy dữ liệu OLTP để có CategoryId, StockQuantity...
+      const oltp = await getOltpProduct(p.product_id ?? p.productId)
+      setFormInit({
+        productId:     oltp.productId,
+        sku:           oltp.sku,
+        productName:   oltp.productName,
+        description:   oltp.description ?? '',
+        basePrice:     oltp.basePrice,
+        costPrice:     oltp.costPrice ?? '',
+        stockQuantity: oltp.stockQuantity,
+        categoryId:    oltp.categoryId,
+      })
+      setFormMode('edit')
+    } catch {
+      showToast('Không tải được thông tin sản phẩm OLTP')
+    }
+  }
+
+  const handleDelete = async (p, e) => {
+    e.stopPropagation()
+    if (!window.confirm(`Xóa sản phẩm "${p.product_name ?? p.name}"?`)) return
+    try {
+      await deleteProduct(p.product_id ?? p.productId)
+      showToast('Đã xóa sản phẩm')
+      fetchData()
+    } catch (err) {
+      showToast(err.response?.data?.message ?? 'Lỗi xóa sản phẩm')
+    }
+  }
+
   useEffect(() => { fetchData() }, [fetchData])
 
   const items      = data?.items ?? []
@@ -68,6 +198,22 @@ export default function ProductsPage() {
   return (
     <div className="space-y-4">
       <MockToast show={isMock} />
+
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-xl text-sm font-medium shadow-lg"
+             style={{ background: 'var(--primary-500)', color: 'white' }}>
+          {toast}
+        </div>
+      )}
+
+      {formMode && (
+        <ProductFormModal
+          mode={formMode}
+          initial={formInit}
+          onClose={() => setFormMode(null)}
+          onSaved={() => { setFormMode(null); showToast(formMode === 'create' ? 'Đã thêm sản phẩm' : 'Đã cập nhật sản phẩm'); fetchData() }}
+        />
+      )}
 
       {/* Header */}
       <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -98,7 +244,7 @@ export default function ProductsPage() {
             ))}
           </div>
           {canEdit && (
-            <button className="lbtn lbtn-primary !h-9">
+            <button className="lbtn lbtn-primary !h-9" onClick={openCreate}>
               <span className="icon text-base">add</span>
               {t('products.addProduct')}
             </button>
@@ -206,13 +352,25 @@ export default function ProductsPage() {
                                 onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                           <span className="icon text-base">visibility</span>
                         </button>
-                        {canEdit && (
-                          <button className="w-8 h-8 flex items-center justify-center rounded-lg transition-colors"
-                                  style={{ color: 'var(--text-secondary)' }}
-                                  onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
-                                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                            <span className="icon text-base">edit</span>
-                          </button>
+                        {canEdit && !isMock && (
+                          <>
+                            <button onClick={() => openEdit(p)}
+                                    className="w-8 h-8 flex items-center justify-center rounded-lg transition-colors"
+                                    title="Sửa sản phẩm"
+                                    style={{ color: 'var(--text-secondary)' }}
+                                    onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
+                                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                              <span className="icon text-base">edit</span>
+                            </button>
+                            <button onClick={e => handleDelete(p, e)}
+                                    className="w-8 h-8 flex items-center justify-center rounded-lg transition-colors"
+                                    title="Xóa sản phẩm"
+                                    style={{ color: '#EF4444' }}
+                                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(239,68,68,0.08)'}
+                                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                              <span className="icon text-base">delete</span>
+                            </button>
+                          </>
                         )}
                       </div>
                     </td>

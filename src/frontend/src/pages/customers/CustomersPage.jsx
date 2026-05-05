@@ -1,8 +1,94 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import MockToast from '../../components/ui/MockToast'
-import { getCustomers } from '../../api/dashboardApi'
+import { getCustomers, createCustomer, updateCustomer, deactivateCustomer } from '../../api/dashboardApi'
 import { MOCK_CUSTOMERS } from '../../mockData/customers'
+import { useAuth } from '../../hooks/useAuth'
+
+const EMPTY_CUST = { fullName: '', email: '', phoneNumber: '', address: '', province: '', district: '' }
+
+function CustomerFormModal({ initial, mode, onClose, onSaved }) {
+  const [form,   setForm]   = useState(initial ?? EMPTY_CUST)
+  const [saving, setSaving] = useState(false)
+  const [err,    setErr]    = useState('')
+  const isEdit = mode === 'edit'
+
+  const set = (field) => (e) => setForm(f => ({ ...f, [field]: e.target.value }))
+
+  const handleSave = async () => {
+    if (!form.fullName.trim()) { setErr('Vui lòng nhập họ tên'); return }
+    setSaving(true); setErr('')
+    try {
+      const dto = {
+        fullName:    form.fullName,
+        email:       form.email       || null,
+        phoneNumber: form.phoneNumber || null,
+        address:     form.address     || null,
+        province:    form.province    || null,
+        district:    form.district    || null,
+      }
+      if (isEdit) await updateCustomer(form.customerId, dto)
+      else         await createCustomer(dto)
+      onSaved()
+    } catch (e) {
+      setErr(e.response?.data?.message ?? (isEdit ? 'Lỗi cập nhật' : 'Lỗi tạo khách hàng'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const inp = (label, field, type = 'text', required = false) => (
+    <div key={field}>
+      <label className="block text-xs mb-1" style={{ color: 'var(--text-tertiary)' }}>
+        {label}{required && <span className="text-red-400"> *</span>}
+      </label>
+      <input type={type} className="linput text-sm" value={form[field] ?? ''}
+             onChange={set(field)} />
+    </div>
+  )
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+         style={{ background: 'rgba(0,0,0,0.6)' }} onClick={onClose}>
+      <div className="lcard w-full max-w-md p-6 space-y-4 scale-in overflow-y-auto max-h-[90vh]"
+           onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <h2 className="font-bold text-sm" style={{ color: 'var(--text-primary)' }}>
+            {isEdit ? 'Sửa thông tin khách hàng' : 'Thêm khách hàng mới'}
+          </h2>
+          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-lg"
+                  style={{ color: 'var(--text-secondary)' }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+            <span className="icon">close</span>
+          </button>
+        </div>
+
+        {err && <p className="text-xs rounded-lg px-3 py-2" style={{ background: 'rgba(239,68,68,0.1)', color: '#EF4444' }}>{err}</p>}
+
+        <div className="grid grid-cols-2 gap-3">
+          {inp('Họ và tên', 'fullName', 'text', true)}
+          {inp('Email', 'email', 'email')}
+          {inp('Số điện thoại', 'phoneNumber', 'tel')}
+          {inp('Tỉnh / Thành phố', 'province')}
+          {inp('Quận / Huyện', 'district')}
+        </div>
+        <div>
+          <label className="block text-xs mb-1" style={{ color: 'var(--text-tertiary)' }}>Địa chỉ</label>
+          <textarea className="linput text-sm" rows={2} value={form.address ?? ''}
+                    onChange={set('address')} />
+        </div>
+
+        <div className="flex gap-2 pt-1">
+          <button onClick={onClose} className="lbtn lbtn-secondary flex-1 justify-center">Hủy</button>
+          <button onClick={handleSave} disabled={saving} className="lbtn lbtn-primary flex-1 justify-center">
+            {saving ? 'Đang lưu...' : 'Lưu'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 const SEGMENT_CFG = {
   VIP:      { bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.35)', color: '#D97706', dot: '#F59E0B', icon: 'star' },
@@ -37,6 +123,7 @@ function Avatar({ name }) {
 
 export default function CustomersPage() {
   const { t } = useTranslation()
+  const { user } = useAuth()
   const [data,     setData]     = useState(null)
   const [loading,  setLoading]  = useState(true)
   const [isMock,   setIsMock]   = useState(false)
@@ -44,6 +131,12 @@ export default function CustomersPage() {
   const [segment,  setSegment]  = useState('all')
   const [page,     setPage]     = useState(1)
   const [selected, setSelected] = useState(null)
+  const [formMode, setFormMode] = useState(null)   // 'create' | 'edit'
+  const [formInit, setFormInit] = useState(null)
+  const [toast,    setToast]    = useState('')
+
+  const canEdit = ['Owner', 'Manager', 'Staff', 'Admin'].includes(user?.role)
+  const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 3000) }
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -65,6 +158,34 @@ export default function CustomersPage() {
     }
   }, [search, segment, page])
 
+  const openCreate = () => { setFormInit(null); setFormMode('create') }
+
+  const openEdit = (c) => {
+    setFormInit({
+      customerId:  c.customer_id ?? c.customerId,
+      fullName:    c.full_name   ?? c.fullName ?? '',
+      email:       c.email  ?? '',
+      phoneNumber: c.phone  ?? c.phoneNumber ?? '',
+      address:     c.address ?? '',
+      province:    c.province ?? '',
+      district:    c.district ?? '',
+    })
+    setSelected(null)
+    setFormMode('edit')
+  }
+
+  const handleDeactivate = async (c) => {
+    if (!window.confirm(`Ẩn khách hàng "${c.full_name ?? c.fullName}"?`)) return
+    try {
+      await deactivateCustomer(c.customer_id ?? c.customerId)
+      showToast('Đã ẩn khách hàng')
+      setSelected(null)
+      fetchData()
+    } catch (err) {
+      showToast(err.response?.data?.message ?? 'Lỗi ẩn khách hàng')
+    }
+  }
+
   useEffect(() => { fetchData() }, [fetchData])
 
   const items      = data?.items ?? []
@@ -74,6 +195,22 @@ export default function CustomersPage() {
   return (
     <div className="space-y-4">
       <MockToast show={isMock} />
+
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-xl text-sm font-medium shadow-lg"
+             style={{ background: 'var(--primary-500)', color: 'white' }}>
+          {toast}
+        </div>
+      )}
+
+      {formMode && (
+        <CustomerFormModal
+          mode={formMode}
+          initial={formInit}
+          onClose={() => setFormMode(null)}
+          onSaved={() => { setFormMode(null); showToast(formMode === 'create' ? 'Đã thêm khách hàng' : 'Đã cập nhật khách hàng'); fetchData() }}
+        />
+      )}
 
       {/* Header */}
       <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -85,9 +222,17 @@ export default function CustomersPage() {
             </p>
           )}
         </div>
-        <button onClick={fetchData} className="lbtn lbtn-secondary !h-9" disabled={loading}>
-          <span className="icon text-base" style={{ ...(loading && { animation: 'spin 1s linear infinite' }) }}>refresh</span>
-        </button>
+        <div className="flex items-center gap-2">
+          {canEdit && !isMock && (
+            <button className="lbtn lbtn-primary !h-9" onClick={openCreate}>
+              <span className="icon text-base">person_add</span>
+              Thêm khách hàng
+            </button>
+          )}
+          <button onClick={fetchData} className="lbtn lbtn-secondary !h-9" disabled={loading}>
+            <span className="icon text-base" style={{ ...(loading && { animation: 'spin 1s linear infinite' }) }}>refresh</span>
+          </button>
+        </div>
       </div>
 
       {/* Segment tab filter */}
@@ -244,6 +389,21 @@ export default function CustomersPage() {
               ))}
             </div>
             <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{t('customers.historyNote')}</p>
+
+            {canEdit && !isMock && (
+              <div className="flex gap-2 pt-2">
+                <button onClick={() => openEdit(selected)} className="lbtn lbtn-secondary flex-1 justify-center !h-9">
+                  <span className="icon text-base">edit</span>
+                  Sửa
+                </button>
+                <button onClick={() => handleDeactivate(selected)}
+                        className="lbtn !h-9 flex-1 justify-center"
+                        style={{ background: 'rgba(239,68,68,0.1)', color: '#EF4444', border: '1px solid rgba(239,68,68,0.3)' }}>
+                  <span className="icon text-base">person_off</span>
+                  Ẩn
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
