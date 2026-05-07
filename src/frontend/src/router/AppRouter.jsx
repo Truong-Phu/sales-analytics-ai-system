@@ -22,6 +22,7 @@ const ReportPage          = lazy(() => import('../pages/report/ReportPage'))
 const AdminPage           = lazy(() => import('../pages/admin/AdminPage'))
 const SettingsPage        = lazy(() => import('../pages/settings/SettingsPage'))
 const ChangePasswordPage  = lazy(() => import('../pages/auth/ChangePasswordPage'))
+const OnboardingPage      = lazy(() => import('../pages/OnboardingPage'))
 
 // Roles constants
 const ALL_ROLES     = ['Owner', 'Manager', 'Staff', 'DataIT', 'Admin']
@@ -50,6 +51,17 @@ export default function AppRouter() {
         <Route path="/login"        element={<LoginPage />} />
         <Route path="/register"     element={<RegisterPage />} />
         <Route path="/unauthorized" element={<UnauthorizedPage />} />
+
+        {/* Onboarding – requires auth, no AppShell, Owner/Manager only */}
+        <Route path="/onboarding" element={
+          <ProtectedRoute roles={['Owner', 'Manager']} skipOnboarding>
+            <ErrorBoundary>
+              <Suspense fallback={<PageSpinner />}>
+                <OnboardingPage />
+              </Suspense>
+            </ErrorBoundary>
+          </ProtectedRoute>
+        } />
 
         {/* Root redirect */}
         <Route path="/" element={<Navigate to="/dashboard" replace />} />

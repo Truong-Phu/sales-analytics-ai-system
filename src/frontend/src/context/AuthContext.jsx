@@ -49,13 +49,40 @@ export function AuthProvider({ children }) {
 
     const payload = parseJwt(data.accessToken)
     const u = {
-      id:    payload.sub,
-      name:  payload['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name'] ?? payload.name,
-      email: payload['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress'] ?? payload.email,
-      role:  payload['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'] ?? payload.role,
-      lang:  data.preferredLanguage ?? 'vi',
+      id:                  payload.sub,
+      name:                payload['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name'] ?? payload.name,
+      email:               payload['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress'] ?? payload.email,
+      role:                payload['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'] ?? payload.role,
+      lang:                data.preferredLanguage ?? 'vi',
+      companyId:           data.companyId,
+      companySlug:         data.companySlug,
+      isSuperAdmin:        data.isSuperAdmin ?? false,
+      onboardingCompleted: data.onboardingCompleted ?? true,
     }
     localStorage.setItem('lang', u.lang)
+    setUser(u)
+    return u
+  }, [])
+
+  // Đăng ký tài khoản Owner mới (tạo company + subscription)
+  const register = useCallback(async (formData) => {
+    const { data } = await api.post('/api/auth/register', formData)
+    sessionStorage.setItem('access_token', data.accessToken)
+    localStorage.setItem('refresh_token', data.refreshToken)
+
+    const payload = parseJwt(data.accessToken)
+    const u = {
+      id:                  payload.sub,
+      name:                payload['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name'] ?? payload.name,
+      email:               payload['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress'] ?? payload.email,
+      role:                payload['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'] ?? payload.role,
+      lang:                'vi',
+      companyId:           data.companyId,
+      companySlug:         data.companySlug,
+      isSuperAdmin:        false,
+      onboardingCompleted: false,
+    }
+    localStorage.setItem('lang', 'vi')
     setUser(u)
     return u
   }, [])
@@ -75,7 +102,7 @@ export function AuthProvider({ children }) {
   }, [])
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, setLang }}>
+    <AuthContext.Provider value={{ user, loading, login, register, logout, setLang }}>
       {children}
     </AuthContext.Provider>
   )
