@@ -102,14 +102,20 @@ class GoogleScraper:
 
     def __init__(
         self,
+        company_id: str = "",
         keywords: Optional[list] = None,
         delay_range: tuple = (2, 5),
         crawl_delay_range: tuple = (1, 3),
     ):
+        self.company_id        = company_id
         self.delay_range       = delay_range
         self.crawl_delay_range = crawl_delay_range
         self.db_url            = os.getenv("DATABASE_URL", "")
         self._session          = requests.Session()
+        # Tải extra_headers / cookies từ integrations nếu có
+        self._extra_headers: dict = {}
+        if company_id:
+            self._load_scraper_config(company_id)
 
         # Ưu tiên keywords truyền vào; nếu không thì đọc từ DB → fallback DEFAULT
         if keywords is not None:
@@ -118,9 +124,24 @@ class GoogleScraper:
             self.keywords = self.load_keywords_from_db()
 
         logger.info(
-            "GoogleScraper khởi tạo: %d từ khóa, delay=%s",
-            len(self.keywords), delay_range,
+            "GoogleScraper khởi tạo: %d từ khóa, delay=%s, company=%s",
+            len(self.keywords), delay_range, company_id or "system",
         )
+
+    def _load_scraper_config(self, company_id: str) -> None:
+        """Tải cookies/headers từ integrations additional_config."""
+        try:
+            from .integration_repository import IntegrationRepository
+            repo  = IntegrationRepository()
+            integ = repo.get_integration(company_id, "google")
+            if integ:
+                cfg = integ.get("additional_config") or {}
+                self._extra_headers = cfg.get("headers", {})
+                cookies = cfg.get("cookies", {})
+                if cookies:
+                    self._session.cookies.update(cookies)
+        except Exception as exc:
+            logger.warning(f"Không thể load Google scraper config từ DB: {exc}")
 
     # ── DB Keyword Management ─────────────────────────────────────────────────
 

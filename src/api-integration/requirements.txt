@@ -23,6 +23,12 @@ pytest-cov==5.0.0         # Coverage report
 pytest-mock==3.14.0       # Mock helpers
 pytest-asyncio==0.23.6    # Async test support
 
+# ── Mã hóa token (AES-256-GCM cho integrations.access_token) ──────────────────
+cryptography==42.0.5      # AES-256-GCM encrypt/decrypt cho integration tokens
+
+# ── Scheduler (đồng bộ tự động theo interval) ────────────────────────────────
+APScheduler==3.10.4       # Lên lịch sync jobs theo interval/cron
+
 # ── Code quality ──────────────────────────────────────────────────────────────
 black==24.3.0             # Code formatter
 flake8==7.0.0             # Linter

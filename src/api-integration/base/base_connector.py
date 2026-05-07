@@ -78,6 +78,7 @@ class BaseConnector(ABC):
 
     Tham số khởi tạo:
         channel_name (str): Tên kênh bán hàng (VD: 'shopee', 'lazada')
+        company_id (str | None): UUID công ty – dùng cho multi-tenant isolation
         rate_limit_calls (int): Số request tối đa mỗi giây (mặc định 10)
         max_retries (int): Số lần retry tối đa khi gặp lỗi (mặc định 3)
         retry_base_delay (float): Thời gian chờ cơ bản khi retry (giây, mặc định 1.0)
@@ -87,6 +88,7 @@ class BaseConnector(ABC):
     def __init__(
         self,
         channel_name: str,
+        company_id: Optional[str] = None,
         rate_limit_calls: int = 10,
         rate_limit_period: float = 1.0,
         max_retries: int = 3,
@@ -94,6 +96,7 @@ class BaseConnector(ABC):
         timeout: int = 30,
     ):
         self.channel_name    = channel_name
+        self.company_id      = company_id   # UUID tenant – None = không có isolation
         self.max_retries     = max_retries
         self.retry_base_delay = retry_base_delay
         self.timeout         = timeout
@@ -322,18 +325,29 @@ class BaseConnector(ABC):
         """
         Lưu danh sách records vào bảng staging.
         Tự động bỏ qua bản ghi đã tồn tại (ON CONFLICT DO NOTHING).
+        Nếu connector có company_id → tự động inject vào mỗi record.
 
         Trả về số bản ghi đã insert thành công.
         """
         if not records:
             return 0
+
+        # Auto-inject company_id cho multi-tenant isolation
+        if self.company_id:
+            records = [
+                {**rec, "company_id": self.company_id}
+                if "company_id" not in rec
+                else rec
+                for rec in records
+            ]
+
         inserted = 0
         with get_conn() as conn:
             with conn.cursor() as cur:
                 for rec in records:
-                    cols   = list(rec.keys())
-                    vals   = list(rec.values())
-                    ph     = ", ".join(["%s"] * len(cols))
+                    cols    = list(rec.keys())
+                    vals    = list(rec.values())
+                    ph      = ", ".join(["%s"] * len(cols))
                     col_str = ", ".join(cols)
                     sql = (
                         f"INSERT INTO {table} ({col_str}) VALUES ({ph}) "

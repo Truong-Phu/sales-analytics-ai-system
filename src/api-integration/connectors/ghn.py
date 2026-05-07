@@ -16,37 +16,45 @@ from ..base.base_connector import BaseConnector, AuthError
 
 load_dotenv()
 
-GHN_TOKEN    = os.getenv("GHN_TOKEN", "")
-GHN_SHOP_ID  = os.getenv("GHN_SHOP_ID", "")
 GHN_BASE_URL = "https://online-gateway.ghn.vn/shiip/public-api"
 
 
 class GHNConnector(BaseConnector):
     """
     Connector cho GHN API v2.
+    company_id bắt buộc → token và shop_id lấy từ bảng integrations.
     Auth đơn giản: Token trong request header.
     """
 
-    def __init__(self):
+    def __init__(self, company_id: str):
         super().__init__(
             channel_name="ghn",
+            company_id=company_id,
             rate_limit_calls=10,
             rate_limit_period=1.0,
             max_retries=3,
         )
-        self.token   = GHN_TOKEN
-        self.shop_id = GHN_SHOP_ID
+        # Token: lấy từ DB theo company_id
+        from .integration_repository import IntegrationRepository
+        from .exceptions import IntegrationNotFoundError
+        self._repo        = IntegrationRepository()
+        self._integration = self._repo.get_integration(company_id, "ghn")
+        if not self._integration:
+            raise IntegrationNotFoundError(company_id, "ghn")
+
+        self.token   = self._integration["access_token"]
+        self.shop_id = self._integration["account_id"]
 
     def authenticate(self) -> None:
         """GHN dùng Token header – không cần OAuth2 flow."""
         if not self.token:
-            raise AuthError("GHN_TOKEN chưa được cấu hình")
+            raise AuthError(f"GHN token trống cho company {self.company_id}")
         # Thêm token vào default headers
         self._session.headers.update({
             "Token":   self.token,
             "ShopId":  str(self.shop_id),
         })
-        self.logger.info(f"GHN authenticated: shop_id={self.shop_id}")
+        self.logger.info(f"GHN authenticated: shop_id={self.shop_id}, company={self.company_id}")
 
     def refresh_token(self) -> None:
         """GHN token không hết hạn – không cần refresh."""

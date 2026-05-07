@@ -19,28 +19,41 @@ from ..base.base_connector import BaseConnector, APIError, AuthError
 
 load_dotenv()
 
+# ── Credentials dùng chung toàn hệ thống (lưu trong .env) ───────────────────
 TIKTOK_APP_KEY    = os.getenv("TIKTOK_APP_KEY", "")
 TIKTOK_APP_SECRET = os.getenv("TIKTOK_APP_SECRET", "")
-TIKTOK_ACCESS_TOKEN = os.getenv("TIKTOK_ACCESS_TOKEN", "")
-TIKTOK_SHOP_ID    = os.getenv("TIKTOK_SHOP_ID", "")
 TIKTOK_BASE_URL   = "https://open-api.tiktokglobalshop.com"
 
 
 class TikTokShopConnector(BaseConnector):
-    """Connector cho TikTok Shop Partner API."""
+    """
+    Connector cho TikTok Shop Partner API.
+    company_id bắt buộc → shop credentials lấy từ bảng integrations.
+    """
 
-    def __init__(self):
+    def __init__(self, company_id: str):
         super().__init__(
             channel_name="tiktok_shop",
+            company_id=company_id,
             rate_limit_calls=5,
             rate_limit_period=1.0,
             max_retries=3,
             retry_base_delay=2.0,
         )
-        self.app_key      = TIKTOK_APP_KEY
-        self.app_secret   = TIKTOK_APP_SECRET
-        self.access_token = TIKTOK_ACCESS_TOKEN
-        self.shop_id      = TIKTOK_SHOP_ID
+        # App credentials: dùng chung, lấy từ .env
+        self.app_key    = TIKTOK_APP_KEY
+        self.app_secret = TIKTOK_APP_SECRET
+
+        # Shop credentials: lấy từ DB theo company_id
+        from .integration_repository import IntegrationRepository
+        from .exceptions import IntegrationNotFoundError
+        self._repo        = IntegrationRepository()
+        self._integration = self._repo.get_integration(company_id, "tiktok")
+        if not self._integration:
+            raise IntegrationNotFoundError(company_id, "tiktok")
+
+        self.access_token = self._integration["access_token"]
+        self.shop_id      = self._integration["account_id"]
 
     def _sign(self, path: str, params: Dict, body: str = "") -> str:
         """

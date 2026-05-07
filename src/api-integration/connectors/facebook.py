@@ -16,29 +16,38 @@ from ..base.base_connector import BaseConnector, APIError, AuthError
 
 load_dotenv()
 
-FB_ACCESS_TOKEN  = os.getenv("FACEBOOK_ACCESS_TOKEN", "")
-FB_PAGE_ID       = os.getenv("FACEBOOK_PAGE_ID", "")
-FB_AD_ACCOUNT_ID = os.getenv("FACEBOOK_AD_ACCOUNT_ID", "")  # VD: act_123456789
-FB_API_VERSION   = os.getenv("FACEBOOK_API_VERSION", "v19.0")
-FB_BASE_URL      = f"https://graph.facebook.com/{FB_API_VERSION}"
+# ── Credentials dùng chung toàn hệ thống (lưu trong .env) ───────────────────
+FB_API_VERSION = os.getenv("FACEBOOK_API_VERSION", "v19.0")
+FB_BASE_URL    = f"https://graph.facebook.com/{FB_API_VERSION}"
 
 
 class FacebookConnector(BaseConnector):
     """
     Connector cho Facebook Graph API và Marketing (Ads) API.
+    company_id bắt buộc → page token và ad account lấy từ bảng integrations.
     Lấy dữ liệu: đơn hàng Facebook Shop + metrics quảng cáo Ads.
     """
 
-    def __init__(self):
+    def __init__(self, company_id: str):
         super().__init__(
             channel_name="facebook",
+            company_id=company_id,
             rate_limit_calls=5,
             rate_limit_period=1.0,
             max_retries=3,
         )
-        self.access_token  = FB_ACCESS_TOKEN
-        self.page_id       = FB_PAGE_ID
-        self.ad_account_id = FB_AD_ACCOUNT_ID
+        # Page credentials: lấy từ DB theo company_id
+        from .integration_repository import IntegrationRepository
+        from .exceptions import IntegrationNotFoundError
+        self._repo        = IntegrationRepository()
+        self._integration = self._repo.get_integration(company_id, "facebook")
+        if not self._integration:
+            raise IntegrationNotFoundError(company_id, "facebook")
+
+        cfg = self._integration.get("additional_config") or {}
+        self.access_token  = self._integration["access_token"]
+        self.page_id       = self._integration["account_id"]
+        self.ad_account_id = cfg.get("ad_account_id", "")
 
     def authenticate(self) -> None:
         if not self.access_token:

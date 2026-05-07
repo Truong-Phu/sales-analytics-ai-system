@@ -108,18 +108,56 @@ class FacebookScraper:
     Ưu tiên: Graph API (Phương án A) → CSV export (Phương án B).
     """
 
-    def __init__(self):
-        self.page_token = os.getenv("FACEBOOK_PAGE_TOKEN", "").strip()
-        self.page_id    = os.getenv("FACEBOOK_PAGE_ID", "").strip()
+    def __init__(self, company_id: str = ""):
+        self.company_id = company_id
         self.db_url     = os.getenv("DATABASE_URL", "")
         self.mode       = os.getenv("SCRAPER_MODE", "online").lower()
         self._session   = requests.Session()
+        # Một company có thể có nhiều Facebook Page
+        self._integrations: list = []
+
+        if company_id:
+            self._load_integrations_from_db(company_id)
+        else:
+            # Fallback: đọc từ .env (dev mode)
+            self.page_token = os.getenv("FACEBOOK_PAGE_TOKEN", "").strip()
+            self.page_id    = os.getenv("FACEBOOK_PAGE_ID", "").strip()
+            self._integrations = [{
+                "id":           "",
+                "company_id":   "",
+                "access_token": self.page_token,
+                "account_id":   self.page_id,
+                "additional_config": {},
+            }] if self.page_token else []
+
+        # Sử dụng integration đầu tiên làm mặc định (tương thích ngược)
+        if self._integrations:
+            self.page_token = self._integrations[0]["access_token"]
+            self.page_id    = self._integrations[0]["account_id"]
+        else:
+            self.page_token = ""
+            self.page_id    = ""
+
         logger.info(
-            "FacebookScraper khởi tạo: mode=%s, page_id=%s, token=%s",
+            "FacebookScraper khởi tạo: mode=%s, company=%s, pages=%d, token=%s",
             self.mode,
-            self.page_id or "chưa cấu hình",
+            company_id or "dev",
+            len(self._integrations),
             "có" if self.page_token else "chưa cấu hình",
         )
+
+    def _load_integrations_from_db(self, company_id: str) -> None:
+        """Tải tất cả Facebook Page integrations của company từ DB."""
+        try:
+            from .integration_repository import IntegrationRepository
+            repo = IntegrationRepository()
+            self._integrations = repo.get_all_active(platform="facebook")
+            # Lọc theo company_id cụ thể
+            self._integrations = [
+                i for i in self._integrations if i["company_id"] == company_id
+            ]
+        except Exception as exc:
+            logger.warning(f"Không thể load integrations từ DB: {exc}")
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 

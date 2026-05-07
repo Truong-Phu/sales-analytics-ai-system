@@ -22,12 +22,10 @@ from ..base.base_connector import BaseConnector, APIError, AuthError
 
 load_dotenv()
 
-# ── Cấu hình từ .env ────────────────────────────────────────────────────────
+# ── Credentials dùng chung toàn hệ thống (lưu trong .env) ───────────────────
+# Partner credentials: cấp cho toàn bộ hệ thống, không phải từng company
 SHOPEE_PARTNER_ID  = os.getenv("SHOPEE_PARTNER_ID", "")
 SHOPEE_PARTNER_KEY = os.getenv("SHOPEE_PARTNER_KEY", "")
-SHOPEE_ACCESS_TOKEN = os.getenv("SHOPEE_ACCESS_TOKEN", "")
-SHOPEE_REFRESH_TOKEN_VAL = os.getenv("SHOPEE_REFRESH_TOKEN", "")
-SHOPEE_SHOP_ID     = int(os.getenv("SHOPEE_SHOP_ID", "0"))
 SHOPEE_BASE_URL    = "https://partner.shopeemobile.com/api/v2"
 # Dùng sandbox khi dev: https://partner.test-stable.shopeemobile.com/api/v2
 
@@ -35,22 +33,34 @@ SHOPEE_BASE_URL    = "https://partner.shopeemobile.com/api/v2"
 class ShopeeConnector(BaseConnector):
     """
     Connector cho Shopee Open API v2.
+    company_id bắt buộc → shop credentials lấy từ bảng integrations.
     Rate limit mặc định: 5 requests/giây (an toàn, thực tế tối đa ~16/giây).
     """
 
-    def __init__(self):
+    def __init__(self, company_id: str):
         super().__init__(
             channel_name="shopee",
-            rate_limit_calls=5,   # 5 req/s để an toàn
+            company_id=company_id,
+            rate_limit_calls=5,
             rate_limit_period=1.0,
             max_retries=3,
             retry_base_delay=2.0,
         )
-        self.partner_id   = int(SHOPEE_PARTNER_ID) if SHOPEE_PARTNER_ID else 0
-        self.partner_key  = SHOPEE_PARTNER_KEY
-        self.access_token = SHOPEE_ACCESS_TOKEN
-        self.refresh_tok  = SHOPEE_REFRESH_TOKEN_VAL
-        self.shop_id      = SHOPEE_SHOP_ID
+        # Partner credentials: dùng chung, lấy từ .env
+        self.partner_id  = int(SHOPEE_PARTNER_ID) if SHOPEE_PARTNER_ID else 0
+        self.partner_key = SHOPEE_PARTNER_KEY
+
+        # Shop credentials: lấy từ DB theo company_id
+        from .integration_repository import IntegrationRepository
+        from .exceptions import IntegrationNotFoundError
+        self._repo        = IntegrationRepository()
+        self._integration = self._repo.get_integration(company_id, "shopee")
+        if not self._integration:
+            raise IntegrationNotFoundError(company_id, "shopee")
+
+        self.access_token = self._integration["access_token"]
+        self.refresh_tok  = self._integration["refresh_token"]
+        self.shop_id      = int(self._integration["account_id"]) if self._integration["account_id"] else 0
 
     # ── Signature ────────────────────────────────────────────────────────────
 
@@ -83,22 +93,27 @@ class ShopeeConnector(BaseConnector):
 
     def authenticate(self) -> None:
         """
-        Xác thực ban đầu. Shopee dùng OAuth2 Authorization Code Flow.
-        access_token được cấp sau khi shop owner authorize trên Shopee Seller Center.
-        Trong hệ thống này, access_token được đọc từ .env (đã được cấp sẵn).
+        Kiểm tra access_token có sẵn (đã tải từ DB trong __init__).
+        Shopee dùng OAuth2 Authorization Code Flow – token được lưu trữ trong
+        bảng integrations và được quản lý qua Settings → Kênh bán hàng.
         """
         if not self.access_token:
             raise AuthError(
-                "SHOPEE_ACCESS_TOKEN chưa được cấu hình trong .env. "
-                "Vui lòng hoàn thành OAuth2 flow và lưu token vào .env."
+                f"Shopee access_token trống cho company {self.company_id}. "
+                "Vui lòng kết nối lại trong Settings → Kênh bán hàng."
             )
-        self.logger.info(f"Shopee authenticated: shop_id={self.shop_id}")
+        self.logger.info(f"Shopee authenticated: shop_id={self.shop_id}, company={self.company_id}")
 
     def refresh_token(self) -> None:
         """
         Làm mới access_token khi hết hạn (thường sau 4 giờ).
         Gọi Shopee API /auth/access_token/get với refresh_token.
+        Lưu token mới vào DB qua IntegrationRepository.
         """
+        from .exceptions import TokenExpiredError
+        if not self.refresh_tok:
+            raise TokenExpiredError("shopee", self.company_id)
+
         api_path = "/auth/access_token/get"
         ts       = int(time.time())
         base_str = f"{self.partner_id}{api_path}{ts}"
@@ -120,8 +135,14 @@ class ShopeeConnector(BaseConnector):
             raise AuthError(f"Refresh token thất bại: {resp.get('message')}")
 
         self.access_token = resp["access_token"]
-        self.refresh_tok  = resp["refresh_token"]
-        self.logger.info("Shopee access_token đã được làm mới thành công")
+        self.refresh_tok  = resp.get("refresh_token", self.refresh_tok)
+        # Lưu token mới vào DB
+        self._repo.update_tokens(
+            integration_id=self._integration["id"],
+            access_token=self.access_token,
+            refresh_token=self.refresh_tok,
+        )
+        self.logger.info("Shopee access_token đã được làm mới và lưu vào DB")
 
     # ── Lấy danh sách đơn hàng ───────────────────────────────────────────────
 
@@ -238,11 +259,17 @@ class ShopeeConnector(BaseConnector):
         # Cập nhật watermark
         self.update_watermark("orders", to_dt)
 
-        # Ghi ETL log
+        # Ghi ETL log và cập nhật last_sync_at trên integration record
         self.log_etl_result(
             "shopee_sync",
             total_orders,
             message=f"Sync Shopee orders thành công: {total_orders} đơn hàng",
+        )
+        self._repo.log_sync(
+            integration_id=self._integration["id"],
+            company_id=self.company_id,
+            status="connected",
+            records_synced=total_orders,
         )
         self.logger.info(f"✓ Shopee sync hoàn thành: {total_orders} đơn hàng mới")
         return total_orders

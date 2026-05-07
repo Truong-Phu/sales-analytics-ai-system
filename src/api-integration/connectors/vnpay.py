@@ -20,25 +20,34 @@ from ..base.base_connector import BaseConnector, AuthError
 
 load_dotenv()
 
-VNPAY_TMN_CODE   = os.getenv("VNPAY_TMN_CODE", "")    # Terminal ID
-VNPAY_SECRET_KEY = os.getenv("VNPAY_SECRET_KEY", "")
-VNPAY_URL        = os.getenv("VNPAY_URL", "https://sandbox.vnpayment.vn/merchant_webapi/api/transaction")
+VNPAY_URL = os.getenv("VNPAY_URL", "https://sandbox.vnpayment.vn/merchant_webapi/api/transaction")
 
 
 class VNPayConnector(BaseConnector):
     """
     Connector cho VNPay – query lịch sử giao dịch.
+    company_id bắt buộc → tmn_code và secret_key lấy từ bảng integrations.
     Signature: HMAC-SHA512 trên sorted params.
     """
 
-    def __init__(self):
+    def __init__(self, company_id: str):
         super().__init__(
             channel_name="vnpay",
+            company_id=company_id,
             rate_limit_calls=5,
             rate_limit_period=1.0,
         )
-        self.tmn_code   = VNPAY_TMN_CODE
-        self.secret_key = VNPAY_SECRET_KEY
+        # Credentials VNPay: lấy từ DB theo company_id
+        from .integration_repository import IntegrationRepository
+        from .exceptions import IntegrationNotFoundError
+        self._repo        = IntegrationRepository()
+        self._integration = self._repo.get_integration(company_id, "vnpay")
+        if not self._integration:
+            raise IntegrationNotFoundError(company_id, "vnpay")
+
+        cfg             = self._integration.get("additional_config") or {}
+        self.tmn_code   = self._integration["account_id"]    # VNPay TmnCode = account_id
+        self.secret_key = self._integration["access_token"]  # secret_key lưu ở access_token
 
     def _sign(self, params: Dict) -> str:
         """

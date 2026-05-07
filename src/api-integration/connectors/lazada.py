@@ -20,29 +20,42 @@ from ..base.base_connector import BaseConnector, APIError, AuthError
 
 load_dotenv()
 
-LAZADA_APP_KEY     = os.getenv("LAZADA_APP_KEY", "")
-LAZADA_APP_SECRET  = os.getenv("LAZADA_APP_SECRET", "")
-LAZADA_ACCESS_TOKEN = os.getenv("LAZADA_ACCESS_TOKEN", "")
-LAZADA_BASE_URL    = "https://api.lazada.vn/rest"  # Endpoint Việt Nam
+# ── Credentials dùng chung toàn hệ thống (lưu trong .env) ───────────────────
+LAZADA_APP_KEY    = os.getenv("LAZADA_APP_KEY", "")
+LAZADA_APP_SECRET = os.getenv("LAZADA_APP_SECRET", "")
+LAZADA_BASE_URL   = "https://api.lazada.vn/rest"  # Endpoint Việt Nam
 
 
 class LazadaConnector(BaseConnector):
     """
     Connector cho Lazada Open Platform.
+    company_id bắt buộc → seller access_token lấy từ bảng integrations.
     Signature: HMAC-SHA256 trên sorted params.
     """
 
-    def __init__(self):
+    def __init__(self, company_id: str):
         super().__init__(
             channel_name="lazada",
-            rate_limit_calls=3,   # 3 req/s – Lazada có limit thấp hơn Shopee
+            company_id=company_id,
+            rate_limit_calls=3,
             rate_limit_period=1.0,
             max_retries=3,
             retry_base_delay=2.0,
         )
-        self.app_key      = LAZADA_APP_KEY
-        self.app_secret   = LAZADA_APP_SECRET
-        self.access_token = LAZADA_ACCESS_TOKEN
+        # App credentials: dùng chung, lấy từ .env
+        self.app_key    = LAZADA_APP_KEY
+        self.app_secret = LAZADA_APP_SECRET
+
+        # Seller access_token: lấy từ DB theo company_id
+        from .integration_repository import IntegrationRepository
+        from .exceptions import IntegrationNotFoundError
+        self._repo        = IntegrationRepository()
+        self._integration = self._repo.get_integration(company_id, "lazada")
+        if not self._integration:
+            raise IntegrationNotFoundError(company_id, "lazada")
+
+        self.access_token = self._integration["access_token"]
+        self.seller_id    = self._integration["account_id"]
 
     # ── Signature Lazada ─────────────────────────────────────────────────────
 

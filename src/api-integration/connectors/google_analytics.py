@@ -18,52 +18,65 @@ from ..base.base_connector import BaseConnector, AuthError
 
 load_dotenv()
 
-GA4_PROPERTY_ID   = os.getenv("GA4_PROPERTY_ID", "")       # VD: "properties/123456789"
-GA4_CREDENTIALS   = os.getenv("GA4_SERVICE_ACCOUNT_JSON")  # JSON string hoặc file path
-
 
 class GoogleAnalyticsConnector(BaseConnector):
     """
     Connector cho GA4 Data API dùng google-analytics-data SDK.
+    company_id bắt buộc → property_id và service account lấy từ integrations.
     Không dùng HTTP request thủ công mà dùng official Python client.
     """
 
-    def __init__(self):
+    def __init__(self, company_id: str):
         super().__init__(
             channel_name="google_analytics",
+            company_id=company_id,
             rate_limit_calls=10,
             rate_limit_period=1.0,
         )
-        self.property_id = GA4_PROPERTY_ID
+        # GA4 credentials: lấy từ DB theo company_id
+        from .integration_repository import IntegrationRepository
+        from .exceptions import IntegrationNotFoundError
+        self._repo        = IntegrationRepository()
+        self._integration = self._repo.get_integration(company_id, "google")
+        if not self._integration:
+            raise IntegrationNotFoundError(company_id, "google")
+
+        cfg              = self._integration.get("additional_config") or {}
+        self.property_id = cfg.get("property_id", self._integration["account_id"])
+        # Service account JSON: lưu trong additional_config["service_account_json"]
+        self._sa_json    = cfg.get("service_account_json") or os.getenv("GA4_SERVICE_ACCOUNT_JSON")
         self._client     = None   # BetaAnalyticsDataClient – khởi tạo lazy
 
     def authenticate(self) -> None:
         """
         Xác thực bằng Service Account JSON key.
-        Dùng google.oauth2.service_account.Credentials.
+        JSON key lấy từ additional_config["service_account_json"] trong DB.
         """
+        if not self._sa_json:
+            raise AuthError(
+                f"GA4 service account JSON chưa cấu hình cho company {self.company_id}. "
+                "Lưu JSON vào Settings → Kênh bán hàng → Google Analytics."
+            )
         try:
             from google.analytics.data_v1beta import BetaAnalyticsDataClient
             from google.oauth2.service_account import Credentials
 
-            if GA4_CREDENTIALS and os.path.isfile(GA4_CREDENTIALS):
-                # Đọc từ file
+            if os.path.isfile(self._sa_json):
+                # Đường dẫn file
                 creds = Credentials.from_service_account_file(
-                    GA4_CREDENTIALS,
+                    self._sa_json,
                     scopes=["https://www.googleapis.com/auth/analytics.readonly"],
                 )
-            elif GA4_CREDENTIALS:
-                # Đọc từ JSON string trong env
-                info = json.loads(GA4_CREDENTIALS)
+            else:
+                # JSON string
+                info = json.loads(self._sa_json)
                 creds = Credentials.from_service_account_info(
                     info,
                     scopes=["https://www.googleapis.com/auth/analytics.readonly"],
                 )
-            else:
-                raise AuthError("GA4_SERVICE_ACCOUNT_JSON chưa được cấu hình")
 
             self._client = BetaAnalyticsDataClient(credentials=creds)
-            self.logger.info(f"GA4 authenticated: property={self.property_id}")
+            self.logger.info(f"GA4 authenticated: property={self.property_id}, company={self.company_id}")
 
         except ImportError:
             raise AuthError(
