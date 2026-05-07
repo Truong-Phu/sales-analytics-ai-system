@@ -19,7 +19,8 @@ public interface IOrderRepository : IRepository<Order>
     /// Include Customer và Channel để tránh N+1.
     /// </summary>
     Task<(IEnumerable<Order> Items, int Total)> GetFilteredAsync(
-        string? search, string? status, int? channelId, int page, int pageSize);
+        string? search, string? status, int? channelId, int page, int pageSize,
+        Guid? companyId = null);
 
     /// <summary>Lấy đơn hàng kèm chi tiết (OrderDetails + Products)</summary>
     Task<Order?> GetWithDetailsAsync(int orderId);

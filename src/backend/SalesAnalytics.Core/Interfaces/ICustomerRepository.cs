@@ -15,7 +15,8 @@ public interface ICustomerRepository : IRepository<Customer>
     /// Lấy danh sách có phân trang, tìm kiếm và lọc theo phân khúc.
     /// </summary>
     Task<(IEnumerable<Customer> Items, int Total)> GetFilteredAsync(
-        string? search, string? segment, int page, int pageSize);
+        string? search, string? segment, int page, int pageSize,
+        Guid? companyId = null);
 
     /// <summary>Lấy top khách hàng theo tổng chi tiêu</summary>
     Task<IEnumerable<Customer>> GetTopBySpendingAsync(int topN = 10);

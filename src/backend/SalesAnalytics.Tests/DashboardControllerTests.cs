@@ -13,12 +13,12 @@ namespace SalesAnalytics.Tests;
 /// </summary>
 public class DashboardControllerTests
 {
-    private readonly Mock<DashboardService> _mockService;
-    private readonly DashboardController   _controller;
+    private readonly Mock<DashboardService>  _mockService;
+    private readonly Mock<ITenantContext>    _mockTenant;
+    private readonly DashboardController    _controller;
 
     public DashboardControllerTests()
     {
-        // DashboardService cần IConfiguration trong constructor → truyền config giả
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
@@ -27,7 +27,11 @@ public class DashboardControllerTests
             .Build();
 
         _mockService = new Mock<DashboardService>(config);
-        _controller  = new DashboardController(_mockService.Object);
+        _mockTenant  = new Mock<ITenantContext>();
+        _mockTenant.Setup(t => t.IsSuperAdmin).Returns(false);
+        _mockTenant.Setup(t => t.CompanyId).Returns(Guid.NewGuid());
+
+        _controller = new DashboardController(_mockService.Object, _mockTenant.Object);
     }
 
     // ── Helper ────────────────────────────────────────────────────────────────
@@ -57,7 +61,8 @@ public class DashboardControllerTests
     {
         _mockService
             .Setup(s => s.GetDashboardAsync(
-                It.IsAny<DateOnly>(), It.IsAny<DateOnly>(), It.IsAny<string?>()))
+                It.IsAny<DateOnly>(), It.IsAny<DateOnly>(),
+                It.IsAny<string?>(),  It.IsAny<Guid?>()))
             .ReturnsAsync(BuildSampleResponse());
 
         var result = await _controller.GetDashboard(null, null, null);
@@ -78,8 +83,10 @@ public class DashboardControllerTests
         DateOnly capturedTo   = default;
 
         _mockService
-            .Setup(s => s.GetDashboardAsync(It.IsAny<DateOnly>(), It.IsAny<DateOnly>(), null))
-            .Callback<DateOnly, DateOnly, string?>((f, t, _) => { capturedFrom = f; capturedTo = t; })
+            .Setup(s => s.GetDashboardAsync(
+                It.IsAny<DateOnly>(), It.IsAny<DateOnly>(),
+                It.IsAny<string?>(),  It.IsAny<Guid?>()))
+            .Callback<DateOnly, DateOnly, string?, Guid?>((f, t, _, _) => { capturedFrom = f; capturedTo = t; })
             .ReturnsAsync(BuildSampleResponse());
 
         await _controller.GetDashboard(from, to, null);
@@ -97,13 +104,14 @@ public class DashboardControllerTests
         var before = DateOnly.FromDateTime(DateTime.UtcNow);
 
         _mockService
-            .Setup(s => s.GetDashboardAsync(It.IsAny<DateOnly>(), It.IsAny<DateOnly>(), null))
-            .Callback<DateOnly, DateOnly, string?>((f, t, _) => { capturedFrom = f; capturedTo = t; })
+            .Setup(s => s.GetDashboardAsync(
+                It.IsAny<DateOnly>(), It.IsAny<DateOnly>(),
+                It.IsAny<string?>(),  It.IsAny<Guid?>()))
+            .Callback<DateOnly, DateOnly, string?, Guid?>((f, t, _, _) => { capturedFrom = f; capturedTo = t; })
             .ReturnsAsync(BuildSampleResponse());
 
         await _controller.GetDashboard(null, null, null);
 
-        // Không truyền ngày → controller phải dùng 30 ngày trước đến hôm nay
         Assert.True(capturedTo >= before);
         Assert.True(capturedFrom < capturedTo);
     }
@@ -114,14 +122,16 @@ public class DashboardControllerTests
     {
         _mockService
             .Setup(s => s.GetDashboardAsync(
-                It.IsAny<DateOnly>(), It.IsAny<DateOnly>(), It.IsAny<string?>()))
+                It.IsAny<DateOnly>(), It.IsAny<DateOnly>(),
+                It.IsAny<string?>(),  It.IsAny<Guid?>()))
             .ReturnsAsync(BuildSampleResponse());
 
         await _controller.GetDashboard(null, null, null);
 
         _mockService.Verify(
             s => s.GetDashboardAsync(
-                It.IsAny<DateOnly>(), It.IsAny<DateOnly>(), It.IsAny<string?>()),
+                It.IsAny<DateOnly>(), It.IsAny<DateOnly>(),
+                It.IsAny<string?>(),  It.IsAny<Guid?>()),
             Times.Once
         );
     }

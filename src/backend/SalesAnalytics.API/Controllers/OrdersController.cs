@@ -18,7 +18,11 @@ namespace SalesAnalytics.API.Controllers;
 [ApiController]
 [Route("api/[controller]")]
 [Authorize]
-public class OrdersController(IConfiguration cfg, IOrderRepository orderRepo, IAuditLogService audit) : ControllerBase
+public class OrdersController(
+    IConfiguration cfg,
+    IOrderRepository orderRepo,
+    IAuditLogService audit,
+    ITenantContext tenant) : ControllerBase
 {
     private readonly string _connStr = cfg.GetConnectionString("Default")!;
 
@@ -28,10 +32,10 @@ public class OrdersController(IConfiguration cfg, IOrderRepository orderRepo, IA
 
     /// <summary>
     /// Danh sách đơn hàng từ DW (fact_sales + dim_*), phân trang, tìm kiếm, lọc.
-    /// Roles: Owner, Manager, Staff, DataIT, Admin
+    /// SuperAdmin thấy tất cả; các role khác chỉ thấy dữ liệu của company mình.
     /// </summary>
     [HttpGet]
-    [Authorize(Roles = "Owner,Manager,Staff,DataIT,Admin")]
+    [Authorize(Roles = "Owner,Manager,Staff,DataIT,Admin,SuperAdmin")]
     public async Task<IActionResult> GetOrders(
         [FromQuery] string? search = null,
         [FromQuery] string? status = null,
@@ -41,12 +45,14 @@ public class OrdersController(IConfiguration cfg, IOrderRepository orderRepo, IA
         if (page  < 1) page  = 1;
         if (limit < 1 || limit > 100) limit = 20;
 
+        // SuperAdmin truyền null để xem tất cả tenant; user thường chỉ xem company của mình
+        var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
+
         try
         {
             await using var conn = new NpgsqlConnection(_connStr);
             await conn.OpenAsync();
 
-            // Truy vấn từ fact_sales + dim_* cho danh sách đơn hàng
             var sql = """
                 SELECT
                     fs.sales_key,
@@ -64,10 +70,11 @@ public class OrdersController(IConfiguration cfg, IOrderRepository orderRepo, IA
                 JOIN dw.dim_channel dc ON fs.channel_key = dc.channel_key
                 JOIN dw.dim_product dp ON fs.product_key = dp.product_key
                 WHERE dp.is_current = TRUE
-                  AND (@status IS NULL OR dc.channel_name ILIKE '%' || @status || '%')
-                  AND (@search IS NULL OR
+                  AND (@status    IS NULL OR dc.channel_name ILIKE '%' || @status || '%')
+                  AND (@search    IS NULL OR
                        fs.external_order_id ILIKE '%' || @search || '%' OR
                        dp.product_name      ILIKE '%' || @search || '%')
+                  AND (@companyId IS NULL OR fs.company_id = @companyId::uuid)
                 ORDER BY dd.full_date DESC, fs.sales_key DESC
                 LIMIT @limit OFFSET @offset
                 """;
@@ -79,20 +86,23 @@ public class OrdersController(IConfiguration cfg, IOrderRepository orderRepo, IA
                 JOIN dw.dim_channel dc ON fs.channel_key = dc.channel_key
                 JOIN dw.dim_product dp ON fs.product_key = dp.product_key
                 WHERE dp.is_current = TRUE
-                  AND (@status IS NULL OR dc.channel_name ILIKE '%' || @status || '%')
-                  AND (@search IS NULL OR
+                  AND (@status    IS NULL OR dc.channel_name ILIKE '%' || @status || '%')
+                  AND (@search    IS NULL OR
                        fs.external_order_id ILIKE '%' || @search || '%' OR
                        dp.product_name      ILIKE '%' || @search || '%')
+                  AND (@companyId IS NULL OR fs.company_id = @companyId::uuid)
                 """;
 
             await using var countCmd = new NpgsqlCommand(countSql, conn);
-            countCmd.Parameters.Add(new NpgsqlParameter("status", NpgsqlDbType.Text) { Value = (object?)status ?? DBNull.Value });
-            countCmd.Parameters.Add(new NpgsqlParameter("search", NpgsqlDbType.Text) { Value = (object?)search ?? DBNull.Value });
+            countCmd.Parameters.Add(new NpgsqlParameter("status",    NpgsqlDbType.Text) { Value = (object?)status    ?? DBNull.Value });
+            countCmd.Parameters.Add(new NpgsqlParameter("search",    NpgsqlDbType.Text) { Value = (object?)search    ?? DBNull.Value });
+            countCmd.Parameters.Add(new NpgsqlParameter("companyId", NpgsqlDbType.Text) { Value = (object?)companyId?.ToString() ?? DBNull.Value });
             var total = Convert.ToInt32(await countCmd.ExecuteScalarAsync());
 
             await using var cmd = new NpgsqlCommand(sql, conn);
-            cmd.Parameters.Add(new NpgsqlParameter("status", NpgsqlDbType.Text) { Value = (object?)status ?? DBNull.Value });
-            cmd.Parameters.Add(new NpgsqlParameter("search", NpgsqlDbType.Text) { Value = (object?)search ?? DBNull.Value });
+            cmd.Parameters.Add(new NpgsqlParameter("status",    NpgsqlDbType.Text) { Value = (object?)status    ?? DBNull.Value });
+            cmd.Parameters.Add(new NpgsqlParameter("search",    NpgsqlDbType.Text) { Value = (object?)search    ?? DBNull.Value });
+            cmd.Parameters.Add(new NpgsqlParameter("companyId", NpgsqlDbType.Text) { Value = (object?)companyId?.ToString() ?? DBNull.Value });
             cmd.Parameters.AddWithValue("limit",  limit);
             cmd.Parameters.AddWithValue("offset", (page - 1) * limit);
 
@@ -102,16 +112,16 @@ public class OrdersController(IConfiguration cfg, IOrderRepository orderRepo, IA
             {
                 orders.Add(new
                 {
-                    SalesKey       = reader.IsDBNull(0)  ? 0              : reader.GetInt32(0),
-                    ExternalOrderId = reader.IsDBNull(1) ? ""             : reader.GetString(1),
-                    SaleDate       = reader.IsDBNull(2)  ? (DateTime?)null : reader.GetDateTime(2),
-                    ChannelName    = reader.IsDBNull(3)  ? ""             : reader.GetString(3),
-                    ProductName    = reader.IsDBNull(4)  ? ""             : reader.GetString(4),
-                    Sku            = reader.IsDBNull(5)  ? ""             : reader.GetString(5),
-                    Quantity       = reader.IsDBNull(6)  ? 0              : reader.GetInt32(6),
-                    NetRevenue     = reader.IsDBNull(7)  ? 0m             : reader.GetDecimal(7),
-                    GrossProfit    = reader.IsDBNull(8)  ? 0m             : reader.GetDecimal(8),
-                    DiscountAmount = reader.IsDBNull(9)  ? 0m             : reader.GetDecimal(9),
+                    SalesKey        = reader.IsDBNull(0)  ? 0               : reader.GetInt32(0),
+                    ExternalOrderId = reader.IsDBNull(1)  ? ""              : reader.GetString(1),
+                    SaleDate        = reader.IsDBNull(2)  ? (DateTime?)null : reader.GetDateTime(2),
+                    ChannelName     = reader.IsDBNull(3)  ? ""              : reader.GetString(3),
+                    ProductName     = reader.IsDBNull(4)  ? ""              : reader.GetString(4),
+                    Sku             = reader.IsDBNull(5)  ? ""              : reader.GetString(5),
+                    Quantity        = reader.IsDBNull(6)  ? 0               : reader.GetInt32(6),
+                    NetRevenue      = reader.IsDBNull(7)  ? 0m              : reader.GetDecimal(7),
+                    GrossProfit     = reader.IsDBNull(8)  ? 0m              : reader.GetDecimal(8),
+                    DiscountAmount  = reader.IsDBNull(9)  ? 0m              : reader.GetDecimal(9),
                 });
             }
 
@@ -134,11 +144,9 @@ public class OrdersController(IConfiguration cfg, IOrderRepository orderRepo, IA
     // 2. OLTP – CRUD qua Repository Pattern (public.orders)
     // ══════════════════════════════════════════════════════════════════════════
 
-    /// <summary>
-    /// [OLTP] Danh sách đơn hàng OLTP với phân trang (EF Core, public schema).
-    /// </summary>
+    /// <summary>[OLTP] Danh sách đơn hàng OLTP với phân trang (EF Core, public schema).</summary>
     [HttpGet("oltp")]
-    [Authorize(Roles = "Owner,Manager,Staff,DataIT,Admin,Viewer")]
+    [Authorize(Roles = "Owner,Manager,Staff,DataIT,Admin,Viewer,SuperAdmin")]
     public async Task<IActionResult> GetOltpOrders(
         [FromQuery] string? search    = null,
         [FromQuery] string? status    = null,
@@ -146,28 +154,30 @@ public class OrdersController(IConfiguration cfg, IOrderRepository orderRepo, IA
         [FromQuery] int     page      = 1,
         [FromQuery] int     pageSize  = 20)
     {
+        var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
         try
         {
-            var (items, total) = await orderRepo.GetFilteredAsync(search, status, channelId, page, pageSize);
+            var (items, total) = await orderRepo.GetFilteredAsync(
+                search, status, channelId, page, pageSize, companyId);
             var dtos = items.Select(o => new OrderResponseDto
             {
-                OrderId        = o.OrderId,
-                OrderCode      = o.OrderCode,
-                CustomerId     = o.CustomerId,
-                CustomerName   = o.Customer?.FullName,
-                ChannelId      = o.ChannelId,
-                ChannelName    = o.Channel?.ChannelName,
-                Status         = o.Status,
-                TotalAmount    = o.TotalAmount,
-                DiscountAmount = o.DiscountAmount,
-                ShippingFee    = o.ShippingFee,
-                PaymentMethod  = o.PaymentMethod,
-                PaymentStatus  = o.PaymentStatus,
-                ShippingStatus = o.ShippingStatus,
-                OrderDate      = o.OrderDate,
-                DeliveredAt    = o.DeliveredAt,
+                OrderId         = o.OrderId,
+                OrderCode       = o.OrderCode,
+                CustomerId      = o.CustomerId,
+                CustomerName    = o.Customer?.FullName,
+                ChannelId       = o.ChannelId,
+                ChannelName     = o.Channel?.ChannelName,
+                Status          = o.Status,
+                TotalAmount     = o.TotalAmount,
+                DiscountAmount  = o.DiscountAmount,
+                ShippingFee     = o.ShippingFee,
+                PaymentMethod   = o.PaymentMethod,
+                PaymentStatus   = o.PaymentStatus,
+                ShippingStatus  = o.ShippingStatus,
+                OrderDate       = o.OrderDate,
+                DeliveredAt     = o.DeliveredAt,
                 ExternalOrderId = o.ExternalOrderId,
-                CreatedAt      = o.CreatedAt,
+                CreatedAt       = o.CreatedAt,
             });
 
             return Ok(new PagedResult<OrderResponseDto>(dtos, total, page, pageSize));
@@ -178,11 +188,9 @@ public class OrdersController(IConfiguration cfg, IOrderRepository orderRepo, IA
         }
     }
 
-    /// <summary>
-    /// [OLTP] Lấy chi tiết đơn hàng kèm danh sách sản phẩm.
-    /// </summary>
+    /// <summary>[OLTP] Lấy chi tiết đơn hàng kèm danh sách sản phẩm.</summary>
     [HttpGet("oltp/{id:int}")]
-    [Authorize(Roles = "Owner,Manager,Staff,DataIT,Admin")]
+    [Authorize(Roles = "Owner,Manager,Staff,DataIT,Admin,SuperAdmin")]
     public async Task<IActionResult> GetOltpOrder(int id)
     {
         try
@@ -190,26 +198,30 @@ public class OrdersController(IConfiguration cfg, IOrderRepository orderRepo, IA
             var order = await orderRepo.GetWithDetailsAsync(id);
             if (order is null) return NotFound(new { message = "Không tìm thấy đơn hàng." });
 
+            // Kiểm tra ownership
+            if (!tenant.IsSuperAdmin && order.CompanyId != tenant.CompanyId)
+                return StatusCode(403, new { message = "Không có quyền truy cập đơn hàng này." });
+
             return Ok(new OrderResponseDto
             {
-                OrderId        = order.OrderId,
-                OrderCode      = order.OrderCode,
-                CustomerId     = order.CustomerId,
-                CustomerName   = order.Customer?.FullName,
-                ChannelId      = order.ChannelId,
-                ChannelName    = order.Channel?.ChannelName,
-                Status         = order.Status,
-                TotalAmount    = order.TotalAmount,
-                DiscountAmount = order.DiscountAmount,
-                ShippingFee    = order.ShippingFee,
-                PaymentMethod  = order.PaymentMethod,
-                PaymentStatus  = order.PaymentStatus,
-                ShippingStatus = order.ShippingStatus,
-                OrderDate      = order.OrderDate,
-                DeliveredAt    = order.DeliveredAt,
+                OrderId         = order.OrderId,
+                OrderCode       = order.OrderCode,
+                CustomerId      = order.CustomerId,
+                CustomerName    = order.Customer?.FullName,
+                ChannelId       = order.ChannelId,
+                ChannelName     = order.Channel?.ChannelName,
+                Status          = order.Status,
+                TotalAmount     = order.TotalAmount,
+                DiscountAmount  = order.DiscountAmount,
+                ShippingFee     = order.ShippingFee,
+                PaymentMethod   = order.PaymentMethod,
+                PaymentStatus   = order.PaymentStatus,
+                ShippingStatus  = order.ShippingStatus,
+                OrderDate       = order.OrderDate,
+                DeliveredAt     = order.DeliveredAt,
                 ExternalOrderId = order.ExternalOrderId,
-                CreatedAt      = order.CreatedAt,
-                Details        = order.OrderDetails.Select(d => new OrderDetailDto
+                CreatedAt       = order.CreatedAt,
+                Details         = order.OrderDetails.Select(d => new OrderDetailDto
                 {
                     ItemId      = d.ItemId,
                     ProductId   = d.ProductId,
@@ -240,32 +252,32 @@ public class OrdersController(IConfiguration cfg, IOrderRepository orderRepo, IA
 
         try
         {
-            // Tạo mã đơn hàng tự động: ORD-yyyyMMdd-XXXX
             var orderCode = $"ORD-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString()[..6].ToUpper()}";
 
             var order = new Order
             {
-                OrderCode      = orderCode,
-                CustomerId     = dto.CustomerId,
-                ChannelId      = dto.ChannelId,
-                Status         = "PENDING",
-                TotalAmount    = dto.TotalAmount,
-                DiscountAmount = dto.DiscountAmount,
-                ShippingFee    = dto.ShippingFee,
-                PaymentMethod  = dto.PaymentMethod,
-                PaymentStatus  = "UNPAID",
-                ShippingStatus = "NOT_SHIPPED",
-                OrderDate      = dto.OrderDate,
+                OrderCode       = orderCode,
+                CustomerId      = dto.CustomerId,
+                ChannelId       = dto.ChannelId,
+                Status          = "PENDING",
+                TotalAmount     = dto.TotalAmount,
+                DiscountAmount  = dto.DiscountAmount,
+                ShippingFee     = dto.ShippingFee,
+                PaymentMethod   = dto.PaymentMethod,
+                PaymentStatus   = "UNPAID",
+                ShippingStatus  = "NOT_SHIPPED",
+                OrderDate       = dto.OrderDate,
                 ExternalOrderId = dto.ExternalOrderId,
-                CreatedAt      = DateTime.UtcNow,
-                UpdatedAt      = DateTime.UtcNow,
-                OrderDetails   = dto.Items.Select(item => new OrderDetail
+                CompanyId       = tenant.CompanyId,      // gán company hiện tại
+                CreatedAt       = DateTime.UtcNow,
+                UpdatedAt       = DateTime.UtcNow,
+                OrderDetails    = dto.Items.Select(item => new OrderDetail
                 {
-                    ProductId  = item.ProductId,
-                    Quantity   = item.Quantity,
-                    UnitPrice  = item.UnitPrice,
-                    Discount   = item.Discount,
-                    Subtotal   = item.Quantity * item.UnitPrice - item.Discount,
+                    ProductId = item.ProductId,
+                    Quantity  = item.Quantity,
+                    UnitPrice = item.UnitPrice,
+                    Discount  = item.Discount,
+                    Subtotal  = item.Quantity * item.UnitPrice - item.Discount,
                 }).ToList(),
             };
 
@@ -304,10 +316,13 @@ public class OrdersController(IConfiguration cfg, IOrderRepository orderRepo, IA
             var order = await orderRepo.GetByIdAsync(id);
             if (order is null) return NotFound(new { message = "Không tìm thấy đơn hàng." });
 
-            if (dto.Status        is not null) order.Status        = dto.Status;
-            if (dto.PaymentStatus is not null) order.PaymentStatus = dto.PaymentStatus;
+            if (!tenant.IsSuperAdmin && order.CompanyId != tenant.CompanyId)
+                return StatusCode(403, new { message = "Không có quyền chỉnh sửa đơn hàng này." });
+
+            if (dto.Status         is not null) order.Status         = dto.Status;
+            if (dto.PaymentStatus  is not null) order.PaymentStatus  = dto.PaymentStatus;
             if (dto.ShippingStatus is not null) order.ShippingStatus = dto.ShippingStatus;
-            if (dto.DeliveredAt   is not null) order.DeliveredAt   = dto.DeliveredAt;
+            if (dto.DeliveredAt    is not null) order.DeliveredAt    = dto.DeliveredAt;
             order.UpdatedAt = DateTime.UtcNow;
 
             await orderRepo.UpdateAsync(order);
@@ -341,6 +356,9 @@ public class OrdersController(IConfiguration cfg, IOrderRepository orderRepo, IA
         {
             var order = await orderRepo.GetByIdAsync(id);
             if (order is null) return NotFound(new { message = "Không tìm thấy đơn hàng." });
+
+            if (!tenant.IsSuperAdmin && order.CompanyId != tenant.CompanyId)
+                return StatusCode(403, new { message = "Không có quyền hủy đơn hàng này." });
 
             if (order.Status == "DELIVERED")
                 return BadRequest(new { message = "Không thể hủy đơn đã giao thành công." });

@@ -7,20 +7,17 @@ namespace SalesAnalytics.API.Controllers;
 /// <summary>Proxy đến AI Service FastAPI – Frontend chỉ gọi Backend, không gọi AI trực tiếp</summary>
 [ApiController]
 [Route("api/ai")]
-[Authorize(Roles = "Owner,Manager,DataIT,Admin")]
-public class AiController : ControllerBase
+[Authorize(Roles = "Owner,Manager,DataIT,Admin,SuperAdmin")]
+public class AiController(AiProxyService ai, ITenantContext tenant) : ControllerBase
 {
-    private readonly AiProxyService _ai;
-
-    public AiController(AiProxyService ai) => _ai = ai;
-
     /// <summary>Dự báo doanh thu N ngày tiếp theo</summary>
     [HttpGet("forecast")]
     public async Task<IActionResult> Forecast(
         [FromQuery] int horizon = 30,
         [FromQuery] string? channel = null)
     {
-        var result = await _ai.GetForecastAsync(horizon, channel);
+        var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
+        var result = await ai.GetForecastAsync(horizon, channel, companyId);
         if (result is null) return StatusCode(503, new { message = "AI Service không khả dụng." });
         return Ok(result);
     }
@@ -31,7 +28,8 @@ public class AiController : ControllerBase
         [FromQuery] int days = 90,
         [FromQuery] string? channel = null)
     {
-        var result = await _ai.GetAnomalyAsync(days, channel);
+        var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
+        var result = await ai.GetAnomalyAsync(days, channel, companyId);
         if (result is null) return StatusCode(503, new { message = "AI Service không khả dụng." });
         return Ok(result);
     }
@@ -42,7 +40,8 @@ public class AiController : ControllerBase
         [FromQuery] int days = 30,
         [FromQuery] string? channel = null)
     {
-        var result = await _ai.GetTrendAsync(days, channel);
+        var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
+        var result = await ai.GetTrendAsync(days, channel, companyId);
         if (result is null) return StatusCode(503, new { message = "AI Service không khả dụng." });
         return Ok(result);
     }
@@ -51,7 +50,8 @@ public class AiController : ControllerBase
     [HttpGet("recommendation")]
     public async Task<IActionResult> Recommendation()
     {
-        var result = await _ai.GetRecommendationsAsync();
+        var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
+        var result = await ai.GetRecommendationsAsync(companyId);
         if (result is null) return StatusCode(503, new { message = "AI Service không khả dụng." });
         return Ok(result);
     }
@@ -60,7 +60,7 @@ public class AiController : ControllerBase
     [HttpGet("forecast/metrics")]
     public async Task<IActionResult> ForecastMetrics()
     {
-        var result = await _ai.GetForecastMetricsAsync();
+        var result = await ai.GetForecastMetricsAsync();
         if (result is null) return StatusCode(503, new { message = "AI Service không khả dụng." });
         return Ok(result);
     }
@@ -80,7 +80,7 @@ public class AiController : ControllerBase
         if (string.IsNullOrWhiteSpace(request?.Question))
             return BadRequest(new { message = "question không được để trống" });
 
-        var result = await _ai.PostRecommendationAsync(
+        var result = await ai.PostRecommendationAsync(
             question: request.Question,
             language: request.Language ?? "vi",
             context:  request.Context,

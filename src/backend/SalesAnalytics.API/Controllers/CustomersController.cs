@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Npgsql;
 using NpgsqlTypes;
+using SalesAnalytics.API.Services;
 using SalesAnalytics.Core.DTOs;
 using SalesAnalytics.Core.Entities;
 using SalesAnalytics.Core.Interfaces;
@@ -16,7 +17,10 @@ namespace SalesAnalytics.API.Controllers;
 [ApiController]
 [Route("api/[controller]")]
 [Authorize]
-public class CustomersController(IConfiguration cfg, ICustomerRepository customerRepo) : ControllerBase
+public class CustomersController(
+    IConfiguration cfg,
+    ICustomerRepository customerRepo,
+    ITenantContext tenant) : ControllerBase
 {
     private readonly string _connStr = cfg.GetConnectionString("Default")!;
 
@@ -29,7 +33,7 @@ public class CustomersController(IConfiguration cfg, ICustomerRepository custome
     /// Roles: Owner, Manager, DataIT, Admin
     /// </summary>
     [HttpGet]
-    [Authorize(Roles = "Owner,Manager,DataIT,Admin")]
+    [Authorize(Roles = "Owner,Manager,DataIT,Admin,SuperAdmin")]
     public async Task<IActionResult> GetCustomers(
         [FromQuery] string? search  = null,
         [FromQuery] string? segment = null,   // VIP | REGULAR | NEW | INACTIVE
@@ -39,12 +43,13 @@ public class CustomersController(IConfiguration cfg, ICustomerRepository custome
         if (page  < 1) page  = 1;
         if (limit < 1 || limit > 100) limit = 20;
 
+        var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
+
         try
         {
             await using var conn = new NpgsqlConnection(_connStr);
             await conn.OpenAsync();
 
-            // Dùng đúng tên cột từ dw.dim_customer và join qua customer_key
             var sql = """
                 SELECT
                     dc.customer_id,
@@ -63,9 +68,10 @@ public class CustomersController(IConfiguration cfg, ICustomerRepository custome
                 LEFT JOIN dw.fact_sales fs ON fs.customer_key = dc.customer_key
                 LEFT JOIN dw.dim_date   dd ON fs.date_key     = dd.date_key
                 WHERE dc.is_current = TRUE
-                  AND (@search  IS NULL OR dc.full_name     ILIKE '%' || @search  || '%'
-                                        OR dc.customer_code ILIKE '%' || @search  || '%')
-                  AND (@segment IS NULL OR dc.segment_label = @segment)
+                  AND (@search    IS NULL OR dc.full_name     ILIKE '%' || @search  || '%'
+                                          OR dc.customer_code ILIKE '%' || @search  || '%')
+                  AND (@segment   IS NULL OR dc.segment_label = @segment)
+                  AND (@companyId IS NULL OR fs.company_id = @companyId::uuid OR fs.company_id IS NULL)
                 GROUP BY dc.customer_key, dc.customer_id, dc.customer_code, dc.full_name,
                          dc.email, dc.province, dc.region, dc.segment_label, dc.effective_from
                 ORDER BY total_revenue DESC
@@ -73,24 +79,28 @@ public class CustomersController(IConfiguration cfg, ICustomerRepository custome
                 """;
 
             var countSql = """
-                SELECT COUNT(*)
+                SELECT COUNT(DISTINCT dc.customer_key)
                 FROM dw.dim_customer dc
+                LEFT JOIN dw.fact_sales fs ON fs.customer_key = dc.customer_key
                 WHERE dc.is_current = TRUE
-                  AND (@search  IS NULL OR dc.full_name     ILIKE '%' || @search  || '%'
-                                        OR dc.customer_code ILIKE '%' || @search  || '%')
-                  AND (@segment IS NULL OR dc.segment_label = @segment)
+                  AND (@search    IS NULL OR dc.full_name     ILIKE '%' || @search  || '%'
+                                          OR dc.customer_code ILIKE '%' || @search  || '%')
+                  AND (@segment   IS NULL OR dc.segment_label = @segment)
+                  AND (@companyId IS NULL OR fs.company_id = @companyId::uuid OR fs.company_id IS NULL)
                 """;
 
             await using var countCmd = new NpgsqlCommand(countSql, conn);
-            countCmd.Parameters.Add(new NpgsqlParameter("search",  NpgsqlDbType.Text) { Value = (object?)search  ?? DBNull.Value });
-            countCmd.Parameters.Add(new NpgsqlParameter("segment", NpgsqlDbType.Text) { Value = (object?)segment ?? DBNull.Value });
+            countCmd.Parameters.Add(new NpgsqlParameter("search",    NpgsqlDbType.Text) { Value = (object?)search    ?? DBNull.Value });
+            countCmd.Parameters.Add(new NpgsqlParameter("segment",   NpgsqlDbType.Text) { Value = (object?)segment   ?? DBNull.Value });
+            countCmd.Parameters.Add(new NpgsqlParameter("companyId", NpgsqlDbType.Text) { Value = (object?)companyId?.ToString() ?? DBNull.Value });
             var total = Convert.ToInt32(await countCmd.ExecuteScalarAsync());
 
             await using var cmd = new NpgsqlCommand(sql, conn);
-            cmd.Parameters.Add(new NpgsqlParameter("search",  NpgsqlDbType.Text) { Value = (object?)search  ?? DBNull.Value });
-            cmd.Parameters.Add(new NpgsqlParameter("segment", NpgsqlDbType.Text) { Value = (object?)segment ?? DBNull.Value });
-            cmd.Parameters.AddWithValue("limit",   limit);
-            cmd.Parameters.AddWithValue("offset",  (page - 1) * limit);
+            cmd.Parameters.Add(new NpgsqlParameter("search",    NpgsqlDbType.Text) { Value = (object?)search    ?? DBNull.Value });
+            cmd.Parameters.Add(new NpgsqlParameter("segment",   NpgsqlDbType.Text) { Value = (object?)segment   ?? DBNull.Value });
+            cmd.Parameters.Add(new NpgsqlParameter("companyId", NpgsqlDbType.Text) { Value = (object?)companyId?.ToString() ?? DBNull.Value });
+            cmd.Parameters.AddWithValue("limit",  limit);
+            cmd.Parameters.AddWithValue("offset", (page - 1) * limit);
 
             var customers = new List<object>();
             await using var reader = await cmd.ExecuteReaderAsync();
@@ -136,16 +146,18 @@ public class CustomersController(IConfiguration cfg, ICustomerRepository custome
     /// [OLTP] Danh sách khách hàng OLTP với phân trang (EF Core, public schema).
     /// </summary>
     [HttpGet("oltp")]
-    [Authorize(Roles = "Owner,Manager,DataIT,Admin")]
+    [Authorize(Roles = "Owner,Manager,DataIT,Admin,SuperAdmin")]
     public async Task<IActionResult> GetOltpCustomers(
         [FromQuery] string? search   = null,
         [FromQuery] string? segment  = null,
         [FromQuery] int     page     = 1,
         [FromQuery] int     pageSize = 20)
     {
+        var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
         try
         {
-            var (items, total) = await customerRepo.GetFilteredAsync(search, segment, page, pageSize);
+            var (items, total) = await customerRepo.GetFilteredAsync(
+                search, segment, page, pageSize, companyId);
             var dtos = items.Select(c => new CustomerResponseDto
             {
                 CustomerId   = c.CustomerId,
@@ -174,13 +186,16 @@ public class CustomersController(IConfiguration cfg, ICustomerRepository custome
     /// [OLTP] Lấy chi tiết khách hàng theo ID.
     /// </summary>
     [HttpGet("oltp/{id:int}")]
-    [Authorize(Roles = "Owner,Manager,DataIT,Admin")]
+    [Authorize(Roles = "Owner,Manager,DataIT,Admin,SuperAdmin")]
     public async Task<IActionResult> GetOltpCustomer(int id)
     {
         try
         {
             var customer = await customerRepo.GetByIdAsync(id);
             if (customer is null) return NotFound(new { message = "Không tìm thấy khách hàng." });
+
+            if (!tenant.IsSuperAdmin && customer.CompanyId != tenant.CompanyId)
+                return StatusCode(403, new { message = "Không có quyền truy cập khách hàng này." });
 
             return Ok(new CustomerResponseDto
             {
@@ -232,6 +247,7 @@ public class CustomersController(IConfiguration cfg, ICustomerRepository custome
                 Address     = dto.Address,
                 Province    = dto.Province,
                 District    = dto.District,
+                CompanyId   = tenant.CompanyId,   // gán company hiện tại
                 IsActive    = true,
                 CreatedAt   = DateTime.UtcNow,
                 UpdatedAt   = DateTime.UtcNow,
@@ -262,6 +278,9 @@ public class CustomersController(IConfiguration cfg, ICustomerRepository custome
             var customer = await customerRepo.GetByIdAsync(id);
             if (customer is null) return NotFound(new { message = "Không tìm thấy khách hàng." });
 
+            if (!tenant.IsSuperAdmin && customer.CompanyId != tenant.CompanyId)
+                return StatusCode(403, new { message = "Không có quyền chỉnh sửa khách hàng này." });
+
             if (dto.FullName     is not null) customer.FullName     = dto.FullName;
             if (dto.Email        is not null) customer.Email        = dto.Email;
             if (dto.PhoneNumber  is not null) customer.PhoneNumber  = dto.PhoneNumber;
@@ -286,7 +305,7 @@ public class CustomersController(IConfiguration cfg, ICustomerRepository custome
     /// Roles: Owner, Manager, DataIT, Admin
     /// </summary>
     [HttpGet("oltp/top")]
-    [Authorize(Roles = "Owner,Manager,DataIT,Admin")]
+    [Authorize(Roles = "Owner,Manager,DataIT,Admin,SuperAdmin")]
     public async Task<IActionResult> GetTopCustomers([FromQuery] int topN = 10)
     {
         try
@@ -326,6 +345,9 @@ public class CustomersController(IConfiguration cfg, ICustomerRepository custome
         {
             var customer = await customerRepo.GetByIdAsync(id);
             if (customer is null) return NotFound(new { message = "Không tìm thấy khách hàng." });
+
+            if (!tenant.IsSuperAdmin && customer.CompanyId != tenant.CompanyId)
+                return StatusCode(403, new { message = "Không có quyền xóa khách hàng này." });
 
             customer.IsActive  = false;
             customer.UpdatedAt = DateTime.UtcNow;

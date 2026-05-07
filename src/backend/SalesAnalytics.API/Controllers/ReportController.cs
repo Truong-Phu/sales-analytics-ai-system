@@ -7,17 +7,12 @@ namespace SalesAnalytics.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "Owner,Manager,DataIT,Admin")]
-public class ReportController : ControllerBase
+[Authorize(Roles = "Owner,Manager,DataIT,Admin,SuperAdmin")]
+public class ReportController(
+    ReportService report,
+    IAuditLogService audit,
+    ITenantContext tenant) : ControllerBase
 {
-    private readonly ReportService    _report;
-    private readonly IAuditLogService _audit;
-
-    public ReportController(ReportService report, IAuditLogService audit)
-    {
-        _report = report;
-        _audit  = audit;
-    }
 
     /// <summary>
     /// Xuất báo cáo PDF.
@@ -39,22 +34,24 @@ public class ReportController : ControllerBase
         var dateFrom = from ?? DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-30));
         var dateTo   = to   ?? DateOnly.FromDateTime(DateTime.UtcNow);
 
-        var ch = channel == "all" ? null : channel;
+        var ch        = channel == "all" ? null : channel;
+        var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
 
         var userId   = int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? (int?)id : null;
         var username = User.FindFirstValue(ClaimTypes.Name) ?? "";
 
         var language = (lang == "en") ? "en" : "vi";
 
-        var pdfBytes = await _report.GenerateReportAsync(
+        var pdfBytes = await report.GenerateReportAsync(
             dateFrom, dateTo, ch, chart,
             language:     language,
             inclOverview: includeOverview,
             inclSales:    includeSales,
             inclChannel:  includeMultichannel,
-            inclAI:       includeAI);
+            inclAI:       includeAI,
+            companyId:    companyId);
 
-        await _audit.LogAsync(
+        await audit.LogAsync(
             userId:     userId, username: username,
             action:     "EXPORT_PDF",
             entityType: "Report",

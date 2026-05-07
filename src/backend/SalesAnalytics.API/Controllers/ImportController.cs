@@ -3,6 +3,7 @@ using System.Text;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Npgsql;
+using SalesAnalytics.API.Services;
 
 namespace SalesAnalytics.API.Controllers;
 
@@ -14,7 +15,7 @@ namespace SalesAnalytics.API.Controllers;
 [ApiController]
 [Route("api/import")]
 [Authorize(Roles = "Owner,Manager,Admin")]
-public class ImportController(IConfiguration cfg) : ControllerBase
+public class ImportController(IConfiguration cfg, ITenantContext tenant) : ControllerBase
 {
     private readonly string _connStr = cfg.GetConnectionString("Default")!;
 
@@ -117,20 +118,23 @@ public class ImportController(IConfiguration cfg) : ControllerBase
 
                 var sql = """
                     INSERT INTO public.orders (external_order_id, customer_email, product_sku,
-                        quantity, unit_price, channel_name, order_date, status, created_at, updated_at)
-                    VALUES (@code, @email, @sku, @qty, @price, @channel, @date, @status, NOW(), NOW())
+                        quantity, unit_price, channel_name, order_date, status,
+                        company_id, created_at, updated_at)
+                    VALUES (@code, @email, @sku, @qty, @price, @channel, @date, @status,
+                        @companyId::uuid, NOW(), NOW())
                     ON CONFLICT (external_order_id) DO NOTHING
                     """;
 
                 await using var cmd = new NpgsqlCommand(sql, conn);
-                cmd.Parameters.AddWithValue("code",    orderCode);
-                cmd.Parameters.AddWithValue("email",   (object?)customerEmail ?? DBNull.Value);
-                cmd.Parameters.AddWithValue("sku",     (object?)productSku ?? DBNull.Value);
-                cmd.Parameters.AddWithValue("qty",     qty);
-                cmd.Parameters.AddWithValue("price",   unitPrice);
-                cmd.Parameters.AddWithValue("channel", (object?)channel ?? DBNull.Value);
-                cmd.Parameters.AddWithValue("date",    orderDate);
-                cmd.Parameters.AddWithValue("status",  status);
+                cmd.Parameters.AddWithValue("code",      orderCode);
+                cmd.Parameters.AddWithValue("email",     (object?)customerEmail ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("sku",       (object?)productSku ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("qty",       qty);
+                cmd.Parameters.AddWithValue("price",     unitPrice);
+                cmd.Parameters.AddWithValue("channel",   (object?)channel ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("date",      orderDate);
+                cmd.Parameters.AddWithValue("status",    status);
+                cmd.Parameters.AddWithValue("companyId", (object?)tenant.CompanyId?.ToString() ?? DBNull.Value);
 
                 var affected = await cmd.ExecuteNonQueryAsync();
                 if (affected > 0) success++; else skipped++;
@@ -178,18 +182,19 @@ public class ImportController(IConfiguration cfg) : ControllerBase
 
                 var sql = """
                     INSERT INTO public.products (sku, product_name, description, base_price, cost_price,
-                        stock_quantity, is_active, created_at, updated_at)
-                    VALUES (@sku, @name, @desc, @price, @cost, @stock, TRUE, NOW(), NOW())
+                        stock_quantity, is_active, company_id, created_at, updated_at)
+                    VALUES (@sku, @name, @desc, @price, @cost, @stock, TRUE, @companyId::uuid, NOW(), NOW())
                     ON CONFLICT (sku) DO NOTHING
                     """;
 
                 await using var cmd = new NpgsqlCommand(sql, conn);
-                cmd.Parameters.AddWithValue("sku",   sku);
-                cmd.Parameters.AddWithValue("name",  name);
-                cmd.Parameters.AddWithValue("desc",  (object?)description ?? DBNull.Value);
-                cmd.Parameters.AddWithValue("price", price);
-                cmd.Parameters.AddWithValue("cost",  costPrice);
-                cmd.Parameters.AddWithValue("stock", stock);
+                cmd.Parameters.AddWithValue("sku",       sku);
+                cmd.Parameters.AddWithValue("name",      name);
+                cmd.Parameters.AddWithValue("desc",      (object?)description ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("price",     price);
+                cmd.Parameters.AddWithValue("cost",      costPrice);
+                cmd.Parameters.AddWithValue("stock",     stock);
+                cmd.Parameters.AddWithValue("companyId", (object?)tenant.CompanyId?.ToString() ?? DBNull.Value);
 
                 var affected = await cmd.ExecuteNonQueryAsync();
                 if (affected > 0) success++; else skipped++;
@@ -237,19 +242,20 @@ public class ImportController(IConfiguration cfg) : ControllerBase
 
                 var sql = """
                     INSERT INTO public.customers (email, full_name, phone_number, address,
-                        city, province, is_active, created_at, updated_at)
-                    VALUES (@email, @name, @phone, @addr, @city, @province, TRUE, @reg, NOW())
+                        city, province, is_active, company_id, created_at, updated_at)
+                    VALUES (@email, @name, @phone, @addr, @city, @province, TRUE, @companyId::uuid, @reg, NOW())
                     ON CONFLICT (email) DO NOTHING
                     """;
 
                 await using var cmd = new NpgsqlCommand(sql, conn);
-                cmd.Parameters.AddWithValue("email",    email);
-                cmd.Parameters.AddWithValue("name",     fullName);
-                cmd.Parameters.AddWithValue("phone",    (object?)phone ?? DBNull.Value);
-                cmd.Parameters.AddWithValue("addr",     (object?)address ?? DBNull.Value);
-                cmd.Parameters.AddWithValue("city",     (object?)city ?? DBNull.Value);
-                cmd.Parameters.AddWithValue("province", (object?)province ?? DBNull.Value);
-                cmd.Parameters.AddWithValue("reg",      regDate);
+                cmd.Parameters.AddWithValue("email",     email);
+                cmd.Parameters.AddWithValue("name",      fullName);
+                cmd.Parameters.AddWithValue("phone",     (object?)phone ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("addr",      (object?)address ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("city",      (object?)city ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("province",  (object?)province ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("reg",       regDate);
+                cmd.Parameters.AddWithValue("companyId", (object?)tenant.CompanyId?.ToString() ?? DBNull.Value);
 
                 var affected = await cmd.ExecuteNonQueryAsync();
                 if (affected > 0) success++; else skipped++;

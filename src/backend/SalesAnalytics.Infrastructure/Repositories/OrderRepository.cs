@@ -41,7 +41,8 @@ public class OrderRepository(AppDbContext db)
 
     /// <inheritdoc/>
     public async Task<(IEnumerable<Order> Items, int Total)> GetFilteredAsync(
-        string? search, string? status, int? channelId, int page, int pageSize)
+        string? search, string? status, int? channelId, int page, int pageSize,
+        Guid? companyId = null)
     {
         if (page < 1) page = 1;
         if (pageSize < 1 || pageSize > 200) pageSize = 20;
@@ -51,6 +52,10 @@ public class OrderRepository(AppDbContext db)
             .Include(o => o.Customer)
             .Include(o => o.Channel)
             .AsQueryable();
+
+        // Lọc theo company (null = SuperAdmin xem tất cả)
+        if (companyId.HasValue)
+            query = query.Where(o => o.CompanyId == companyId.Value);
 
         // Lọc theo trạng thái
         if (!string.IsNullOrWhiteSpace(status))

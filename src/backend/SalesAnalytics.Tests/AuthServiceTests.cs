@@ -54,7 +54,7 @@ public class AuthServiceTests : IDisposable
     [Trait("Category", "Auth")]
     public async Task LoginAsync_ValidCredentials_ReturnsAuthResponse()
     {
-        var result = await _sut.LoginAsync(new LoginRequest(TestUsername, TestPassword));
+        var result = await _sut.LoginAsync(new LoginRequest { Username = TestUsername, Password = TestPassword });
 
         Assert.NotNull(result);
         Assert.NotEmpty(result.AccessToken);
@@ -66,7 +66,7 @@ public class AuthServiceTests : IDisposable
     [Trait("Category", "Auth")]
     public async Task LoginAsync_WrongPassword_ReturnsNull()
     {
-        var result = await _sut.LoginAsync(new LoginRequest(TestUsername, "wrong-password"));
+        var result = await _sut.LoginAsync(new LoginRequest { Username = TestUsername, Password = "wrong-password" });
 
         Assert.Null(result);
     }
@@ -75,7 +75,7 @@ public class AuthServiceTests : IDisposable
     [Trait("Category", "Auth")]
     public async Task LoginAsync_NonExistentUser_ReturnsNull()
     {
-        var result = await _sut.LoginAsync(new LoginRequest("ghost_user", "any-password"));
+        var result = await _sut.LoginAsync(new LoginRequest { Username = "ghost_user", Password = "any-password" });
 
         Assert.Null(result);
     }
@@ -90,7 +90,7 @@ public class AuthServiceTests : IDisposable
         ));
         // IsActive mặc định = false → không activate
 
-        var result = await _sut.LoginAsync(new LoginRequest("locked_user", "some-pass"));
+        var result = await _sut.LoginAsync(new LoginRequest { Username = "locked_user", Password = "some-pass" });
 
         Assert.Null(result);
     }

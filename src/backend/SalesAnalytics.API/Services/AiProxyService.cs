@@ -16,29 +16,36 @@ public class AiProxyService
 
     public AiProxyService(HttpClient http) => _http = http;
 
-    public async Task<object?> GetForecastAsync(int horizon = 30, string? channel = null)
+    public async Task<object?> GetForecastAsync(int horizon = 30, string? channel = null, Guid? companyId = null)
     {
         var url = $"/forecast?horizon={horizon}";
         if (!string.IsNullOrEmpty(channel)) url += $"&channel={Uri.EscapeDataString(channel)}";
+        if (companyId.HasValue)              url += $"&company_id={companyId.Value}";
         return await GetJsonAsync(url);
     }
 
-    public async Task<object?> GetAnomalyAsync(int days = 90, string? channel = null)
+    public async Task<object?> GetAnomalyAsync(int days = 90, string? channel = null, Guid? companyId = null)
     {
         var url = $"/anomaly?days={days}";
         if (!string.IsNullOrEmpty(channel)) url += $"&channel={Uri.EscapeDataString(channel)}";
+        if (companyId.HasValue)              url += $"&company_id={companyId.Value}";
         return await GetJsonAsync(url);
     }
 
-    public async Task<object?> GetTrendAsync(int days = 30, string? channel = null)
+    public async Task<object?> GetTrendAsync(int days = 30, string? channel = null, Guid? companyId = null)
     {
         var url = $"/trend?days={days}";
         if (!string.IsNullOrEmpty(channel)) url += $"&channel={Uri.EscapeDataString(channel)}";
+        if (companyId.HasValue)              url += $"&company_id={companyId.Value}";
         return await GetJsonAsync(url);
     }
 
-    public async Task<object?> GetRecommendationsAsync()
-        => await GetJsonAsync("/recommendation");
+    public async Task<object?> GetRecommendationsAsync(Guid? companyId = null)
+    {
+        var url = "/recommendation";
+        if (companyId.HasValue) url += $"?company_id={companyId.Value}";
+        return await GetJsonAsync(url);
+    }
 
     /// <summary>Lấy metrics đánh giá độ chính xác model Prophet (MAE, RMSE, MAPE).</summary>
     public async Task<object?> GetForecastMetricsAsync()

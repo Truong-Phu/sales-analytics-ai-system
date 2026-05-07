@@ -23,7 +23,8 @@ public class CustomerRepository(AppDbContext db)
 
     /// <inheritdoc/>
     public async Task<(IEnumerable<Customer> Items, int Total)> GetFilteredAsync(
-        string? search, string? segment, int page, int pageSize)
+        string? search, string? segment, int page, int pageSize,
+        Guid? companyId = null)
     {
         if (page < 1) page = 1;
         if (pageSize < 1 || pageSize > 200) pageSize = 20;
@@ -32,6 +33,10 @@ public class CustomerRepository(AppDbContext db)
             .AsNoTracking()
             .Where(c => c.IsActive)
             .AsQueryable();
+
+        // Lọc theo company (null = SuperAdmin xem tất cả)
+        if (companyId.HasValue)
+            query = query.Where(c => c.CompanyId == companyId.Value);
 
         // Lọc theo phân khúc khách hàng
         if (!string.IsNullOrWhiteSpace(segment))

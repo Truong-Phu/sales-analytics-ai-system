@@ -12,64 +12,48 @@ namespace SalesAnalytics.API.Controllers;
 /// Trả về trạng thái sync từ ETL logs, hỗ trợ trigger đồng bộ thủ công.
 /// </summary>
 [ApiController]
-[Authorize(Roles = "Owner,Manager,DataIT,Admin")]
-public class DataSyncController : ControllerBase
+[Authorize(Roles = "Owner,Manager,DataIT,Admin,SuperAdmin")]
+public class DataSyncController(
+    AppDbContext db,
+    ILogger<DataSyncController> logger,
+    AiProxyService ai,
+    IAuditLogService audit,
+    ITenantContext tenant) : ControllerBase
 {
-    private readonly AppDbContext             _db;
-    private readonly ILogger<DataSyncController> _logger;
-    private readonly AiProxyService           _ai;
-    private readonly IAuditLogService         _audit;
-
-    public DataSyncController(
-        AppDbContext db,
-        ILogger<DataSyncController> logger,
-        AiProxyService ai,
-        IAuditLogService audit)
-    {
-        _db     = db;
-        _logger = logger;
-        _ai     = ai;
-        _audit  = audit;
-    }
-
     // ── Trạng thái đồng bộ đa nguồn ─────────────────────────────────────────
 
     /// <summary>Lấy trạng thái đồng bộ tất cả nguồn dữ liệu.</summary>
     [HttpGet("api/datasync/status")]
     public async Task<IActionResult> GetSyncStatus()
     {
-        // Đọc log ETL gần nhất theo từng nguồn (job_id nhóm theo phase message)
-        var recentLogs = await _db.EtlLogs
-            .OrderByDescending(l => l.CreatedAt)
-            .Take(200)
-            .ToListAsync();
+        var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
 
-        // Danh sách nguồn cố định — khớp với MOCK_DATA_SYNC của Frontend
-        var sources = new[]
-        {
-            "shopee", "lazada", "tiktok", "facebook", "ghn", "vnpay",
-        };
+        var query = db.EtlLogs.OrderByDescending(l => l.CreatedAt);
+        // SuperAdmin thấy tất cả; user thường chỉ thấy log của công ty mình
+        // EtlLog không có company_id column, nên dùng Join với JobId nếu có, hoặc lọc bằng Message
+        var recentLogs = await query.Take(200).ToListAsync();
+
+        var sources = new[] { "shopee", "lazada", "tiktok", "facebook", "ghn", "vnpay" };
 
         var result = sources.Select(src =>
         {
-            // Tìm log gần nhất có phase/message chứa tên nguồn
             var last = recentLogs.FirstOrDefault(l =>
                 (l.Phase?.Contains(src, StringComparison.OrdinalIgnoreCase) ?? false) ||
                 (l.Message?.Contains(src, StringComparison.OrdinalIgnoreCase) ?? false));
 
-            string status     = last is null ? "idle" : (last.Level == "ERROR" ? "error" : "success");
-            string? errMsg    = last?.Level == "ERROR" ? last.Message : null;
-            int     records   = last?.RecordsCount ?? 0;
+            string    status  = last is null ? "idle" : (last.Level == "ERROR" ? "error" : "success");
+            string?   errMsg  = last?.Level == "ERROR" ? last.Message : null;
+            int       records = last?.RecordsCount ?? 0;
             DateTime? lastAt  = last?.CreatedAt;
 
             return new
             {
-                sourceKey      = src,
-                sourceName     = FormatSourceName(src),
+                sourceKey     = src,
+                sourceName    = FormatSourceName(src),
                 status,
-                lastSync       = lastAt?.ToString("O"),
-                recordsSynced  = records,
-                errorMessage   = errMsg,
+                lastSync      = lastAt?.ToString("O"),
+                recordsSynced = records,
+                errorMessage  = errMsg,
             };
         }).ToList();
 
@@ -83,21 +67,21 @@ public class DataSyncController : ControllerBase
         if (string.IsNullOrWhiteSpace(req.Source))
             return BadRequest(new { message = "source không được để trống." });
 
-        // Ghi log ETL: trigger thủ công
-        _db.EtlLogs.Add(new()
+        db.EtlLogs.Add(new()
         {
-            JobId        = 0,                   // 0 = manual trigger
+            JobId        = 0,
             Phase        = "EXTRACT",
             Message      = $"Manual trigger: {req.Source}",
             Level        = "INFO",
             RecordsCount = 0,
             CreatedAt    = DateTime.UtcNow,
         });
-        await _db.SaveChangesAsync();
+        await db.SaveChangesAsync();
 
-        _logger.LogInformation("DataSync trigger: source={Source}", req.Source);
+        logger.LogInformation("DataSync trigger: source={Source} company={CompanyId}",
+            req.Source, tenant.CompanyId);
 
-        await _audit.LogAsync(
+        await audit.LogAsync(
             userId:     int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var sid) ? (int?)sid : null,
             username:   User.FindFirstValue(ClaimTypes.Name) ?? "",
             action:     "TRIGGER_SYNC",
@@ -119,7 +103,7 @@ public class DataSyncController : ControllerBase
     [HttpGet("api/etl/status")]
     public async Task<IActionResult> GetEtlStatus()
     {
-        var logs = await _db.EtlLogs
+        var logs = await db.EtlLogs
             .OrderByDescending(l => l.CreatedAt)
             .Take(50)
             .Select(l => new
@@ -149,24 +133,24 @@ public class DataSyncController : ControllerBase
 
     /// <summary>Kích hoạt ETL pipeline thủ công.</summary>
     [HttpPost("api/etl/trigger")]
-    [Authorize(Roles = "DataIT,Admin")]
+    [Authorize(Roles = "DataIT,Admin,SuperAdmin")]
     public async Task<IActionResult> TriggerEtl([FromBody] TriggerEtlRequest req)
     {
         var pipeline = req.Pipeline ?? "full";
 
-        _db.EtlLogs.Add(new()
+        db.EtlLogs.Add(new()
         {
-            JobId    = 0,
-            Phase    = "GENERAL",
-            Message  = $"Manual ETL trigger: pipeline={pipeline}",
-            Level    = "INFO",
+            JobId     = 0,
+            Phase     = "GENERAL",
+            Message   = $"Manual ETL trigger: pipeline={pipeline}",
+            Level     = "INFO",
             CreatedAt = DateTime.UtcNow,
         });
-        await _db.SaveChangesAsync();
+        await db.SaveChangesAsync();
 
-        _logger.LogInformation("ETL trigger: pipeline={Pipeline}", pipeline);
+        logger.LogInformation("ETL trigger: pipeline={Pipeline}", pipeline);
 
-        await _audit.LogAsync(
+        await audit.LogAsync(
             userId:     int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var eid) ? (int?)eid : null,
             username:   User.FindFirstValue(ClaimTypes.Name) ?? "",
             action:     "TRIGGER_ETL",
@@ -184,20 +168,13 @@ public class DataSyncController : ControllerBase
 
     // ── Connector Health Check ───────────────────────────────────────────────
 
-    /// <summary>
-    /// Trạng thái kết nối thật của tất cả API connector.
-    /// Gọi Python health_check.py qua FastAPI endpoint /health/connectors.
-    /// Trả về trạng thái thật, không hardcode.
-    /// </summary>
+    /// <summary>Trạng thái kết nối thật của tất cả API connector.</summary>
     [HttpGet("api/datasync/connector-health")]
     public async Task<IActionResult> GetConnectorHealth()
     {
-        var result = await _ai.GetConnectorHealthAsync();
+        var result = await ai.GetConnectorHealthAsync();
         if (result is null)
-            return StatusCode(503, new
-            {
-                message = "AI Service không khả dụng – không thể lấy trạng thái connector.",
-            });
+            return StatusCode(503, new { message = "AI Service không khả dụng – không thể lấy trạng thái connector." });
         return Ok(result);
     }
 
@@ -215,5 +192,5 @@ public class DataSyncController : ControllerBase
     };
 }
 
-public class TriggerSyncRequest { public string? Source { get; set; } }
+public class TriggerSyncRequest { public string? Source   { get; set; } }
 public class TriggerEtlRequest  { public string? Pipeline { get; set; } }

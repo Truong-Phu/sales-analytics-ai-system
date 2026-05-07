@@ -24,15 +24,15 @@ public class DashboardService
     }
 
     public virtual async Task<DashboardResponse> GetDashboardAsync(
-        DateOnly from, DateOnly to, string? channel = null)
+        DateOnly from, DateOnly to, string? channel = null, Guid? companyId = null)
     {
         await using var conn = new NpgsqlConnection(_connStr);
         await conn.OpenAsync();
 
-        var kpi              = await GetKpiAsync(conn, from, to, channel);
-        var revenueByDay     = await GetRevenueByDayAsync(conn, from, to, channel);
-        var revenueByChannel = await GetRevenueByChannelAsync(conn, from, to);
-        var topProducts      = await GetTopProductsAsync(conn, from, to, channel);
+        var kpi              = await GetKpiAsync(conn, from, to, channel, companyId);
+        var revenueByDay     = await GetRevenueByDayAsync(conn, from, to, channel, companyId);
+        var revenueByChannel = await GetRevenueByChannelAsync(conn, from, to, companyId);
+        var topProducts      = await GetTopProductsAsync(conn, from, to, channel, companyId);
 
         return new DashboardResponse(kpi, revenueByDay, revenueByChannel, topProducts);
     }
@@ -40,7 +40,7 @@ public class DashboardService
     // ── KPI Summary ─────────────────────────────────────────────────────────
 
     private static async Task<KpiSummary> GetKpiAsync(
-        NpgsqlConnection conn, DateOnly from, DateOnly to, string? channel)
+        NpgsqlConnection conn, DateOnly from, DateOnly to, string? channel, Guid? companyId = null)
     {
         // Tính kỳ trước để so sánh trend
         var days     = to.DayNumber - from.DayNumber;
@@ -59,13 +59,15 @@ public class DashboardService
             JOIN dw.dim_date    dd ON fs.date_key    = dd.date_key
             JOIN dw.dim_channel dc ON fs.channel_key = dc.channel_key
             WHERE dd.full_date BETWEEN @from AND @to
-              AND (@channel IS NULL OR dc.channel_name ILIKE '%' || @channel || '%')
+              AND (@channel   IS NULL OR dc.channel_name ILIKE '%' || @channel || '%')
+              AND (@companyId IS NULL OR fs.company_id = @companyId::uuid)
             """;
 
         await using var cmdCurr = new NpgsqlCommand(sqlCurr, conn);
         cmdCurr.Parameters.AddWithValue("from",    from.ToDateTime(TimeOnly.MinValue));
         cmdCurr.Parameters.AddWithValue("to",      to.ToDateTime(TimeOnly.MinValue));
-        cmdCurr.Parameters.Add(new NpgsqlParameter("channel", NpgsqlDbType.Text) { Value = (object?)channel ?? DBNull.Value });
+        cmdCurr.Parameters.Add(new NpgsqlParameter("channel",   NpgsqlDbType.Text) { Value = (object?)channel   ?? DBNull.Value });
+        cmdCurr.Parameters.Add(new NpgsqlParameter("companyId", NpgsqlDbType.Text) { Value = (object?)companyId?.ToString() ?? DBNull.Value });
 
         await using var rCurr = await cmdCurr.ExecuteReaderAsync();
         await rCurr.ReadAsync();
@@ -87,13 +89,15 @@ public class DashboardService
             JOIN dw.dim_date    dd ON fs.date_key    = dd.date_key
             JOIN dw.dim_channel dc ON fs.channel_key = dc.channel_key
             WHERE dd.full_date BETWEEN @from AND @to
-              AND (@channel IS NULL OR dc.channel_name ILIKE '%' || @channel || '%')
+              AND (@channel   IS NULL OR dc.channel_name ILIKE '%' || @channel || '%')
+              AND (@companyId IS NULL OR fs.company_id = @companyId::uuid)
             """;
 
         await using var cmdPrev = new NpgsqlCommand(sqlPrev, conn);
         cmdPrev.Parameters.AddWithValue("from",    prevFrom.ToDateTime(TimeOnly.MinValue));
         cmdPrev.Parameters.AddWithValue("to",      prevTo.ToDateTime(TimeOnly.MinValue));
-        cmdPrev.Parameters.Add(new NpgsqlParameter("channel", NpgsqlDbType.Text) { Value = (object?)channel ?? DBNull.Value });
+        cmdPrev.Parameters.Add(new NpgsqlParameter("channel",   NpgsqlDbType.Text) { Value = (object?)channel   ?? DBNull.Value });
+        cmdPrev.Parameters.Add(new NpgsqlParameter("companyId", NpgsqlDbType.Text) { Value = (object?)companyId?.ToString() ?? DBNull.Value });
 
         await using var rPrev = await cmdPrev.ExecuteReaderAsync();
         await rPrev.ReadAsync();
@@ -126,7 +130,7 @@ public class DashboardService
     // ── Revenue by day ───────────────────────────────────────────────────────
 
     private static async Task<List<RevenueByDay>> GetRevenueByDayAsync(
-        NpgsqlConnection conn, DateOnly from, DateOnly to, string? channel)
+        NpgsqlConnection conn, DateOnly from, DateOnly to, string? channel, Guid? companyId = null)
     {
         var sql = """
             SELECT
@@ -138,7 +142,8 @@ public class DashboardService
             JOIN dw.dim_date    dd ON fs.date_key    = dd.date_key
             JOIN dw.dim_channel dc ON fs.channel_key = dc.channel_key
             WHERE dd.full_date BETWEEN @from AND @to
-              AND (@channel IS NULL OR dc.channel_name ILIKE '%' || @channel || '%')
+              AND (@channel   IS NULL OR dc.channel_name ILIKE '%' || @channel || '%')
+              AND (@companyId IS NULL OR fs.company_id = @companyId::uuid)
             GROUP BY dd.full_date
             ORDER BY dd.full_date
             """;
@@ -146,7 +151,8 @@ public class DashboardService
         await using var cmd = new NpgsqlCommand(sql, conn);
         cmd.Parameters.AddWithValue("from",    from.ToDateTime(TimeOnly.MinValue));
         cmd.Parameters.AddWithValue("to",      to.ToDateTime(TimeOnly.MinValue));
-        cmd.Parameters.Add(new NpgsqlParameter("channel", NpgsqlDbType.Text) { Value = (object?)channel ?? DBNull.Value });
+        cmd.Parameters.Add(new NpgsqlParameter("channel",   NpgsqlDbType.Text) { Value = (object?)channel   ?? DBNull.Value });
+        cmd.Parameters.Add(new NpgsqlParameter("companyId", NpgsqlDbType.Text) { Value = (object?)companyId?.ToString() ?? DBNull.Value });
 
         var result = new List<RevenueByDay>();
         await using var reader = await cmd.ExecuteReaderAsync();
@@ -165,7 +171,7 @@ public class DashboardService
     // ── Revenue by channel ───────────────────────────────────────────────────
 
     private static async Task<List<RevenueByChannel>> GetRevenueByChannelAsync(
-        NpgsqlConnection conn, DateOnly from, DateOnly to)
+        NpgsqlConnection conn, DateOnly from, DateOnly to, Guid? companyId = null)
     {
         var sql = """
             SELECT
@@ -176,6 +182,7 @@ public class DashboardService
             JOIN dw.dim_date    dd ON fs.date_key    = dd.date_key
             JOIN dw.dim_channel dc ON fs.channel_key = dc.channel_key
             WHERE dd.full_date BETWEEN @from AND @to
+              AND (@companyId IS NULL OR fs.company_id = @companyId::uuid)
             GROUP BY dc.channel_name
             ORDER BY revenue DESC
             """;
@@ -183,6 +190,7 @@ public class DashboardService
         await using var cmd = new NpgsqlCommand(sql, conn);
         cmd.Parameters.AddWithValue("from", from.ToDateTime(TimeOnly.MinValue));
         cmd.Parameters.AddWithValue("to",   to.ToDateTime(TimeOnly.MinValue));
+        cmd.Parameters.Add(new NpgsqlParameter("companyId", NpgsqlDbType.Text) { Value = (object?)companyId?.ToString() ?? DBNull.Value });
 
         var rows = new List<(string, decimal, int)>();
         await using var reader = await cmd.ExecuteReaderAsync();
@@ -201,7 +209,7 @@ public class DashboardService
     // ── Top products ─────────────────────────────────────────────────────────
 
     private static async Task<List<TopProduct>> GetTopProductsAsync(
-        NpgsqlConnection conn, DateOnly from, DateOnly to, string? channel)
+        NpgsqlConnection conn, DateOnly from, DateOnly to, string? channel, Guid? companyId = null)
     {
         var sql = """
             SELECT
@@ -218,7 +226,8 @@ public class DashboardService
             JOIN dw.dim_channel dc ON fs.channel_key = dc.channel_key
             WHERE dd.full_date BETWEEN @from AND @to
               AND dp.is_current = TRUE
-              AND (@channel IS NULL OR dc.channel_name ILIKE '%' || @channel || '%')
+              AND (@channel   IS NULL OR dc.channel_name ILIKE '%' || @channel || '%')
+              AND (@companyId IS NULL OR fs.company_id = @companyId::uuid)
             GROUP BY dp.product_key, dp.product_name, dp.sku, dc.channel_name
             ORDER BY revenue DESC
             LIMIT 10
@@ -227,7 +236,8 @@ public class DashboardService
         await using var cmd = new NpgsqlCommand(sql, conn);
         cmd.Parameters.AddWithValue("from",    from.ToDateTime(TimeOnly.MinValue));
         cmd.Parameters.AddWithValue("to",      to.ToDateTime(TimeOnly.MinValue));
-        cmd.Parameters.Add(new NpgsqlParameter("channel", NpgsqlDbType.Text) { Value = (object?)channel ?? DBNull.Value });
+        cmd.Parameters.Add(new NpgsqlParameter("channel",   NpgsqlDbType.Text) { Value = (object?)channel   ?? DBNull.Value });
+        cmd.Parameters.Add(new NpgsqlParameter("companyId", NpgsqlDbType.Text) { Value = (object?)companyId?.ToString() ?? DBNull.Value });
 
         var result = new List<TopProduct>();
         await using var reader = await cmd.ExecuteReaderAsync();

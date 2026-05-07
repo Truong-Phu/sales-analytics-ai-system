@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Npgsql;
 using NpgsqlTypes;
+using SalesAnalytics.API.Services;
 using SalesAnalytics.Core.DTOs;
 using SalesAnalytics.Core.Entities;
 using SalesAnalytics.Core.Interfaces;
@@ -16,7 +17,10 @@ namespace SalesAnalytics.API.Controllers;
 [ApiController]
 [Route("api/[controller]")]
 [Authorize]
-public class ProductsController(IConfiguration cfg, IProductRepository productRepo) : ControllerBase
+public class ProductsController(
+    IConfiguration cfg,
+    IProductRepository productRepo,
+    ITenantContext tenant) : ControllerBase
 {
     private readonly string _connStr = cfg.GetConnectionString("Default")!;
 
@@ -29,7 +33,7 @@ public class ProductsController(IConfiguration cfg, IProductRepository productRe
     /// Roles: Owner, Manager, Staff, DataIT, Admin
     /// </summary>
     [HttpGet]
-    [Authorize(Roles = "Owner,Manager,Staff,DataIT,Admin")]
+    [Authorize(Roles = "Owner,Manager,Staff,DataIT,Admin,SuperAdmin")]
     public async Task<IActionResult> GetProducts(
         [FromQuery] string? search   = null,
         [FromQuery] string? category = null,
@@ -38,6 +42,8 @@ public class ProductsController(IConfiguration cfg, IProductRepository productRe
     {
         if (page  < 1) page  = 1;
         if (limit < 1 || limit > 100) limit = 20;
+
+        var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
 
         try
         {
@@ -60,9 +66,10 @@ public class ProductsController(IConfiguration cfg, IProductRepository productRe
                 FROM dw.dim_product dp
                 LEFT JOIN dw.fact_sales fs ON fs.product_key = dp.product_key
                 WHERE dp.is_current = TRUE
-                  AND (@search   IS NULL OR dp.product_name ILIKE '%' || @search   || '%'
-                                         OR dp.sku          ILIKE '%' || @search   || '%')
-                  AND (@category IS NULL OR dp.category_name ILIKE '%' || @category || '%')
+                  AND (@search     IS NULL OR dp.product_name ILIKE '%' || @search   || '%'
+                                           OR dp.sku          ILIKE '%' || @search   || '%')
+                  AND (@category   IS NULL OR dp.category_name ILIKE '%' || @category || '%')
+                  AND (@companyId  IS NULL OR fs.company_id = @companyId::uuid OR fs.company_id IS NULL)
                 GROUP BY dp.product_key, dp.product_id, dp.product_name, dp.sku,
                          dp.category_name, dp.brand, dp.base_price,
                          dp.cost_price, dp.is_current, dp.effective_from
@@ -71,24 +78,28 @@ public class ProductsController(IConfiguration cfg, IProductRepository productRe
                 """;
 
             var countSql = """
-                SELECT COUNT(*)
+                SELECT COUNT(DISTINCT dp.product_key)
                 FROM dw.dim_product dp
+                LEFT JOIN dw.fact_sales fs ON fs.product_key = dp.product_key
                 WHERE dp.is_current = TRUE
-                  AND (@search   IS NULL OR dp.product_name ILIKE '%' || @search   || '%'
-                                         OR dp.sku          ILIKE '%' || @search   || '%')
-                  AND (@category IS NULL OR dp.category_name ILIKE '%' || @category || '%')
+                  AND (@search    IS NULL OR dp.product_name ILIKE '%' || @search   || '%'
+                                          OR dp.sku          ILIKE '%' || @search   || '%')
+                  AND (@category  IS NULL OR dp.category_name ILIKE '%' || @category || '%')
+                  AND (@companyId IS NULL OR fs.company_id = @companyId::uuid OR fs.company_id IS NULL)
                 """;
 
             await using var countCmd = new NpgsqlCommand(countSql, conn);
-            countCmd.Parameters.Add(new NpgsqlParameter("search",   NpgsqlDbType.Text) { Value = (object?)search   ?? DBNull.Value });
-            countCmd.Parameters.Add(new NpgsqlParameter("category", NpgsqlDbType.Text) { Value = (object?)category ?? DBNull.Value });
+            countCmd.Parameters.Add(new NpgsqlParameter("search",    NpgsqlDbType.Text) { Value = (object?)search    ?? DBNull.Value });
+            countCmd.Parameters.Add(new NpgsqlParameter("category",  NpgsqlDbType.Text) { Value = (object?)category  ?? DBNull.Value });
+            countCmd.Parameters.Add(new NpgsqlParameter("companyId", NpgsqlDbType.Text) { Value = (object?)companyId?.ToString() ?? DBNull.Value });
             var total = Convert.ToInt32(await countCmd.ExecuteScalarAsync());
 
             await using var cmd = new NpgsqlCommand(sql, conn);
-            cmd.Parameters.Add(new NpgsqlParameter("search",   NpgsqlDbType.Text) { Value = (object?)search   ?? DBNull.Value });
-            cmd.Parameters.Add(new NpgsqlParameter("category", NpgsqlDbType.Text) { Value = (object?)category ?? DBNull.Value });
-            cmd.Parameters.AddWithValue("limit",    limit);
-            cmd.Parameters.AddWithValue("offset",   (page - 1) * limit);
+            cmd.Parameters.Add(new NpgsqlParameter("search",    NpgsqlDbType.Text) { Value = (object?)search    ?? DBNull.Value });
+            cmd.Parameters.Add(new NpgsqlParameter("category",  NpgsqlDbType.Text) { Value = (object?)category  ?? DBNull.Value });
+            cmd.Parameters.Add(new NpgsqlParameter("companyId", NpgsqlDbType.Text) { Value = (object?)companyId?.ToString() ?? DBNull.Value });
+            cmd.Parameters.AddWithValue("limit",  limit);
+            cmd.Parameters.AddWithValue("offset", (page - 1) * limit);
 
             var products = new List<object>();
             await using var reader = await cmd.ExecuteReaderAsync();
@@ -179,7 +190,7 @@ public class ProductsController(IConfiguration cfg, IProductRepository productRe
     /// Roles: Owner, Manager, Staff, DataIT, Admin
     /// </summary>
     [HttpGet("oltp")]
-    [Authorize(Roles = "Owner,Manager,Staff,DataIT,Admin")]
+    [Authorize(Roles = "Owner,Manager,Staff,DataIT,Admin,SuperAdmin")]
     public async Task<IActionResult> GetOltpProducts(
         [FromQuery] string? search     = null,
         [FromQuery] int?    categoryId = null,
@@ -187,9 +198,11 @@ public class ProductsController(IConfiguration cfg, IProductRepository productRe
         [FromQuery] int     page       = 1,
         [FromQuery] int     pageSize   = 20)
     {
+        var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
         try
         {
-            var (items, total) = await productRepo.GetFilteredAsync(search, categoryId, isActive, page, pageSize);
+            var (items, total) = await productRepo.GetFilteredAsync(
+                search, categoryId, isActive, page, pageSize, companyId);
             var dtos = items.Select(p => new ProductResponseDto
             {
                 ProductId     = p.ProductId,
@@ -218,13 +231,16 @@ public class ProductsController(IConfiguration cfg, IProductRepository productRe
     /// [OLTP] Lấy chi tiết sản phẩm theo ID.
     /// </summary>
     [HttpGet("oltp/{id:int}")]
-    [Authorize(Roles = "Owner,Manager,Staff,DataIT,Admin")]
+    [Authorize(Roles = "Owner,Manager,Staff,DataIT,Admin,SuperAdmin")]
     public async Task<IActionResult> GetOltpProduct(int id)
     {
         try
         {
             var product = await productRepo.GetByIdAsync(id);
             if (product is null) return NotFound(new { message = "Không tìm thấy sản phẩm." });
+
+            if (!tenant.IsSuperAdmin && product.CompanyId != tenant.CompanyId)
+                return StatusCode(403, new { message = "Không có quyền truy cập sản phẩm này." });
 
             return Ok(new ProductResponseDto
             {
@@ -275,6 +291,7 @@ public class ProductsController(IConfiguration cfg, IProductRepository productRe
                 CategoryId    = dto.CategoryId,
                 ImageUrl      = dto.ImageUrl,
                 IsActive      = true,
+                CompanyId     = tenant.CompanyId,   // gán company hiện tại
                 CreatedAt     = DateTime.UtcNow,
                 UpdatedAt     = DateTime.UtcNow,
             };
@@ -303,6 +320,9 @@ public class ProductsController(IConfiguration cfg, IProductRepository productRe
         {
             var product = await productRepo.GetByIdAsync(id);
             if (product is null) return NotFound(new { message = "Không tìm thấy sản phẩm." });
+
+            if (!tenant.IsSuperAdmin && product.CompanyId != tenant.CompanyId)
+                return StatusCode(403, new { message = "Không có quyền chỉnh sửa sản phẩm này." });
 
             // Kiểm tra SKU nếu thay đổi
             if (dto.Sku is not null && dto.Sku != product.Sku && await productRepo.SkuExistsAsync(dto.Sku, id))
@@ -339,8 +359,11 @@ public class ProductsController(IConfiguration cfg, IProductRepository productRe
     {
         try
         {
-            if (!await productRepo.ExistsAsync(id))
-                return NotFound(new { message = "Không tìm thấy sản phẩm." });
+            var product = await productRepo.GetByIdAsync(id);
+            if (product is null) return NotFound(new { message = "Không tìm thấy sản phẩm." });
+
+            if (!tenant.IsSuperAdmin && product.CompanyId != tenant.CompanyId)
+                return StatusCode(403, new { message = "Không có quyền xóa sản phẩm này." });
 
             await productRepo.DeleteAsync(id);
             return NoContent();
@@ -373,6 +396,9 @@ public class ProductsController(IConfiguration cfg, IProductRepository productRe
         {
             var product = await productRepo.GetByIdAsync(id);
             if (product is null) return NotFound(new { message = "Không tìm thấy sản phẩm." });
+
+            if (!tenant.IsSuperAdmin && product.CompanyId != tenant.CompanyId)
+                return StatusCode(403, new { message = "Không có quyền upload ảnh cho sản phẩm này." });
 
             var uploadsDir = Path.Combine(
                 cfg["WebRootPath"] ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot"),

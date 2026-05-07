@@ -291,9 +291,10 @@ public class ReportService
         bool    inclOverview   = true,
         bool    inclSales      = true,
         bool    inclChannel    = true,
-        bool    inclAI         = false)
+        bool    inclAI         = false,
+        Guid?   companyId      = null)
     {
-        var data = await _dashboard.GetDashboardAsync(from, to, channel);
+        var data = await _dashboard.GetDashboardAsync(from, to, channel, companyId);
 
         // Fallback: dùng sample data nếu bất kỳ section nào thiếu dữ liệu
         var usingSample = data.Kpi.TotalRevenue == 0

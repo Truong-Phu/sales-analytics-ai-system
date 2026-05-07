@@ -60,6 +60,10 @@ public class Product
     [Column("updated_at")]
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
+    /// <summary>Công ty sở hữu sản phẩm – multi-tenant isolation</summary>
+    [Column("company_id")]
+    public Guid? CompanyId { get; set; }
+
     // ── Navigation properties ────────────────────────────────────────────────
 
     /// <summary>Danh mục sản phẩm</summary>

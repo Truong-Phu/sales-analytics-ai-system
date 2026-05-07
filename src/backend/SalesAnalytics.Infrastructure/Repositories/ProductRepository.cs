@@ -31,7 +31,8 @@ public class ProductRepository(AppDbContext db)
 
     /// <inheritdoc/>
     public async Task<(IEnumerable<Product> Items, int Total)> GetFilteredAsync(
-        string? search, int? categoryId, bool? isActive, int page, int pageSize)
+        string? search, int? categoryId, bool? isActive, int page, int pageSize,
+        Guid? companyId = null)
     {
         if (page < 1) page = 1;
         if (pageSize < 1 || pageSize > 200) pageSize = 20;
@@ -40,6 +41,10 @@ public class ProductRepository(AppDbContext db)
             .AsNoTracking()
             .Include(p => p.Category)
             .AsQueryable();
+
+        // Lọc theo company (null = SuperAdmin xem tất cả)
+        if (companyId.HasValue)
+            query = query.Where(p => p.CompanyId == companyId.Value);
 
         // Lọc theo trạng thái
         if (isActive.HasValue)

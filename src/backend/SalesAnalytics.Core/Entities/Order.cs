@@ -80,6 +80,10 @@ public class Order
     [Column("updated_at")]
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
+    /// <summary>Công ty sở hữu đơn hàng – multi-tenant isolation</summary>
+    [Column("company_id")]
+    public Guid? CompanyId { get; set; }
+
     // ── Navigation properties ────────────────────────────────────────────────
 
     /// <summary>Khách hàng đặt đơn</summary>
