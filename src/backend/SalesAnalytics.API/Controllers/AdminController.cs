@@ -312,6 +312,159 @@ public class AdminController(
             totalPages = (int)Math.Ceiling((double)total / pageSize) });
     }
 
+    /// <summary>[SA] Dashboard tổng hệ thống – KPIs, companies đăng ký theo tháng, top companies</summary>
+    [HttpGet("sa/dashboard")]
+    [RequireSuperAdmin]
+    public async Task<IActionResult> GetSystemDashboard()
+    {
+        var now          = DateTime.UtcNow;
+        var startOfMonth = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+        var sixMonthsAgo = now.AddMonths(-6);
+
+        var totalCompanies  = await db.Companies.CountAsync();
+        var activeCompanies = await db.Companies.CountAsync(c => c.IsActive);
+        var totalUsers      = await db.Users.CountAsync(u => !u.IsSuperAdmin);
+        var activeUsers     = await db.Users.CountAsync(u => u.IsActive && !u.IsSuperAdmin);
+        var proSubs         = await db.Subscriptions.CountAsync(s => s.Plan == "pro" && s.Status == "active");
+        var monthRevenue    = await db.Invoices
+            .Where(i => i.PaymentStatus == "paid" && i.PaidAt >= startOfMonth)
+            .SumAsync(i => (decimal?)i.Amount) ?? 0;
+
+        // Số công ty đăng ký theo tháng (6 tháng gần nhất)
+        var registrations = await db.Companies
+            .Where(c => c.CreatedAt >= sixMonthsAgo)
+            .GroupBy(c => new { c.CreatedAt.Year, c.CreatedAt.Month })
+            .Select(g => new { g.Key.Year, g.Key.Month, Count = g.Count() })
+            .OrderBy(x => x.Year).ThenBy(x => x.Month)
+            .ToListAsync();
+
+        // Top 5 công ty gần nhất
+        var topCompanies = await db.Companies
+            .OrderByDescending(c => c.CreatedAt)
+            .Take(5)
+            .Select(c => new {
+                c.Id, c.Name, c.Email, c.IsActive, c.CreatedAt,
+                UserCount    = db.Users.Count(u => u.CompanyId == c.Id),
+                Subscription = db.Subscriptions
+                    .Where(s => s.CompanyId == c.Id)
+                    .OrderByDescending(s => s.CreatedAt)
+                    .Select(s => new { s.Plan, s.Status })
+                    .FirstOrDefault(),
+            })
+            .ToListAsync();
+
+        return Ok(new {
+            success = true,
+            data = new {
+                totalCompanies, activeCompanies, totalUsers, activeUsers,
+                proSubscriptions = proSubs, monthlyRevenue = monthRevenue,
+                registrationsByMonth = registrations,
+                topCompanies,
+            }
+        });
+    }
+
+    /// <summary>[SA] Danh sách tất cả subscriptions trong hệ thống</summary>
+    [HttpGet("sa/subscriptions")]
+    [RequireSuperAdmin]
+    public async Task<IActionResult> GetAllSubscriptions(
+        [FromQuery] string? plan     = null,
+        [FromQuery] string? status   = null,
+        [FromQuery] int     page     = 1,
+        [FromQuery] int     pageSize = 50)
+    {
+        if (page < 1) page = 1;
+        if (pageSize < 1 || pageSize > 200) pageSize = 50;
+
+        var query = db.Subscriptions.Include(s => s.Company).AsQueryable();
+        if (!string.IsNullOrWhiteSpace(plan))   query = query.Where(s => s.Plan   == plan);
+        if (!string.IsNullOrWhiteSpace(status)) query = query.Where(s => s.Status == status);
+
+        var total = await query.CountAsync();
+        var items = await query
+            .OrderByDescending(s => s.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(s => new {
+                s.Id, s.CompanyId,
+                CompanyName = s.Company != null ? s.Company.Name : null,
+                CompanyEmail = s.Company != null ? s.Company.Email : null,
+                s.Plan, s.Status, s.AutoRenew,
+                s.MaxChannels, s.MaxUsers, s.AiEnabled, s.AdvancedReports,
+                s.StartedAt, s.ExpiresAt, s.GraceEndsAt, s.CreatedAt,
+            })
+            .ToListAsync();
+
+        return Ok(new { success = true, data = items, total, page, pageSize,
+            totalPages = (int)Math.Ceiling((double)total / pageSize) });
+    }
+
+    /// <summary>[SA] Cập nhật subscription thủ công (nâng/hạ cấp, thay đổi expires_at)</summary>
+    [HttpPut("sa/subscriptions/{id}")]
+    [RequireSuperAdmin]
+    public async Task<IActionResult> UpdateSubscription(Guid id,
+        [FromBody] UpdateSubscriptionRequest req)
+    {
+        var sub = await db.Subscriptions.FindAsync(id);
+        if (sub is null) return NotFound(new { success = false, message = "Subscription không tồn tại" });
+
+        if (!string.IsNullOrWhiteSpace(req.Plan))
+        {
+            sub.Plan            = req.Plan;
+            sub.AiEnabled       = req.Plan is "pro" or "enterprise";
+            sub.AdvancedReports = req.Plan is "pro" or "enterprise";
+            sub.MaxChannels     = req.Plan == "free" ? 2  : -1;
+            sub.MaxUsers        = req.Plan == "free" ? 3  : -1;
+        }
+        if (!string.IsNullOrWhiteSpace(req.Status)) sub.Status    = req.Status;
+        if (req.ExpiresAt.HasValue)                 sub.ExpiresAt = req.ExpiresAt;
+        if (req.MaxChannels.HasValue)               sub.MaxChannels = req.MaxChannels.Value;
+        if (req.MaxUsers.HasValue)                  sub.MaxUsers    = req.MaxUsers.Value;
+        sub.UpdatedAt = DateTime.UtcNow;
+
+        await db.SaveChangesAsync();
+
+        await audit.LogAsync(
+            userId: GetCurrentUserId(), username: GetCurrentUsername(),
+            action: "SA_UPDATE_SUBSCRIPTION", entityType: "Subscription", entityId: id.ToString(),
+            newValue: $"{{\"plan\":\"{sub.Plan}\",\"status\":\"{sub.Status}\"}}",
+            ipAddress: HttpContext.Connection.RemoteIpAddress?.ToString(),
+            userAgent: HttpContext.Request.Headers["User-Agent"].ToString());
+
+        return Ok(new { success = true, message = "Đã cập nhật subscription" });
+    }
+
+    /// <summary>[SA] ETL / Sync logs toàn hệ thống</summary>
+    [HttpGet("sa/sync-logs")]
+    [RequireSuperAdmin]
+    public async Task<IActionResult> GetSyncLogs(
+        [FromQuery] string? level    = null,
+        [FromQuery] string? phase    = null,
+        [FromQuery] int     page     = 1,
+        [FromQuery] int     pageSize = 50)
+    {
+        if (page < 1) page = 1;
+        if (pageSize < 1 || pageSize > 200) pageSize = 50;
+
+        var query = db.EtlLogs.AsQueryable();
+        if (!string.IsNullOrWhiteSpace(level)) query = query.Where(l => l.Level == level.ToUpper());
+        if (!string.IsNullOrWhiteSpace(phase)) query = query.Where(l => l.Phase == phase.ToUpper());
+
+        var total = await query.CountAsync();
+        var items = await query
+            .OrderByDescending(l => l.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(l => new {
+                l.LogId, l.JobId, l.Phase, l.Level,
+                l.Message, l.RecordsCount, l.CreatedAt,
+            })
+            .ToListAsync();
+
+        return Ok(new { success = true, data = items, total, page, pageSize,
+            totalPages = (int)Math.Ceiling((double)total / pageSize) });
+    }
+
     // ── Helper ───────────────────────────────────────────────────────────────
 
     private int?   GetCurrentUserId()   =>
@@ -322,3 +475,10 @@ public class AdminController(
 
 public record ChangeRoleRequest([System.ComponentModel.DataAnnotations.Required] string Role);
 public record ToggleRequest(bool IsActive);
+public record UpdateSubscriptionRequest(
+    string?   Plan,
+    string?   Status,
+    DateTime? ExpiresAt,
+    int?      MaxChannels,
+    int?      MaxUsers
+);

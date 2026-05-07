@@ -2,7 +2,9 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { Suspense, lazy } from 'react'
 import { PageSpinner } from '../components/ui/Spinner'
 import AppShell from '../components/layout/AppShell'
+import AdminLayout from '../components/layout/AdminLayout'
 import ProtectedRoute from './ProtectedRoute'
+import SuperAdminRoute from './SuperAdminRoute'
 import ErrorBoundary from '../components/ui/ErrorBoundary'
 import LoginPage       from '../pages/auth/LoginPage'
 import RegisterPage    from '../pages/auth/RegisterPage'
@@ -23,6 +25,14 @@ const AdminPage           = lazy(() => import('../pages/admin/AdminPage'))
 const SettingsPage        = lazy(() => import('../pages/settings/SettingsPage'))
 const ChangePasswordPage  = lazy(() => import('../pages/auth/ChangePasswordPage'))
 const OnboardingPage      = lazy(() => import('../pages/OnboardingPage'))
+
+// Super Admin pages (lazy)
+const SaDashboard         = lazy(() => import('../pages/sa/SaDashboard'))
+const SaCompaniesPage     = lazy(() => import('../pages/sa/SaCompaniesPage'))
+const SaUsersPage         = lazy(() => import('../pages/sa/SaUsersPage'))
+const SaSubscriptionsPage = lazy(() => import('../pages/sa/SaSubscriptionsPage'))
+const SaSyncMonitorPage   = lazy(() => import('../pages/sa/SaSyncMonitorPage'))
+const SaAuditLogsPage     = lazy(() => import('../pages/sa/SaAuditLogsPage'))
 
 // Roles constants
 const ALL_ROLES     = ['Owner', 'Manager', 'Staff', 'DataIT', 'Admin']
@@ -148,6 +158,24 @@ export default function AppRouter() {
             <Shell><ChangePasswordPage /></Shell>
           </ProtectedRoute>
         } />
+
+        {/* ── Super Admin Panel (/sa/*) ── */}
+        <Route path="/sa" element={
+          <SuperAdminRoute>
+            <ErrorBoundary>
+              <Suspense fallback={<PageSpinner />}>
+                <AdminLayout />
+              </Suspense>
+            </ErrorBoundary>
+          </SuperAdminRoute>
+        }>
+          <Route index                  element={<Suspense fallback={<PageSpinner />}><SaDashboard /></Suspense>} />
+          <Route path="companies"       element={<Suspense fallback={<PageSpinner />}><SaCompaniesPage /></Suspense>} />
+          <Route path="users"           element={<Suspense fallback={<PageSpinner />}><SaUsersPage /></Suspense>} />
+          <Route path="subscriptions"   element={<Suspense fallback={<PageSpinner />}><SaSubscriptionsPage /></Suspense>} />
+          <Route path="sync-monitor"    element={<Suspense fallback={<PageSpinner />}><SaSyncMonitorPage /></Suspense>} />
+          <Route path="audit-logs"      element={<Suspense fallback={<PageSpinner />}><SaAuditLogsPage /></Suspense>} />
+        </Route>
 
         {/* Fallback */}
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
