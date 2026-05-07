@@ -170,13 +170,13 @@
   "dashboard": {
     "title": "Tổng quan kinh doanh",
     "kpi": {
-      "revenue":        "Doanh thu thuần",
-      "orders":         "Số đơn hàng",
-      "aov":            "Giá trị đơn TB",
-      "newCustomers":   "Khách hàng mới",
+      "revenue": "Doanh thu thuần",
+      "orders": "Số đơn hàng",
+      "aov": "Giá trị đơn TB",
+      "newCustomers": "Khách hàng mới",
       "conversionRate": "Tỷ lệ chuyển đổi",
-      "profit":         "Lợi nhuận gộp",
-      "roi":            "ROI tổng"
+      "profit": "Lợi nhuận gộp",
+      "roi": "ROI tổng"
     },
     "revenueChart": "Doanh thu theo ngày",
     "channelChart": "Doanh thu theo kênh",
@@ -187,58 +187,58 @@
     "colRevenue": "Doanh thu",
     "compare": "so sánh",
     "tab": {
-      "overview":     "Tổng quan",
-      "sales":        "Bán hàng",
+      "overview": "Tổng quan",
+      "sales": "Bán hàng",
       "multichannel": "Đa kênh",
-      "customer":     "Khách hàng",
-      "marketing":    "Marketing & ROI",
-      "inventory":    "Tồn kho & Vận hành"
+      "customer": "Khách hàng",
+      "marketing": "Marketing & ROI",
+      "inventory": "Tồn kho & Vận hành"
     },
     "preset": {
       "year2025": "2025",
-      "30d":      "30 ngày",
-      "90d":      "90 ngày",
-      "custom":   "Tùy chọn"
+      "30d": "30 ngày",
+      "90d": "90 ngày",
+      "custom": "Tùy chọn"
     },
     "chart": {
-      "revenueTrend":    "Xu hướng doanh thu & lợi nhuận",
-      "channelShare":    "Tỷ trọng doanh thu theo kênh",
-      "channelMonthly":  "Doanh thu kênh theo tháng (Stacked)",
-      "top5Products":    "Top 5 sản phẩm bán chạy",
-      "revenueGrowth":   "Tăng trưởng doanh thu",
-      "channelCompare":  "So sánh doanh thu kênh theo tháng",
-      "channelProp":     "Tỷ trọng kênh",
-      "radar":           "Hiệu suất đa chiều theo kênh (Radar)",
-      "funnel":          "Phễu chuyển đổi khách hàng",
-      "clv":             "CLV vs Tần suất mua (phân khúc)",
-      "heatmap":         "Thời gian mua hàng (Giờ × Ngày trong tuần)",
-      "marketingCombo":  "Chi phí quảng cáo vs Doanh thu (Combo)",
-      "roas":            "ROAS theo kênh",
-      "cac":             "CAC vs ROAS theo kênh",
-      "inventory":       "Tồn kho hiện tại vs Dự báo nhu cầu",
-      "returnRate":      "Tỷ lệ hoàn trả theo sản phẩm (%)"
+      "revenueTrend": "Xu hướng doanh thu & lợi nhuận",
+      "channelShare": "Tỷ trọng doanh thu theo kênh",
+      "channelMonthly": "Doanh thu kênh theo tháng (Stacked)",
+      "top5Products": "Top 5 sản phẩm bán chạy",
+      "revenueGrowth": "Tăng trưởng doanh thu",
+      "channelCompare": "So sánh doanh thu kênh theo tháng",
+      "channelProp": "Tỷ trọng kênh",
+      "radar": "Hiệu suất đa chiều theo kênh (Radar)",
+      "funnel": "Phễu chuyển đổi khách hàng",
+      "clv": "CLV vs Tần suất mua (phân khúc)",
+      "heatmap": "Thời gian mua hàng (Giờ × Ngày trong tuần)",
+      "marketingCombo": "Chi phí quảng cáo vs Doanh thu (Combo)",
+      "roas": "ROAS theo kênh",
+      "cac": "CAC vs ROAS theo kênh",
+      "inventory": "Tồn kho hiện tại vs Dự báo nhu cầu",
+      "returnRate": "Tỷ lệ hoàn trả theo sản phẩm (%)"
     },
     "series": {
-      "revenue":       "Doanh thu",
-      "profit":        "Lợi nhuận",
-      "stock":         "Tồn kho hiện tại",
-      "forecast":      "Dự báo nhu cầu",
-      "adCost":        "Chi phí QC",
-      "revenueM":      "Doanh thu (M₫)",
-      "adCostM":       "Chi phí QC (M₫)",
-      "radarCost":     "Chi phí",
-      "radarEngage":   "Tương tác",
-      "radarConv":     "Tỷ lệ chuyển đổi",
-      "radarRevenue":  "Doanh thu"
+      "revenue": "Doanh thu",
+      "profit": "Lợi nhuận",
+      "stock": "Tồn kho hiện tại",
+      "forecast": "Dự báo nhu cầu",
+      "adCost": "Chi phí QC",
+      "revenueM": "Doanh thu (M₫)",
+      "adCostM": "Chi phí QC (M₫)",
+      "radarCost": "Chi phí",
+      "radarEngage": "Tương tác",
+      "radarConv": "Tỷ lệ chuyển đổi",
+      "radarRevenue": "Doanh thu"
     },
     "invKpi": {
-      "returnRate":       "Tỷ lệ hoàn đơn TB",
-      "cancelRate":       "Tỷ lệ hủy đơn",
-      "deliverySuccess":  "Tỷ lệ giao thành công",
-      "processingTime":   "Tốc độ xử lý đơn"
+      "returnRate": "Tỷ lệ hoàn đơn TB",
+      "cancelRate": "Tỷ lệ hủy đơn",
+      "deliverySuccess": "Tỷ lệ giao thành công",
+      "processingTime": "Tốc độ xử lý đơn"
     },
     "heatmap": {
-      "low":  "Ít",
+      "low": "Ít",
       "high": "Nhiều"
     },
     "period": {
@@ -428,13 +428,13 @@
     "formatLang": "Ngôn ngữ",
     "formatLangSub": "Tiếng Việt",
     "section": {
-      "overview":     "Tổng quan (KPI, doanh thu, kênh)",
-      "sales":        "Phân tích bán hàng (top sản phẩm, tăng trưởng)",
+      "overview": "Tổng quan (KPI, doanh thu, kênh)",
+      "sales": "Phân tích bán hàng (top sản phẩm, tăng trưởng)",
       "multichannel": "Phân tích đa kênh (so sánh kênh)",
-      "customer":     "Phân tích khách hàng (CLV, phễu)",
-      "marketing":    "Marketing & ROI (chi phí vs doanh thu)",
-      "inventory":    "Tồn kho & Vận hành (tồn kho, hoàn đơn)",
-      "ai":           "Nhận xét & Insight từ AI"
+      "customer": "Phân tích khách hàng (CLV, phễu)",
+      "marketing": "Marketing & ROI (chi phí vs doanh thu)",
+      "inventory": "Tồn kho & Vận hành (tồn kho, hoàn đơn)",
+      "ai": "Nhận xét & Insight từ AI"
     }
   },
   "admin": {
@@ -486,8 +486,8 @@
     "detail": "Chi tiết sản phẩm",
     "viewDetail": "Xem chi tiết",
     "status": {
-      "active":    "Đang bán",
-      "inactive":  "Ngừng bán",
+      "active": "Đang bán",
+      "inactive": "Ngừng bán",
       "low_stock": "Sắp hết hàng"
     }
   },
@@ -507,9 +507,9 @@
     "viewHistory": "Xem lịch sử",
     "historyNote": "Lịch sử đơn hàng chi tiết sẽ hiển thị khi kết nối với backend.",
     "segment": {
-      "VIP":      "VIP (> 10tr)",
-      "REGULAR":  "Thân thiết",
-      "NEW":      "Mới",
+      "VIP": "VIP (> 10tr)",
+      "REGULAR": "Thân thiết",
+      "NEW": "Mới",
       "INACTIVE": "Không hoạt động"
     }
   },
@@ -525,5 +525,92 @@
     "avatarHint": "Ảnh tối đa 2MB",
     "changeAvatar": "Đổi ảnh đại diện",
     "avatarFormat": "PNG/JPG, tối đa 2MB"
+  },
+  "subscription": {
+    "title": "Gói dịch vụ & Thanh toán",
+    "tabs": {
+      "plan": "Gói dịch vụ",
+      "payment": "Thanh toán",
+      "history": "Lịch sử"
+    },
+    "currentPlan": "Gói hiện tại",
+    "plan": {
+      "free": "Miễn phí",
+      "pro": "Chuyên nghiệp",
+      "enterprise": "Doanh nghiệp"
+    },
+    "status": {
+      "active": "Đang hoạt động",
+      "trial": "Dùng thử",
+      "expired": "Hết hạn",
+      "cancelled": "Đã hủy"
+    },
+    "expiresAt": "Hết hạn vào",
+    "neverExpires": "Không giới hạn",
+    "upgradeBtn": "Nâng cấp lên Pro",
+    "cancelAutoRenew": "Hủy gia hạn tự động",
+    "enableAutoRenew": "Bật gia hạn tự động",
+    "compare": {
+      "feature": "Tính năng",
+      "free": "Miễn phí",
+      "pro": "Chuyên nghiệp",
+      "channels": "Kênh kết nối",
+      "users": "Người dùng",
+      "ai": "Dự báo AI",
+      "reports": "Báo cáo nâng cao",
+      "support": "Hỗ trợ",
+      "freeChannels": "Tối đa 2 kênh",
+      "proChannels": "Không giới hạn",
+      "freeUsers": "Tối đa 3 người",
+      "proUsers": "Không giới hạn",
+      "freeAi": "Không có",
+      "proAi": "Có",
+      "freeReports": "Cơ bản",
+      "proReports": "Đầy đủ",
+      "freeSupport": "Email",
+      "proSupport": "Ưu tiên 24/7"
+    },
+    "upgrade": {
+      "title": "Nâng cấp lên Pro",
+      "cycle": {
+        "monthly": "Hàng tháng",
+        "yearly": "Hàng năm (tiết kiệm 20%)"
+      },
+      "monthlyPrice": "490.000 đ / tháng",
+      "yearlyPrice": "4.704.000 đ / năm",
+      "paymentMethod": "Phương thức thanh toán",
+      "vnpay": "VNPay",
+      "momo": "Momo",
+      "bank": "Chuyển khoản ngân hàng",
+      "previewTitle": "Xem trước hóa đơn",
+      "planLabel": "Gói",
+      "price": "Giá gốc",
+      "tax": "Thuế VAT (10%)",
+      "total": "Tổng cộng",
+      "confirmBtn": "Xác nhận thanh toán",
+      "cancelBtn": "Hủy"
+    },
+    "bankInfo": {
+      "title": "Thông tin chuyển khoản",
+      "bank": "Ngân hàng",
+      "account": "Số tài khoản",
+      "name": "Chủ tài khoản",
+      "content": "Nội dung chuyển khoản",
+      "note": "Sau khi chuyển khoản, gói Pro sẽ được kích hoạt trong vòng 24 giờ."
+    },
+    "invoices": {
+      "code": "Mã hóa đơn",
+      "plan": "Gói",
+      "amount": "Số tiền",
+      "method": "Phương thức",
+      "status": "Trạng thái",
+      "date": "Ngày",
+      "download": "Tải PDF",
+      "empty": "Chưa có lịch sử thanh toán",
+      "paid": "Đã thanh toán",
+      "pending": "Chờ thanh toán",
+      "failed": "Thất bại",
+      "refunded": "Hoàn tiền"
+    }
   }
 }

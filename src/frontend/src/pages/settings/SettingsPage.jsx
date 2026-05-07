@@ -4,6 +4,7 @@ import { useAuth } from '../../hooks/useAuth'
 import { Link } from 'react-router-dom'
 import { useTheme } from '../../hooks/useTheme'
 import axios from '../../api/axios'
+import SubscriptionPage from './SubscriptionPage'
 
 // ── Avatar component ──────────────────────────────────────────────────────────
 function AvatarSection({ user, avatarUrl, onAvatarChange }) {
@@ -98,10 +99,14 @@ export default function SettingsPage() {
   const { isDark, toggle } = useTheme()
 
   const NAV = [
-    { key: 'profile',       icon: 'person',        label: t('settings.account') },
-    { key: 'security',      icon: 'lock',           label: t('settings.security') },
-    { key: 'notifications', icon: 'notifications',  label: t('settings.notifications') },
-    { key: 'appearance',    icon: 'palette',        label: t('settings.appearance') },
+    { key: 'profile',       icon: 'person',           label: t('settings.account') },
+    { key: 'security',      icon: 'lock',             label: t('settings.security') },
+    { key: 'notifications', icon: 'notifications',    label: t('settings.notifications') },
+    { key: 'appearance',    icon: 'palette',          label: t('settings.appearance') },
+    // Chỉ Owner mới thấy tab Gói dịch vụ
+    ...(user?.role === 'Owner'
+      ? [{ key: 'subscription', icon: 'workspace_premium', label: t('subscription.title', 'Gói dịch vụ') }]
+      : []),
   ]
 
   const [section,    setSection]    = useState('profile')
@@ -455,6 +460,13 @@ export default function SettingsPage() {
                   )
                 })}
               </div>
+            </div>
+          )}
+
+          {/* ── SUBSCRIPTION (Owner only) ── */}
+          {section === 'subscription' && (
+            <div className="lcard p-5">
+              <SubscriptionPage />
             </div>
           )}
         </div>

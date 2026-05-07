@@ -8,6 +8,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Serilog;
 using Serilog.Events;
+using SalesAnalytics.API.Attributes;
+using SalesAnalytics.API.Filters;
 using SalesAnalytics.API.Services;
 using SalesAnalytics.Core.Interfaces;
 using SalesAnalytics.Infrastructure.Data;
@@ -136,6 +138,14 @@ try
     builder.Services.AddScoped<ReportService>();
     builder.Services.AddScoped<IAuditLogService, AuditLogService>();
 
+    // Multi-tenant services (thêm [2025-05-07])
+    builder.Services.AddHttpContextAccessor();
+    builder.Services.AddScoped<ITenantContext, TenantContext>();
+    builder.Services.AddMemoryCache();  // Dùng cho SubscriptionAuthorizationFilter cache
+
+    // Background jobs
+    builder.Services.AddHostedService<SubscriptionExpiryJob>();
+
     // ── 8. Repository Pattern (DI) ────────────────────────────────────────────
     builder.Services.AddScoped<IProductRepository,   ProductRepository>();
     builder.Services.AddScoped<IOrderRepository,     OrderRepository>();
@@ -144,7 +154,16 @@ try
     builder.Services.AddScoped<ISalesDataRepository, SalesDataRepository>();
 
     // ── 9. Controllers + Swagger ─────────────────────────────────────────────
-    builder.Services.AddControllers();
+    // Đăng ký global filters multi-tenant
+    builder.Services.AddScoped<TenantAuthorizationFilter>();
+    builder.Services.AddScoped<SubscriptionAuthorizationFilter>();
+    builder.Services.AddControllers(opt =>
+    {
+        // TenantAuthorizationFilter: yêu cầu company_id cho mọi API (trừ /auth/*, /admin/*)
+        opt.Filters.Add<TenantAuthorizationFilter>();
+        // SubscriptionAuthorizationFilter: kiểm tra gói [RequirePlan]
+        opt.Filters.Add<SubscriptionAuthorizationFilter>();
+    });
     builder.Services.AddEndpointsApiExplorer();
     builder.Services.AddSwaggerGen(opt =>
     {

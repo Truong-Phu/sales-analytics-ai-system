@@ -170,13 +170,13 @@
   "dashboard": {
     "title": "Business Overview",
     "kpi": {
-      "revenue":        "Net Revenue",
-      "orders":         "Total Orders",
-      "aov":            "Avg. Order Value",
-      "newCustomers":   "New Customers",
+      "revenue": "Net Revenue",
+      "orders": "Total Orders",
+      "aov": "Avg. Order Value",
+      "newCustomers": "New Customers",
       "conversionRate": "Conversion Rate",
-      "profit":         "Gross Profit",
-      "roi":            "Total ROI"
+      "profit": "Gross Profit",
+      "roi": "Total ROI"
     },
     "revenueChart": "Revenue by Day",
     "channelChart": "Revenue by Channel",
@@ -187,58 +187,58 @@
     "colRevenue": "Revenue",
     "compare": "vs prev.",
     "tab": {
-      "overview":     "Overview",
-      "sales":        "Sales",
+      "overview": "Overview",
+      "sales": "Sales",
       "multichannel": "Multi-channel",
-      "customer":     "Customers",
-      "marketing":    "Marketing & ROI",
-      "inventory":    "Inventory & Ops"
+      "customer": "Customers",
+      "marketing": "Marketing & ROI",
+      "inventory": "Inventory & Ops"
     },
     "preset": {
       "year2025": "2025",
-      "30d":      "30 days",
-      "90d":      "90 days",
-      "custom":   "Custom"
+      "30d": "30 days",
+      "90d": "90 days",
+      "custom": "Custom"
     },
     "chart": {
-      "revenueTrend":    "Revenue & Profit Trend",
-      "channelShare":    "Revenue Share by Channel",
-      "channelMonthly":  "Channel Revenue by Month (Stacked)",
-      "top5Products":    "Top 5 Best-Selling Products",
-      "revenueGrowth":   "Revenue Growth",
-      "channelCompare":  "Channel Revenue Comparison",
-      "channelProp":     "Channel Proportion",
-      "radar":           "Multi-dimensional Channel Performance (Radar)",
-      "funnel":          "Customer Conversion Funnel",
-      "clv":             "CLV vs Purchase Frequency (Segments)",
-      "heatmap":         "Purchase Time (Hour × Day of Week)",
-      "marketingCombo":  "Ad Spend vs Revenue (Combo)",
-      "roas":            "ROAS by Channel",
-      "cac":             "CAC vs ROAS by Channel",
-      "inventory":       "Current Stock vs Demand Forecast",
-      "returnRate":      "Return Rate by Product (%)"
+      "revenueTrend": "Revenue & Profit Trend",
+      "channelShare": "Revenue Share by Channel",
+      "channelMonthly": "Channel Revenue by Month (Stacked)",
+      "top5Products": "Top 5 Best-Selling Products",
+      "revenueGrowth": "Revenue Growth",
+      "channelCompare": "Channel Revenue Comparison",
+      "channelProp": "Channel Proportion",
+      "radar": "Multi-dimensional Channel Performance (Radar)",
+      "funnel": "Customer Conversion Funnel",
+      "clv": "CLV vs Purchase Frequency (Segments)",
+      "heatmap": "Purchase Time (Hour × Day of Week)",
+      "marketingCombo": "Ad Spend vs Revenue (Combo)",
+      "roas": "ROAS by Channel",
+      "cac": "CAC vs ROAS by Channel",
+      "inventory": "Current Stock vs Demand Forecast",
+      "returnRate": "Return Rate by Product (%)"
     },
     "series": {
-      "revenue":       "Revenue",
-      "profit":        "Profit",
-      "stock":         "Current Stock",
-      "forecast":      "Demand Forecast",
-      "adCost":        "Ad Cost",
-      "revenueM":      "Revenue (M₫)",
-      "adCostM":       "Ad Cost (M₫)",
-      "radarCost":     "Ad Cost",
-      "radarEngage":   "Engagement",
-      "radarConv":     "Conversion Rate",
-      "radarRevenue":  "Revenue"
+      "revenue": "Revenue",
+      "profit": "Profit",
+      "stock": "Current Stock",
+      "forecast": "Demand Forecast",
+      "adCost": "Ad Cost",
+      "revenueM": "Revenue (M₫)",
+      "adCostM": "Ad Cost (M₫)",
+      "radarCost": "Ad Cost",
+      "radarEngage": "Engagement",
+      "radarConv": "Conversion Rate",
+      "radarRevenue": "Revenue"
     },
     "invKpi": {
-      "returnRate":       "Avg. Return Rate",
-      "cancelRate":       "Cancellation Rate",
-      "deliverySuccess":  "Delivery Success Rate",
-      "processingTime":   "Order Processing Time"
+      "returnRate": "Avg. Return Rate",
+      "cancelRate": "Cancellation Rate",
+      "deliverySuccess": "Delivery Success Rate",
+      "processingTime": "Order Processing Time"
     },
     "heatmap": {
-      "low":  "Low",
+      "low": "Low",
       "high": "High"
     },
     "period": {
@@ -428,13 +428,13 @@
     "formatLang": "Language",
     "formatLangSub": "Vietnamese",
     "section": {
-      "overview":     "Overview (KPI, revenue, channels)",
-      "sales":        "Sales analysis (top products, growth)",
+      "overview": "Overview (KPI, revenue, channels)",
+      "sales": "Sales analysis (top products, growth)",
       "multichannel": "Multi-channel analysis (channel comparison)",
-      "customer":     "Customer analysis (CLV, funnel)",
-      "marketing":    "Marketing & ROI (cost vs revenue)",
-      "inventory":    "Inventory & Operations (stock, returns)",
-      "ai":           "AI Insights & Recommendations"
+      "customer": "Customer analysis (CLV, funnel)",
+      "marketing": "Marketing & ROI (cost vs revenue)",
+      "inventory": "Inventory & Operations (stock, returns)",
+      "ai": "AI Insights & Recommendations"
     }
   },
   "admin": {
@@ -486,8 +486,8 @@
     "detail": "Product Detail",
     "viewDetail": "View Detail",
     "status": {
-      "active":    "Active",
-      "inactive":  "Discontinued",
+      "active": "Active",
+      "inactive": "Discontinued",
       "low_stock": "Low Stock"
     }
   },
@@ -507,9 +507,9 @@
     "viewHistory": "View History",
     "historyNote": "Detailed order history will show when backend is connected.",
     "segment": {
-      "VIP":      "VIP (> 10M)",
-      "REGULAR":  "Regular",
-      "NEW":      "New",
+      "VIP": "VIP (> 10M)",
+      "REGULAR": "Regular",
+      "NEW": "New",
       "INACTIVE": "Inactive"
     }
   },
@@ -525,5 +525,92 @@
     "avatarHint": "Max 2MB image",
     "changeAvatar": "Change Avatar",
     "avatarFormat": "PNG/JPG, max 2MB"
+  },
+  "subscription": {
+    "title": "Subscription & Billing",
+    "tabs": {
+      "plan": "Plan",
+      "payment": "Payment",
+      "history": "History"
+    },
+    "currentPlan": "Current Plan",
+    "plan": {
+      "free": "Free",
+      "pro": "Professional",
+      "enterprise": "Enterprise"
+    },
+    "status": {
+      "active": "Active",
+      "trial": "Trial",
+      "expired": "Expired",
+      "cancelled": "Cancelled"
+    },
+    "expiresAt": "Expires on",
+    "neverExpires": "No expiry",
+    "upgradeBtn": "Upgrade to Pro",
+    "cancelAutoRenew": "Cancel auto-renewal",
+    "enableAutoRenew": "Enable auto-renewal",
+    "compare": {
+      "feature": "Feature",
+      "free": "Free",
+      "pro": "Professional",
+      "channels": "Connected channels",
+      "users": "Users",
+      "ai": "AI Forecast",
+      "reports": "Advanced reports",
+      "support": "Support",
+      "freeChannels": "Up to 2 channels",
+      "proChannels": "Unlimited",
+      "freeUsers": "Up to 3 users",
+      "proUsers": "Unlimited",
+      "freeAi": "Not available",
+      "proAi": "Included",
+      "freeReports": "Basic",
+      "proReports": "Full",
+      "freeSupport": "Email",
+      "proSupport": "24/7 Priority"
+    },
+    "upgrade": {
+      "title": "Upgrade to Pro",
+      "cycle": {
+        "monthly": "Monthly",
+        "yearly": "Yearly (save 20%)"
+      },
+      "monthlyPrice": "490,000 VND / month",
+      "yearlyPrice": "4,704,000 VND / year",
+      "paymentMethod": "Payment method",
+      "vnpay": "VNPay",
+      "momo": "Momo",
+      "bank": "Bank transfer",
+      "previewTitle": "Invoice preview",
+      "planLabel": "Plan",
+      "price": "Base price",
+      "tax": "VAT (10%)",
+      "total": "Total",
+      "confirmBtn": "Confirm payment",
+      "cancelBtn": "Cancel"
+    },
+    "bankInfo": {
+      "title": "Bank transfer details",
+      "bank": "Bank",
+      "account": "Account number",
+      "name": "Account holder",
+      "content": "Transfer description",
+      "note": "After transfer, your Pro plan will be activated within 24 hours."
+    },
+    "invoices": {
+      "code": "Invoice code",
+      "plan": "Plan",
+      "amount": "Amount",
+      "method": "Method",
+      "status": "Status",
+      "date": "Date",
+      "download": "Download PDF",
+      "empty": "No payment history yet",
+      "paid": "Paid",
+      "pending": "Pending",
+      "failed": "Failed",
+      "refunded": "Refunded"
+    }
   }
 }

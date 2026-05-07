@@ -23,6 +23,11 @@ public class AppDbContext : DbContext
     public DbSet<LoginHistory>           LoginHistories          => Set<LoginHistory>();
     public DbSet<NotificationPreference> NotificationPreferences => Set<NotificationPreference>();
 
+    // Multi-tenant (thêm [2025-05-07])
+    public DbSet<Company>      Companies     => Set<Company>();
+    public DbSet<Subscription> Subscriptions => Set<Subscription>();
+    public DbSet<Invoice>      Invoices      => Set<Invoice>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         // ── User ─────────────────────────────────────────────────────────────
@@ -42,14 +47,108 @@ public class AppDbContext : DbContext
             e.Property(u => u.LastLoginAt).HasColumnName("last_login_at");
             e.Property(u => u.RefreshToken).HasColumnName("refresh_token");
             e.Property(u => u.RefreshTokenExpiresAt).HasColumnName("refresh_token_expires_at");
-            // Extended profile columns (PROMPT 6)
+            // Extended profile columns
             e.Property(u => u.AvatarUrl).HasColumnName("avatar_url").HasMaxLength(500);
             e.Property(u => u.Phone).HasColumnName("phone").HasMaxLength(20);
             e.Property(u => u.Birthdate).HasColumnName("birthdate");
             e.Property(u => u.Timezone).HasColumnName("timezone").HasMaxLength(50).HasDefaultValue("Asia/Ho_Chi_Minh");
             e.Property(u => u.LangPref).HasColumnName("lang_pref").HasMaxLength(10).HasDefaultValue("vi");
+            // Multi-tenant columns
+            e.Property(u => u.CompanyId).HasColumnName("company_id");
+            e.Property(u => u.IsSuperAdmin).HasColumnName("is_super_admin").HasDefaultValue(false);
+            e.HasOne(u => u.Company)
+             .WithMany(c => c.Users)
+             .HasForeignKey(u => u.CompanyId)
+             .OnDelete(DeleteBehavior.SetNull);
             e.HasIndex(u => u.Username).IsUnique();
             e.HasIndex(u => u.Email).IsUnique();
+            e.HasIndex(u => u.CompanyId);
+        });
+
+        // ── Company ───────────────────────────────────────────────────────────
+        modelBuilder.Entity<Company>(e =>
+        {
+            e.ToTable("companies", "public");
+            e.HasKey(c => c.Id);
+            e.Property(c => c.Id).HasColumnName("id").HasDefaultValueSql("gen_random_uuid()");
+            e.Property(c => c.Name).HasColumnName("name").HasMaxLength(200).IsRequired();
+            e.Property(c => c.Slug).HasColumnName("slug").HasMaxLength(100).IsRequired();
+            e.Property(c => c.Email).HasColumnName("email").HasMaxLength(150).IsRequired();
+            e.Property(c => c.Phone).HasColumnName("phone").HasMaxLength(20);
+            e.Property(c => c.LogoUrl).HasColumnName("logo_url").HasMaxLength(500);
+            e.Property(c => c.Industry).HasColumnName("industry").HasMaxLength(100);
+            e.Property(c => c.BusinessScale).HasColumnName("business_scale").HasMaxLength(50);
+            e.Property(c => c.ShopName).HasColumnName("shop_name").HasMaxLength(200);
+            e.Property(c => c.Address).HasColumnName("address");
+            e.Property(c => c.Timezone).HasColumnName("timezone").HasMaxLength(50).HasDefaultValue("Asia/Ho_Chi_Minh");
+            e.Property(c => c.LangPref).HasColumnName("lang_pref").HasMaxLength(10).HasDefaultValue("vi");
+            e.Property(c => c.OnboardingCompleted).HasColumnName("onboarding_completed").HasDefaultValue(false);
+            e.Property(c => c.OnboardingStep).HasColumnName("onboarding_step").HasDefaultValue(0);
+            e.Property(c => c.IsActive).HasColumnName("is_active").HasDefaultValue(true);
+            e.Property(c => c.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()");
+            e.Property(c => c.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("NOW()");
+            e.HasIndex(c => c.Slug).IsUnique();
+            e.HasIndex(c => c.Email).IsUnique();
+        });
+
+        // ── Subscription ──────────────────────────────────────────────────────
+        modelBuilder.Entity<Subscription>(e =>
+        {
+            e.ToTable("subscriptions", "public");
+            e.HasKey(s => s.Id);
+            e.Property(s => s.Id).HasColumnName("id").HasDefaultValueSql("gen_random_uuid()");
+            e.Property(s => s.CompanyId).HasColumnName("company_id").IsRequired();
+            e.Property(s => s.Plan).HasColumnName("plan").HasMaxLength(20).HasDefaultValue("free");
+            e.Property(s => s.Status).HasColumnName("status").HasMaxLength(20).HasDefaultValue("active");
+            e.Property(s => s.StartedAt).HasColumnName("started_at").HasDefaultValueSql("NOW()");
+            e.Property(s => s.ExpiresAt).HasColumnName("expires_at");
+            e.Property(s => s.TrialEndsAt).HasColumnName("trial_ends_at");
+            e.Property(s => s.GraceEndsAt).HasColumnName("grace_ends_at");
+            e.Property(s => s.AutoRenew).HasColumnName("auto_renew").HasDefaultValue(true);
+            e.Property(s => s.MaxChannels).HasColumnName("max_channels").HasDefaultValue(2);
+            e.Property(s => s.MaxUsers).HasColumnName("max_users").HasDefaultValue(3);
+            e.Property(s => s.AiEnabled).HasColumnName("ai_enabled").HasDefaultValue(false);
+            e.Property(s => s.AdvancedReports).HasColumnName("advanced_reports").HasDefaultValue(false);
+            e.Property(s => s.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()");
+            e.Property(s => s.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("NOW()");
+            e.HasOne(s => s.Company)
+             .WithMany(c => c.Subscriptions)
+             .HasForeignKey(s => s.CompanyId)
+             .OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(s => s.CompanyId);
+        });
+
+        // ── Invoice ───────────────────────────────────────────────────────────
+        modelBuilder.Entity<Invoice>(e =>
+        {
+            e.ToTable("invoices", "public");
+            e.HasKey(i => i.Id);
+            e.Property(i => i.Id).HasColumnName("id").HasDefaultValueSql("gen_random_uuid()");
+            e.Property(i => i.CompanyId).HasColumnName("company_id").IsRequired();
+            e.Property(i => i.SubscriptionId).HasColumnName("subscription_id");
+            e.Property(i => i.InvoiceCode).HasColumnName("invoice_code").HasMaxLength(50).IsRequired();
+            e.Property(i => i.Plan).HasColumnName("plan").HasMaxLength(20).IsRequired();
+            e.Property(i => i.Amount).HasColumnName("amount").HasColumnType("numeric(15,2)").IsRequired();
+            e.Property(i => i.Currency).HasColumnName("currency").HasMaxLength(10).HasDefaultValue("VND");
+            e.Property(i => i.PaymentMethod).HasColumnName("payment_method").HasMaxLength(50);
+            e.Property(i => i.PaymentStatus).HasColumnName("payment_status").HasMaxLength(20).HasDefaultValue("pending");
+            e.Property(i => i.PaymentGatewayRef).HasColumnName("payment_gateway_ref").HasMaxLength(200);
+            e.Property(i => i.BillingPeriodStart).HasColumnName("billing_period_start");
+            e.Property(i => i.BillingPeriodEnd).HasColumnName("billing_period_end");
+            e.Property(i => i.PaidAt).HasColumnName("paid_at");
+            e.Property(i => i.PdfUrl).HasColumnName("pdf_url").HasMaxLength(500);
+            e.Property(i => i.Metadata).HasColumnName("metadata").HasColumnType("jsonb");
+            e.Property(i => i.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()");
+            e.HasOne(i => i.Company)
+             .WithMany()
+             .HasForeignKey(i => i.CompanyId)
+             .OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(i => i.Subscription)
+             .WithMany()
+             .HasForeignKey(i => i.SubscriptionId)
+             .OnDelete(DeleteBehavior.SetNull);
+            e.HasIndex(i => i.InvoiceCode).IsUnique();
+            e.HasIndex(i => i.CompanyId);
         });
 
         // ── Category ─────────────────────────────────────────────────────────
