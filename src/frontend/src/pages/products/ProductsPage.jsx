@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import MockToast from '../../components/ui/MockToast'
-import { getProducts, getOltpProduct, createProduct, updateProduct, deleteProduct, getCategories, uploadProductImage } from '../../api/dashboardApi'
+import { getProducts, createProduct, updateProduct, deleteProduct, getCategories, uploadProductImage } from '../../api/dashboardApi'
 import { MOCK_PRODUCTS } from '../../mockData/products'
 import { useAuth } from '../../hooks/useAuth'
 
@@ -28,7 +28,278 @@ function StockBadge({ p, t }) {
 
 const EMPTY_FORM = { sku: '', productName: '', description: '', basePrice: '', costPrice: '', stockQuantity: 0, categoryId: '' }
 
-// Modal tạo / sửa sản phẩm
+// ── Modal CHI TIẾT + CHỈNH SỬA sản phẩm (kết hợp view/edit inline) ──────────
+function ProductDetailModal({ product, canEdit, isMock, onClose, onSaved }) {
+  const [mode,       setMode]       = useState('view')      // 'view' | 'edit'
+  const [editData,   setEditData]   = useState(null)        // dữ liệu OLTP đầy đủ
+  const [categories, setCategories] = useState([])
+  const [loadingEdit, setLoadingEdit] = useState(false)
+  const [imgFile,    setImgFile]    = useState(null)
+  const [imgPreview, setImgPreview] = useState(null)
+  const [saving,     setSaving]     = useState(false)
+  const [err,        setErr]        = useState('')
+  const fileRef = useRef(null)
+
+  // Tải danh mục khi mở chế độ edit
+  useEffect(() => {
+    if (mode === 'edit' && categories.length === 0) {
+      getCategories().then(setCategories).catch(() => setCategories([]))
+    }
+  }, [mode])
+
+  const enterEdit = () => {
+    // Dùng lại data đã load từ danh sách/chi tiết, không gọi API thêm lần nữa
+    setEditData({
+      productId:     product.product_id ?? product.productId ?? product.id,
+      sku:           product.sku ?? '',
+      productName:   product.product_name ?? product.productName ?? product.name ?? '',
+      description:   product.description ?? '',
+      basePrice:     product.unit_price ?? product.basePrice ?? product.price ?? '',
+      costPrice:     product.cost_price ?? product.costPrice ?? '',
+      stockQuantity: product.stock ?? product.stockQuantity ?? 0,
+      categoryId:    product.category_id ?? product.categoryId ?? '',
+      imageUrl:      product.imageUrl ?? null,
+    })
+    setImgPreview(product.imageUrl ?? null)
+    setMode('edit')
+  }
+
+  const set = (field) => (e) => setEditData(f => ({ ...f, [field]: e.target.value }))
+
+  const handleImgSelect = (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+    setImgFile(file)
+    setImgPreview(URL.createObjectURL(file))
+  }
+
+  const handleSave = async () => {
+    if (!editData.sku || !editData.productName || !editData.basePrice || !editData.categoryId) {
+      setErr('Vui lòng nhập đầy đủ SKU, Tên sản phẩm, Giá bán và Danh mục')
+      return
+    }
+    setSaving(true); setErr('')
+    try {
+      await updateProduct(editData.productId, {
+        sku:           editData.sku,
+        productName:   editData.productName,
+        description:   editData.description || null,
+        basePrice:     Number(editData.basePrice),
+        costPrice:     editData.costPrice ? Number(editData.costPrice) : null,
+        stockQuantity: Number(editData.stockQuantity) || 0,
+        categoryId:    Number(editData.categoryId),
+      })
+      if (imgFile) {
+        await uploadProductImage(editData.productId, imgFile)
+      }
+      onSaved?.()
+    } catch (e) {
+      setErr(e.response?.data?.message ?? 'Lỗi cập nhật sản phẩm')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const catOptions = categories.map(c => ({
+    value: c.categoryId,
+    label: c.level > 1 ? `  └ ${c.categoryName}` : c.categoryName,
+  }))
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+         style={{ background: 'rgba(0,0,0,0.6)' }} onClick={onClose}>
+      <div className="lcard w-full max-w-lg p-6 space-y-4 scale-in overflow-y-auto max-h-[90vh]"
+           onClick={e => e.stopPropagation()}>
+
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <h2 className="font-bold text-base" style={{ color: 'var(--text-primary)' }}>
+            {mode === 'view' ? 'Chi tiết sản phẩm' : 'Chỉnh sửa sản phẩm'}
+          </h2>
+          <button onClick={onClose}
+                  className="w-8 h-8 flex items-center justify-center rounded-lg transition-colors"
+                  style={{ color: 'var(--text-secondary)' }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+            <span className="icon">close</span>
+          </button>
+        </div>
+
+        {err && <p className="text-xs rounded-lg px-3 py-2" style={{ background: 'rgba(239,68,68,0.1)', color: '#EF4444' }}>{err}</p>}
+
+        {/* ── VIEW MODE — layout 2 cột ── */}
+        {mode === 'view' && (
+          <>
+            <div className="flex gap-5">
+              {/* Cột trái 40%: ảnh + badges */}
+              <div className="flex flex-col items-center gap-3 shrink-0" style={{ width: '38%' }}>
+                <div className="w-full rounded-xl overflow-hidden"
+                     style={{ aspectRatio: '1', border: '1px solid var(--border)' }}>
+                  {product.imageUrl
+                    ? <img src={product.imageUrl} alt="product" className="w-full h-full object-cover" />
+                    : <div className="w-full h-full flex flex-col items-center justify-center gap-2"
+                           style={{ background: 'var(--bg-elevated)', color: 'var(--text-tertiary)' }}>
+                        <span className="icon" style={{ fontSize: 36, opacity: 0.35 }}>image_not_supported</span>
+                        <p className="text-xs">Chưa có ảnh</p>
+                      </div>
+                  }
+                </div>
+                {/* Trạng thái */}
+                {(product.total_qty_sold ?? 0) === 0 || (product.stock ?? 100) === 0
+                  ? <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium"
+                           style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#EF4444' }}>
+                      <span className="w-1.5 h-1.5 rounded-full bg-red-500" />Ngừng bán
+                    </span>
+                  : <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium"
+                           style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)', color: 'var(--accent-500)' }}>
+                      <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--accent-500)' }} />Đang bán
+                    </span>
+                }
+                {/* Badge danh mục */}
+                {product.category && (
+                  <span className="inline-flex px-3 py-1 rounded-full text-xs font-medium text-center"
+                        style={{ background: 'var(--bg-elevated)', color: 'var(--text-secondary)', border: '1px solid var(--border)' }}>
+                    {product.category}
+                  </span>
+                )}
+              </div>
+
+              {/* Cột phải 60%: thông tin */}
+              <div className="flex-1 min-w-0 space-y-3">
+                <div>
+                  <h3 className="font-bold text-base leading-snug" style={{ color: 'var(--text-primary)' }}>
+                    {product.product_name ?? product.name}
+                  </h3>
+                  <p className="text-xs font-mono mt-1" style={{ color: 'var(--text-tertiary)' }}>
+                    {product.sku}
+                  </p>
+                </div>
+
+                <div style={{ borderTop: '1px solid var(--border)' }} />
+
+                {/* Grid 2 cột thông số */}
+                <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                  {[
+                    ['Giá bán',     `${(product.unit_price ?? product.price ?? 0).toLocaleString('vi-VN')}₫`],
+                    ['Giá vốn',     `${(product.cost_price ?? 0).toLocaleString('vi-VN')}₫`],
+                    ['Đã bán',      (product.total_qty_sold ?? 0).toLocaleString()],
+                    ['Tồn kho',     (product.stock ?? 100).toLocaleString()],
+                    ['Thương hiệu', product.brand ?? '—'],
+                    ['Số đơn hàng', (product.total_orders ?? 0).toLocaleString()],
+                  ].map(([label, value]) => (
+                    <div key={label}>
+                      <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{label}</p>
+                      <p className="font-semibold mt-0.5" style={{ color: 'var(--text-primary)' }}>{value}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Mô tả */}
+                {product.description && (
+                  <div style={{ borderTop: '1px solid var(--border)', paddingTop: 8 }}>
+                    <p className="text-xs mb-1" style={{ color: 'var(--text-tertiary)' }}>Mô tả</p>
+                    <p className="text-sm leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+                      {product.description}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Footer view mode */}
+            <div className="flex gap-2 pt-2" style={{ borderTop: '1px solid var(--border)' }}>
+              <button onClick={onClose} className="lbtn lbtn-secondary flex-1 justify-center">
+                Đóng
+              </button>
+              {canEdit && !isMock && (
+                <button onClick={enterEdit} disabled={loadingEdit}
+                        className="lbtn lbtn-primary flex-1 justify-center">
+                  {loadingEdit
+                    ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full"
+                            style={{ animation: 'spin 0.8s linear infinite' }} />
+                    : <span className="icon text-sm">edit</span>
+                  }
+                  Chỉnh sửa
+                </button>
+              )}
+            </div>
+          </>
+        )}
+
+        {/* ── EDIT MODE ── */}
+        {mode === 'edit' && editData && (
+          <>
+            {/* Ảnh sản phẩm */}
+            <div>
+              <label className="block text-xs mb-2" style={{ color: 'var(--text-tertiary)' }}>Hình ảnh sản phẩm</label>
+              <div className="flex items-center gap-3">
+                <div className="w-16 h-16 rounded-xl border-2 border-dashed flex items-center justify-center overflow-hidden shrink-0"
+                     style={{ borderColor: 'var(--border)', background: 'var(--bg-elevated)' }}>
+                  {imgPreview
+                    ? <img src={imgPreview} alt="preview" className="w-full h-full object-cover" />
+                    : <span className="icon" style={{ fontSize: 24, color: 'var(--text-tertiary)' }}>image</span>
+                  }
+                </div>
+                <div>
+                  <button type="button" onClick={() => fileRef.current?.click()}
+                          className="lbtn lbtn-secondary !h-8 text-xs">
+                    <span className="icon text-sm">upload</span>
+                    Thay đổi ảnh
+                  </button>
+                  <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>PNG/JPG/WEBP · Tối đa 5MB</p>
+                </div>
+              </div>
+              <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden"
+                     onChange={handleImgSelect} />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                ['SKU', 'sku', 'text'],
+                ['Tên sản phẩm', 'productName', 'text'],
+                ['Giá bán (₫)', 'basePrice', 'number'],
+                ['Giá vốn (₫)', 'costPrice', 'number'],
+                ['Tồn kho', 'stockQuantity', 'number'],
+              ].map(([label, field, type]) => (
+                <div key={field}>
+                  <label className="block text-xs mb-1" style={{ color: 'var(--text-tertiary)' }}>{label}</label>
+                  <input type={type} className="linput text-sm" value={editData[field] ?? ''}
+                         onChange={set(field)} />
+                </div>
+              ))}
+              <div>
+                <label className="block text-xs mb-1" style={{ color: 'var(--text-tertiary)' }}>Danh mục</label>
+                <select className="linput text-sm" value={editData.categoryId ?? ''} onChange={set('categoryId')}>
+                  <option value="">-- Chọn danh mục --</option>
+                  {catOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs mb-1" style={{ color: 'var(--text-tertiary)' }}>Mô tả</label>
+              <textarea className="linput text-sm" rows={2} value={editData.description ?? ''}
+                        onChange={set('description')} />
+            </div>
+
+            <div className="flex gap-2 pt-1">
+              <button onClick={() => { setMode('view'); setErr('') }}
+                      className="lbtn lbtn-secondary flex-1 justify-center">
+                Hủy
+              </button>
+              <button onClick={handleSave} disabled={saving}
+                      className="lbtn lbtn-primary flex-1 justify-center">
+                {saving ? 'Đang lưu...' : 'Lưu thay đổi'}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// Modal tạo sản phẩm mới
 function ProductFormModal({ initial, mode, onClose, onSaved }) {
   const [form,       setForm]       = useState(initial ?? EMPTY_FORM)
   const [categories, setCategories] = useState([])
@@ -200,8 +471,7 @@ export default function ProductsPage() {
   const [page,     setPage]     = useState(1)
   const [selected, setSelected] = useState(null)
   const [view,     setView]     = useState('table') // 'table' | 'grid'
-  const [formMode, setFormMode] = useState(null)    // 'create' | 'edit'
-  const [formInit, setFormInit] = useState(null)    // dữ liệu ban đầu cho form edit
+  const [formMode, setFormMode] = useState(null)    // 'create' khi tạo mới
   const [toast,    setToast]    = useState('')
 
   const canEdit = ['Manager', 'DataIT', 'Admin'].includes(user?.role)
@@ -227,27 +497,7 @@ export default function ProductsPage() {
     }
   }, [search, category, page])
 
-  const openCreate = () => { setFormInit(null); setFormMode('create') }
-
-  const openEdit = async (p) => {
-    try {
-      // Lấy dữ liệu OLTP để có CategoryId, StockQuantity...
-      const oltp = await getOltpProduct(p.product_id ?? p.productId)
-      setFormInit({
-        productId:     oltp.productId,
-        sku:           oltp.sku,
-        productName:   oltp.productName,
-        description:   oltp.description ?? '',
-        basePrice:     oltp.basePrice,
-        costPrice:     oltp.costPrice ?? '',
-        stockQuantity: oltp.stockQuantity,
-        categoryId:    oltp.categoryId,
-      })
-      setFormMode('edit')
-    } catch {
-      showToast('Không tải được thông tin sản phẩm OLTP')
-    }
-  }
+  const openCreate = () => setFormMode('create')
 
   const handleDelete = async (p, e) => {
     e.stopPropagation()
@@ -277,12 +527,12 @@ export default function ProductsPage() {
         </div>
       )}
 
-      {formMode && (
+      {formMode === 'create' && (
         <ProductFormModal
-          mode={formMode}
-          initial={formInit}
+          mode="create"
+          initial={null}
           onClose={() => setFormMode(null)}
-          onSaved={() => { setFormMode(null); showToast(formMode === 'create' ? 'Đã thêm sản phẩm' : 'Đã cập nhật sản phẩm'); fetchData() }}
+          onSaved={() => { setFormMode(null); showToast('Đã thêm sản phẩm'); fetchData() }}
         />
       )}
 
@@ -395,8 +645,9 @@ export default function ProductsPage() {
               <tbody>
                 {items.map((p, i) => (
                   <tr key={p.product_id ?? p.id ?? i}
-                      className="transition-colors"
+                      className="transition-colors cursor-pointer"
                       style={{ borderBottom: '1px solid var(--border)' }}
+                      onClick={() => setSelected(p)}
                       onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
                       onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                     <td className="px-4 py-3 text-xs tabular-nums" style={{ color: 'var(--text-tertiary)' }}>
@@ -416,7 +667,7 @@ export default function ProductsPage() {
                     <td className="px-4 py-3"><StockBadge p={p} t={t} /></td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1">
-                        <button onClick={() => setSelected(p)}
+                        <button onClick={e => { e.stopPropagation(); setSelected(p) }}
                                 className="w-8 h-8 flex items-center justify-center rounded-lg transition-colors"
                                 style={{ color: 'var(--primary-500)' }}
                                 onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
@@ -424,24 +675,14 @@ export default function ProductsPage() {
                           <span className="icon text-base">visibility</span>
                         </button>
                         {canEdit && !isMock && (
-                          <>
-                            <button onClick={() => openEdit(p)}
-                                    className="w-8 h-8 flex items-center justify-center rounded-lg transition-colors"
-                                    title="Sửa sản phẩm"
-                                    style={{ color: 'var(--text-secondary)' }}
-                                    onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
-                                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                              <span className="icon text-base">edit</span>
-                            </button>
-                            <button onClick={e => handleDelete(p, e)}
-                                    className="w-8 h-8 flex items-center justify-center rounded-lg transition-colors"
-                                    title="Xóa sản phẩm"
-                                    style={{ color: '#EF4444' }}
-                                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(239,68,68,0.08)'}
-                                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                              <span className="icon text-base">delete</span>
-                            </button>
-                          </>
+                          <button onClick={e => handleDelete(p, e)}
+                                  className="w-8 h-8 flex items-center justify-center rounded-lg transition-colors"
+                                  title="Xóa sản phẩm"
+                                  style={{ color: '#EF4444' }}
+                                  onMouseEnter={e => e.currentTarget.style.background = 'rgba(239,68,68,0.08)'}
+                                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                            <span className="icon text-base">delete</span>
+                          </button>
                         )}
                       </div>
                     </td>
@@ -470,41 +711,15 @@ export default function ProductsPage() {
         </div>
       )}
 
-      {/* Detail modal */}
+      {/* Detail + Edit modal */}
       {selected && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-             style={{ background: 'rgba(0,0,0,0.6)' }}
-             onClick={() => setSelected(null)}>
-          <div className="lcard w-full max-w-md p-6 space-y-5 scale-in" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between">
-              <h2 className="font-bold text-base" style={{ color: 'var(--text-primary)' }}>{t('products.detail')}</h2>
-              <button onClick={() => setSelected(null)}
-                      className="w-8 h-8 flex items-center justify-center rounded-lg transition-colors"
-                      style={{ color: 'var(--text-secondary)' }}
-                      onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
-                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                <span className="icon">close</span>
-              </button>
-            </div>
-            <div className="space-y-3 text-sm">
-              {[
-                [t('products.name'),      selected.product_name ?? selected.name],
-                ['SKU',                   selected.sku],
-                [t('products.category'),  selected.category],
-                [t('products.brand'),     selected.brand ?? '—'],
-                [t('products.price'),     `${(selected.unit_price ?? selected.price ?? 0).toLocaleString('vi-VN')}₫`],
-                [t('products.costPrice'), `${(selected.cost_price ?? 0).toLocaleString('vi-VN')}₫`],
-                [t('products.qtySold'),   (selected.total_qty_sold ?? 0).toLocaleString()],
-                [t('products.orders'),    (selected.total_orders ?? 0).toLocaleString()],
-              ].map(([label, value]) => (
-                <div key={label} className="flex justify-between gap-4" style={{ borderBottom: '1px solid var(--border)', paddingBottom: 8 }}>
-                  <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{label}</span>
-                  <span className="font-medium text-right text-sm" style={{ color: 'var(--text-primary)' }}>{value}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
+        <ProductDetailModal
+          product={selected}
+          canEdit={canEdit}
+          isMock={isMock}
+          onClose={() => setSelected(null)}
+          onSaved={() => { setSelected(null); showToast('Đã cập nhật sản phẩm'); fetchData() }}
+        />
       )}
     </div>
   )

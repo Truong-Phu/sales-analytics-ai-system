@@ -24,11 +24,16 @@ export function AuthProvider({ children }) {
       const payload = parseJwt(token)
       if (payload && payload.exp * 1000 > Date.now()) {
         setUser({
-          id:    payload.sub,
-          name:  payload['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name'] ?? payload.name,
-          email: payload['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress'] ?? payload.email,
-          role:  payload['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'] ?? payload.role,
-          lang:  localStorage.getItem('lang') ?? 'vi',
+          id:                  payload.sub,
+          name:                payload['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name'] ?? payload.name,
+          email:               payload['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress'] ?? payload.email,
+          role:                payload['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'] ?? payload.role,
+          lang:                localStorage.getItem('lang') ?? 'vi',
+          // Các field cần thiết để route guard hoạt động đúng sau khi reload trang
+          isSuperAdmin:        payload['is_super_admin'] === 'True' || payload['is_super_admin'] === true,
+          companyId:           payload['company_id'] ?? undefined,
+          companySlug:         payload['company_slug'] ?? undefined,
+          onboardingCompleted: true,
         })
       } else {
         // Token hết hạn → xóa
@@ -43,21 +48,23 @@ export function AuthProvider({ children }) {
     const body = { password }
     if (email)    body.email    = email
     if (username) body.username = username
-    const { data } = await api.post('/api/auth/login', body)
-    sessionStorage.setItem('access_token', data.accessToken)
-    localStorage.setItem('refresh_token', data.refreshToken)
+    // Backend trả về { success, data: { accessToken, refreshToken, ... } }
+    const { data: res } = await api.post('/api/auth/login', body)
+    const tokenData = res.data
+    sessionStorage.setItem('access_token', tokenData.accessToken)
+    localStorage.setItem('refresh_token', tokenData.refreshToken)
 
-    const payload = parseJwt(data.accessToken)
+    const payload = parseJwt(tokenData.accessToken)
     const u = {
       id:                  payload.sub,
       name:                payload['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name'] ?? payload.name,
       email:               payload['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress'] ?? payload.email,
       role:                payload['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'] ?? payload.role,
-      lang:                data.preferredLanguage ?? 'vi',
-      companyId:           data.companyId,
-      companySlug:         data.companySlug,
-      isSuperAdmin:        data.isSuperAdmin ?? false,
-      onboardingCompleted: data.onboardingCompleted ?? true,
+      lang:                tokenData.preferredLanguage ?? 'vi',
+      companyId:           tokenData.companyId,
+      companySlug:         tokenData.companySlug,
+      isSuperAdmin:        tokenData.isSuperAdmin ?? false,
+      onboardingCompleted: tokenData.onboardingCompleted ?? true,
     }
     localStorage.setItem('lang', u.lang)
     setUser(u)
@@ -66,19 +73,21 @@ export function AuthProvider({ children }) {
 
   // Đăng ký tài khoản Owner mới (tạo company + subscription)
   const register = useCallback(async (formData) => {
-    const { data } = await api.post('/api/auth/register', formData)
-    sessionStorage.setItem('access_token', data.accessToken)
-    localStorage.setItem('refresh_token', data.refreshToken)
+    // Backend trả về { success, message, data: { accessToken, refreshToken, ... } }
+    const { data: res } = await api.post('/api/auth/register', formData)
+    const tokenData = res.data
+    sessionStorage.setItem('access_token', tokenData.accessToken)
+    localStorage.setItem('refresh_token', tokenData.refreshToken)
 
-    const payload = parseJwt(data.accessToken)
+    const payload = parseJwt(tokenData.accessToken)
     const u = {
       id:                  payload.sub,
       name:                payload['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name'] ?? payload.name,
       email:               payload['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress'] ?? payload.email,
       role:                payload['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'] ?? payload.role,
       lang:                'vi',
-      companyId:           data.companyId,
-      companySlug:         data.companySlug,
+      companyId:           tokenData.companyId,
+      companySlug:         tokenData.companySlug,
       isSuperAdmin:        false,
       onboardingCompleted: false,
     }
@@ -101,8 +110,13 @@ export function AuthProvider({ children }) {
     setUser(prev => prev ? { ...prev, lang } : prev)
   }, [])
 
+  // Cập nhật một số field trong user context (sau khi sửa profile, upload avatar…)
+  const updateUser = useCallback((fields) => {
+    setUser(prev => prev ? { ...prev, ...fields } : prev)
+  }, [])
+
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout, setLang }}>
+    <AuthContext.Provider value={{ user, loading, login, register, logout, setLang, updateUser }}>
       {children}
     </AuthContext.Provider>
   )

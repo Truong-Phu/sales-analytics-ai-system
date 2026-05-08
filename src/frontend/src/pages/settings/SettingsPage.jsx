@@ -7,7 +7,7 @@ import axios from '../../api/axios'
 import SubscriptionPage from './SubscriptionPage'
 
 // ── Avatar component ──────────────────────────────────────────────────────────
-function AvatarSection({ user, avatarUrl, onAvatarChange }) {
+function AvatarSection({ user, avatarUrl, onAvatarChange, onContextUpdate }) {
   const { t } = useTranslation()
   const fileRef = useRef(null)
   const [preview,   setPreview]   = useState(null)
@@ -36,6 +36,8 @@ function AvatarSection({ user, avatarUrl, onAvatarChange }) {
         headers: { 'Content-Type': 'multipart/form-data' },
       })
       onAvatarChange?.(res.data.avatarUrl)
+      // Cập nhật user context để navbar hiển thị avatar mới ngay
+      onContextUpdate?.({ avatarUrl: res.data.avatarUrl })
     } catch (err) {
       setUploadErr(err.response?.data?.message ?? 'Upload thất bại')
       setPreview(null)
@@ -95,7 +97,7 @@ function NotifToggle({ label, desc, value, onChange }) {
 // ── Main ──────────────────────────────────────────────────────────────────────
 export default function SettingsPage() {
   const { t, i18n } = useTranslation()
-  const { user, logout } = useAuth()
+  const { user, logout, updateUser } = useAuth()
   const { isDark, toggle } = useTheme()
 
   const NAV = [
@@ -134,6 +136,25 @@ export default function SettingsPage() {
     weeklyReport:  true,
   })
 
+  // Load profile từ API khi mount để lấy phone, birthdate, timezone, langPref, avatarUrl
+  useEffect(() => {
+    axios.get('/api/users/me')
+      .then(r => {
+        const d = r.data
+        setProfile({
+          fullName:  d.fullName  ?? d.full_name  ?? user?.fullName ?? '',
+          email:     d.email     ?? user?.email  ?? '',
+          phone:     d.phone     ?? '',
+          birthdate: d.birthdate ?? '',
+          timezone:  d.timezone  ?? 'Asia/Ho_Chi_Minh',
+          langPref:  d.langPref  ?? d.lang_pref  ?? 'vi',
+        })
+        const av = d.avatarUrl ?? d.avatar_url
+        if (av) setAvatarUrl(av)
+      })
+      .catch(() => {}) // giữ giá trị mặc định nếu API lỗi
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Load notification prefs từ API khi mount
   useEffect(() => {
     axios.get('/api/users/notification-preferences')
@@ -166,6 +187,8 @@ export default function SettingsPage() {
         timezone:  profile.timezone  || null,
         langPref:  profile.langPref  || null,
       })
+      // Cập nhật user context để navbar/header hiển thị tên mới ngay
+      updateUser({ name: profile.fullName, lang: profile.langPref })
       i18n.changeLanguage(profile.langPref)
       flash()
     } catch (err) {
@@ -242,6 +265,7 @@ export default function SettingsPage() {
                 user={user}
                 avatarUrl={avatarUrl}
                 onAvatarChange={url => setAvatarUrl(url)}
+                onContextUpdate={updateUser}
               />
               <div style={{ borderTop: '1px solid var(--border)', paddingTop: 16 }} />
 
