@@ -283,14 +283,19 @@ export default function ReportPage() {
               {t('report.contentSections')} ({includedCount}/{SECTION_DEFS.length})
             </p>
             <div className="space-y-1">
-              {SECTION_DEFS.map(s => (
+              {SECTION_DEFS.filter(s => s.always || form[s.key]).map(s => (
                 <PreviewSection
                   key={s.key}
                   icon={s.icon}
                   label={t(`report.section.${s.sectionKey}`)}
-                  enabled={s.always || form[s.key]}
+                  enabled
                 />
               ))}
+              {includedCount === 0 && (
+                <p className="text-xs italic py-2 text-center" style={{ color: 'var(--text-tertiary)' }}>
+                  {t('report.noSections')}
+                </p>
+              )}
             </div>
           </div>
 

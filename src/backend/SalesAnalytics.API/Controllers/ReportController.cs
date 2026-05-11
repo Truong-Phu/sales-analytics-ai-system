@@ -1,7 +1,9 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using SalesAnalytics.API.Services;
+using SalesAnalytics.Infrastructure.Data;
 
 namespace SalesAnalytics.API.Controllers;
 
@@ -11,13 +13,15 @@ namespace SalesAnalytics.API.Controllers;
 public class ReportController(
     ReportService report,
     IAuditLogService audit,
-    ITenantContext tenant) : ControllerBase
+    ITenantContext tenant,
+    AppDbContext db) : ControllerBase
 {
 
     /// <summary>
     /// Xuất báo cáo PDF.
     /// Query params: from, to, channel, chart (base64 ảnh biểu đồ, optional),
-    ///               includeOverview, includeSales, includeMultichannel, includeAI
+    ///               includeOverview, includeSales, includeMultichannel,
+    ///               includeCustomer, includeMarketing, includeInventory, includeAI
     /// </summary>
     [HttpGet("export-pdf")]
     public async Task<IActionResult> ExportPdf(
@@ -28,8 +32,11 @@ public class ReportController(
         [FromQuery] string    lang                 = "vi",
         [FromQuery] bool      includeOverview      = true,
         [FromQuery] bool      includeSales         = true,
-        [FromQuery] bool      includeMultichannel  = true,
-        [FromQuery] bool      includeAI            = false)
+        [FromQuery] bool      includeMultichannel  = false,
+        [FromQuery] bool      includeCustomer      = false,
+        [FromQuery] bool      includeMarketing     = false,
+        [FromQuery] bool      includeInventory     = false,
+        [FromQuery] bool      includeAI            = true)
     {
         var dateFrom = from ?? DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-30));
         var dateTo   = to   ?? DateOnly.FromDateTime(DateTime.UtcNow);
@@ -37,19 +44,38 @@ public class ReportController(
         var ch        = channel == "all" ? null : channel;
         var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
 
-        var userId   = int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? (int?)id : null;
+        var userId   = int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var uid) ? (int?)uid : null;
         var username = User.FindFirstValue(ClaimTypes.Name) ?? "";
+        var userRole = User.FindFirstValue(ClaimTypes.Role) ?? "";
+
+        // Lấy tên công ty từ DB (nếu có)
+        var companyName = "—";
+        if (companyId.HasValue)
+        {
+            var company = await db.Companies
+                .AsNoTracking()
+                .Where(c => c.Id == companyId.Value)
+                .Select(c => new { c.Name })
+                .FirstOrDefaultAsync();
+            if (company != null) companyName = company.Name;
+        }
 
         var language = (lang == "en") ? "en" : "vi";
 
         var pdfBytes = await report.GenerateReportAsync(
             dateFrom, dateTo, ch, chart,
-            language:     language,
-            inclOverview: includeOverview,
-            inclSales:    includeSales,
-            inclChannel:  includeMultichannel,
-            inclAI:       includeAI,
-            companyId:    companyId);
+            language:      language,
+            inclOverview:  includeOverview,
+            inclSales:     includeSales,
+            inclChannel:   includeMultichannel,
+            inclCustomer:  includeCustomer,
+            inclMarketing: includeMarketing,
+            inclInventory: includeInventory,
+            inclAI:        includeAI,
+            companyId:     companyId,
+            companyName:   companyName,
+            userName:      username,
+            userRole:      userRole);
 
         await audit.LogAsync(
             userId:     userId, username: username,
