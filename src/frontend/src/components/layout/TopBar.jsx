@@ -1,34 +1,22 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import { useTheme } from '../../hooks/useTheme'
 import { useTranslation } from 'react-i18next'
 import { useCmdK } from '../ui/CommandPalette'
 import i18n from '../../i18n'
+import axios from '../../api/axios'
 
-// ── Logo SVG ──────────────────────────────────────────────────────────────────
+// ── Logo PNG (đồng bộ với mobile app) ─────────────────────────────────────────
 function LuminaLogo({ size = 32 }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 32 32" fill="none">
-      <defs>
-        <linearGradient id="logoGrad" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stopColor="#6366F1" />
-          <stop offset="100%" stopColor="#10B981" />
-        </linearGradient>
-      </defs>
-      <polygon
-        points="16,2 28,9 28,23 16,30 4,23 4,9"
-        fill="url(#logoGrad)"
-        opacity="0.15"
-      />
-      <polygon
-        points="16,2 28,9 28,23 16,30 4,23 4,9"
-        fill="none"
-        stroke="url(#logoGrad)"
-        strokeWidth="1.5"
-      />
-      <circle cx="16" cy="16" r="4" fill="url(#logoGrad)" />
-    </svg>
+    <img
+      src="/logo.png"
+      alt="MSAS"
+      width={size}
+      height={size}
+      style={{ borderRadius: 6, objectFit: 'contain' }}
+    />
   )
 }
 
@@ -104,10 +92,13 @@ function UserAvatar() {
       <button
         onClick={() => setOpen(o => !o)}
         className="w-8 h-8 rounded-full flex items-center justify-center
-                   text-white text-sm font-bold shrink-0 cursor-pointer"
-        style={{ background: 'linear-gradient(135deg, var(--primary-400), var(--accent-500))' }}
+                   text-white text-sm font-bold shrink-0 cursor-pointer overflow-hidden"
+        style={{ background: user?.avatarUrl ? undefined : 'linear-gradient(135deg, var(--primary-400), var(--accent-500))' }}
       >
-        {initials}
+        {user?.avatarUrl
+          ? <img src={user.avatarUrl} alt="avatar" className="w-full h-full object-cover" />
+          : initials
+        }
       </button>
 
       {open && (
@@ -156,14 +147,160 @@ function UserAvatar() {
   )
 }
 
-// ── MegaMenu cho "Bán hàng" — chỉ Orders/Products/Customers (không có Đồng bộ) ──
+// ── Notification Bell ─────────────────────────────────────────────────────────
+function NotificationBell() {
+  const { t }    = useTranslation()
+  const navigate = useNavigate()
+  const [open,        setOpen]        = useState(false)
+  const [items,       setItems]       = useState([])
+  const [unreadCount, setUnreadCount] = useState(0)
+  const ref = useRef(null)
+
+  const fetchNotifs = useCallback(async () => {
+    try {
+      const res = await axios.get('/api/notifications?limit=5')
+      setItems(res.data.data ?? [])
+      setUnreadCount(res.data.unreadCount ?? 0)
+    } catch { /* silent fail */ }
+  }, [])
+
+  // Polling mỗi 30 giây
+  useEffect(() => {
+    fetchNotifs()
+    const id = setInterval(fetchNotifs, 30_000)
+    return () => clearInterval(id)
+  }, [fetchNotifs])
+
+  useEffect(() => {
+    const handler = e => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const markAllRead = async () => {
+    try {
+      await axios.patch('/api/notifications/read-all')
+      setUnreadCount(0)
+      setItems(items.map(n => ({ ...n, isRead: true })))
+    } catch { /* silent */ }
+  }
+
+  const timeAgo = (dateStr) => {
+    const diff = (Date.now() - new Date(dateStr).getTime()) / 1000
+    if (diff < 60)      return 'Vừa xong'
+    if (diff < 3600)    return `${Math.floor(diff / 60)} phút trước`
+    if (diff < 86400)   return `${Math.floor(diff / 3600)} giờ trước`
+    return `${Math.floor(diff / 86400)} ngày trước`
+  }
+
+  const typeIcon = { info: 'info', warning: 'warning', error: 'error', success: 'check_circle' }
+  const typeColor = { info: 'var(--primary-500)', warning: '#F59E0B', error: '#EF4444', success: '#10B981' }
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => { setOpen(o => !o); if (!open) fetchNotifs() }}
+        className="relative lbtn lbtn-ghost w-8 h-8 p-0 justify-center rounded-lg"
+        title="Thông báo"
+      >
+        <span className="icon text-base" style={{ color: 'var(--text-secondary)' }}>notifications</span>
+        {unreadCount > 0 && (
+          <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold text-white"
+                style={{ background: '#EF4444', minWidth: 16 }}>
+            {unreadCount > 9 ? '9+' : unreadCount}
+          </span>
+        )}
+      </button>
+
+      {open && (
+        <div className="lcard scale-in absolute right-0 top-10 w-80 z-[200]"
+             style={{ boxShadow: 'var(--shadow-lg)' }}>
+          {/* Header */}
+          <div className="flex items-center justify-between px-4 py-3 border-b"
+               style={{ borderColor: 'var(--border)' }}>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+                {t('notifications.title')}
+              </span>
+              {unreadCount > 0 && (
+                <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold text-white"
+                      style={{ background: '#EF4444' }}>
+                  {unreadCount}
+                </span>
+              )}
+            </div>
+            {unreadCount > 0 && (
+              <button onClick={markAllRead}
+                      className="text-xs hover:underline"
+                      style={{ color: 'var(--primary-500)' }}>
+                {t('notifications.markAllRead')}
+              </button>
+            )}
+          </div>
+
+          {/* Items */}
+          <div className="max-h-72 overflow-y-auto">
+            {items.length === 0 ? (
+              <div className="py-8 flex flex-col items-center gap-2" style={{ color: 'var(--text-tertiary)' }}>
+                <span className="icon" style={{ fontSize: 32, opacity: 0.3 }}>notifications_none</span>
+                <p className="text-xs">{t('notifications.empty')}</p>
+              </div>
+            ) : items.map(n => (
+              <div key={n.id}
+                   className="flex items-start gap-3 px-4 py-3 cursor-pointer transition-colors"
+                   style={{ background: n.isRead ? 'transparent' : 'var(--primary-50, rgba(99,102,241,0.05))' }}
+                   onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
+                   onMouseLeave={e => e.currentTarget.style.background = n.isRead ? 'transparent' : 'var(--primary-50, rgba(99,102,241,0.05))'}
+                   onClick={() => { navigate('/notifications'); setOpen(false) }}>
+                <span className="icon text-base shrink-0 mt-0.5"
+                      style={{ color: typeColor[n.type] ?? 'var(--text-secondary)' }}>
+                  {typeIcon[n.type] ?? 'info'}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>
+                    {n.title}
+                  </p>
+                  {n.body && (
+                    <p className="text-xs truncate mt-0.5" style={{ color: 'var(--text-secondary)' }}>
+                      {n.body}
+                    </p>
+                  )}
+                  <p className="text-[10px] mt-1" style={{ color: 'var(--text-tertiary)' }}>
+                    {timeAgo(n.createdAt)}
+                  </p>
+                </div>
+                {!n.isRead && (
+                  <span className="w-2 h-2 rounded-full shrink-0 mt-1.5"
+                        style={{ background: 'var(--primary-500)' }} />
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* Footer */}
+          <div className="border-t py-2 px-4" style={{ borderColor: 'var(--border)' }}>
+            <button
+              onClick={() => { navigate('/notifications'); setOpen(false) }}
+              className="text-xs w-full text-center hover:underline"
+              style={{ color: 'var(--primary-500)' }}>
+              {t('notifications.viewAll')}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── MegaMenu cho "Bán hàng" — Orders/Products/Categories/Customers ───────────
 function MegaMenu({ onClose }) {
   const navigate = useNavigate()
   const { t } = useTranslation()
   const items = [
-    { labelKey: 'nav.orders',    descKey: 'nav.ordersDesc',    icon: 'receipt_long', href: '/orders' },
-    { labelKey: 'nav.products',  descKey: 'nav.productsDesc',  icon: 'inventory_2',  href: '/products' },
-    { labelKey: 'nav.customers', descKey: 'nav.customersDesc', icon: 'people',       href: '/customers' },
+    { labelKey: 'nav.orders',      descKey: 'nav.ordersDesc',      icon: 'receipt_long', href: '/orders' },
+    { labelKey: 'nav.products',    descKey: 'nav.productsDesc',    icon: 'inventory_2',  href: '/products' },
+    { labelKey: 'nav.categories',  descKey: 'nav.categoriesDesc',  icon: 'category',     href: '/categories' },
+    { labelKey: 'nav.customers',   descKey: 'nav.customersDesc',   icon: 'people',       href: '/customers' },
   ]
 
   return (
@@ -325,6 +462,7 @@ export default function TopBar() {
           </kbd>
         </button>
 
+        <NotificationBell />
         <LangToggle />
         <ThemeToggle />
 

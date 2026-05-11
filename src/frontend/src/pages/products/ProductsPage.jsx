@@ -1,16 +1,15 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import MockToast from '../../components/ui/MockToast'
-import { getProducts, createProduct, updateProduct, deleteProduct, getCategories, uploadProductImage } from '../../api/dashboardApi'
+import { getOltpProducts, createProduct, updateProduct, deleteProduct, getCategories, uploadProductImage } from '../../api/dashboardApi'
 import { MOCK_PRODUCTS } from '../../mockData/products'
 import { useAuth } from '../../hooks/useAuth'
 
 const PAGE_SIZE = 10
 
 function StockBadge({ p, t }) {
-  const qty = p.total_qty_sold ?? 0
-  const stock = p.stock ?? 100
-  if (qty === 0 || stock === 0)
+  const stock = p.stock ?? 0
+  if (stock === 0)
     return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
                  style={{ background: 'rgba(239,68,68,0.10)', border: '1px solid rgba(239,68,68,0.30)', color: '#EF4444' }}>
              <span className="w-1.5 h-1.5 rounded-full bg-red-500" />{t('products.status.inactive')}
@@ -33,7 +32,6 @@ function ProductDetailModal({ product, canEdit, isMock, onClose, onSaved }) {
   const [mode,       setMode]       = useState('view')      // 'view' | 'edit'
   const [editData,   setEditData]   = useState(null)        // dữ liệu OLTP đầy đủ
   const [categories, setCategories] = useState([])
-  const [loadingEdit, setLoadingEdit] = useState(false)
   const [imgFile,    setImgFile]    = useState(null)
   const [imgPreview, setImgPreview] = useState(null)
   const [saving,     setSaving]     = useState(false)
@@ -48,16 +46,18 @@ function ProductDetailModal({ product, canEdit, isMock, onClose, onSaved }) {
   }, [mode])
 
   const enterEdit = () => {
-    // Dùng lại data đã load từ danh sách/chi tiết, không gọi API thêm lần nữa
+    // Dùng lại data đã load từ danh sách/chi tiết, không gọi API thêm lần nữa.
+    // OltpProductId và oltpCategoryId được backend JOIN từ public.products để tránh
+    // nhầm với DW product_id (seed 101-115 không tồn tại trong OLTP).
     setEditData({
-      productId:     product.product_id ?? product.productId ?? product.id,
+      productId:     product.oltpProductId  ?? product.oltp_product_id ?? product.product_id ?? product.productId ?? product.id,
       sku:           product.sku ?? '',
       productName:   product.product_name ?? product.productName ?? product.name ?? '',
       description:   product.description ?? '',
       basePrice:     product.unit_price ?? product.basePrice ?? product.price ?? '',
       costPrice:     product.cost_price ?? product.costPrice ?? '',
       stockQuantity: product.stock ?? product.stockQuantity ?? 0,
-      categoryId:    product.category_id ?? product.categoryId ?? '',
+      categoryId:    product.oltpCategoryId ?? product.oltp_category_id ?? product.category_id ?? product.categoryId ?? '',
       imageUrl:      product.imageUrl ?? null,
     })
     setImgPreview(product.imageUrl ?? null)
@@ -145,7 +145,7 @@ function ProductDetailModal({ product, canEdit, isMock, onClose, onSaved }) {
                   }
                 </div>
                 {/* Trạng thái */}
-                {(product.total_qty_sold ?? 0) === 0 || (product.stock ?? 100) === 0
+                {(product.stock ?? 0) === 0
                   ? <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium"
                            style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#EF4444' }}>
                       <span className="w-1.5 h-1.5 rounded-full bg-red-500" />Ngừng bán
@@ -182,8 +182,8 @@ function ProductDetailModal({ product, canEdit, isMock, onClose, onSaved }) {
                   {[
                     ['Giá bán',     `${(product.unit_price ?? product.price ?? 0).toLocaleString('vi-VN')}₫`],
                     ['Giá vốn',     `${(product.cost_price ?? 0).toLocaleString('vi-VN')}₫`],
-                    ['Đã bán',      (product.total_qty_sold ?? 0).toLocaleString()],
-                    ['Tồn kho',     (product.stock ?? 100).toLocaleString()],
+                    ['Tồn kho',     (product.stock ?? 0).toLocaleString()],
+                    ['Danh mục',    product.category ?? product.categoryName ?? '—'],
                     ['Thương hiệu', product.brand ?? '—'],
                     ['Số đơn hàng', (product.total_orders ?? 0).toLocaleString()],
                   ].map(([label, value]) => (
@@ -211,14 +211,10 @@ function ProductDetailModal({ product, canEdit, isMock, onClose, onSaved }) {
               <button onClick={onClose} className="lbtn lbtn-secondary flex-1 justify-center">
                 Đóng
               </button>
-              {canEdit && !isMock && (
-                <button onClick={enterEdit} disabled={loadingEdit}
+              {canEdit && !isMock && (product.oltpProductId ?? product.oltp_product_id ?? product.product_id) && (
+                <button onClick={enterEdit}
                         className="lbtn lbtn-primary flex-1 justify-center">
-                  {loadingEdit
-                    ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full"
-                            style={{ animation: 'spin 0.8s linear infinite' }} />
-                    : <span className="icon text-sm">edit</span>
-                  }
+                  <span className="icon text-sm">edit</span>
                   Chỉnh sửa
                 </button>
               )}
@@ -481,7 +477,8 @@ export default function ProductsPage() {
     setLoading(true)
     setIsMock(false)
     try {
-      setData(await getProducts({ search, category, page, limit: PAGE_SIZE }))
+      const searchParam = [search, category].filter(Boolean).join(' ') || undefined
+      setData(await getOltpProducts({ search: searchParam, page, limit: PAGE_SIZE }))
     } catch {
       const filtered = MOCK_PRODUCTS.filter(p =>
         (!search   || (p.name ?? p.product_name ?? '').toLowerCase().includes(search.toLowerCase()) ||
@@ -508,6 +505,35 @@ export default function ProductsPage() {
       fetchData()
     } catch (err) {
       showToast(err.response?.data?.message ?? 'Lỗi xóa sản phẩm')
+    }
+  }
+
+  const handleToggleActive = async (p, e) => {
+    e.stopPropagation()
+    const newActive = !(p.isActive ?? true)
+    // Optimistic update
+    setData(prev => prev ? {
+      ...prev,
+      items: prev.items.map(item =>
+        (item.product_id ?? item.productId) === (p.product_id ?? p.productId)
+          ? { ...item, isActive: newActive }
+          : item
+      )
+    } : prev)
+    try {
+      await updateProduct(p.product_id ?? p.productId, { isActive: newActive })
+      showToast(newActive ? 'Sản phẩm đang bán' : 'Sản phẩm ngừng bán')
+    } catch (err) {
+      // Rollback
+      setData(prev => prev ? {
+        ...prev,
+        items: prev.items.map(item =>
+          (item.product_id ?? item.productId) === (p.product_id ?? p.productId)
+            ? { ...item, isActive: p.isActive ?? true }
+            : item
+        )
+      } : prev)
+      showToast(err.response?.data?.message ?? 'Lỗi thay đổi trạng thái')
     }
   }
 
@@ -613,9 +639,12 @@ export default function ProductsPage() {
               onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'}
               onMouseLeave={e => e.currentTarget.style.transform = ''}
             >
-              <div className="w-10 h-10 rounded-xl flex items-center justify-center mb-3"
-                   style={{ background: 'var(--bg-elevated)' }}>
-                <span className="icon" style={{ fontSize: 22, color: 'var(--primary-500)' }}>inventory_2</span>
+              <div className="w-full rounded-xl overflow-hidden mb-3 flex items-center justify-center"
+                   style={{ aspectRatio: '1', background: 'var(--bg-elevated)', maxHeight: 120 }}>
+                {p.imageUrl
+                  ? <img src={p.imageUrl} alt={p.product_name ?? p.name} className="w-full h-full object-cover" />
+                  : <span className="icon" style={{ fontSize: 32, color: 'var(--text-tertiary)', opacity: 0.4 }}>inventory_2</span>
+                }
               </div>
               <div className="font-medium text-sm truncate mb-1" style={{ color: 'var(--text-primary)' }}>
                 {p.product_name ?? p.name}
@@ -636,7 +665,7 @@ export default function ProductsPage() {
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-elevated)' }}>
                   {['#', t('products.name'), 'SKU', t('products.category'), t('products.price'),
-                    t('products.qtySold'), t('common.status'), ''].map(h => (
+                    'Tồn kho', t('common.status'), 'Bán', ''].map(h => (
                     <th key={h} className="text-left px-4 py-3 text-xs font-semibold tracking-wide"
                         style={{ color: 'var(--text-tertiary)', whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
@@ -653,8 +682,17 @@ export default function ProductsPage() {
                     <td className="px-4 py-3 text-xs tabular-nums" style={{ color: 'var(--text-tertiary)' }}>
                       {(page - 1) * PAGE_SIZE + i + 1}
                     </td>
-                    <td className="px-4 py-3 font-medium max-w-[180px] truncate" style={{ color: 'var(--text-primary)' }}>
-                      {p.product_name ?? p.name}
+                    <td className="px-4 py-3 font-medium max-w-[200px]" style={{ color: 'var(--text-primary)' }}>
+                      <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-lg overflow-hidden shrink-0 flex items-center justify-center"
+                             style={{ background: 'var(--bg-elevated)' }}>
+                          {p.imageUrl
+                            ? <img src={p.imageUrl} alt="" className="w-full h-full object-cover" />
+                            : <span className="icon" style={{ fontSize: 16, color: 'var(--text-tertiary)' }}>inventory_2</span>
+                          }
+                        </div>
+                        <span className="truncate">{p.product_name ?? p.name}</span>
+                      </div>
                     </td>
                     <td className="px-4 py-3 font-mono text-xs" style={{ color: 'var(--text-secondary)' }}>{p.sku}</td>
                     <td className="px-4 py-3 text-xs" style={{ color: 'var(--text-secondary)' }}>{p.category}</td>
@@ -662,9 +700,21 @@ export default function ProductsPage() {
                       {(p.unit_price ?? p.price ?? 0).toLocaleString('vi-VN')}₫
                     </td>
                     <td className="px-4 py-3 text-right tabular-nums" style={{ color: 'var(--text-secondary)' }}>
-                      {(p.total_qty_sold ?? 0).toLocaleString()}
+                      {(p.stock ?? 0).toLocaleString()}
                     </td>
                     <td className="px-4 py-3"><StockBadge p={p} t={t} /></td>
+                    {/* Toggle isActive */}
+                    <td className="px-4 py-3">
+                      <button
+                        disabled={isMock || !canEdit}
+                        onClick={e => handleToggleActive(p, e)}
+                        title={(p.isActive ?? true) ? 'Đang bán — click để ngừng bán' : 'Ngừng bán — click để bán lại'}
+                        className={`relative w-10 h-5 rounded-full transition-colors ${(p.isActive ?? true) ? 'bg-green-500' : 'bg-gray-300'}`}
+                        style={{ opacity: (isMock || !canEdit) ? 0.5 : 1 }}
+                      >
+                        <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${(p.isActive ?? true) ? 'left-5' : 'left-0.5'}`} />
+                      </button>
+                    </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1">
                         <button onClick={e => { e.stopPropagation(); setSelected(p) }}

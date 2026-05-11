@@ -367,7 +367,7 @@ function PlanTab({ sub, onUpgradeSuccess, t }) {
 }
 
 // ── Tab 2: Thanh toán nhanh ───────────────────────────────────────────────────
-function PaymentTab({ onSuccess, t }) {
+function PaymentTab({ onSuccess, t, pendingInvoice }) {
   const [cycle,   setCycle]   = useState('monthly')
   const [method,  setMethod]  = useState('vnpay')
   const [loading, setLoading] = useState(false)
@@ -397,6 +397,23 @@ function PaymentTab({ onSuccess, t }) {
 
   return (
     <div className="max-w-lg space-y-5">
+      {/* Banner hóa đơn pending nếu có */}
+      {pendingInvoice && (
+        <div className="flex items-start gap-3 px-4 py-3 rounded-xl text-sm"
+          style={{ background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.30)', color: '#854D0E' }}>
+          <span className="icon shrink-0 mt-0.5" style={{ fontSize: 18, color: '#F59E0B' }}>info</span>
+          <div>
+            <p className="font-semibold">Bạn có hóa đơn chưa thanh toán</p>
+            <p className="text-xs mt-0.5">
+              Mã hóa đơn: <strong>{pendingInvoice.invoiceCode}</strong> —
+              Số tiền: <strong>{fmtVnd(pendingInvoice.amount)}</strong>
+            </p>
+            <p className="text-xs mt-0.5" style={{ color: '#92400E' }}>
+              Chọn phương thức thanh toán bên dưới và xác nhận để hoàn tất.
+            </p>
+          </div>
+        </div>
+      )}
       {/* Chọn gói + chu kỳ */}
       <div>
         <label className="text-sm font-medium block mb-2" style={{ color: 'var(--text-primary)' }}>
@@ -483,7 +500,7 @@ function PaymentTab({ onSuccess, t }) {
 }
 
 // ── Tab 3: Lịch sử thanh toán ─────────────────────────────────────────────────
-function InvoiceTab({ t }) {
+function InvoiceTab({ t, onPayPending }) {
   const [invoices, setInvoices] = useState([])
   const [loading,  setLoading]  = useState(true)
   const [error,    setError]    = useState('')
@@ -522,69 +539,98 @@ function InvoiceTab({ t }) {
     </div>
   )
 
+  const pendingCount = invoices.filter(inv => inv.paymentStatus === 'pending').length
+
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead>
-          <tr style={{ borderBottom: '1px solid var(--border)' }}>
-            {[
-              t('subscription.invoices.code'),
-              t('subscription.invoices.plan'),
-              t('subscription.invoices.amount'),
-              t('subscription.invoices.method'),
-              t('subscription.invoices.status'),
-              t('subscription.invoices.date'),
-              '',
-            ].map((h, i) => (
-              <th key={i} className="text-left py-3 px-3 font-medium"
-                style={{ color: 'var(--text-tertiary)', whiteSpace: 'nowrap' }}>
-                {h}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {invoices.map(inv => {
-            const st = statusMap[inv.paymentStatus] ?? statusMap.pending
-            return (
-              <tr key={inv.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                <td className="py-3 px-3 font-mono text-xs" style={{ color: 'var(--text-primary)' }}>
-                  {inv.invoiceCode}
-                </td>
-                <td className="py-3 px-3 capitalize" style={{ color: 'var(--text-primary)' }}>
-                  {inv.plan}
-                </td>
-                <td className="py-3 px-3 font-medium" style={{ color: 'var(--text-primary)' }}>
-                  {fmtVnd(inv.amount)}
-                </td>
-                <td className="py-3 px-3" style={{ color: 'var(--text-secondary)' }}>
-                  {inv.paymentMethod?.toUpperCase() ?? '—'}
-                </td>
-                <td className="py-3 px-3">
-                  <span className="text-xs font-medium px-2 py-0.5 rounded-full"
-                    style={{ background: st.bg, color: st.color }}>
-                    {t(`subscription.invoices.${inv.paymentStatus}`, inv.paymentStatus)}
-                  </span>
-                </td>
-                <td className="py-3 px-3 text-xs" style={{ color: 'var(--text-secondary)' }}>
-                  {fmtDate(inv.createdAt)}
-                </td>
-                <td className="py-3 px-3">
-                  {inv.paymentStatus === 'paid' && (
-                    <a href={`/api/subscription/invoices/${inv.id}/pdf`}
-                      target="_blank" rel="noopener noreferrer"
-                      className="flex items-center gap-1 text-xs"
-                      style={{ color: 'var(--primary-500)' }}>
-                      <span className="icon icon-sm">download</span>
-                      {t('subscription.invoices.download')}
-                    </a>
-                  )}
-                </td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
+    <div>
+      {/* Banner thông báo có hóa đơn chưa thanh toán */}
+      {pendingCount > 0 && (
+        <div className="flex items-center gap-3 mb-4 px-4 py-3 rounded-xl text-sm"
+          style={{ background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.30)', color: '#854D0E' }}>
+          <span className="icon" style={{ fontSize: 20, color: '#F59E0B' }}>warning</span>
+          <span>Bạn có <strong>{pendingCount}</strong> hóa đơn chưa thanh toán.</span>
+          <button
+            onClick={() => onPayPending(invoices.find(inv => inv.paymentStatus === 'pending'))}
+            className="ml-auto text-xs font-semibold underline underline-offset-2"
+            style={{ color: '#854D0E', whiteSpace: 'nowrap' }}>
+            Thanh toán ngay
+          </button>
+        </div>
+      )}
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr style={{ borderBottom: '1px solid var(--border)' }}>
+              {[
+                t('subscription.invoices.code'),
+                t('subscription.invoices.plan'),
+                t('subscription.invoices.amount'),
+                t('subscription.invoices.method'),
+                t('subscription.invoices.status'),
+                t('subscription.invoices.date'),
+                '',
+              ].map((h, i) => (
+                <th key={i} className="text-left py-3 px-3 font-medium"
+                  style={{ color: 'var(--text-tertiary)', whiteSpace: 'nowrap' }}>
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {invoices.map(inv => {
+              const st = statusMap[inv.paymentStatus] ?? statusMap.pending
+              return (
+                <tr key={inv.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                  <td className="py-3 px-3 font-mono text-xs" style={{ color: 'var(--text-primary)' }}>
+                    {inv.invoiceCode}
+                  </td>
+                  <td className="py-3 px-3 capitalize" style={{ color: 'var(--text-primary)' }}>
+                    {inv.plan}
+                  </td>
+                  <td className="py-3 px-3 font-medium" style={{ color: 'var(--text-primary)' }}>
+                    {fmtVnd(inv.amount)}
+                  </td>
+                  <td className="py-3 px-3" style={{ color: 'var(--text-secondary)' }}>
+                    {inv.paymentMethod?.toUpperCase() ?? '—'}
+                  </td>
+                  <td className="py-3 px-3">
+                    <span className="text-xs font-medium px-2 py-0.5 rounded-full"
+                      style={{ background: st.bg, color: st.color }}>
+                      {t(`subscription.invoices.${inv.paymentStatus}`, inv.paymentStatus)}
+                    </span>
+                  </td>
+                  <td className="py-3 px-3 text-xs" style={{ color: 'var(--text-secondary)' }}>
+                    {fmtDate(inv.createdAt)}
+                  </td>
+                  <td className="py-3 px-3">
+                    {inv.paymentStatus === 'paid' && (
+                      <a href={`/api/subscription/invoices/${inv.id}/pdf`}
+                        target="_blank" rel="noopener noreferrer"
+                        className="flex items-center gap-1 text-xs"
+                        style={{ color: 'var(--primary-500)' }}>
+                        <span className="icon icon-sm">download</span>
+                        {t('subscription.invoices.download')}
+                      </a>
+                    )}
+                    {inv.paymentStatus === 'pending' && (
+                      <button
+                        onClick={() => onPayPending(inv)}
+                        className="flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-lg transition-colors"
+                        style={{ background: 'rgba(245,158,11,0.10)', color: '#854D0E' }}
+                        onMouseEnter={e => e.currentTarget.style.background = 'rgba(245,158,11,0.20)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'rgba(245,158,11,0.10)'}>
+                        <span className="icon icon-sm">credit_card</span>
+                        Thanh toán
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }
@@ -592,9 +638,10 @@ function InvoiceTab({ t }) {
 // ── Main ──────────────────────────────────────────────────────────────────────
 export default function SubscriptionPage() {
   const { t } = useTranslation()
-  const [activeTab, setActiveTab] = useState('plan')
-  const [sub,       setSub]       = useState(null)
-  const [subLoad,   setSubLoad]   = useState(true)
+  const [activeTab,      setActiveTab]      = useState('plan')
+  const [sub,            setSub]            = useState(null)
+  const [subLoad,        setSubLoad]        = useState(true)
+  const [pendingInvoice, setPendingInvoice] = useState(null)  // hóa đơn pending đang chờ xử lý
 
   const loadSub = useCallback(() => {
     axios.get('/api/subscription')
@@ -622,7 +669,7 @@ export default function SubscriptionPage() {
         style={{ background: 'var(--bg-elevated)' }}>
         {tabs.map(tab => (
           <button key={tab.key}
-            onClick={() => setActiveTab(tab.key)}
+            onClick={() => { setActiveTab(tab.key); if (tab.key !== 'payment') setPendingInvoice(null) }}
             className="flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all"
             style={{
               background:    activeTab === tab.key ? 'var(--bg-surface)' : 'transparent',
@@ -644,8 +691,13 @@ export default function SubscriptionPage() {
             </div>
           : <PlanTab sub={sub} onUpgradeSuccess={loadSub} t={t} />
       )}
-      {activeTab === 'payment' && <PaymentTab onSuccess={loadSub} t={t} />}
-      {activeTab === 'history' && <InvoiceTab t={t} />}
+      {activeTab === 'payment' && <PaymentTab onSuccess={loadSub} t={t} pendingInvoice={pendingInvoice} />}
+      {activeTab === 'history' && (
+        <InvoiceTab
+          t={t}
+          onPayPending={inv => { setPendingInvoice(inv); setActiveTab('payment') }}
+        />
+      )}
     </div>
   )
 }
