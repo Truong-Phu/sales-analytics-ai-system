@@ -25,7 +25,7 @@ export function useAuth() {
     // Permission helpers
     canEdit:        ['Admin', 'Owner', 'Manager', 'Staff'].includes(role),
     canViewReport:  ['Admin', 'Owner', 'Manager'].includes(role),
-    canManageUsers: role === 'Admin',
+    canManageUsers: ['Admin', 'Owner', 'Manager'].includes(role),
   }
 }
 

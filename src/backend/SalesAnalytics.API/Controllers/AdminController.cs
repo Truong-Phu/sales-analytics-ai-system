@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SalesAnalytics.API.Attributes;
 using SalesAnalytics.API.Services;
+using SalesAnalytics.Core.Entities;
 using SalesAnalytics.Core.Enums;
 using SalesAnalytics.Infrastructure.Data;
 
@@ -28,7 +29,7 @@ public class AdminController(
 
     /// <summary>Danh sách user trong company hiện tại</summary>
     [HttpGet("users")]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Owner,Manager,Admin")]
     public async Task<IActionResult> GetUsers()
     {
         var query = db.Users.AsQueryable();
@@ -51,9 +52,112 @@ public class AdminController(
         return Ok(users);
     }
 
+    /// <summary>Owner/Manager tạo user mới trong công ty (is_active = true ngay lập tức)</summary>
+    [HttpPost("users")]
+    [Authorize(Roles = "Owner,Manager,Admin")]
+    public async Task<IActionResult> CreateUser([FromBody] CreateUserRequest req)
+    {
+        if (string.IsNullOrWhiteSpace(req.FullName)  ||
+            string.IsNullOrWhiteSpace(req.Email)     ||
+            string.IsNullOrWhiteSpace(req.TempPassword))
+            return BadRequest(new { message = "Thiếu thông tin bắt buộc." });
+
+        if (!tenant.CompanyId.HasValue && !tenant.IsSuperAdmin)
+            return BadRequest(new { message = "Không xác định được công ty." });
+
+        // Kiểm tra email trùng
+        if (await db.Users.AnyAsync(u => u.Email == req.Email))
+            return BadRequest(new { message = "Email đã tồn tại trong hệ thống." });
+
+        if (!Enum.TryParse<UserRole>(req.Role, true, out var role) ||
+            role is UserRole.Owner or UserRole.Admin)
+            return BadRequest(new { message = "Vai trò không hợp lệ. Chỉ được tạo Manager, Staff, Viewer, DataIT." });
+
+        var user = new User
+        {
+            FullName     = req.FullName.Trim(),
+            Email        = req.Email.Trim().ToLower(),
+            Username     = req.Email.Trim().ToLower(),
+            PasswordHash = AuthService.HashPassword(req.TempPassword),
+            Role         = role,
+            IsActive     = true,
+            CompanyId    = tenant.CompanyId,
+        };
+        db.Users.Add(user);
+        await db.SaveChangesAsync();
+
+        await audit.LogAsync(
+            userId: GetCurrentUserId(), username: GetCurrentUsername(),
+            action: "CREATE_USER", entityType: "User", entityId: user.Id.ToString(),
+            newValue: $"{{\"email\":\"{user.Email}\",\"role\":\"{role}\"}}",
+            ipAddress: HttpContext.Connection.RemoteIpAddress?.ToString(),
+            userAgent: HttpContext.Request.Headers["User-Agent"].ToString());
+
+        return Ok(new { message = $"Đã tạo tài khoản {user.Email} với vai trò {role}.", userId = user.Id });
+    }
+
+    /// <summary>Cập nhật thông tin user (tên, role, active)</summary>
+    [HttpPut("users/{id}")]
+    [Authorize(Roles = "Owner,Manager,Admin")]
+    public async Task<IActionResult> UpdateUser(int id, [FromBody] UpdateUserRequest req)
+    {
+        var user = await db.Users.FindAsync(id);
+        if (user is null) return NotFound();
+
+        if (!tenant.IsSuperAdmin && user.CompanyId != tenant.CompanyId)
+            return StatusCode(403, new { message = "Không có quyền chỉnh sửa tài khoản này." });
+
+        if (user.Role == UserRole.Owner)
+            return BadRequest(new { message = "Không thể chỉnh sửa tài khoản Owner." });
+
+        if (req.FullName is not null) user.FullName = req.FullName.Trim();
+        if (req.Role is not null && Enum.TryParse<UserRole>(req.Role, true, out var newRole)
+            && newRole is not UserRole.Owner and not UserRole.Admin)
+            user.Role = newRole;
+        if (req.IsActive.HasValue) user.IsActive = req.IsActive.Value;
+
+        await db.SaveChangesAsync();
+
+        await audit.LogAsync(
+            userId: GetCurrentUserId(), username: GetCurrentUsername(),
+            action: "UPDATE_USER", entityType: "User", entityId: id.ToString(),
+            newValue: $"{{\"fullName\":\"{user.FullName}\",\"role\":\"{user.Role}\",\"isActive\":{user.IsActive.ToString().ToLower()}}}",
+            ipAddress: HttpContext.Connection.RemoteIpAddress?.ToString(),
+            userAgent: HttpContext.Request.Headers["User-Agent"].ToString());
+
+        return Ok(new { message = $"Đã cập nhật tài khoản {user.Email}." });
+    }
+
+    /// <summary>Xóa user (chỉ Owner mới được xóa)</summary>
+    [HttpDelete("users/{id}")]
+    [Authorize(Roles = "Owner,Admin")]
+    public async Task<IActionResult> DeleteUser(int id)
+    {
+        var user = await db.Users.FindAsync(id);
+        if (user is null) return NotFound();
+
+        if (!tenant.IsSuperAdmin && user.CompanyId != tenant.CompanyId)
+            return StatusCode(403, new { message = "Không có quyền xóa tài khoản này." });
+
+        if (user.Role == UserRole.Owner)
+            return BadRequest(new { message = "Không thể xóa tài khoản Owner." });
+
+        db.Users.Remove(user);
+        await db.SaveChangesAsync();
+
+        await audit.LogAsync(
+            userId: GetCurrentUserId(), username: GetCurrentUsername(),
+            action: "DELETE_USER", entityType: "User", entityId: id.ToString(),
+            newValue: $"{{\"email\":\"{user.Email}\",\"role\":\"{user.Role}\"}}",
+            ipAddress: HttpContext.Connection.RemoteIpAddress?.ToString(),
+            userAgent: HttpContext.Request.Headers["User-Agent"].ToString());
+
+        return Ok(new { message = $"Đã xóa tài khoản {user.Email}." });
+    }
+
     /// <summary>Phê duyệt tài khoản (IsActive = true)</summary>
     [HttpPatch("users/{id}/approve")]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Owner,Manager,Admin")]
     public async Task<IActionResult> ApproveUser(int id)
     {
         var user = await db.Users.FindAsync(id);
@@ -78,7 +182,7 @@ public class AdminController(
 
     /// <summary>Khóa tài khoản</summary>
     [HttpPatch("users/{id}/deactivate")]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Owner,Manager,Admin")]
     public async Task<IActionResult> DeactivateUser(int id)
     {
         var user = await db.Users.FindAsync(id);
@@ -103,7 +207,7 @@ public class AdminController(
 
     /// <summary>Kích hoạt lại tài khoản đã khóa</summary>
     [HttpPatch("users/{id}/activate")]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Owner,Manager,Admin")]
     public async Task<IActionResult> ActivateUser(int id)
     {
         var user = await db.Users.FindAsync(id);
@@ -127,7 +231,7 @@ public class AdminController(
 
     /// <summary>Đổi role người dùng</summary>
     [HttpPatch("users/{id}/role")]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Owner,Manager,Admin")]
     public async Task<IActionResult> ChangeRole(int id, [FromBody] ChangeRoleRequest req)
     {
         var user = await db.Users.FindAsync(id);
@@ -220,26 +324,46 @@ public class AdminController(
         return Ok(companies);
     }
 
-    /// <summary>[SA] Kích hoạt / khóa một công ty</summary>
+    /// <summary>[SA] Kích hoạt / khóa một công ty (kèm lý do nếu khóa)</summary>
     [HttpPatch("sa/companies/{id}/toggle")]
     [RequireSuperAdmin]
-    public async Task<IActionResult> ToggleCompany(Guid id, [FromBody] ToggleRequest req)
+    public async Task<IActionResult> ToggleCompany(Guid id, [FromBody] ToggleCompanyRequest req)
     {
         var company = await db.Companies.FindAsync(id);
         if (company is null) return NotFound();
 
-        company.IsActive = req.IsActive;
+        company.IsActive  = req.IsActive;
+        company.UpdatedAt = DateTime.UtcNow;
+
+        if (!req.IsActive)
+        {
+            company.LockReason = req.Reason?.Trim();
+            company.LockedAt   = DateTime.UtcNow;
+            // Vô hiệu hoá tất cả refresh token của user trong công ty khi bị khóa
+            await db.Users
+                .Where(u => u.CompanyId == id)
+                .ExecuteUpdateAsync(s => s.SetProperty(u => u.RefreshToken, (string?)null));
+        }
+        else
+        {
+            company.LockReason = null;
+            company.LockedAt   = null;
+        }
+
         await db.SaveChangesAsync();
 
         await audit.LogAsync(
             userId: GetCurrentUserId(), username: GetCurrentUsername(),
             action: req.IsActive ? "ACTIVATE_COMPANY" : "DEACTIVATE_COMPANY",
             entityType: "Company", entityId: id.ToString(),
-            newValue: $"{{\"isActive\":{req.IsActive.ToString().ToLower()}}}",
+            newValue: $"{{\"isActive\":{req.IsActive.ToString().ToLower()},\"reason\":\"{req.Reason}\"}}",
             ipAddress: HttpContext.Connection.RemoteIpAddress?.ToString(),
             userAgent: HttpContext.Request.Headers["User-Agent"].ToString());
 
-        return Ok(new { message = $"Công ty '{company.Name}' đã được {(req.IsActive ? "kích hoạt" : "khóa")}." });
+        return Ok(new {
+            message = $"Công ty '{company.Name}' đã được {(req.IsActive ? "kích hoạt" : "khóa")}.",
+            lockReason = company.LockReason
+        });
     }
 
     /// <summary>[SA] Danh sách tất cả user trong hệ thống (toàn tenant)</summary>
@@ -473,8 +597,23 @@ public class AdminController(
         User.FindFirstValue(ClaimTypes.Name) ?? "unknown";
 }
 
+public record CreateUserRequest(
+    string FullName,
+    string Email,
+    string TempPassword,
+    string Role,
+    bool   SendInvite = false
+);
+
+public record UpdateUserRequest(
+    string? FullName,
+    string? Role,
+    bool?   IsActive
+);
+
 public record ChangeRoleRequest([System.ComponentModel.DataAnnotations.Required] string Role);
 public record ToggleRequest(bool IsActive);
+public record ToggleCompanyRequest(bool IsActive, string? Reason);
 public record UpdateSubscriptionRequest(
     string?   Plan,
     string?   Status,

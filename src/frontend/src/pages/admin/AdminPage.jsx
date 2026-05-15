@@ -1,22 +1,27 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import MockToast from '../../components/ui/MockToast'
-import { getUsers, approveUser, deactivate, activate, changeRole, getAuditLogs } from '../../api/adminApi'
+import {
+  getUsers, deactivate, activate, getAuditLogs,
+  createUser, updateUser, deleteUser,
+} from '../../api/adminApi'
 import { MOCK_USERS } from '../../mockData/admin'
+import { useAuth } from '../../hooks/useAuth'
 
-const ROLE_OPTIONS = ['Owner', 'Manager', 'Staff', 'DataIT', 'Admin', 'Viewer']
+const ROLE_CREATEABLE = ['Manager', 'Staff', 'Viewer']
+const ROLE_LABEL = { Manager: 'Quản lý', Staff: 'Nhân viên', Viewer: 'Xem', Owner: 'Chủ', DataIT: 'Data/IT', Admin: 'Admin' }
 const ROLE_COLOR = {
-  Owner:   { bg: 'rgba(139,92,246,0.10)', color: '#7C3AED', border: 'rgba(139,92,246,0.30)' },  // tím
-  Manager: { bg: 'rgba(59,130,246,0.10)',  color: '#3B82F6', border: 'rgba(59,130,246,0.30)'  }, // xanh dương
-  Staff:   { bg: 'rgba(16,185,129,0.10)',  color: '#10B981', border: 'rgba(16,185,129,0.30)'  }, // xanh lá
-  DataIT:  { bg: 'rgba(59,130,246,0.10)',  color: '#3B82F6', border: 'rgba(59,130,246,0.30)'  }, // xanh dương
-  Admin:   { bg: 'rgba(239,68,68,0.10)',   color: '#EF4444', border: 'rgba(239,68,68,0.30)'   }, // đỏ
-  Viewer:  { bg: 'rgba(100,116,139,0.10)', color: '#64748B', border: 'rgba(100,116,139,0.30)' }, // xám
+  Owner:   { bg: 'rgba(139,92,246,0.10)', color: '#7C3AED', border: 'rgba(139,92,246,0.30)' },
+  Manager: { bg: 'rgba(59,130,246,0.10)',  color: '#3B82F6', border: 'rgba(59,130,246,0.30)'  },
+  Staff:   { bg: 'rgba(16,185,129,0.10)',  color: '#10B981', border: 'rgba(16,185,129,0.30)'  },
+  DataIT:  { bg: 'rgba(59,130,246,0.10)',  color: '#3B82F6', border: 'rgba(59,130,246,0.30)'  },
+  Admin:   { bg: 'rgba(239,68,68,0.10)',   color: '#EF4444', border: 'rgba(239,68,68,0.30)'   },
+  Viewer:  { bg: 'rgba(100,116,139,0.10)', color: '#64748B', border: 'rgba(100,116,139,0.30)' },
 }
 const STATUS_CFG = {
   active:   { bg: 'rgba(16,185,129,0.10)', color: 'var(--accent-500)', border: 'rgba(16,185,129,0.30)', dot: 'var(--accent-500)', label: 'Hoạt động' },
-  inactive: { bg: 'rgba(239,68,68,0.08)',  color: '#EF4444',            border: 'rgba(239,68,68,0.25)',  dot: '#EF4444',            label: 'Vô hiệu' },
-  pending:  { bg: 'rgba(245,158,11,0.10)', color: '#F59E0B',            border: 'rgba(245,158,11,0.30)', dot: '#F59E0B',            label: 'Chờ duyệt' },
+  inactive: { bg: 'rgba(239,68,68,0.08)',  color: '#EF4444',           border: 'rgba(239,68,68,0.25)',  dot: '#EF4444',           label: 'Vô hiệu'   },
+  pending:  { bg: 'rgba(245,158,11,0.10)', color: '#F59E0B',           border: 'rgba(245,158,11,0.30)', dot: '#F59E0B',           label: 'Chờ duyệt' },
 }
 const AUDIT_STATUS_CFG = {
   SUCCESS:      { bg: 'rgba(16,185,129,0.10)', color: 'var(--accent-500)', border: 'rgba(16,185,129,0.30)' },
@@ -31,15 +36,17 @@ const ACTION_LABELS = {
   TRIGGER_SYNC: 'Kích hoạt Sync', TRIGGER_ETL: 'Kích hoạt ETL',
 }
 
-function RoleBadge({ role, label }) {
+// ─── Shared sub-components ────────────────────────────────────────────────────
+function RoleBadge({ role }) {
   const c = ROLE_COLOR[role] ?? ROLE_COLOR.Viewer
   return (
-    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
+    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
           style={{ background: c.bg, border: `1px solid ${c.border}`, color: c.color }}>
-      {label}
+      {ROLE_LABEL[role] ?? role}
     </span>
   )
 }
+
 function StatusDot({ status }) {
   const c = STATUS_CFG[status] ?? STATUS_CFG.inactive
   return (
@@ -50,6 +57,7 @@ function StatusDot({ status }) {
     </span>
   )
 }
+
 function AuditStatusBadge({ status }) {
   const c = AUDIT_STATUS_CFG[status] ?? AUDIT_STATUS_CFG.FAILED
   return (
@@ -60,16 +68,212 @@ function AuditStatusBadge({ status }) {
   )
 }
 
+function Spinner({ size = 4 }) {
+  return (
+    <span className={`w-${size} h-${size} border-2 rounded-full`}
+          style={{ borderColor: 'var(--border-strong)', borderTopColor: 'var(--primary-500)', animation: 'spin 0.8s linear infinite' }} />
+  )
+}
+
+function IconBtn({ icon, title, color, bg, hoverBg, onClick, disabled }) {
+  const [hov, setHov] = useState(false)
+  return (
+    <button onClick={onClick} title={title} disabled={disabled}
+            className="w-7 h-7 flex items-center justify-center rounded-lg transition-colors disabled:opacity-40"
+            style={{ color, background: hov ? hoverBg : bg }}
+            onMouseEnter={() => setHov(true)}
+            onMouseLeave={() => setHov(false)}>
+      <span className="icon" style={{ fontSize: 16 }}>{icon}</span>
+    </button>
+  )
+}
+
+// ─── Modal Thêm người dùng ────────────────────────────────────────────────────
+function CreateUserModal({ onClose, onCreated }) {
+  const [form, setForm]   = useState({ fullName: '', email: '', tempPassword: '', role: 'Staff', sendInvite: false })
+  const [saving, setSaving] = useState(false)
+  const [error,  setError]  = useState('')
+
+  const set = key => e => setForm(f => ({ ...f, [key]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }))
+
+  const handleSubmit = async e => {
+    e.preventDefault()
+    if (!form.fullName.trim() || !form.email.trim() || !form.tempPassword.trim()) {
+      setError('Vui lòng điền đầy đủ các trường bắt buộc.')
+      return
+    }
+    if (form.tempPassword.length < 6) {
+      setError('Mật khẩu tạm phải có ít nhất 6 ký tự.')
+      return
+    }
+    setSaving(true)
+    setError('')
+    try {
+      await createUser({ fullName: form.fullName.trim(), email: form.email.trim(), tempPassword: form.tempPassword, role: form.role, sendInvite: form.sendInvite })
+      onCreated()
+      onClose()
+    } catch (err) {
+      setError(err?.response?.data?.message ?? 'Tạo người dùng thất bại. Kiểm tra email đã tồn tại chưa.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+         style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}>
+      <div className="lcard w-full max-w-md p-6 space-y-5" style={{ maxHeight: '90vh', overflowY: 'auto' }}>
+        <div className="flex items-center justify-between">
+          <h2 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>Thêm người dùng mới</h2>
+          <button onClick={onClose} className="icon text-xl leading-none" style={{ color: 'var(--text-tertiary)' }}>close</button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {[
+            { label: 'Họ và tên', key: 'fullName', type: 'text',     placeholder: 'Nguyễn Văn A' },
+            { label: 'Email',     key: 'email',    type: 'email',    placeholder: 'user@company.com' },
+            { label: 'Mật khẩu tạm', key: 'tempPassword', type: 'password', placeholder: 'Tối thiểu 6 ký tự' },
+          ].map(({ label, key, type, placeholder }) => (
+            <div key={key} className="space-y-1">
+              <label className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
+                {label} <span style={{ color: '#EF4444' }}>*</span>
+              </label>
+              <input type={type} className="linput w-full" placeholder={placeholder}
+                     value={form[key]} onChange={set(key)} />
+            </div>
+          ))}
+
+          <div className="space-y-1">
+            <label className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Vai trò <span style={{ color: '#EF4444' }}>*</span></label>
+            <select className="linput w-full" value={form.role} onChange={set('role')}>
+              {ROLE_CREATEABLE.map(r => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
+            </select>
+          </div>
+
+          <label className="flex items-center gap-2 cursor-pointer select-none">
+            <input type="checkbox" className="w-4 h-4 rounded accent-primary"
+                   checked={form.sendInvite} onChange={set('sendInvite')} />
+            <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>Gửi email mời đăng nhập</span>
+          </label>
+
+          {error && (
+            <p className="text-xs px-3 py-2 rounded-lg"
+               style={{ background: 'rgba(239,68,68,0.08)', color: '#EF4444', border: '1px solid rgba(239,68,68,0.25)' }}>
+              {error}
+            </p>
+          )}
+
+          <div className="flex gap-3 pt-1">
+            <button type="button" onClick={onClose} className="lbtn lbtn-secondary flex-1" disabled={saving}>Hủy</button>
+            <button type="submit" className="lbtn lbtn-primary flex-1" disabled={saving}>
+              {saving ? <Spinner size={4} /> : 'Tạo người dùng'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+// ─── Modal Sửa người dùng ─────────────────────────────────────────────────────
+function EditUserModal({ user: u, onClose, onSaved }) {
+  const [form, setForm]   = useState({
+    fullName: u.fullName ?? '',
+    role:     u.role ?? 'Staff',
+    isActive: u.status === 'active' || u.isActive === true,
+  })
+  const [saving, setSaving] = useState(false)
+  const [error,  setError]  = useState('')
+
+  const handleSubmit = async e => {
+    e.preventDefault()
+    if (!form.fullName.trim()) { setError('Họ tên không được để trống.'); return }
+    setSaving(true)
+    setError('')
+    try {
+      await updateUser(u.id, { fullName: form.fullName.trim(), role: form.role, isActive: form.isActive })
+      onSaved()
+      onClose()
+    } catch (err) {
+      setError(err?.response?.data?.message ?? 'Cập nhật thất bại. Vui lòng thử lại.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const isOwnerUser = u.role === 'Owner'
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+         style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}>
+      <div className="lcard w-full max-w-md p-6 space-y-5">
+        <div className="flex items-center justify-between">
+          <h2 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>Sửa thông tin người dùng</h2>
+          <button onClick={onClose} className="icon text-xl leading-none" style={{ color: 'var(--text-tertiary)' }}>close</button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-1">
+            <label className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Họ và tên <span style={{ color: '#EF4444' }}>*</span></label>
+            <input className="linput w-full" value={form.fullName}
+                   onChange={e => setForm(f => ({ ...f, fullName: e.target.value }))} />
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Vai trò</label>
+            {isOwnerUser ? (
+              <div className="px-3 py-2 rounded-lg text-xs" style={{ background: 'var(--bg-elevated)', color: 'var(--text-tertiary)' }}>
+                Không thể thay đổi vai trò Owner
+              </div>
+            ) : (
+              <select className="linput w-full" value={form.role}
+                      onChange={e => setForm(f => ({ ...f, role: e.target.value }))}>
+                {ROLE_CREATEABLE.map(r => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
+              </select>
+            )}
+          </div>
+
+          {!isOwnerUser && (
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input type="checkbox" className="w-4 h-4 rounded accent-primary"
+                     checked={form.isActive} onChange={e => setForm(f => ({ ...f, isActive: e.target.checked }))} />
+              <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>Tài khoản đang hoạt động</span>
+            </label>
+          )}
+
+          {error && (
+            <p className="text-xs px-3 py-2 rounded-lg"
+               style={{ background: 'rgba(239,68,68,0.08)', color: '#EF4444', border: '1px solid rgba(239,68,68,0.25)' }}>
+              {error}
+            </p>
+          )}
+
+          <div className="flex gap-3 pt-1">
+            <button type="button" onClick={onClose} className="lbtn lbtn-secondary flex-1" disabled={saving}>Hủy</button>
+            <button type="submit" className="lbtn lbtn-primary flex-1" disabled={saving}>
+              {saving ? <Spinner size={4} /> : 'Lưu thay đổi'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+// ─── Main page ────────────────────────────────────────────────────────────────
 export default function AdminPage() {
   const { t } = useTranslation()
+  const { user: me } = useAuth()
   const [users,   setUsers]   = useState([])
   const [loading, setLoading] = useState(true)
   const [isMock,  setIsMock]  = useState(false)
   const [tab,     setTab]     = useState('all')
-  const [acting,       setActing]       = useState({})
-  const [editingRoleId, setEditingRoleId] = useState(null)
+  const [acting,  setActing]  = useState({})
 
-  // ── Audit log state ────────────────────────────────────────────────────────
+  const [showCreate, setShowCreate] = useState(false)
+  const [editUser,   setEditUser]   = useState(null)
+
+  // ── Audit log ──────────────────────────────────────────────────────────────
   const [auditLogs,    setAuditLogs]    = useState([])
   const [auditTotal,   setAuditTotal]   = useState(0)
   const [auditPage,    setAuditPage]    = useState(1)
@@ -80,21 +284,14 @@ export default function AdminPage() {
   const [filterTo,     setFilterTo]     = useState('')
 
   const fetchUsers = async () => {
-    setLoading(true)
-    setIsMock(false)
-    try {
-      setUsers(await getUsers())
-    } catch {
-      setUsers(MOCK_USERS)
-      setIsMock(true)
-    } finally {
-      setLoading(false)
-    }
+    setLoading(true); setIsMock(false)
+    try   { setUsers(await getUsers()) }
+    catch { setUsers(MOCK_USERS); setIsMock(true) }
+    finally { setLoading(false) }
   }
 
   const fetchAuditLogs = useCallback(async (page = 1) => {
-    setAuditLoading(true)
-    setAuditError(false)
+    setAuditLoading(true); setAuditError(false)
     try {
       const params = { page, pageSize: 50 }
       if (filterAction) params.action = filterAction
@@ -105,9 +302,7 @@ export default function AdminPage() {
       setAuditTotal(res.total)
       setAuditPage(page)
     } catch {
-      setAuditError(true)
-      setAuditLogs([])
-      setAuditTotal(0)
+      setAuditError(true); setAuditLogs([]); setAuditTotal(0)
     } finally {
       setAuditLoading(false)
     }
@@ -118,36 +313,55 @@ export default function AdminPage() {
 
   const act = async (userId, fn) => {
     setActing(a => ({ ...a, [userId]: true }))
-    try { await fn(); await fetchUsers() } catch { /* ignore */ }
-    finally {
-      setActing(a => ({ ...a, [userId]: false }))
-      setEditingRoleId(null)
-    }
+    try   { await fn(); await fetchUsers() }
+    catch { /* ignore */ }
+    finally { setActing(a => ({ ...a, [userId]: false })) }
   }
 
-  const pendingCount = users.filter(u => u.status === 'pending').length
-  const displayed    = tab === 'pending' ? users.filter(u => u.status === 'pending') : users
+  const handleToggleActive = u => {
+    if (u.status === 'active') act(u.id, () => deactivate(u.id))
+    else                       act(u.id, () => activate(u.id))
+  }
+
+  const handleDelete = u => {
+    if (!window.confirm(`Xóa người dùng "${u.fullName}"?\nHành động này không thể hoàn tác.`)) return
+    act(u.id, () => deleteUser(u.id))
+  }
+
+  const managerCount = users.filter(u => u.role === 'Manager').length
+  const isOwner      = me?.role === 'Owner'
 
   const statCards = [
-    { label: t('admin.totalUsers'),    value: users.length,                                       icon: 'group',         color: 'var(--primary-500)' },
-    { label: t('admin.activeUsers'),   value: users.filter(u => u.status === 'active').length,    icon: 'check_circle',  color: 'var(--accent-500)'  },
-    { label: t('admin.pendingUsers'),  value: pendingCount,                                        icon: 'hourglass_top', color: '#F59E0B'             },
-    { label: t('admin.inactiveUsers'), value: users.filter(u => u.status === 'inactive').length,  icon: 'block',         color: '#EF4444'             },
+    { label: t('admin.totalUsers'),    value: users.length,                                      icon: 'group',           color: 'var(--primary-500)' },
+    { label: t('admin.activeUsers'),   value: users.filter(u => u.status === 'active').length,   icon: 'check_circle',    color: 'var(--accent-500)'  },
+    { label: 'Quản lý',               value: managerCount,                                       icon: 'manage_accounts', color: '#3B82F6'             },
+    { label: t('admin.inactiveUsers'), value: users.filter(u => u.status === 'inactive').length, icon: 'block',           color: '#EF4444'             },
   ]
 
   return (
     <div className="space-y-4">
       <MockToast show={isMock} />
+      {showCreate && <CreateUserModal onClose={() => setShowCreate(false)} onCreated={fetchUsers} />}
+      {editUser   && <EditUserModal   user={editUser} onClose={() => setEditUser(null)} onSaved={fetchUsers} />}
 
+      {/* Header */}
       <div className="flex items-center justify-between gap-4">
         <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>{t('admin.title')}</h1>
-        <button onClick={tab === 'audit' ? () => fetchAuditLogs(1) : fetchUsers}
-                className="lbtn lbtn-secondary !h-9" disabled={loading || auditLoading}>
-          <span className="icon text-base"
-                style={{ ...(( loading || auditLoading) && { animation: 'spin 1s linear infinite' }) }}>
-            refresh
-          </span>
-        </button>
+        <div className="flex items-center gap-2">
+          {tab !== 'audit' && (
+            <button onClick={() => setShowCreate(true)} className="lbtn lbtn-primary !h-9 gap-1.5">
+              <span className="icon text-base">person_add</span>
+              <span className="hidden sm:inline">Thêm người dùng</span>
+            </button>
+          )}
+          <button onClick={tab === 'audit' ? () => fetchAuditLogs(1) : fetchUsers}
+                  className="lbtn lbtn-secondary !h-9" disabled={loading || auditLoading}>
+            <span className="icon text-base"
+                  style={{ ...((loading || auditLoading) && { animation: 'spin 1s linear infinite' }) }}>
+              refresh
+            </span>
+          </button>
+        </div>
       </div>
 
       {/* Summary cards */}
@@ -167,35 +381,28 @@ export default function AdminPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-0" style={{ borderBottom: '1px solid var(--border)' }}>
+      <div className="flex" style={{ borderBottom: '1px solid var(--border)' }}>
         {[
-          { key: 'all',     label: t('admin.allUsers'),        suffix: '' },
-          { key: 'pending', label: t('admin.pendingApproval'), suffix: pendingCount > 0 ? ` (${pendingCount})` : '' },
-          { key: 'audit',   label: 'Lịch sử hoạt động',       suffix: auditTotal > 0 ? ` (${auditTotal})` : '' },
+          { key: 'all',   label: t('admin.allUsers'),  suffix: '' },
+          { key: 'audit', label: 'Lịch sử hoạt động', suffix: auditTotal > 0 ? ` (${auditTotal})` : '' },
         ].map(tb => (
-          <button
-            key={tb.key}
-            onClick={() => setTab(tb.key)}
-            className="pb-3 px-4 text-sm font-medium transition-all"
-            style={{
-              borderBottom: `2px solid ${tab === tb.key ? 'var(--primary-500)' : 'transparent'}`,
-              color: tab === tb.key ? 'var(--primary-500)' : 'var(--text-secondary)',
-              marginBottom: -1,
-            }}
-          >
+          <button key={tb.key} onClick={() => setTab(tb.key)}
+                  className="pb-3 px-4 text-sm font-medium transition-all"
+                  style={{
+                    borderBottom: `2px solid ${tab === tb.key ? 'var(--primary-500)' : 'transparent'}`,
+                    color: tab === tb.key ? 'var(--primary-500)' : 'var(--text-secondary)',
+                    marginBottom: -1,
+                  }}>
             {tb.label}{tb.suffix}
           </button>
         ))}
       </div>
 
-      {/* User management table */}
+      {/* ── Users table ── */}
       {tab !== 'audit' && (
         <div className="lcard overflow-hidden">
           {loading ? (
-            <div className="p-16 flex items-center justify-center">
-              <span className="w-7 h-7 border-2 rounded-full"
-                    style={{ borderColor: 'var(--border-strong)', borderTopColor: 'var(--primary-500)', animation: 'spin 0.8s linear infinite' }} />
-            </div>
+            <div className="p-16 flex items-center justify-center"><Spinner size={7} /></div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -208,80 +415,74 @@ export default function AdminPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {displayed.length === 0 ? (
+                  {users.length === 0 ? (
                     <tr>
                       <td colSpan={5} className="py-12 text-center text-sm" style={{ color: 'var(--text-tertiary)' }}>
-                        {tab === 'pending' ? t('admin.noPending') : t('common.noData')}
+                        {t('common.noData')}
                       </td>
                     </tr>
-                  ) : displayed.map(u => (
-                    <tr key={u.id} className="transition-colors"
-                        style={{ borderBottom: '1px solid var(--border)' }}
-                        onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
-                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                      <td className="px-4 py-3 font-medium" style={{ color: 'var(--text-primary)' }}>{u.fullName}</td>
-                      <td className="px-4 py-3 text-xs" style={{ color: 'var(--text-secondary)' }}>{u.email}</td>
-                      <td className="px-4 py-3">
-                        {editingRoleId === u.id ? (
-                          <select
-                            value={u.role}
-                            disabled={acting[u.id]}
-                            autoFocus
-                            onChange={e => act(u.id, () => changeRole(u.id, e.target.value))}
-                            onBlur={() => setEditingRoleId(null)}
-                            className="linput !h-7 text-xs !px-2 !py-0"
-                            style={{ maxWidth: 130 }}
-                          >
-                            {ROLE_OPTIONS.map(r => (
-                              <option key={r} value={r}>{t(`admin.roles.${r}`, r)}</option>
-                            ))}
-                          </select>
-                        ) : (
-                          <button
-                            onClick={() => !acting[u.id] && setEditingRoleId(u.id)}
-                            disabled={acting[u.id]}
-                            title={t('admin.changeRole')}
-                            className="cursor-pointer disabled:cursor-default"
-                          >
-                            <RoleBadge role={u.role} label={t(`admin.roles.${u.role}`, u.role)} />
-                          </button>
-                        )}
-                      </td>
-                      <td className="px-4 py-3"><StatusDot status={u.status} /></td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          {acting[u.id] ? (
-                            <span className="w-4 h-4 border-2 rounded-full"
-                                  style={{ borderColor: 'var(--border-strong)', borderTopColor: 'var(--primary-500)', animation: 'spin 0.8s linear infinite' }} />
-                          ) : (
-                            <>
-                              {u.status === 'pending' && (
-                                <button onClick={() => act(u.id, () => approveUser(u.id))}
-                                        className="lbtn lbtn-primary !h-7 !px-3 text-xs">
-                                  <span className="icon" style={{ fontSize: 14 }}>check</span>
-                                  {t('admin.approve')}
-                                </button>
-                              )}
-                              {u.status === 'active' && (
-                                <button onClick={() => act(u.id, () => deactivate(u.id))}
-                                        className="lbtn lbtn-secondary !h-7 !px-3 text-xs">
-                                  <span className="icon" style={{ fontSize: 14 }}>block</span>
-                                  {t('admin.deactivate')}
-                                </button>
-                              )}
-                              {u.status === 'inactive' && (
-                                <button onClick={() => act(u.id, () => activate(u.id))}
-                                        className="lbtn lbtn-secondary !h-7 !px-3 text-xs">
-                                  <span className="icon" style={{ fontSize: 14 }}>check_circle</span>
-                                  {t('admin.activate')}
-                                </button>
-                              )}
-                            </>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                  ) : users.map(u => {
+                    const isSelf     = String(me?.id) === String(u.id)
+                    const isUserOwner = u.role === 'Owner'
+                    return (
+                      <tr key={u.id} className="transition-colors"
+                          style={{ borderBottom: '1px solid var(--border)' }}
+                          onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
+                          onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                        <td className="px-4 py-3 font-medium" style={{ color: 'var(--text-primary)' }}>
+                          <div className="flex items-center gap-2">
+                            {u.fullName}
+                            {isSelf && (
+                              <span className="text-xs px-1.5 py-0.5 rounded font-normal"
+                                    style={{ background: 'rgba(99,102,241,0.1)', color: 'var(--primary-500)' }}>
+                                bạn
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-xs" style={{ color: 'var(--text-secondary)' }}>{u.email}</td>
+                        <td className="px-4 py-3"><RoleBadge role={u.role} /></td>
+                        <td className="px-4 py-3"><StatusDot status={u.status} /></td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-1.5">
+                            {acting[u.id] ? <Spinner size={4} /> : (
+                              <>
+                                {/* Sửa */}
+                                <IconBtn
+                                  icon="edit" title="Sửa thông tin"
+                                  color="var(--primary-500)"
+                                  bg="rgba(99,102,241,0.08)" hoverBg="rgba(99,102,241,0.16)"
+                                  onClick={() => setEditUser(u)}
+                                />
+
+                                {/* Khoá / Mở – không tự khoá, không khoá Owner khác */}
+                                {!isSelf && !isUserOwner && (
+                                  <IconBtn
+                                    icon={u.status === 'active' ? 'lock' : 'lock_open'}
+                                    title={u.status === 'active' ? 'Vô hiệu hóa' : 'Kích hoạt'}
+                                    color={u.status === 'active' ? '#F59E0B' : 'var(--accent-500)'}
+                                    bg={u.status === 'active' ? 'rgba(245,158,11,0.08)' : 'rgba(16,185,129,0.08)'}
+                                    hoverBg={u.status === 'active' ? 'rgba(245,158,11,0.16)' : 'rgba(16,185,129,0.16)'}
+                                    onClick={() => handleToggleActive(u)}
+                                  />
+                                )}
+
+                                {/* Xóa – chỉ Owner thấy, không xóa chính mình / Owner khác */}
+                                {isOwner && !isSelf && !isUserOwner && (
+                                  <IconBtn
+                                    icon="delete" title="Xóa người dùng"
+                                    color="#EF4444"
+                                    bg="rgba(239,68,68,0.08)" hoverBg="rgba(239,68,68,0.16)"
+                                    onClick={() => handleDelete(u)}
+                                  />
+                                )}
+                              </>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
@@ -289,39 +490,28 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* Audit log tab */}
+      {/* ── Audit log tab ── */}
       {tab === 'audit' && (
         <div className="space-y-3">
           {/* Filter bar */}
           <div className="lcard p-3 flex flex-wrap gap-3 items-end">
             <div className="flex flex-col gap-1">
               <label className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Loại hành động</label>
-              <select
-                value={filterAction}
-                onChange={e => setFilterAction(e.target.value)}
-                className="linput !h-8 text-xs"
-                style={{ minWidth: 160 }}
-              >
+              <select value={filterAction} onChange={e => setFilterAction(e.target.value)}
+                      className="linput !h-8 text-xs" style={{ minWidth: 160 }}>
                 <option value="">Tất cả</option>
-                {Object.entries(ACTION_LABELS).map(([k, v]) => (
-                  <option key={k} value={k}>{v}</option>
-                ))}
+                {Object.entries(ACTION_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
               </select>
             </div>
             <div className="flex flex-col gap-1">
               <label className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Từ ngày</label>
-              <input type="date" value={filterFrom}
-                     onChange={e => setFilterFrom(e.target.value)}
-                     className="linput !h-8 text-xs" />
+              <input type="date" value={filterFrom} onChange={e => setFilterFrom(e.target.value)} className="linput !h-8 text-xs" />
             </div>
             <div className="flex flex-col gap-1">
               <label className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Đến ngày</label>
-              <input type="date" value={filterTo}
-                     onChange={e => setFilterTo(e.target.value)}
-                     className="linput !h-8 text-xs" />
+              <input type="date" value={filterTo} onChange={e => setFilterTo(e.target.value)} className="linput !h-8 text-xs" />
             </div>
-            <button onClick={() => fetchAuditLogs(1)}
-                    className="lbtn lbtn-primary !h-8 !px-4 text-xs" disabled={auditLoading}>
+            <button onClick={() => fetchAuditLogs(1)} className="lbtn lbtn-primary !h-8 !px-4 text-xs" disabled={auditLoading}>
               <span className="icon" style={{ fontSize: 14 }}>search</span>
               Tìm kiếm
             </button>
@@ -334,10 +524,7 @@ export default function AdminPage() {
           {/* Table */}
           <div className="lcard overflow-hidden">
             {auditLoading ? (
-              <div className="p-16 flex items-center justify-center">
-                <span className="w-7 h-7 border-2 rounded-full"
-                      style={{ borderColor: 'var(--border-strong)', borderTopColor: 'var(--primary-500)', animation: 'spin 0.8s linear infinite' }} />
-              </div>
+              <div className="p-16 flex items-center justify-center"><Spinner size={7} /></div>
             ) : auditError ? (
               <div className="p-12 text-center">
                 <span className="icon text-3xl mb-2 block" style={{ color: '#EF4444' }}>error_outline</span>
@@ -372,12 +559,10 @@ export default function AdminPage() {
                           style={{ borderBottom: '1px solid var(--border)' }}
                           onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
                           onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                        <td className="px-4 py-2.5 text-xs font-mono whitespace-nowrap"
-                            style={{ color: 'var(--text-secondary)' }}>
+                        <td className="px-4 py-2.5 text-xs font-mono whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>
                           {new Date(log.createdAt).toLocaleString('vi-VN')}
                         </td>
-                        <td className="px-4 py-2.5 text-xs font-medium"
-                            style={{ color: 'var(--text-primary)' }}>
+                        <td className="px-4 py-2.5 text-xs font-medium" style={{ color: 'var(--text-primary)' }}>
                           {log.username ?? '—'}
                         </td>
                         <td className="px-4 py-2.5 text-xs">
@@ -392,9 +577,7 @@ export default function AdminPage() {
                         <td className="px-4 py-2.5">
                           <div className="flex flex-col gap-1">
                             <AuditStatusBadge status={log.status} />
-                            {log.errorMessage && (
-                              <span className="text-xs" style={{ color: '#EF4444' }}>{log.errorMessage}</span>
-                            )}
+                            {log.errorMessage && <span className="text-xs" style={{ color: '#EF4444' }}>{log.errorMessage}</span>}
                           </div>
                         </td>
                       </tr>
@@ -406,23 +589,18 @@ export default function AdminPage() {
 
             {/* Pagination */}
             {auditTotal > 50 && (
-              <div className="px-4 py-3 flex items-center justify-between"
-                   style={{ borderTop: '1px solid var(--border)' }}>
-                <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                  Tổng {auditTotal} bản ghi
-                </span>
+              <div className="px-4 py-3 flex items-center justify-between" style={{ borderTop: '1px solid var(--border)' }}>
+                <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Tổng {auditTotal} bản ghi</span>
                 <div className="flex gap-2">
                   <button onClick={() => fetchAuditLogs(auditPage - 1)}
-                          disabled={auditPage <= 1 || auditLoading}
-                          className="lbtn lbtn-secondary !h-7 !px-3 text-xs">
+                          disabled={auditPage <= 1 || auditLoading} className="lbtn lbtn-secondary !h-7 !px-3 text-xs">
                     <span className="icon" style={{ fontSize: 14 }}>chevron_left</span>
                   </button>
                   <span className="text-xs flex items-center px-2" style={{ color: 'var(--text-secondary)' }}>
                     Trang {auditPage}
                   </span>
                   <button onClick={() => fetchAuditLogs(auditPage + 1)}
-                          disabled={auditPage * 50 >= auditTotal || auditLoading}
-                          className="lbtn lbtn-secondary !h-7 !px-3 text-xs">
+                          disabled={auditPage * 50 >= auditTotal || auditLoading} className="lbtn lbtn-secondary !h-7 !px-3 text-xs">
                     <span className="icon" style={{ fontSize: 14 }}>chevron_right</span>
                   </button>
                 </div>
