@@ -193,3 +193,9 @@ export const getChannelPrices = (productId) =>
 
 export const saveChannelPrice = (productId, dto) =>
   api.post(`/api/products/oltp/${productId}/channel-prices`, dto).then(r => r.data)
+
+// ── Order Notes ───────────────────────────────────────────────────────────────
+
+export const getOrderNotes   = (orderId)        => api.get(`/api/orders/oltp/${orderId}/notes`).then(r => r.data)
+export const addOrderNote    = (orderId, note)   => api.post(`/api/orders/oltp/${orderId}/notes`, { note }).then(r => r.data)
+export const deleteOrderNote = (orderId, noteId) => api.delete(`/api/orders/oltp/${orderId}/notes/${noteId}`).then(r => r.data)

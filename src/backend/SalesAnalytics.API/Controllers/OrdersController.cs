@@ -385,4 +385,134 @@ public class OrdersController(
             return StatusCode(503, new { message = "Lỗi kết nối database.", detail = ex.Message });
         }
     }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // 3. GHI CHÚ NỘI BỘ – order_notes (raw SQL, idempotent CREATE TABLE)
+    // ══════════════════════════════════════════════════════════════════════════
+
+    private const string CreateOrderNotesTableSql = """
+        CREATE TABLE IF NOT EXISTS public.order_notes (
+            id         SERIAL       PRIMARY KEY,
+            order_id   INTEGER      NOT NULL,
+            user_id    INTEGER,
+            user_name  VARCHAR(255),
+            note       TEXT         NOT NULL,
+            created_at TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS idx_order_notes_order_id ON public.order_notes(order_id);
+        """;
+
+    /// <summary>[OLTP] Lấy danh sách ghi chú nội bộ của đơn hàng</summary>
+    [HttpGet("oltp/{orderId:int}/notes")]
+    [Authorize(Roles = "Owner,Manager,Staff,DataIT,Admin")]
+    public async Task<IActionResult> GetOrderNotes(int orderId)
+    {
+        try
+        {
+            await using var conn = new NpgsqlConnection(_connStr);
+            await conn.OpenAsync();
+
+            await using (var cmd = new NpgsqlCommand(CreateOrderNotesTableSql, conn))
+                await cmd.ExecuteNonQueryAsync();
+
+            await using var select = new NpgsqlCommand(
+                "SELECT id, order_id, user_id, user_name, note, created_at FROM public.order_notes WHERE order_id = @oid ORDER BY created_at DESC",
+                conn);
+            select.Parameters.AddWithValue("oid", orderId);
+
+            var notes = new List<object>();
+            await using var reader = await select.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                notes.Add(new
+                {
+                    id        = reader.GetInt32(0),
+                    orderId   = reader.GetInt32(1),
+                    userId    = reader.IsDBNull(2) ? (int?)null : reader.GetInt32(2),
+                    userName  = reader.IsDBNull(3) ? null : reader.GetString(3),
+                    note      = reader.GetString(4),
+                    createdAt = reader.GetDateTime(5),
+                });
+            }
+
+            return Ok(new { success = true, data = notes });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(503, new { message = "Lỗi lấy ghi chú.", detail = ex.Message });
+        }
+    }
+
+    /// <summary>[OLTP] Thêm ghi chú nội bộ cho đơn hàng</summary>
+    [HttpPost("oltp/{orderId:int}/notes")]
+    [Authorize(Roles = "Owner,Manager,Staff,DataIT,Admin")]
+    public async Task<IActionResult> AddOrderNote(int orderId, [FromBody] OrderNoteRequest req)
+    {
+        if (string.IsNullOrWhiteSpace(req.Note))
+            return BadRequest(new { message = "Nội dung ghi chú không được để trống." });
+
+        var userId   = int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var uid) ? (int?)uid : null;
+        var userName = User.FindFirstValue(ClaimTypes.Name) ?? User.FindFirstValue(ClaimTypes.Email) ?? "Hệ thống";
+
+        try
+        {
+            await using var conn = new NpgsqlConnection(_connStr);
+            await conn.OpenAsync();
+
+            await using (var cmd = new NpgsqlCommand(CreateOrderNotesTableSql, conn))
+                await cmd.ExecuteNonQueryAsync();
+
+            await using var insert = new NpgsqlCommand(
+                "INSERT INTO public.order_notes (order_id, user_id, user_name, note) VALUES (@oid, @uid, @uname, @note) RETURNING id, created_at",
+                conn);
+            insert.Parameters.AddWithValue("oid",   orderId);
+            insert.Parameters.AddWithValue("uid",   userId.HasValue ? (object)userId.Value : DBNull.Value);
+            insert.Parameters.AddWithValue("uname", userName);
+            insert.Parameters.AddWithValue("note",  req.Note.Trim());
+
+            await using var reader = await insert.ExecuteReaderAsync();
+            await reader.ReadAsync();
+            var newId   = reader.GetInt32(0);
+            var created = reader.GetDateTime(1);
+
+            return Ok(new
+            {
+                success = true,
+                data    = new { id = newId, orderId, userId, userName, note = req.Note.Trim(), createdAt = created },
+            });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(503, new { message = "Lỗi thêm ghi chú.", detail = ex.Message });
+        }
+    }
+
+    /// <summary>[OLTP] Xóa ghi chú (Owner/Manager/Admin)</summary>
+    [HttpDelete("oltp/{orderId:int}/notes/{noteId:int}")]
+    [Authorize(Roles = "Owner,Manager,Admin")]
+    public async Task<IActionResult> DeleteOrderNote(int orderId, int noteId)
+    {
+        try
+        {
+            await using var conn = new NpgsqlConnection(_connStr);
+            await conn.OpenAsync();
+
+            await using var del = new NpgsqlCommand(
+                "DELETE FROM public.order_notes WHERE id = @nid AND order_id = @oid",
+                conn);
+            del.Parameters.AddWithValue("nid", noteId);
+            del.Parameters.AddWithValue("oid", orderId);
+
+            var affected = await del.ExecuteNonQueryAsync();
+            if (affected == 0) return NotFound(new { message = "Không tìm thấy ghi chú." });
+
+            return Ok(new { success = true });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(503, new { message = "Lỗi xóa ghi chú.", detail = ex.Message });
+        }
+    }
 }
+
+public record OrderNoteRequest(string Note);

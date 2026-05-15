@@ -449,10 +449,22 @@ function DrillDownModal({ title, subtitle, columns, data, onClose, onExport }) {
 }
 
 // ── Tab: 1 — Overview ─────────────────────────────────────────────────────────
-function TabOverview({ data }) {
+function TabOverview({ data, compareMode, prevData }) {
   const { t }  = useTranslation()
   const kpi    = data.kpi
   const sp     = data.sparklines || {}
+
+  // Dữ liệu chart gộp kỳ này + kỳ trước (index-based)
+  const trendData = data.revenueByDay.map((d, i) => {
+    const prev = prevData?.revenueByDay?.[i]
+    return {
+      date:           d.date.slice(5),
+      netRevenue:     d.netRevenue,
+      grossProfit:    d.grossProfit,
+      prevRevenue:    prev?.netRevenue   ?? null,
+      prevProfit:     prev?.grossProfit  ?? null,
+    }
+  })
 
   return (
     <div className="space-y-5">
@@ -531,17 +543,29 @@ function TabOverview({ data }) {
         <div className="lcard p-5 col-span-12 lg:col-span-8">
           <div className="flex items-center justify-between mb-4">
             <SectionTitle>{t('dashboard.chart.revenueTrend')}</SectionTitle>
-            <div className="flex items-center gap-3 text-caption" style={{ color: 'var(--text-tertiary)' }}>
+            <div className="flex items-center gap-3 text-caption flex-wrap" style={{ color: 'var(--text-tertiary)' }}>
               <span className="flex items-center gap-1.5">
                 <span className="w-3 h-0.5 inline-block rounded" style={{ background: '#6366F1' }} />{t('dashboard.series.revenue')}
               </span>
               <span className="flex items-center gap-1.5">
                 <span className="w-3 h-0.5 inline-block rounded" style={{ background: '#10B981' }} />{t('dashboard.series.profit')}
               </span>
+              {compareMode && prevData && (
+                <>
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-3 h-0.5 inline-block rounded border-t-2 border-dashed" style={{ background: 'transparent', borderColor: '#A5B4FC' }} />
+                    DT kỳ trước
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-3 h-0.5 inline-block rounded border-t-2 border-dashed" style={{ background: 'transparent', borderColor: '#6EE7B7' }} />
+                    LN kỳ trước
+                  </span>
+                </>
+              )}
             </div>
           </div>
           <ResponsiveContainer width="100%" height={280}>
-            <AreaChart data={data.revenueByDay.map(d => ({ ...d, date: d.date.slice(5) }))} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+            <AreaChart data={trendData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
               <defs>
                 <linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor="#6366F1" stopOpacity={0.25} />
@@ -554,12 +578,18 @@ function TabOverview({ data }) {
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
               <XAxis dataKey="date" tick={{ fontSize: 11, fill: 'var(--text-tertiary)' }} axisLine={false} tickLine={false}
-                tickFormatter={(v, i) => i % Math.max(1, Math.floor(data.revenueByDay.length / 8)) === 0 ? v : ''} />
+                tickFormatter={(v, i) => i % Math.max(1, Math.floor(trendData.length / 8)) === 0 ? v : ''} />
               <YAxis tick={{ fontSize: 11, fill: 'var(--text-tertiary)' }} axisLine={false} tickLine={false} width={52}
                 tickFormatter={v => v >= 1_000_000 ? `${(v/1_000_000).toFixed(0)}M` : v >= 1000 ? `${(v/1000).toFixed(0)}K` : v} />
               <Tooltip content={<ChartTooltip />} />
               <Area type="monotone" dataKey="netRevenue"  name={t('dashboard.series.revenue')} stroke="#6366F1" strokeWidth={2} fill="url(#revGrad)" dot={false} />
               <Area type="monotone" dataKey="grossProfit" name={t('dashboard.series.profit')}  stroke="#10B981" strokeWidth={2} fill="url(#proGrad)" dot={false} />
+              {compareMode && prevData && (
+                <>
+                  <Area type="monotone" dataKey="prevRevenue" name="DT kỳ trước" stroke="#A5B4FC" strokeWidth={1.5} strokeDasharray="5 4" fill="none" dot={false} connectNulls />
+                  <Area type="monotone" dataKey="prevProfit"  name="LN kỳ trước" stroke="#6EE7B7" strokeWidth={1.5} strokeDasharray="5 4" fill="none" dot={false} connectNulls />
+                </>
+              )}
             </AreaChart>
           </ResponsiveContainer>
         </div>
@@ -591,11 +621,24 @@ function TabOverview({ data }) {
 }
 
 // ── Tab: 2 — Sales Performance ────────────────────────────────────────────────
-function TabSales({ data }) {
+function TabSales({ data, compareMode, prevData }) {
   const { t } = useTranslation()
   const [drillProduct,        setDrillProduct]        = useState(null)
   // Toggle ẩn/hiện bảng raw data — mặc định ẩn
   const [showChannelTopTable, setShowChannelTopTable] = useState(false)
+
+  // Dữ liệu theo tháng gộp kỳ này + kỳ trước (cho tab Sales)
+  const monthlyCompare = compareMode && prevData
+    ? data.monthlyByChannel.map((row, i) => {
+        const prev = prevData.monthlyByChannel?.[i]
+        if (!prev) return row
+        const combined = { ...row }
+        Object.keys(prev).forEach(k => {
+          if (k !== 'month') combined[`prev_${k}`] = prev[k]
+        })
+        return combined
+      })
+    : null
 
   // Tính Pareto: sắp xếp theo doanh thu giảm dần, thêm % tích lũy
   const totalRevenue = data.revenueByChannel.reduce((s, ch) => s + ch.revenue, 0)
@@ -639,9 +682,17 @@ function TabSales({ data }) {
     <div className="space-y-5">
       {/* Grouped bar doanh thu kênh theo tháng (tab Sales) */}
       <div className="lcard p-5">
-        <SectionTitle>{t('dashboard.chart.channelMonthly')}</SectionTitle>
+        <div className="flex items-center justify-between mb-4">
+          <SectionTitle>{t('dashboard.chart.channelMonthly')}</SectionTitle>
+          {compareMode && prevData && (
+            <span className="text-xs px-2 py-1 rounded-full font-medium"
+                  style={{ background: 'rgba(99,102,241,0.1)', color: 'var(--primary-600)' }}>
+              So sánh kỳ trước (gạch ngang = kỳ trước)
+            </span>
+          )}
+        </div>
         <ResponsiveContainer width="100%" height={280}>
-          <ComposedChart data={data.monthlyByChannel} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+          <ComposedChart data={monthlyCompare ?? data.monthlyByChannel} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
             <XAxis dataKey="month" tick={{ fontSize: 11, fill: 'var(--text-tertiary)' }} axisLine={false} tickLine={false} />
             <YAxis tick={{ fontSize: 11, fill: 'var(--text-tertiary)' }} axisLine={false} tickLine={false} width={52}
@@ -652,6 +703,12 @@ function TabSales({ data }) {
               <Bar key={ch.channelName} dataKey={ch.channelName} stackId="a"
                 fill={CHART_COLORS[i % CHART_COLORS.length]}
                 radius={i === data.revenueByChannel.length - 1 ? [4,4,0,0] : [0,0,0,0]} />
+            ))}
+            {compareMode && prevData && data.revenueByChannel.map((ch, i) => (
+              <Line key={`prev_${ch.channelName}`} dataKey={`prev_${ch.channelName}`}
+                name={`${ch.channelName} (kỳ trước)`}
+                stroke={CHART_COLORS[i % CHART_COLORS.length]} strokeWidth={1.5}
+                strokeDasharray="4 3" dot={false} connectNulls />
             ))}
           </ComposedChart>
         </ResponsiveContainer>
@@ -1484,15 +1541,17 @@ function TabInventory({ data }) {
 // ── DashboardPage ─────────────────────────────────────────────────────────────
 export default function DashboardPage() {
   const { t }      = useTranslation()
-  const [activeTab,  setActiveTab]  = useState('overview')
-  const [presetKey,  setPresetKey]  = useState('year2025')
-  const [customFrom, setCustomFrom] = useState('2025-01-01')
-  const [customTo,   setCustomTo]   = useState('2025-12-31')
-  const [channel,    setChannel]    = useState('all')
-  const [data,       setData]       = useState(null)
-  const [loading,    setLoading]    = useState(true)
-  const [isMock,     setIsMock]     = useState(false)
-  const [tvy,        setTvy]        = useState(null)
+  const [activeTab,   setActiveTab]   = useState('overview')
+  const [presetKey,   setPresetKey]   = useState('year2025')
+  const [customFrom,  setCustomFrom]  = useState('2025-01-01')
+  const [customTo,    setCustomTo]    = useState('2025-12-31')
+  const [channel,     setChannel]     = useState('all')
+  const [data,        setData]        = useState(null)
+  const [loading,     setLoading]     = useState(true)
+  const [isMock,      setIsMock]      = useState(false)
+  const [tvy,         setTvy]         = useState(null)
+  const [compareMode, setCompareMode] = useState(false)
+  const [prevData,    setPrevData]    = useState(null)
 
   // Định nghĩa bên trong component để t() được gọi đúng context
   const QUICK_PRESETS = [
@@ -1515,6 +1574,16 @@ export default function DashboardPage() {
     if (presetKey === 'custom') return { from: customFrom, to: customTo }
     const preset = QUICK_PRESETS.find(p => p.key === presetKey)
     return resolvePreset(preset)
+  }
+
+  // Tính kỳ trước có cùng độ dài với kỳ hiện tại
+  function getPrevRange(from, to) {
+    const msFrom = new Date(from).getTime()
+    const msTo   = new Date(to).getTime()
+    const days   = Math.round((msTo - msFrom) / 86_400_000) + 1
+    const prevTo   = new Date(msFrom - 86_400_000).toISOString().slice(0, 10)
+    const prevFrom = new Date(msFrom - days * 86_400_000).toISOString().slice(0, 10)
+    return { from: prevFrom, to: prevTo }
   }
 
   // fetchData phụ thuộc filter state → re-fetch khi filter thay đổi
@@ -1541,9 +1610,20 @@ export default function DashboardPage() {
     } finally {
       setLoading(false)
     }
-  // Kết nối filter state với re-fetch: presetKey, customFrom, customTo, channel
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [presetKey, customFrom, customTo, channel])
+
+  // Fetch dữ liệu kỳ trước khi compareMode bật
+  useEffect(() => {
+    if (!compareMode) { setPrevData(null); return }
+    const { from, to } = getRange()
+    const prev = getPrevRange(from, to)
+    const ch = channel === 'all' ? null : channel
+    getDashboard(prev.from, prev.to, ch)
+      .catch(() => generateMockData(prev.from, prev.to))
+      .then(setPrevData)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [compareMode, presetKey, customFrom, customTo, channel])
 
   // Re-render/re-fetch khi bất kỳ filter nào thay đổi
   useEffect(() => { fetchData() }, [fetchData])
@@ -1597,6 +1677,20 @@ export default function DashboardPage() {
           <select value={channel} onChange={e => setChannel(e.target.value)} className="linput !h-9 !px-3 text-body" style={{ width: 140 }}>
             {CHANNEL_KEYS.map(k => <option key={k} value={k}>{t(`dashboard.channel.${k}`)}</option>)}
           </select>
+          {/* Toggle so sánh kỳ trước */}
+          <button
+            onClick={() => setCompareMode(m => !m)}
+            className="lbtn !py-0 !h-9 gap-1.5 text-xs font-medium"
+            style={{
+              background: compareMode ? 'rgba(99,102,241,0.12)' : 'var(--bg-elevated)',
+              color:      compareMode ? 'var(--primary-600)'     : 'var(--text-secondary)',
+              border:     compareMode ? '1.5px solid var(--primary-400)' : '1.5px solid transparent',
+            }}
+            title="So sánh với kỳ trước cùng độ dài"
+          >
+            <span className="icon text-base">compare_arrows</span>
+            <span className="hidden sm:inline">So sánh kỳ trước</span>
+          </button>
           <button onClick={fetchData} className="lbtn lbtn-secondary !py-0 !h-9" title={t('common.refresh')}>
             <span className="icon text-base" style={{ color: 'var(--text-secondary)' }}>refresh</span>
           </button>
@@ -1692,8 +1786,8 @@ export default function DashboardPage() {
         </div>
       ) : data && (
         <div className="page-enter">
-          {activeTab === 'overview'     && <TabOverview     data={data} />}
-          {activeTab === 'sales'        && <TabSales        data={data} />}
+          {activeTab === 'overview'     && <TabOverview     data={data} compareMode={compareMode} prevData={prevData} />}
+          {activeTab === 'sales'        && <TabSales        data={data} compareMode={compareMode} prevData={prevData} />}
           {activeTab === 'multichannel' && <TabMultiChannel data={data} />}
           {activeTab === 'customer'     && <TabCustomer     data={data} />}
           {activeTab === 'marketing'    && <TabMarketing    data={data} />}

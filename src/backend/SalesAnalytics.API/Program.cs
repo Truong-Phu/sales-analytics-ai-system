@@ -123,13 +123,19 @@ try
         });
     });
 
-    // ── 6. HTTP Client cho AI Service ────────────────────────────────────────
+    // ── 6. HTTP Client cho AI Service + Email Service + Expo Push ────────────
     builder.Services.AddHttpClient<AiProxyService>(client =>
     {
         var aiBaseUrl = builder.Configuration["AiService:BaseUrl"] ?? "http://localhost:8001";
         client.BaseAddress = new Uri(aiBaseUrl);
         client.Timeout     = TimeSpan.FromSeconds(30);
     });
+
+    // Email (Resend) – dùng HttpClient thuần
+    builder.Services.AddHttpClient<IEmailService, ResendEmailService>();
+
+    // Expo Push Notifications
+    builder.Services.AddHttpClient<IExpoPushService, ExpoPushService>();
 
     // ── 7. Application Services ───────────────────────────────────────────────
     builder.Services.AddScoped<JwtService>();
@@ -138,6 +144,10 @@ try
     builder.Services.AddScoped<ReportService>();
     builder.Services.AddScoped<IAuditLogService, AuditLogService>();
 
+    // OTP + Notification services (thêm [2026-05-08])
+    builder.Services.AddScoped<IOtpService, OtpService>();
+    builder.Services.AddScoped<INotificationService, NotificationService>();
+
     // Multi-tenant services (thêm [2025-05-07])
     builder.Services.AddHttpContextAccessor();
     builder.Services.AddScoped<ITenantContext, TenantContext>();
@@ -145,6 +155,7 @@ try
 
     // Background jobs
     builder.Services.AddHostedService<SubscriptionExpiryJob>();
+    builder.Services.AddHostedService<SmartAlertJob>();
 
     // ── 8. Repository Pattern (DI) ────────────────────────────────────────────
     builder.Services.AddScoped<IProductRepository,   ProductRepository>();

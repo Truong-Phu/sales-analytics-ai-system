@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import MockToast from '../../components/ui/MockToast'
 import FilterPill from '../../components/ui/FilterPill'
-import { getOrders, updateOrderStatus, cancelOrder } from '../../api/dashboardApi'
+import { getOrders, updateOrderStatus, cancelOrder, getOrderNotes, addOrderNote, deleteOrderNote } from '../../api/dashboardApi'
+import { useAuth } from '../../hooks/useAuth'
 import { MOCK_ORDERS } from '../../mockData/orders'
 
 const STATUS_COLOR = {
@@ -118,8 +119,106 @@ function UpdateOrderModal({ order, onClose, onSaved }) {
   )
 }
 
+// ── Ghi chú nội bộ đơn hàng ──────────────────────────────────────────────────
+function OrderNotes({ orderId, canDelete }) {
+  const [notes,    setNotes]    = useState([])
+  const [text,     setText]     = useState('')
+  const [loading,  setLoading]  = useState(true)
+  const [saving,   setSaving]   = useState(false)
+
+  useEffect(() => {
+    setLoading(true)
+    getOrderNotes(orderId)
+      .then(res => setNotes(res.data ?? []))
+      .catch(() => setNotes([]))
+      .finally(() => setLoading(false))
+  }, [orderId])
+
+  const handleAdd = async () => {
+    if (!text.trim()) return
+    setSaving(true)
+    try {
+      const res = await addOrderNote(orderId, text.trim())
+      setNotes(prev => [res.data, ...prev])
+      setText('')
+    } catch { /* silent */ }
+    finally { setSaving(false) }
+  }
+
+  const handleDelete = async (noteId) => {
+    if (!window.confirm('Xóa ghi chú này?')) return
+    try {
+      await deleteOrderNote(orderId, noteId)
+      setNotes(prev => prev.filter(n => n.id !== noteId))
+    } catch { /* silent */ }
+  }
+
+  return (
+    <div className="mt-4 pt-4" style={{ borderTop: '1px solid var(--border)' }}>
+      <div className="flex items-center gap-1.5 mb-3">
+        <span className="icon text-sm" style={{ color: 'var(--text-tertiary)', fontSize: 14 }}>note_alt</span>
+        <span className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>Ghi chú nội bộ</span>
+      </div>
+
+      {/* Danh sách ghi chú */}
+      {loading ? (
+        <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Đang tải...</p>
+      ) : notes.length === 0 ? (
+        <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Chưa có ghi chú nào</p>
+      ) : (
+        <div className="space-y-2 mb-3">
+          {notes.map(n => (
+            <div key={n.id} className="flex items-start gap-2 p-2 rounded-lg"
+                 style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-0.5">
+                  <span className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>{n.userName}</span>
+                  <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                    {new Date(n.createdAt).toLocaleString('vi-VN', { dateStyle: 'short', timeStyle: 'short' })}
+                  </span>
+                </div>
+                <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>{n.note}</p>
+              </div>
+              {canDelete && (
+                <button onClick={() => handleDelete(n.id)}
+                        className="w-6 h-6 flex items-center justify-center rounded shrink-0"
+                        style={{ color: '#EF4444' }}
+                        onMouseEnter={e => e.currentTarget.style.background = 'rgba(239,68,68,0.08)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                  <span className="icon" style={{ fontSize: 14 }}>delete_outline</span>
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Form thêm ghi chú */}
+      <div className="flex items-center gap-2">
+        <input
+          className="linput flex-1 text-xs !h-8"
+          placeholder="Thêm ghi chú nội bộ..."
+          value={text}
+          onChange={e => setText(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && !saving && handleAdd()}
+          maxLength={500}
+        />
+        <button
+          onClick={handleAdd}
+          disabled={saving || !text.trim()}
+          className="lbtn lbtn-primary !h-8 !px-3 text-xs shrink-0"
+        >
+          {saving ? '...' : 'Thêm'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export default function OrdersPage() {
   const { t } = useTranslation()
+  const { role } = useAuth()
+  const canDelete = ['Owner', 'Manager', 'Admin'].includes(role)
   const [data,    setData]    = useState(null)
   const [loading, setLoading] = useState(true)
   const [isMock,  setIsMock]  = useState(false)
@@ -331,6 +430,7 @@ export default function OrdersPage() {
                               </div>
                             ))}
                           </div>
+                          <OrderNotes orderId={order.orderId} canDelete={canDelete} />
                         </td>
                       </tr>
                     )}
