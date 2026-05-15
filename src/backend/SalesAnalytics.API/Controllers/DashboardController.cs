@@ -24,4 +24,32 @@ public class DashboardController(DashboardService service, ITenantContext tenant
         var data = await service.GetDashboardAsync(dateFrom, dateTo, channel, companyId);
         return Ok(data);
     }
+
+    /// <summary>So sánh doanh thu & đơn hàng hôm nay vs hôm qua</summary>
+    [HttpGet("today-vs-yesterday")]
+    [Authorize(Roles = "Owner,Manager,DataIT,Admin,Staff,Viewer,SuperAdmin")]
+    public async Task<IActionResult> GetTodayVsYesterday()
+    {
+        var today     = DateOnly.FromDateTime(DateTime.UtcNow);
+        var yesterday = today.AddDays(-1);
+        var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
+
+        var t = await service.GetDashboardAsync(today,     today,     null, companyId);
+        var y = await service.GetDashboardAsync(yesterday, yesterday, null, companyId);
+
+        decimal revPct = y.Kpi.TotalRevenue > 0
+            ? Math.Round((t.Kpi.TotalRevenue - y.Kpi.TotalRevenue) / y.Kpi.TotalRevenue * 100, 1)
+            : 0;
+        decimal ordPct = y.Kpi.TotalOrders > 0
+            ? Math.Round((t.Kpi.TotalOrders - y.Kpi.TotalOrders) / (decimal)y.Kpi.TotalOrders * 100, 1)
+            : 0;
+
+        return Ok(new
+        {
+            today     = new { revenue = t.Kpi.TotalRevenue, orders = t.Kpi.TotalOrders, profit = t.Kpi.TotalProfit },
+            yesterday = new { revenue = y.Kpi.TotalRevenue, orders = y.Kpi.TotalOrders, profit = y.Kpi.TotalProfit },
+            revenuePct = revPct,
+            ordersPct  = ordPct,
+        });
+    }
 }

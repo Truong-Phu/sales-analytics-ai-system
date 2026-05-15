@@ -62,9 +62,13 @@ public class ProductsController(
                     dp.is_current,
                     dp.effective_from,
                     COUNT(fs.sales_key) AS total_orders,
-                    COALESCE(SUM(fs.item_quantity), 0) AS total_qty_sold
+                    COALESCE(SUM(fs.item_quantity), 0) AS total_qty_sold,
+                    oltp.product_id  AS oltp_product_id,
+                    oltp.category_id AS oltp_category_id,
+                    oltp.stock_quantity AS stock
                 FROM dw.dim_product dp
-                LEFT JOIN dw.fact_sales fs ON fs.product_key = dp.product_key
+                LEFT JOIN dw.fact_sales fs   ON fs.product_key = dp.product_key
+                LEFT JOIN public.products oltp ON oltp.sku = dp.sku AND oltp.is_active = TRUE
                 WHERE dp.is_current = TRUE
                   AND (@search     IS NULL OR dp.product_name ILIKE '%' || @search   || '%'
                                            OR dp.sku          ILIKE '%' || @search   || '%')
@@ -72,7 +76,8 @@ public class ProductsController(
                   AND (@companyId  IS NULL OR fs.company_id = @companyId::uuid OR fs.company_id IS NULL)
                 GROUP BY dp.product_key, dp.product_id, dp.product_name, dp.sku,
                          dp.category_name, dp.brand, dp.base_price,
-                         dp.cost_price, dp.is_current, dp.effective_from
+                         dp.cost_price, dp.is_current, dp.effective_from,
+                         oltp.product_id, oltp.category_id, oltp.stock_quantity
                 ORDER BY total_qty_sold DESC, dp.product_name
                 LIMIT @limit OFFSET @offset
                 """;
@@ -107,17 +112,20 @@ public class ProductsController(
             {
                 products.Add(new
                 {
-                    ProductId     = reader.GetInt32(0),
-                    ProductName   = reader.GetString(1),
-                    Sku           = reader.IsDBNull(2) ? "" : reader.GetString(2),
-                    Category      = reader.IsDBNull(3) ? "" : reader.GetString(3),
-                    Brand         = reader.IsDBNull(4) ? "" : reader.GetString(4),
-                    BasePrice     = reader.IsDBNull(5) ? 0m : reader.GetDecimal(5),
-                    CostPrice     = reader.IsDBNull(6) ? 0m : reader.GetDecimal(6),
-                    IsCurrent     = reader.GetBoolean(7),
-                    EffectiveFrom = reader.IsDBNull(8) ? (DateTime?)null : reader.GetDateTime(8),
-                    TotalOrders   = reader.GetInt64(9),
-                    TotalQtySold  = reader.GetInt64(10),
+                    ProductId       = reader.GetInt32(0),
+                    ProductName     = reader.GetString(1),
+                    Sku             = reader.IsDBNull(2)  ? "" : reader.GetString(2),
+                    Category        = reader.IsDBNull(3)  ? "" : reader.GetString(3),
+                    Brand           = reader.IsDBNull(4)  ? "" : reader.GetString(4),
+                    BasePrice       = reader.IsDBNull(5)  ? 0m : reader.GetDecimal(5),
+                    CostPrice       = reader.IsDBNull(6)  ? 0m : reader.GetDecimal(6),
+                    IsCurrent       = reader.GetBoolean(7),
+                    EffectiveFrom   = reader.IsDBNull(8)  ? (DateTime?)null : reader.GetDateTime(8),
+                    TotalOrders     = reader.GetInt64(9),
+                    TotalQtySold    = reader.GetInt64(10),
+                    OltpProductId   = reader.IsDBNull(11) ? (int?)null : reader.GetInt32(11),
+                    OltpCategoryId  = reader.IsDBNull(12) ? (int?)null : reader.GetInt32(12),
+                    Stock           = reader.IsDBNull(13) ? (int?)null : reader.GetInt32(13),
                 });
             }
 
@@ -421,4 +429,96 @@ public class ProductsController(
             return StatusCode(503, new { message = "Lỗi kết nối database.", detail = ex.Message });
         }
     }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // 3. GIÁ THEO KÊNH – product_channel_prices
+    // ══════════════════════════════════════════════════════════════════════════
+
+    /// <summary>Lấy danh sách giá theo kênh của 1 sản phẩm</summary>
+    [HttpGet("oltp/{id:int}/channel-prices")]
+    [Authorize(Roles = "Owner,Manager,Staff,DataIT,Admin,SuperAdmin")]
+    public async Task<IActionResult> GetChannelPrices(int id)
+    {
+        try
+        {
+            await using var conn = new NpgsqlConnection(_connStr);
+            await conn.OpenAsync();
+
+            // Tạo bảng nếu chưa có (idempotent)
+            const string ensureTable = """
+                CREATE TABLE IF NOT EXISTS public.product_channel_prices (
+                    id         SERIAL PRIMARY KEY,
+                    product_id INTEGER NOT NULL REFERENCES public.products(product_id) ON DELETE CASCADE,
+                    channel    VARCHAR(100) NOT NULL,
+                    price      NUMERIC(18,2) NOT NULL DEFAULT 0,
+                    is_active  BOOLEAN NOT NULL DEFAULT TRUE,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    UNIQUE (product_id, channel)
+                )
+                """;
+            await using (var cmd = new NpgsqlCommand(ensureTable, conn))
+                await cmd.ExecuteNonQueryAsync();
+
+            const string sql = """
+                SELECT id, channel, price, is_active, updated_at
+                FROM   public.product_channel_prices
+                WHERE  product_id = @productId
+                ORDER  BY channel
+                """;
+            await using var q = new NpgsqlCommand(sql, conn);
+            q.Parameters.AddWithValue("productId", id);
+
+            var rows = new List<object>();
+            await using var r = await q.ExecuteReaderAsync();
+            while (await r.ReadAsync())
+                rows.Add(new {
+                    id        = r.GetInt32(0),
+                    channel   = r.GetString(1),
+                    price     = r.GetDecimal(2),
+                    isActive  = r.GetBoolean(3),
+                    updatedAt = r.GetDateTime(4),
+                });
+            return Ok(rows);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(503, new { message = "Lỗi kết nối database.", detail = ex.Message });
+        }
+    }
+
+    /// <summary>Lưu (upsert) giá theo kênh cho 1 sản phẩm</summary>
+    [HttpPost("oltp/{id:int}/channel-prices")]
+    [Authorize(Roles = "Owner,Manager,DataIT,Admin,SuperAdmin")]
+    public async Task<IActionResult> SaveChannelPrice(int id, [FromBody] ChannelPriceRequest req)
+    {
+        if (string.IsNullOrWhiteSpace(req.Channel) || req.Price < 0)
+            return BadRequest(new { message = "Kênh và giá không hợp lệ." });
+
+        try
+        {
+            await using var conn = new NpgsqlConnection(_connStr);
+            await conn.OpenAsync();
+
+            const string upsert = """
+                INSERT INTO public.product_channel_prices (product_id, channel, price, is_active, updated_at)
+                VALUES (@productId, @channel, @price, @isActive, NOW())
+                ON CONFLICT (product_id, channel)
+                DO UPDATE SET price = EXCLUDED.price, is_active = EXCLUDED.is_active, updated_at = NOW()
+                """;
+            await using var cmd = new NpgsqlCommand(upsert, conn);
+            cmd.Parameters.AddWithValue("productId", id);
+            cmd.Parameters.AddWithValue("channel",   req.Channel.Trim());
+            cmd.Parameters.AddWithValue("price",     req.Price);
+            cmd.Parameters.AddWithValue("isActive",  req.IsActive);
+            await cmd.ExecuteNonQueryAsync();
+
+            return Ok(new { message = "Đã lưu giá theo kênh." });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(503, new { message = "Lỗi kết nối database.", detail = ex.Message });
+        }
+    }
 }
+
+public record ChannelPriceRequest(string Channel, decimal Price, bool IsActive = true);

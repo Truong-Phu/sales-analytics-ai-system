@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import MockToast from '../../components/ui/MockToast'
-import { getOltpProducts, createProduct, updateProduct, deleteProduct, getCategories, uploadProductImage } from '../../api/dashboardApi'
+import { getOltpProducts, createProduct, updateProduct, deleteProduct, getCategories, uploadProductImage, getChannelPrices, saveChannelPrice } from '../../api/dashboardApi'
 import { MOCK_PRODUCTS } from '../../mockData/products'
 import { useAuth } from '../../hooks/useAuth'
 
@@ -28,29 +28,61 @@ function StockBadge({ p, t }) {
 const EMPTY_FORM = { sku: '', productName: '', description: '', basePrice: '', costPrice: '', stockQuantity: 0, categoryId: '' }
 
 // ── Modal CHI TIẾT + CHỈNH SỬA sản phẩm (kết hợp view/edit inline) ──────────
+const CHANNELS_LIST = ['Shopee', 'Lazada', 'TikTok Shop', 'Facebook', 'Website', 'Khác']
+
 function ProductDetailModal({ product, canEdit, isMock, onClose, onSaved }) {
-  const [mode,       setMode]       = useState('view')      // 'view' | 'edit'
-  const [editData,   setEditData]   = useState(null)        // dữ liệu OLTP đầy đủ
-  const [categories, setCategories] = useState([])
-  const [imgFile,    setImgFile]    = useState(null)
-  const [imgPreview, setImgPreview] = useState(null)
-  const [saving,     setSaving]     = useState(false)
-  const [err,        setErr]        = useState('')
+  const [mode,          setMode]          = useState('view') // 'view' | 'edit' | 'channel'
+  const [editData,      setEditData]      = useState(null)
+  const [categories,    setCategories]    = useState([])
+  const [imgFile,       setImgFile]       = useState(null)
+  const [imgPreview,    setImgPreview]    = useState(null)
+  const [saving,        setSaving]        = useState(false)
+  const [err,           setErr]           = useState('')
+  // Channel prices state
+  const [chanPrices,    setChanPrices]    = useState([])
+  const [chanLoading,   setChanLoading]   = useState(false)
+  const [chanSaving,    setChanSaving]    = useState({})
+  const [chanEdit,      setChanEdit]      = useState({}) // { [channel]: price }
   const fileRef = useRef(null)
+
+  const productId = product.oltpProductId ?? product.oltp_product_id ?? product.product_id ?? product.productId ?? product.id
 
   // Tải danh mục khi mở chế độ edit
   useEffect(() => {
-    if (mode === 'edit' && categories.length === 0) {
+    if (mode === 'edit' && categories.length === 0)
       getCategories().then(setCategories).catch(() => setCategories([]))
-    }
   }, [mode])
 
+  // Tải giá theo kênh khi mở tab channel
+  useEffect(() => {
+    if (mode !== 'channel' || !productId || isMock) return
+    setChanLoading(true)
+    getChannelPrices(productId)
+      .then(rows => {
+        setChanPrices(rows)
+        const init = {}
+        rows.forEach(r => { init[r.channel] = r.price })
+        setChanEdit(init)
+      })
+      .catch(() => {})
+      .finally(() => setChanLoading(false))
+  }, [mode, productId, isMock])
+
+  const handleSaveChanPrice = async (channel) => {
+    if (!productId) return
+    setChanSaving(s => ({ ...s, [channel]: true }))
+    try {
+      await saveChannelPrice(productId, { channel, price: Number(chanEdit[channel] ?? 0), isActive: true })
+      // Refresh
+      const rows = await getChannelPrices(productId)
+      setChanPrices(rows)
+    } catch { /* ignore */ }
+    finally { setChanSaving(s => ({ ...s, [channel]: false })) }
+  }
+
   const enterEdit = () => {
-    // Dùng lại data đã load từ danh sách/chi tiết, không gọi API thêm lần nữa.
-    // OltpProductId và oltpCategoryId được backend JOIN từ public.products để tránh
-    // nhầm với DW product_id (seed 101-115 không tồn tại trong OLTP).
     setEditData({
-      productId:     product.oltpProductId  ?? product.oltp_product_id ?? product.product_id ?? product.productId ?? product.id,
+      productId,
       sku:           product.sku ?? '',
       productName:   product.product_name ?? product.productName ?? product.name ?? '',
       description:   product.description ?? '',
@@ -114,7 +146,7 @@ function ProductDetailModal({ product, canEdit, isMock, onClose, onSaved }) {
         {/* Header */}
         <div className="flex items-center justify-between">
           <h2 className="font-bold text-base" style={{ color: 'var(--text-primary)' }}>
-            {mode === 'view' ? 'Chi tiết sản phẩm' : 'Chỉnh sửa sản phẩm'}
+            {mode === 'edit' ? 'Chỉnh sửa sản phẩm' : mode === 'channel' ? 'Giá theo kênh' : 'Chi tiết sản phẩm'}
           </h2>
           <button onClick={onClose}
                   className="w-8 h-8 flex items-center justify-center rounded-lg transition-colors"
@@ -124,6 +156,27 @@ function ProductDetailModal({ product, canEdit, isMock, onClose, onSaved }) {
             <span className="icon">close</span>
           </button>
         </div>
+
+        {/* Tabs — only in view/channel mode */}
+        {mode !== 'edit' && productId && !isMock && (
+          <div className="flex gap-0" style={{ borderBottom: '1px solid var(--border)', marginTop: -8 }}>
+            {[
+              { key: 'view',    label: 'Thông tin chung', icon: 'info' },
+              { key: 'channel', label: 'Giá theo kênh',   icon: 'price_change' },
+            ].map(tb => (
+              <button key={tb.key} onClick={() => { setMode(tb.key); setErr('') }}
+                      className="flex items-center gap-1.5 pb-2.5 px-3 text-xs font-medium transition-all"
+                      style={{
+                        borderBottom: `2px solid ${mode === tb.key ? 'var(--primary-500)' : 'transparent'}`,
+                        color: mode === tb.key ? 'var(--primary-500)' : 'var(--text-secondary)',
+                        marginBottom: -1,
+                      }}>
+                <span className="icon" style={{ fontSize: 15 }}>{tb.icon}</span>
+                {tb.label}
+              </button>
+            ))}
+          </div>
+        )}
 
         {err && <p className="text-xs rounded-lg px-3 py-2" style={{ background: 'rgba(239,68,68,0.1)', color: '#EF4444' }}>{err}</p>}
 
@@ -220,6 +273,53 @@ function ProductDetailModal({ product, canEdit, isMock, onClose, onSaved }) {
               )}
             </div>
           </>
+        )}
+
+        {/* ── CHANNEL PRICES MODE ── */}
+        {mode === 'channel' && (
+          <div className="space-y-3">
+            {chanLoading ? (
+              <div className="py-8 flex items-center justify-center">
+                <span className="w-5 h-5 border-2 rounded-full"
+                      style={{ borderColor: 'var(--border-strong)', borderTopColor: 'var(--primary-500)', animation: 'spin 0.8s linear infinite' }} />
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {CHANNELS_LIST.map(ch => {
+                  const existing = chanPrices.find(r => r.channel === ch)
+                  const val      = chanEdit[ch] ?? (existing?.price ?? '')
+                  const saving   = chanSaving[ch]
+                  return (
+                    <div key={ch} className="flex items-center gap-2 p-2 rounded-lg"
+                         style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)' }}>
+                      <span className="flex-none text-sm font-medium w-28 truncate" style={{ color: 'var(--text-primary)' }}>{ch}</span>
+                      <input
+                        type="number" min={0} placeholder="Giá bán (₫)"
+                        className="linput !h-8 text-sm flex-1"
+                        value={val}
+                        onChange={e => setChanEdit(m => ({ ...m, [ch]: e.target.value }))}
+                        disabled={saving || !canEdit}
+                      />
+                      {canEdit && (
+                        <button
+                          onClick={() => handleSaveChanPrice(ch)}
+                          disabled={saving}
+                          className="lbtn lbtn-primary !h-8 !px-3 text-xs shrink-0">
+                          {saving
+                            ? <span className="w-3 h-3 border-2 rounded-full" style={{ borderColor: 'rgba(255,255,255,0.3)', borderTopColor: '#fff', animation: 'spin 0.8s linear infinite' }} />
+                            : 'Lưu'
+                          }
+                        </button>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+            <div className="pt-2" style={{ borderTop: '1px solid var(--border)' }}>
+              <button onClick={onClose} className="lbtn lbtn-secondary w-full justify-center">Đóng</button>
+            </div>
+          </div>
         )}
 
         {/* ── EDIT MODE ── */}

@@ -55,7 +55,7 @@ const normalizeProduct = (p) => ({
   unit_price:    Number(p.basePrice ?? p.unitPrice ?? p.unit_price ?? p.price ?? 0),
   price:         Number(p.basePrice ?? p.price ?? 0),
   cost_price:    Number(p.costPrice ?? p.cost_price ?? 0),
-  stock:         p.stock        ?? 100,
+  stock:         p.stock        ?? p.stockQuantity ?? 100,
   total_qty_sold:Number(p.totalQtySold  ?? p.total_qty_sold ?? 0),
   total_orders:  Number(p.totalOrders   ?? p.total_orders   ?? 0),
 })
@@ -97,10 +97,22 @@ export const getCustomers = async (params = {}) => {
   }
 }
 
-// ── Categories (dropdown) ─────────────────────────────────────────────────────
+// ── Categories CRUD ───────────────────────────────────────────────────────────
 
 export const getCategories = () =>
-  api.get('/api/products/categories').then(r => r.data)
+  api.get('/api/categories').then(r => r.data.data ?? r.data)
+
+export const createCategory = (dto) =>
+  api.post('/api/categories', dto).then(r => r.data)
+
+export const updateCategory = (id, dto) =>
+  api.put(`/api/categories/${id}`, dto).then(r => r.data)
+
+export const deleteCategory = (id) =>
+  api.delete(`/api/categories/${id}`).then(r => r.data)
+
+export const toggleCategory = (id) =>
+  api.patch(`/api/categories/${id}/toggle`).then(r => r.data)
 
 // ── Orders OLTP CRUD ─────────────────────────────────────────────────────────
 
@@ -118,7 +130,7 @@ export const getOltpProducts = async (params = {}) => {
     params: { ...rest, pageSize: limit ?? 20 },
   }).then(r => r.data)
   return {
-    items:      res.data ?? res.items ?? [],
+    items:      (res.data ?? res.items ?? []).map(normalizeProduct),
     total:      res.total ?? 0,
     page:       res.page  ?? 1,
     totalPages: res.totalPages ?? 1,
@@ -168,3 +180,16 @@ export const updateCustomer = (id, dto) =>
 
 export const deactivateCustomer = (id) =>
   api.delete(`/api/customers/oltp/${id}`).then(r => r.data)
+
+// ── Today vs Yesterday ────────────────────────────────────────────────────────
+
+export const getTodayVsYesterday = () =>
+  api.get('/api/dashboard/today-vs-yesterday').then(r => r.data)
+
+// ── Product Channel Prices ────────────────────────────────────────────────────
+
+export const getChannelPrices = (productId) =>
+  api.get(`/api/products/oltp/${productId}/channel-prices`).then(r => r.data)
+
+export const saveChannelPrice = (productId, dto) =>
+  api.post(`/api/products/oltp/${productId}/channel-prices`, dto).then(r => r.data)
