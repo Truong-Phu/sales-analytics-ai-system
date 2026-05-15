@@ -14,7 +14,7 @@ namespace SalesAnalytics.API.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/import")]
-[Authorize(Roles = "Owner,Manager,Admin")]
+[Authorize(Roles = "Owner,Manager")]
 public class ImportController(IConfiguration cfg, ITenantContext tenant) : ControllerBase
 {
     private readonly string _connStr = cfg.GetConnectionString("Default")!;
@@ -69,7 +69,7 @@ public class ImportController(IConfiguration cfg, ITenantContext tenant) : Contr
                              "template_orders.csv"),
             "products"   => ("sku,name,category,description,price,cost_price,stock_quantity",
                              "template_products.csv"),
-            "customers"  => ("email,full_name,phone,address,city,province,registered_date",
+            "customers"  => ("email,full_name,phone,address,district,province,registered_date",
                              "template_customers.csv"),
             "sales-data" => ("date,channel,product_sku,quantity_sold,revenue,order_count",
                              "template_sales_data.csv"),
@@ -89,14 +89,26 @@ public class ImportController(IConfiguration cfg, ITenantContext tenant) : Contr
         if (file is null || file.Length == 0)
             return BadRequest(new { message = "File không hợp lệ." });
 
-        var rows = ParseCsv(file.OpenReadStream());
+        List<string[]> rows;
+        try { rows = ParseCsv(file.OpenReadStream()); }
+        catch { return BadRequest(new { message = "Không thể đọc file. Kiểm tra định dạng CSV." }); }
+
         if (rows.Count < 2) return BadRequest(new { message = "File trống hoặc chỉ có header." });
 
         int success = 0, skipped = 0;
         var errors = new List<object>();
 
-        await using var conn = new NpgsqlConnection(_connStr);
-        await conn.OpenAsync();
+        NpgsqlConnection conn;
+        try
+        {
+            conn = new NpgsqlConnection(_connStr);
+            await conn.OpenAsync();
+        }
+        catch
+        {
+            return StatusCode(503, new { message = "Không thể kết nối cơ sở dữ liệu. Vui lòng thử lại." });
+        }
+        await using var _ = conn;
 
         // Bỏ hàng header (row[0])
         for (int r = 1; r < rows.Count; r++)
@@ -156,14 +168,26 @@ public class ImportController(IConfiguration cfg, ITenantContext tenant) : Contr
         if (file is null || file.Length == 0)
             return BadRequest(new { message = "File không hợp lệ." });
 
-        var rows = ParseCsv(file.OpenReadStream());
+        List<string[]> rows;
+        try { rows = ParseCsv(file.OpenReadStream()); }
+        catch { return BadRequest(new { message = "Không thể đọc file. Kiểm tra định dạng CSV." }); }
+
         if (rows.Count < 2) return BadRequest(new { message = "File trống hoặc chỉ có header." });
 
         int success = 0, skipped = 0;
         var errors = new List<object>();
 
-        await using var conn = new NpgsqlConnection(_connStr);
-        await conn.OpenAsync();
+        NpgsqlConnection conn;
+        try
+        {
+            conn = new NpgsqlConnection(_connStr);
+            await conn.OpenAsync();
+        }
+        catch
+        {
+            return StatusCode(503, new { message = "Không thể kết nối cơ sở dữ liệu. Vui lòng thử lại." });
+        }
+        await using var _ = conn;
 
         for (int r = 1; r < rows.Count; r++)
         {
@@ -216,14 +240,26 @@ public class ImportController(IConfiguration cfg, ITenantContext tenant) : Contr
         if (file is null || file.Length == 0)
             return BadRequest(new { message = "File không hợp lệ." });
 
-        var rows = ParseCsv(file.OpenReadStream());
+        List<string[]> rows;
+        try { rows = ParseCsv(file.OpenReadStream()); }
+        catch { return BadRequest(new { message = "Không thể đọc file. Kiểm tra định dạng CSV." }); }
+
         if (rows.Count < 2) return BadRequest(new { message = "File trống hoặc chỉ có header." });
 
         int success = 0, skipped = 0;
         var errors = new List<object>();
 
-        await using var conn = new NpgsqlConnection(_connStr);
-        await conn.OpenAsync();
+        NpgsqlConnection conn;
+        try
+        {
+            conn = new NpgsqlConnection(_connStr);
+            await conn.OpenAsync();
+        }
+        catch
+        {
+            return StatusCode(503, new { message = "Không thể kết nối cơ sở dữ liệu. Vui lòng thử lại." });
+        }
+        await using var _ = conn;
 
         for (int r = 1; r < rows.Count; r++)
         {
@@ -236,14 +272,15 @@ public class ImportController(IConfiguration cfg, ITenantContext tenant) : Contr
                 var fullName   = Cell(row, 1);
                 var phone      = Cell(row, 2);
                 var address    = Cell(row, 3);
-                var city       = Cell(row, 4);
+                var district   = Cell(row, 4);  // CSV column "city" map sang district
                 var province   = Cell(row, 5);
                 var regDate    = DateTime.TryParse(Cell(row, 6), out var rd) ? rd : DateTime.UtcNow;
 
+                // DB customers co 'district' thay vi 'city'
                 var sql = """
                     INSERT INTO public.customers (email, full_name, phone_number, address,
-                        city, province, is_active, company_id, created_at, updated_at)
-                    VALUES (@email, @name, @phone, @addr, @city, @province, TRUE, @companyId::uuid, @reg, NOW())
+                        district, province, is_active, company_id, created_at, updated_at)
+                    VALUES (@email, @name, @phone, @addr, @district, @province, TRUE, @companyId::uuid, @reg, NOW())
                     ON CONFLICT (email) DO NOTHING
                     """;
 
@@ -252,7 +289,7 @@ public class ImportController(IConfiguration cfg, ITenantContext tenant) : Contr
                 cmd.Parameters.AddWithValue("name",      fullName);
                 cmd.Parameters.AddWithValue("phone",     (object?)phone ?? DBNull.Value);
                 cmd.Parameters.AddWithValue("addr",      (object?)address ?? DBNull.Value);
-                cmd.Parameters.AddWithValue("city",      (object?)city ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("district",  (object?)district ?? DBNull.Value);
                 cmd.Parameters.AddWithValue("province",  (object?)province ?? DBNull.Value);
                 cmd.Parameters.AddWithValue("reg",       regDate);
                 cmd.Parameters.AddWithValue("companyId", (object?)tenant.CompanyId?.ToString() ?? DBNull.Value);
@@ -277,14 +314,26 @@ public class ImportController(IConfiguration cfg, ITenantContext tenant) : Contr
         if (file is null || file.Length == 0)
             return BadRequest(new { message = "File không hợp lệ." });
 
-        var rows = ParseCsv(file.OpenReadStream());
+        List<string[]> rows;
+        try { rows = ParseCsv(file.OpenReadStream()); }
+        catch { return BadRequest(new { message = "Không thể đọc file. Kiểm tra định dạng CSV." }); }
+
         if (rows.Count < 2) return BadRequest(new { message = "File trống hoặc chỉ có header." });
 
         int success = 0, skipped = 0;
         var errors = new List<object>();
 
-        await using var conn = new NpgsqlConnection(_connStr);
-        await conn.OpenAsync();
+        NpgsqlConnection conn;
+        try
+        {
+            conn = new NpgsqlConnection(_connStr);
+            await conn.OpenAsync();
+        }
+        catch
+        {
+            return StatusCode(503, new { message = "Không thể kết nối cơ sở dữ liệu. Vui lòng thử lại." });
+        }
+        await using var _ = conn;
 
         for (int r = 1; r < rows.Count; r++)
         {

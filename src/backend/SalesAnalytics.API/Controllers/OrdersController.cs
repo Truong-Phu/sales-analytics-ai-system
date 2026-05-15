@@ -35,7 +35,7 @@ public class OrdersController(
     /// SuperAdmin thấy tất cả; các role khác chỉ thấy dữ liệu của company mình.
     /// </summary>
     [HttpGet]
-    [Authorize(Roles = "Owner,Manager,Staff,DataIT,Admin,SuperAdmin")]
+    [Authorize(Roles = "Owner,Manager,Staff,DataIT,SuperAdmin")]
     public async Task<IActionResult> GetOrders(
         [FromQuery] string? search = null,
         [FromQuery] string? status = null,
@@ -146,7 +146,7 @@ public class OrdersController(
 
     /// <summary>[OLTP] Danh sách đơn hàng OLTP với phân trang (EF Core, public schema).</summary>
     [HttpGet("oltp")]
-    [Authorize(Roles = "Owner,Manager,Staff,DataIT,Admin,Viewer,SuperAdmin")]
+    [Authorize(Roles = "Owner,Manager,Staff,DataIT,Viewer,SuperAdmin")]
     public async Task<IActionResult> GetOltpOrders(
         [FromQuery] string? search    = null,
         [FromQuery] string? status    = null,
@@ -190,7 +190,7 @@ public class OrdersController(
 
     /// <summary>[OLTP] Lấy chi tiết đơn hàng kèm danh sách sản phẩm.</summary>
     [HttpGet("oltp/{id:int}")]
-    [Authorize(Roles = "Owner,Manager,Staff,DataIT,Admin,SuperAdmin")]
+    [Authorize(Roles = "Owner,Manager,Staff,DataIT,SuperAdmin")]
     public async Task<IActionResult> GetOltpOrder(int id)
     {
         try
@@ -242,10 +242,10 @@ public class OrdersController(
 
     /// <summary>
     /// [OLTP] Tạo đơn hàng mới kèm chi tiết sản phẩm.
-    /// Roles: Owner, Manager, Staff, Admin
+    /// Roles: Owner, Manager, Staff
     /// </summary>
     [HttpPost("oltp")]
-    [Authorize(Roles = "Owner,Manager,Staff,Admin")]
+    [Authorize(Roles = "Owner,Manager,Staff")]
     public async Task<IActionResult> CreateOrder([FromBody] CreateOrderDto dto)
     {
         if (!ModelState.IsValid) return BadRequest(ModelState);
@@ -303,10 +303,10 @@ public class OrdersController(
 
     /// <summary>
     /// [OLTP] Cập nhật trạng thái đơn hàng.
-    /// Roles: Owner, Manager, Staff, Admin
+    /// Roles: Owner, Manager, Staff
     /// </summary>
     [HttpPut("oltp/{id:int}")]
-    [Authorize(Roles = "Owner,Manager,Staff,Admin")]
+    [Authorize(Roles = "Owner,Manager,Staff")]
     public async Task<IActionResult> UpdateOrder(int id, [FromBody] UpdateOrderDto dto)
     {
         if (!ModelState.IsValid) return BadRequest(ModelState);
@@ -346,10 +346,10 @@ public class OrdersController(
 
     /// <summary>
     /// [OLTP] Hủy đơn hàng (soft-delete: set Status = CANCELLED).
-    /// Roles: Owner, Manager, Admin
+    /// Roles: Owner, Manager
     /// </summary>
     [HttpDelete("oltp/{id:int}")]
-    [Authorize(Roles = "Owner,Manager,Admin")]
+    [Authorize(Roles = "Owner,Manager")]
     public async Task<IActionResult> CancelOrder(int id)
     {
         try
@@ -404,7 +404,7 @@ public class OrdersController(
 
     /// <summary>[OLTP] Lấy danh sách ghi chú nội bộ của đơn hàng</summary>
     [HttpGet("oltp/{orderId:int}/notes")]
-    [Authorize(Roles = "Owner,Manager,Staff,DataIT,Admin")]
+    [Authorize(Roles = "Owner,Manager,Staff,DataIT")]
     public async Task<IActionResult> GetOrderNotes(int orderId)
     {
         try
@@ -445,7 +445,7 @@ public class OrdersController(
 
     /// <summary>[OLTP] Thêm ghi chú nội bộ cho đơn hàng</summary>
     [HttpPost("oltp/{orderId:int}/notes")]
-    [Authorize(Roles = "Owner,Manager,Staff,DataIT,Admin")]
+    [Authorize(Roles = "Owner,Manager,Staff,DataIT")]
     public async Task<IActionResult> AddOrderNote(int orderId, [FromBody] OrderNoteRequest req)
     {
         if (string.IsNullOrWhiteSpace(req.Note))
@@ -489,7 +489,7 @@ public class OrdersController(
 
     /// <summary>[OLTP] Xóa ghi chú (Owner/Manager/Admin)</summary>
     [HttpDelete("oltp/{orderId:int}/notes/{noteId:int}")]
-    [Authorize(Roles = "Owner,Manager,Admin")]
+    [Authorize(Roles = "Owner,Manager")]
     public async Task<IActionResult> DeleteOrderNote(int orderId, int noteId)
     {
         try

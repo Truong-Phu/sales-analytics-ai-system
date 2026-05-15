@@ -10,41 +10,41 @@ import { useAuth } from './useAuth'
  */
 const PERMISSIONS = {
   // Dashboard
-  'dashboard.view':          ['Owner', 'Manager', 'DataIT', 'Admin', 'Staff', 'Viewer'],
+  'dashboard.view':          ['Owner', 'Manager', 'DataIT', 'Staff', 'Viewer'],
 
   // AI / Phân tích
-  'forecast.view':           ['Owner', 'Manager', 'DataIT', 'Admin'],
-  'anomaly.view':            ['Owner', 'Manager', 'DataIT', 'Admin'],
-  'recommendations.view':    ['Owner', 'Manager', 'Admin'],
+  'forecast.view':           ['Owner', 'Manager', 'DataIT'],
+  'anomaly.view':            ['Owner', 'Manager', 'DataIT'],
+  'recommendations.view':    ['Owner', 'Manager'],
 
   // Sản phẩm / Đơn hàng / Khách hàng
-  'orders.view':             ['Owner', 'Manager', 'DataIT', 'Admin', 'Staff', 'Viewer'],
-  'products.view':           ['Owner', 'Manager', 'DataIT', 'Admin', 'Staff'],
-  'products.edit':           ['Owner', 'Manager', 'DataIT', 'Admin', 'Staff'],
-  'products.delete':         ['Owner', 'Manager', 'Admin'],
-  'categories.view':         ['Owner', 'Manager', 'DataIT', 'Admin', 'Staff'],
-  'categories.edit':         ['Owner', 'Manager', 'Admin'],
-  'customers.view':          ['Owner', 'Manager', 'DataIT', 'Admin'],
+  'orders.view':             ['Owner', 'Manager', 'DataIT', 'Staff', 'Viewer'],
+  'products.view':           ['Owner', 'Manager', 'DataIT', 'Staff'],
+  'products.edit':           ['Owner', 'Manager', 'DataIT', 'Staff'],
+  'products.delete':         ['Owner', 'Manager'],
+  'categories.view':         ['Owner', 'Manager', 'DataIT', 'Staff'],
+  'categories.edit':         ['Owner', 'Manager'],
+  'customers.view':          ['Owner', 'Manager', 'DataIT'],
 
   // Vận hành dữ liệu
-  'data-sync.view':          ['Owner', 'Manager', 'DataIT', 'Admin'],
-  'etl-monitor.view':        ['DataIT', 'Admin'],
+  'data-sync.view':          ['Owner', 'Manager', 'DataIT'],
+  'etl-monitor.view':        ['DataIT', 'Owner'],
 
   // Báo cáo
-  'report.view':             ['Owner', 'Manager', 'DataIT', 'Admin'],
-  'report.export':           ['Owner', 'Manager', 'Admin'],
+  'report.view':             ['Owner', 'Manager', 'DataIT'],
+  'report.export':           ['Owner', 'Manager'],
 
   // Quản trị
-  'admin.view':              ['Owner', 'Manager', 'Admin'],
-  'admin.manage-users':      ['Owner', 'Manager', 'Admin'],
-  'admin.manage-roles':      ['Owner', 'Admin'],
+  'admin.view':              ['Owner', 'Manager'],
+  'admin.manage-users':      ['Owner', 'Manager'],
+  'admin.manage-roles':      ['Owner'],
 
   // Cài đặt
-  'settings.view':           ['Owner', 'Manager', 'DataIT', 'Admin', 'Staff', 'Viewer'],
+  'settings.view':           ['Owner', 'Manager', 'DataIT', 'Staff', 'Viewer'],
   'settings.subscription':   ['Owner'],
 
   // Thông báo
-  'notifications.view':      ['Owner', 'Manager', 'DataIT', 'Admin', 'Staff', 'Viewer'],
+  'notifications.view':      ['Owner', 'Manager', 'DataIT', 'Staff', 'Viewer'],
 }
 
 export function usePermission(feature) {

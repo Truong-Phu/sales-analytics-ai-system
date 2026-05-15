@@ -14,8 +14,8 @@ export default function MobileBottomNav() {
   const role = user?.role ?? ''
 
   const visible = NAV.filter(item => {
-    if (item.href === '/forecast') return ['Owner','Manager','DataIT','Admin','Viewer'].includes(role)
-    if (item.href === '/report')   return ['Owner','Manager','DataIT','Admin'].includes(role)
+    if (item.href === '/forecast') return ['Owner','Manager','DataIT','Viewer'].includes(role)
+    if (item.href === '/report')   return ['Owner','Manager','DataIT'].includes(role)
     return true
   })
 

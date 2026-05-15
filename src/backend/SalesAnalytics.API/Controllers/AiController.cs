@@ -7,7 +7,7 @@ namespace SalesAnalytics.API.Controllers;
 /// <summary>Proxy đến AI Service FastAPI – Frontend chỉ gọi Backend, không gọi AI trực tiếp</summary>
 [ApiController]
 [Route("api/ai")]
-[Authorize(Roles = "Owner,Manager,DataIT,Admin,SuperAdmin")]
+[Authorize(Roles = "Owner,Manager,DataIT,SuperAdmin")]
 public class AiController(AiProxyService ai, ITenantContext tenant) : ControllerBase
 {
     /// <summary>Dự báo doanh thu N ngày tiếp theo</summary>

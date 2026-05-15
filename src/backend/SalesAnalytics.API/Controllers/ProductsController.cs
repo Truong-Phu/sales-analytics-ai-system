@@ -30,10 +30,10 @@ public class ProductsController(
 
     /// <summary>
     /// Danh sách sản phẩm với số lượng bán + tổng doanh thu (từ DW).
-    /// Roles: Owner, Manager, Staff, DataIT, Admin
+    /// Roles: Owner, Manager, Staff, DataIT
     /// </summary>
     [HttpGet]
-    [Authorize(Roles = "Owner,Manager,Staff,DataIT,Admin,SuperAdmin")]
+    [Authorize(Roles = "Owner,Manager,Staff,DataIT,SuperAdmin")]
     public async Task<IActionResult> GetProducts(
         [FromQuery] string? search   = null,
         [FromQuery] string? category = null,
@@ -153,7 +153,7 @@ public class ProductsController(
     /// Danh sách danh mục sản phẩm đang hoạt động, dùng cho dropdown.
     /// </summary>
     [HttpGet("categories")]
-    [Authorize(Roles = "Owner,Manager,Staff,DataIT,Admin")]
+    [Authorize(Roles = "Owner,Manager,Staff,DataIT")]
     public async Task<IActionResult> GetCategories()
     {
         try
@@ -195,10 +195,10 @@ public class ProductsController(
 
     /// <summary>
     /// [OLTP] Danh sách sản phẩm với phân trang và tìm kiếm (EF Core, public schema).
-    /// Roles: Owner, Manager, Staff, DataIT, Admin
+    /// Roles: Owner, Manager, Staff, DataIT
     /// </summary>
     [HttpGet("oltp")]
-    [Authorize(Roles = "Owner,Manager,Staff,DataIT,Admin,SuperAdmin")]
+    [Authorize(Roles = "Owner,Manager,Staff,DataIT,SuperAdmin")]
     public async Task<IActionResult> GetOltpProducts(
         [FromQuery] string? search     = null,
         [FromQuery] int?    categoryId = null,
@@ -239,7 +239,7 @@ public class ProductsController(
     /// [OLTP] Lấy chi tiết sản phẩm theo ID.
     /// </summary>
     [HttpGet("oltp/{id:int}")]
-    [Authorize(Roles = "Owner,Manager,Staff,DataIT,Admin,SuperAdmin")]
+    [Authorize(Roles = "Owner,Manager,Staff,DataIT,SuperAdmin")]
     public async Task<IActionResult> GetOltpProduct(int id)
     {
         try
@@ -274,10 +274,10 @@ public class ProductsController(
 
     /// <summary>
     /// [OLTP] Tạo sản phẩm mới.
-    /// Roles: Manager, DataIT, Admin
+    /// Roles: Owner, Manager, DataIT
     /// </summary>
     [HttpPost("oltp")]
-    [Authorize(Roles = "Manager,DataIT,Admin")]
+    [Authorize(Roles = "Owner,Manager,DataIT")]
     public async Task<IActionResult> CreateProduct([FromBody] CreateProductDto dto)
     {
         if (!ModelState.IsValid) return BadRequest(ModelState);
@@ -316,10 +316,10 @@ public class ProductsController(
 
     /// <summary>
     /// [OLTP] Cập nhật thông tin sản phẩm (partial update).
-    /// Roles: Manager, DataIT, Admin
+    /// Roles: Owner, Manager, DataIT
     /// </summary>
     [HttpPut("oltp/{id:int}")]
-    [Authorize(Roles = "Manager,DataIT,Admin")]
+    [Authorize(Roles = "Owner,Manager,DataIT")]
     public async Task<IActionResult> UpdateProduct(int id, [FromBody] UpdateProductDto dto)
     {
         if (!ModelState.IsValid) return BadRequest(ModelState);
@@ -359,10 +359,10 @@ public class ProductsController(
 
     /// <summary>
     /// [OLTP] Xóa sản phẩm (soft-delete: set IsActive = false).
-    /// Roles: Admin, DataIT
+    /// Roles: Owner, DataIT
     /// </summary>
     [HttpDelete("oltp/{id:int}")]
-    [Authorize(Roles = "Admin,DataIT")]
+    [Authorize(Roles = "Owner,DataIT")]
     public async Task<IActionResult> DeleteProduct(int id)
     {
         try
@@ -384,10 +384,10 @@ public class ProductsController(
 
     /// <summary>
     /// [OLTP] Upload ảnh sản phẩm (PNG/JPG/WEBP, max 5MB).
-    /// Roles: Manager, DataIT, Admin
+    /// Roles: Owner, Manager, DataIT
     /// </summary>
     [HttpPost("oltp/{id:int}/image")]
-    [Authorize(Roles = "Manager,DataIT,Admin")]
+    [Authorize(Roles = "Owner,Manager,DataIT")]
     public async Task<IActionResult> UploadProductImage(int id, IFormFile image)
     {
         if (image is null || image.Length == 0)
@@ -436,7 +436,7 @@ public class ProductsController(
 
     /// <summary>Lấy danh sách giá theo kênh của 1 sản phẩm</summary>
     [HttpGet("oltp/{id:int}/channel-prices")]
-    [Authorize(Roles = "Owner,Manager,Staff,DataIT,Admin,SuperAdmin")]
+    [Authorize(Roles = "Owner,Manager,Staff,DataIT,SuperAdmin")]
     public async Task<IActionResult> GetChannelPrices(int id)
     {
         try
@@ -488,7 +488,7 @@ public class ProductsController(
 
     /// <summary>Lưu (upsert) giá theo kênh cho 1 sản phẩm</summary>
     [HttpPost("oltp/{id:int}/channel-prices")]
-    [Authorize(Roles = "Owner,Manager,DataIT,Admin,SuperAdmin")]
+    [Authorize(Roles = "Owner,Manager,DataIT,SuperAdmin")]
     public async Task<IActionResult> SaveChannelPrice(int id, [FromBody] ChannelPriceRequest req)
     {
         if (string.IsNullOrWhiteSpace(req.Channel) || req.Price < 0)

@@ -2,12 +2,12 @@ namespace SalesAnalytics.Core.Enums;
 
 public enum UserRole
 {
-    Owner,
+    Owner,       // Chủ doanh nghiệp – quản trị toàn bộ công ty
     Manager,
     Staff,
     DataIT,
-    Admin,
-    Viewer
+    Viewer,
+    SuperAdmin   // Quản trị hệ thống – không thuộc tenant nào
 }
 
 public enum OrderStatus

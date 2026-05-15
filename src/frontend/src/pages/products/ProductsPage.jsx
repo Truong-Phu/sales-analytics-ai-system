@@ -570,7 +570,7 @@ export default function ProductsPage() {
   const [formMode, setFormMode] = useState(null)    // 'create' khi tạo mới
   const [toast,    setToast]    = useState('')
 
-  const canEdit = ['Manager', 'DataIT', 'Admin'].includes(user?.role)
+  const canEdit = ['Owner', 'Manager', 'DataIT'].includes(user?.role)
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 3000) }
 
   const fetchData = useCallback(async () => {

@@ -11,7 +11,7 @@ public class DashboardController(DashboardService service, ITenantContext tenant
 {
     /// <summary>Lấy dữ liệu Dashboard (KPI, doanh thu, kênh, sản phẩm)</summary>
     [HttpGet]
-    [Authorize(Roles = "Owner,Manager,DataIT,Admin,Viewer,SuperAdmin")]
+    [Authorize(Roles = "Owner,Manager,DataIT,Viewer,SuperAdmin")]
     public async Task<IActionResult> GetDashboard(
         [FromQuery] DateOnly? from    = null,
         [FromQuery] DateOnly? to      = null,
@@ -27,7 +27,7 @@ public class DashboardController(DashboardService service, ITenantContext tenant
 
     /// <summary>So sánh doanh thu & đơn hàng hôm nay vs hôm qua</summary>
     [HttpGet("today-vs-yesterday")]
-    [Authorize(Roles = "Owner,Manager,DataIT,Admin,Staff,Viewer,SuperAdmin")]
+    [Authorize(Roles = "Owner,Manager,DataIT,Staff,Viewer,SuperAdmin")]
     public async Task<IActionResult> GetTodayVsYesterday()
     {
         var today     = DateOnly.FromDateTime(DateTime.UtcNow);

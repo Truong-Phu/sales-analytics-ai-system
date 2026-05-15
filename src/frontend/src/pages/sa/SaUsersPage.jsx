@@ -8,11 +8,10 @@ const ROLE_CFG = {
   Manager: { bg: '#DBEAFE', color: '#1D4ED8' },
   Staff:   { bg: '#D1FAE5', color: '#065F46' },
   DataIT:  { bg: '#E0F2FE', color: '#0369A1' },
-  Admin:   { bg: '#FEE2E2', color: '#991B1B' },
   Viewer:  { bg: '#F1F5F9', color: '#475569' },
 }
 
-const ROLES = ['', 'Owner', 'Manager', 'Staff', 'DataIT', 'Admin', 'Viewer']
+const ROLES = ['', 'Owner', 'Manager', 'Staff', 'DataIT', 'Viewer']
 
 export default function SaUsersPage() {
   const [users,   setUsers]   = useState([])
@@ -29,7 +28,7 @@ export default function SaUsersPage() {
     if (roleFilter) params.set('role', roleFilter)
     axios.get(`/api/admin/sa/users?${params}`)
       .then(r => { setUsers(r.data.data ?? []); setTotal(r.data.total ?? 0) })
-      .catch(() => setError('Không thể tải danh sách users'))
+      .catch(() => setError('Không thể tải danh sách người dùng'))
       .finally(() => setLoading(false))
   }, [page, roleFilter])
 
@@ -41,9 +40,9 @@ export default function SaUsersPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Users</h1>
+          <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Quản lý Người dùng</h1>
           <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
-            Tất cả users – {total} tổng
+            Tất cả người dùng – {total} tổng
           </p>
         </div>
         <select
@@ -54,7 +53,7 @@ export default function SaUsersPage() {
             background: 'var(--bg-surface)', border: '1px solid var(--border)',
             color: 'var(--text-primary)', minWidth: 140,
           }}>
-          {ROLES.map(r => <option key={r} value={r}>{r || 'Tất cả roles'}</option>)}
+          {ROLES.map(r => <option key={r} value={r}>{r || 'Tất cả vai trò'}</option>)}
         </select>
       </div>
 
@@ -74,7 +73,7 @@ export default function SaUsersPage() {
           <table className="w-full text-sm">
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-elevated)' }}>
-                {['Tên', 'Email', 'Company', 'Role', 'Đăng nhập cuối', 'Ngày tạo', 'Trạng thái'].map(h => (
+                {['Tên', 'Email', 'Công ty', 'Vai trò', 'Đăng nhập cuối', 'Ngày tạo', 'Trạng thái'].map(h => (
                   <th key={h} className="text-left px-4 py-3 font-medium"
                     style={{ color: 'var(--text-tertiary)', whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
@@ -122,7 +121,7 @@ export default function SaUsersPage() {
                           background: u.isActive ? '#D1FAE5' : '#FEE2E2',
                           color:      u.isActive ? '#065F46' : '#991B1B',
                         }}>
-                        {u.isActive ? 'Active' : 'Locked'}
+                        {u.isActive ? 'Đang hoạt động' : 'Đã khóa'}
                       </span>
                     </td>
                   </tr>
@@ -130,7 +129,7 @@ export default function SaUsersPage() {
               })}
               {users.length === 0 && (
                 <tr><td colSpan={7} className="px-4 py-10 text-center text-sm"
-                  style={{ color: 'var(--text-tertiary)' }}>Không có user nào</td></tr>
+                  style={{ color: 'var(--text-tertiary)' }}>Không có người dùng nào</td></tr>
               )}
             </tbody>
           </table>
@@ -141,7 +140,7 @@ export default function SaUsersPage() {
       {totalPages > 1 && (
         <div className="flex items-center justify-between text-sm">
           <span style={{ color: 'var(--text-tertiary)' }}>
-            Trang {page}/{totalPages} · {total} users
+            Trang {page}/{totalPages} · {total} người dùng
           </span>
           <div className="flex gap-2">
             <button disabled={page <= 1} onClick={() => setPage(p => p - 1)}

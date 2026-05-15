@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SalesAnalytics.API.Services;
 using SalesAnalytics.Infrastructure.Data;
+using SalesAnalytics.Core.Entities;
 
 namespace SalesAnalytics.API.Controllers;
 
@@ -12,13 +13,14 @@ namespace SalesAnalytics.API.Controllers;
 /// Trả về trạng thái sync từ ETL logs, hỗ trợ trigger đồng bộ thủ công.
 /// </summary>
 [ApiController]
-[Authorize(Roles = "Owner,Manager,DataIT,Admin,SuperAdmin")]
+[Authorize(Roles = "Owner,Manager,DataIT,SuperAdmin")]
 public class DataSyncController(
     AppDbContext db,
     ILogger<DataSyncController> logger,
     AiProxyService ai,
     IAuditLogService audit,
-    ITenantContext tenant) : ControllerBase
+    ITenantContext tenant,
+    INotificationService notifications) : ControllerBase
 {
     // ── Trạng thái đồng bộ đa nguồn ─────────────────────────────────────────
 
@@ -67,34 +69,59 @@ public class DataSyncController(
         if (string.IsNullOrWhiteSpace(req.Source))
             return BadRequest(new { message = "source không được để trống." });
 
-        db.EtlLogs.Add(new()
+        try
         {
-            JobId        = 0,
-            Phase        = "EXTRACT",
-            Message      = $"Manual trigger: {req.Source}",
-            Level        = "INFO",
-            RecordsCount = 0,
-            CreatedAt    = DateTime.UtcNow,
-        });
-        await db.SaveChangesAsync();
+            db.EtlLogs.Add(new()
+            {
+                JobId        = 0,
+                Phase        = "EXTRACT",
+                Message      = $"Manual trigger: {req.Source}",
+                Level        = "INFO",
+                RecordsCount = 0,
+                CreatedAt    = DateTime.UtcNow,
+            });
+            await db.SaveChangesAsync();
 
-        logger.LogInformation("DataSync trigger: source={Source} company={CompanyId}",
-            req.Source, tenant.CompanyId);
+            logger.LogInformation("DataSync trigger: source={Source} company={CompanyId}",
+                req.Source, tenant.CompanyId);
 
-        await audit.LogAsync(
-            userId:     int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var sid) ? (int?)sid : null,
-            username:   User.FindFirstValue(ClaimTypes.Name) ?? "",
-            action:     "TRIGGER_SYNC",
-            entityType: "DataSync", entityId: req.Source,
-            newValue:   $"{{\"source\":\"{req.Source}\"}}",
-            ipAddress:  HttpContext.Connection.RemoteIpAddress?.ToString(),
-            userAgent:  HttpContext.Request.Headers["User-Agent"].ToString());
+            await audit.LogAsync(
+                userId:     int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var sid) ? (int?)sid : null,
+                username:   User.FindFirstValue(ClaimTypes.Name) ?? "",
+                action:     "TRIGGER_SYNC",
+                entityType: "DataSync", entityId: req.Source,
+                newValue:   $"{{\"source\":\"{req.Source}\"}}",
+                ipAddress:  HttpContext.Connection.RemoteIpAddress?.ToString(),
+                userAgent:  HttpContext.Request.Headers["User-Agent"].ToString());
 
-        return Accepted(new
+            // Gửi thông báo in-app khi sync được kích hoạt thủ công
+            if (int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var uid))
+            {
+                _ = notifications.SendAsync(uid, new NotificationRequest
+                {
+                    Title    = "Đồng bộ dữ liệu đang chạy",
+                    Body     = $"Đang đồng bộ từ {FormatSourceName(req.Source)}...",
+                    Type     = "info",
+                    Category = "sync",
+                    Channels = ["in_app"],
+                });
+            }
+
+            return Accepted(new
+            {
+                message = $"Đã kích hoạt đồng bộ nguồn '{req.Source}'. Kết quả sẽ cập nhật sau vài phút.",
+                source  = req.Source,
+            });
+        }
+        catch (Exception ex)
         {
-            message = $"Đã kích hoạt đồng bộ nguồn '{req.Source}'. Kết quả sẽ cập nhật sau vài phút.",
-            source  = req.Source,
-        });
+            logger.LogError(ex, "Lỗi trigger sync: source={Source}", req.Source);
+            return StatusCode(503, new
+            {
+                success = false,
+                message = $"Không thể đồng bộ nguồn '{req.Source}'. Vui lòng kiểm tra kết nối và thử lại.",
+            });
+        }
     }
 
     // ── ETL Pipeline status ──────────────────────────────────────────────────
@@ -133,7 +160,7 @@ public class DataSyncController(
 
     /// <summary>Kích hoạt ETL pipeline thủ công.</summary>
     [HttpPost("api/etl/trigger")]
-    [Authorize(Roles = "DataIT,Admin,SuperAdmin")]
+    [Authorize(Roles = "DataIT,Owner,SuperAdmin")]
     public async Task<IActionResult> TriggerEtl([FromBody] TriggerEtlRequest req)
     {
         var pipeline = req.Pipeline ?? "full";

@@ -135,7 +135,7 @@ export default function CustomersPage() {
   const [formInit, setFormInit] = useState(null)
   const [toast,    setToast]    = useState('')
 
-  const canEdit = ['Owner', 'Manager', 'Staff', 'Admin'].includes(user?.role)
+  const canEdit = ['Owner', 'Manager', 'Staff'].includes(user?.role)
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 3000) }
 
   const fetchData = useCallback(async () => {

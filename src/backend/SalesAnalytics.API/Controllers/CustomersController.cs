@@ -30,10 +30,10 @@ public class CustomersController(
 
     /// <summary>
     /// Danh sách khách hàng với tổng doanh thu + số đơn từ DW.
-    /// Roles: Owner, Manager, DataIT, Admin
+    /// Roles: Owner, Manager, DataIT
     /// </summary>
     [HttpGet]
-    [Authorize(Roles = "Owner,Manager,DataIT,Admin,SuperAdmin")]
+    [Authorize(Roles = "Owner,Manager,DataIT,SuperAdmin")]
     public async Task<IActionResult> GetCustomers(
         [FromQuery] string? search  = null,
         [FromQuery] string? segment = null,   // VIP | REGULAR | NEW | INACTIVE
@@ -146,7 +146,7 @@ public class CustomersController(
     /// [OLTP] Danh sách khách hàng OLTP với phân trang (EF Core, public schema).
     /// </summary>
     [HttpGet("oltp")]
-    [Authorize(Roles = "Owner,Manager,DataIT,Admin,SuperAdmin")]
+    [Authorize(Roles = "Owner,Manager,DataIT,SuperAdmin")]
     public async Task<IActionResult> GetOltpCustomers(
         [FromQuery] string? search   = null,
         [FromQuery] string? segment  = null,
@@ -186,7 +186,7 @@ public class CustomersController(
     /// [OLTP] Lấy chi tiết khách hàng theo ID.
     /// </summary>
     [HttpGet("oltp/{id:int}")]
-    [Authorize(Roles = "Owner,Manager,DataIT,Admin,SuperAdmin")]
+    [Authorize(Roles = "Owner,Manager,DataIT,SuperAdmin")]
     public async Task<IActionResult> GetOltpCustomer(int id)
     {
         try
@@ -221,10 +221,10 @@ public class CustomersController(
 
     /// <summary>
     /// [OLTP] Tạo khách hàng mới.
-    /// Roles: Owner, Manager, Staff, Admin
+    /// Roles: Owner, Manager, Staff
     /// </summary>
     [HttpPost("oltp")]
-    [Authorize(Roles = "Owner,Manager,Staff,Admin")]
+    [Authorize(Roles = "Owner,Manager,Staff")]
     public async Task<IActionResult> CreateCustomer([FromBody] CreateCustomerDto dto)
     {
         if (!ModelState.IsValid) return BadRequest(ModelState);
@@ -265,10 +265,10 @@ public class CustomersController(
 
     /// <summary>
     /// [OLTP] Cập nhật thông tin khách hàng (partial update).
-    /// Roles: Owner, Manager, Staff, Admin
+    /// Roles: Owner, Manager, Staff
     /// </summary>
     [HttpPut("oltp/{id:int}")]
-    [Authorize(Roles = "Owner,Manager,Staff,Admin")]
+    [Authorize(Roles = "Owner,Manager,Staff")]
     public async Task<IActionResult> UpdateCustomer(int id, [FromBody] UpdateCustomerDto dto)
     {
         if (!ModelState.IsValid) return BadRequest(ModelState);
@@ -302,10 +302,10 @@ public class CustomersController(
 
     /// <summary>
     /// [OLTP] Lấy top khách hàng theo tổng chi tiêu.
-    /// Roles: Owner, Manager, DataIT, Admin
+    /// Roles: Owner, Manager, DataIT
     /// </summary>
     [HttpGet("oltp/top")]
-    [Authorize(Roles = "Owner,Manager,DataIT,Admin,SuperAdmin")]
+    [Authorize(Roles = "Owner,Manager,DataIT,SuperAdmin")]
     public async Task<IActionResult> GetTopCustomers([FromQuery] int topN = 10)
     {
         try
@@ -335,10 +335,10 @@ public class CustomersController(
 
     /// <summary>
     /// [OLTP] Ẩn khách hàng (soft-delete: set IsActive = false).
-    /// Roles: Manager, Admin
+    /// Roles: Owner, Manager
     /// </summary>
     [HttpDelete("oltp/{id:int}")]
-    [Authorize(Roles = "Manager,Admin")]
+    [Authorize(Roles = "Owner,Manager")]
     public async Task<IActionResult> DeactivateCustomer(int id)
     {
         try

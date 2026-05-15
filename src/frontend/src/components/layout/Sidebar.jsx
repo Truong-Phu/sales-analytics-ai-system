@@ -6,26 +6,27 @@ import { useTranslation } from 'react-i18next'
 // Cấu trúc nav items – label là i18n key (nav.xxx)
 const NAV_ITEMS = [
   // Analytics
-  { to: '/dashboard',       icon: 'dashboard',        labelKey: 'nav.dashboard',       roles: ['Owner','Manager','DataIT','Admin','Viewer'] },
-  { to: '/forecast',        icon: 'trending_up',      labelKey: 'nav.forecast',        roles: ['Owner','Manager','DataIT','Admin'] },
-  { to: '/anomaly',         icon: 'crisis_alert',     labelKey: 'nav.anomaly',         roles: ['Owner','Manager','DataIT','Admin'] },
-  { to: '/recommendations', icon: 'psychology',       labelKey: 'nav.recommendations', roles: ['Owner','Manager','Admin'] },
+  { to: '/dashboard',       icon: 'dashboard',        labelKey: 'nav.dashboard',       roles: ['Owner','Manager','DataIT','Viewer'] },
+  { to: '/forecast',        icon: 'trending_up',      labelKey: 'nav.forecast',        roles: ['Owner','Manager','DataIT'] },
+  { to: '/anomaly',         icon: 'crisis_alert',     labelKey: 'nav.anomaly',         roles: ['Owner','Manager','DataIT'] },
+  { to: '/recommendations', icon: 'psychology',       labelKey: 'nav.recommendations', roles: ['Owner','Manager'] },
   // Operations
   { divider: 'nav.sectionOperations' },
-  { to: '/data-sync',       icon: 'sync',             labelKey: 'nav.dataSync',        roles: ['DataIT','Admin'] },
-  { to: '/etl-monitor',     icon: 'monitoring',       labelKey: 'nav.etlMonitor',      roles: ['DataIT','Admin'] },
+  { to: '/data-sync',       icon: 'sync',             labelKey: 'nav.dataSync',        roles: ['DataIT','Owner'] },
+  { to: '/etl-monitor',     icon: 'monitoring',       labelKey: 'nav.etlMonitor',      roles: ['DataIT','Owner'] },
   // Data
   { divider: 'nav.sectionData' },
-  { to: '/orders',          icon: 'receipt_long',     labelKey: 'nav.orders',          roles: ['Staff','Manager','DataIT','Admin','Viewer'] },
-  { to: '/products',        icon: 'inventory_2',      labelKey: 'nav.products',        roles: ['Staff','Manager','DataIT','Admin','Owner'] },
-  { to: '/customers',       icon: 'people',           labelKey: 'nav.customers',       roles: ['Owner','Manager','DataIT','Admin'] },
+  { to: '/orders',          icon: 'receipt_long',     labelKey: 'nav.orders',          roles: ['Staff','Manager','DataIT','Viewer'] },
+  { to: '/products',        icon: 'inventory_2',      labelKey: 'nav.products',        roles: ['Staff','Manager','DataIT','Owner'] },
+  { to: '/categories',      icon: 'category',         labelKey: 'nav.categories',      roles: ['Staff','Manager','DataIT','Owner'] },
+  { to: '/customers',       icon: 'people',           labelKey: 'nav.customers',       roles: ['Owner','Manager','DataIT'] },
   // Reports
   { divider: 'nav.sectionReports' },
-  { to: '/report',          icon: 'picture_as_pdf',   labelKey: 'nav.report',          roles: ['Owner','Manager','DataIT','Admin'] },
+  { to: '/report',          icon: 'picture_as_pdf',   labelKey: 'nav.report',          roles: ['Owner','Manager','DataIT'] },
   // Admin
   { divider: 'nav.sectionAdmin' },
-  { to: '/admin',           icon: 'manage_accounts',  labelKey: 'nav.admin',           roles: ['Admin'] },
-  { to: '/settings',        icon: 'settings',         labelKey: 'nav.settings',        roles: ['Owner','Manager','Staff','DataIT','Admin','Viewer'] },
+  { to: '/admin',           icon: 'manage_accounts',  labelKey: 'nav.admin',           roles: ['Owner'] },
+  { to: '/settings',        icon: 'settings',         labelKey: 'nav.settings',        roles: ['Owner','Manager','Staff','DataIT','Viewer'] },
 ]
 
 const ROLE_BADGE = {
@@ -33,7 +34,6 @@ const ROLE_BADGE = {
   Manager: { color: 'bg-primary/20 text-primary' },
   Staff:   { color: 'bg-tertiary/20 text-tertiary' },
   DataIT:  { color: 'bg-secondary/20 text-secondary' },
-  Admin:   { color: 'bg-error/20 text-error' },
   Viewer:  { color: 'bg-outline/20 text-outline' },
 }
 
@@ -43,7 +43,7 @@ export default function Sidebar({ isOpen, onClose }) {
   const { t } = useTranslation()
   const [collapsed, setCollapsed] = useState(false)
 
-  const handleLogout = () => { logout(); navigate('/login') }
+  const handleLogout = () => { logout(); navigate('/login', { replace: true }) }
 
   // Lọc nav items theo role
   const visibleItems = NAV_ITEMS.filter(item => {
@@ -143,9 +143,12 @@ export default function Sidebar({ isOpen, onClose }) {
         {!collapsed && (
           <div className="mt-4 pt-4 border-t border-outline-variant/10 px-3">
             <div className="flex items-center gap-3 px-2 mb-3">
-              <div className="w-9 h-9 rounded-full bg-gradient-to-br from-primary-container to-primary
+              <div className="w-9 h-9 rounded-full overflow-hidden bg-gradient-to-br from-primary-container to-primary
                               flex items-center justify-center text-surface text-sm font-bold shrink-0">
-                {user?.fullName?.[0] ?? 'U'}
+                {user?.avatarUrl
+                  ? <img src={user.avatarUrl} alt="avatar" className="w-full h-full object-cover" />
+                  : (user?.fullName?.[0] ?? user?.name?.[0] ?? 'U')
+                }
               </div>
               <div className="min-w-0">
                 <p className="text-sm font-semibold text-on-surface truncate">{user?.fullName}</p>

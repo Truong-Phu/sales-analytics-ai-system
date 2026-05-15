@@ -29,7 +29,7 @@ public class AdminController(
 
     /// <summary>Danh sách user trong company hiện tại</summary>
     [HttpGet("users")]
-    [Authorize(Roles = "Owner,Manager,Admin")]
+    [Authorize(Roles = "Owner,Manager")]
     public async Task<IActionResult> GetUsers()
     {
         var query = db.Users.AsQueryable();
@@ -54,7 +54,7 @@ public class AdminController(
 
     /// <summary>Owner/Manager tạo user mới trong công ty (is_active = true ngay lập tức)</summary>
     [HttpPost("users")]
-    [Authorize(Roles = "Owner,Manager,Admin")]
+    [Authorize(Roles = "Owner,Manager")]
     public async Task<IActionResult> CreateUser([FromBody] CreateUserRequest req)
     {
         if (string.IsNullOrWhiteSpace(req.FullName)  ||
@@ -70,7 +70,7 @@ public class AdminController(
             return BadRequest(new { message = "Email đã tồn tại trong hệ thống." });
 
         if (!Enum.TryParse<UserRole>(req.Role, true, out var role) ||
-            role is UserRole.Owner or UserRole.Admin)
+            role is UserRole.Owner or UserRole.SuperAdmin)
             return BadRequest(new { message = "Vai trò không hợp lệ. Chỉ được tạo Manager, Staff, Viewer, DataIT." });
 
         var user = new User
@@ -98,7 +98,7 @@ public class AdminController(
 
     /// <summary>Cập nhật thông tin user (tên, role, active)</summary>
     [HttpPut("users/{id}")]
-    [Authorize(Roles = "Owner,Manager,Admin")]
+    [Authorize(Roles = "Owner,Manager")]
     public async Task<IActionResult> UpdateUser(int id, [FromBody] UpdateUserRequest req)
     {
         var user = await db.Users.FindAsync(id);
@@ -112,7 +112,7 @@ public class AdminController(
 
         if (req.FullName is not null) user.FullName = req.FullName.Trim();
         if (req.Role is not null && Enum.TryParse<UserRole>(req.Role, true, out var newRole)
-            && newRole is not UserRole.Owner and not UserRole.Admin)
+            && newRole is not UserRole.Owner and not UserRole.SuperAdmin)
             user.Role = newRole;
         if (req.IsActive.HasValue) user.IsActive = req.IsActive.Value;
 
@@ -130,7 +130,7 @@ public class AdminController(
 
     /// <summary>Xóa user (chỉ Owner mới được xóa)</summary>
     [HttpDelete("users/{id}")]
-    [Authorize(Roles = "Owner,Admin")]
+    [Authorize(Roles = "Owner")]
     public async Task<IActionResult> DeleteUser(int id)
     {
         var user = await db.Users.FindAsync(id);
@@ -157,7 +157,7 @@ public class AdminController(
 
     /// <summary>Phê duyệt tài khoản (IsActive = true)</summary>
     [HttpPatch("users/{id}/approve")]
-    [Authorize(Roles = "Owner,Manager,Admin")]
+    [Authorize(Roles = "Owner,Manager")]
     public async Task<IActionResult> ApproveUser(int id)
     {
         var user = await db.Users.FindAsync(id);
@@ -182,7 +182,7 @@ public class AdminController(
 
     /// <summary>Khóa tài khoản</summary>
     [HttpPatch("users/{id}/deactivate")]
-    [Authorize(Roles = "Owner,Manager,Admin")]
+    [Authorize(Roles = "Owner,Manager")]
     public async Task<IActionResult> DeactivateUser(int id)
     {
         var user = await db.Users.FindAsync(id);
@@ -207,7 +207,7 @@ public class AdminController(
 
     /// <summary>Kích hoạt lại tài khoản đã khóa</summary>
     [HttpPatch("users/{id}/activate")]
-    [Authorize(Roles = "Owner,Manager,Admin")]
+    [Authorize(Roles = "Owner,Manager")]
     public async Task<IActionResult> ActivateUser(int id)
     {
         var user = await db.Users.FindAsync(id);
@@ -231,7 +231,7 @@ public class AdminController(
 
     /// <summary>Đổi role người dùng</summary>
     [HttpPatch("users/{id}/role")]
-    [Authorize(Roles = "Owner,Manager,Admin")]
+    [Authorize(Roles = "Owner,Manager")]
     public async Task<IActionResult> ChangeRole(int id, [FromBody] ChangeRoleRequest req)
     {
         var user = await db.Users.FindAsync(id);
@@ -260,7 +260,7 @@ public class AdminController(
 
     /// <summary>Audit log trong company hiện tại (Admin) hoặc toàn hệ thống (SuperAdmin)</summary>
     [HttpGet("audit-logs")]
-    [Authorize(Roles = "Admin,SuperAdmin")]
+    [Authorize(Roles = "Owner,SuperAdmin")]
     public async Task<IActionResult> GetAuditLogs(
         [FromQuery] int?      userId   = null,
         [FromQuery] string?   action   = null,

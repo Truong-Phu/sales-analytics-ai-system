@@ -9,13 +9,12 @@ import { MOCK_USERS } from '../../mockData/admin'
 import { useAuth } from '../../hooks/useAuth'
 
 const ROLE_CREATEABLE = ['Manager', 'Staff', 'Viewer']
-const ROLE_LABEL = { Manager: 'Quản lý', Staff: 'Nhân viên', Viewer: 'Xem', Owner: 'Chủ', DataIT: 'Data/IT', Admin: 'Admin' }
+const ROLE_LABEL = { Manager: 'Quản lý', Staff: 'Nhân viên', Viewer: 'Xem', Owner: 'Chủ doanh nghiệp', DataIT: 'Data/IT' }
 const ROLE_COLOR = {
   Owner:   { bg: 'rgba(139,92,246,0.10)', color: '#7C3AED', border: 'rgba(139,92,246,0.30)' },
   Manager: { bg: 'rgba(59,130,246,0.10)',  color: '#3B82F6', border: 'rgba(59,130,246,0.30)'  },
   Staff:   { bg: 'rgba(16,185,129,0.10)',  color: '#10B981', border: 'rgba(16,185,129,0.30)'  },
   DataIT:  { bg: 'rgba(59,130,246,0.10)',  color: '#3B82F6', border: 'rgba(59,130,246,0.30)'  },
-  Admin:   { bg: 'rgba(239,68,68,0.10)',   color: '#EF4444', border: 'rgba(239,68,68,0.30)'   },
   Viewer:  { bg: 'rgba(100,116,139,0.10)', color: '#64748B', border: 'rgba(100,116,139,0.30)' },
 }
 const STATUS_CFG = {

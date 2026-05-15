@@ -9,7 +9,7 @@ namespace SalesAnalytics.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "Owner,Manager,DataIT,Admin,SuperAdmin")]
+[Authorize(Roles = "Owner,Manager,DataIT,SuperAdmin")]
 public class ReportController(
     ReportService report,
     IAuditLogService audit,
@@ -21,7 +21,8 @@ public class ReportController(
     /// Xuất báo cáo PDF.
     /// Query params: from, to, channel, chart (base64 ảnh biểu đồ, optional),
     ///               includeOverview, includeSales, includeMultichannel,
-    ///               includeCustomer, includeMarketing, includeInventory, includeAI
+    ///               includeCustomer, includeMarketing, includeInventory, includeAI,
+    ///               sections (danh sách tên section, ví dụ: sections=overview&sections=trend_chart)
     /// </summary>
     [HttpGet("export-pdf")]
     public async Task<IActionResult> ExportPdf(
@@ -36,7 +37,8 @@ public class ReportController(
         [FromQuery] bool      includeCustomer      = false,
         [FromQuery] bool      includeMarketing     = false,
         [FromQuery] bool      includeInventory     = false,
-        [FromQuery] bool      includeAI            = true)
+        [FromQuery] bool      includeAI            = true,
+        [FromQuery] List<string>? sections         = null)
     {
         var dateFrom = from ?? DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-30));
         var dateTo   = to   ?? DateOnly.FromDateTime(DateTime.UtcNow);
@@ -64,18 +66,19 @@ public class ReportController(
 
         var pdfBytes = await report.GenerateReportAsync(
             dateFrom, dateTo, ch, chart,
-            language:      language,
-            inclOverview:  includeOverview,
-            inclSales:     includeSales,
-            inclChannel:   includeMultichannel,
-            inclCustomer:  includeCustomer,
-            inclMarketing: includeMarketing,
-            inclInventory: includeInventory,
-            inclAI:        includeAI,
-            companyId:     companyId,
-            companyName:   companyName,
-            userName:      username,
-            userRole:      userRole);
+            language:         language,
+            inclOverview:     includeOverview,
+            inclSales:        includeSales,
+            inclChannel:      includeMultichannel,
+            inclCustomer:     includeCustomer,
+            inclMarketing:    includeMarketing,
+            inclInventory:    includeInventory,
+            inclAI:           includeAI,
+            companyId:        companyId,
+            companyName:      companyName,
+            userName:         username,
+            userRole:         userRole,
+            selectedSections: sections);
 
         await audit.LogAsync(
             userId:     userId, username: username,

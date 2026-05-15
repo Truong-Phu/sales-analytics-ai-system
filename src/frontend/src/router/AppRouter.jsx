@@ -6,9 +6,11 @@ import AdminLayout from '../components/layout/AdminLayout'
 import ProtectedRoute from './ProtectedRoute'
 import SuperAdminRoute from './SuperAdminRoute'
 import ErrorBoundary from '../components/ui/ErrorBoundary'
-import LoginPage       from '../pages/auth/LoginPage'
-import RegisterPage    from '../pages/auth/RegisterPage'
-import UnauthorizedPage from '../pages/UnauthorizedPage'
+import LoginPage           from '../pages/auth/LoginPage'
+import RegisterPage        from '../pages/auth/RegisterPage'
+import ForgotPasswordPage  from '../pages/auth/ForgotPasswordPage'
+import ResetPasswordPage   from '../pages/auth/ResetPasswordPage'
+import UnauthorizedPage    from '../pages/UnauthorizedPage'
 
 // Lazy load để giảm bundle size
 const DashboardPage       = lazy(() => import('../pages/dashboard/DashboardPage'))
@@ -17,7 +19,9 @@ const AnomalyPage         = lazy(() => import('../pages/anomaly/AnomalyPage'))
 const RecommendationsPage = lazy(() => import('../pages/recommendations/RecommendationsPage'))
 const OrdersPage          = lazy(() => import('../pages/orders/OrdersPage'))
 const ProductsPage        = lazy(() => import('../pages/products/ProductsPage'))
+const CategoriesPage      = lazy(() => import('../pages/categories/CategoriesPage'))
 const CustomersPage       = lazy(() => import('../pages/customers/CustomersPage'))
+const NotificationsPage   = lazy(() => import('../pages/notifications/NotificationsPage'))
 const DataSyncPage        = lazy(() => import('../pages/data-sync/DataSyncPage'))
 const EtlMonitorPage      = lazy(() => import('../pages/etl-monitor/EtlMonitorPage'))
 const ReportPage          = lazy(() => import('../pages/report/ReportPage'))
@@ -32,13 +36,14 @@ const SaCompaniesPage     = lazy(() => import('../pages/sa/SaCompaniesPage'))
 const SaUsersPage         = lazy(() => import('../pages/sa/SaUsersPage'))
 const SaSubscriptionsPage = lazy(() => import('../pages/sa/SaSubscriptionsPage'))
 const SaSyncMonitorPage   = lazy(() => import('../pages/sa/SaSyncMonitorPage'))
-const SaAuditLogsPage     = lazy(() => import('../pages/sa/SaAuditLogsPage'))
+const SaAuditLogsPage         = lazy(() => import('../pages/sa/SaAuditLogsPage'))
+const SaPaymentAccountsPage   = lazy(() => import('../pages/sa/SaPaymentAccountsPage'))
 
 // Roles constants
-const ALL_ROLES     = ['Owner', 'Manager', 'Staff', 'DataIT', 'Admin']
-const ANALYST_ROLES = ['Owner', 'Manager', 'DataIT', 'Admin']
-const DATA_ROLES    = ['DataIT', 'Admin']
-const ADMIN_ONLY    = ['Admin']
+const ALL_ROLES     = ['Owner', 'Manager', 'Staff', 'DataIT']
+const ANALYST_ROLES = ['Owner', 'Manager', 'DataIT']
+const DATA_ROLES    = ['DataIT', 'Owner']
+const ADMIN_ONLY    = ['Owner']
 const VIEWER_ROUTES = [...ALL_ROLES, 'Viewer']
 
 function Shell({ children }) {
@@ -58,9 +63,11 @@ export default function AppRouter() {
     <BrowserRouter>
       <Routes>
         {/* Public routes – NO AppShell */}
-        <Route path="/login"        element={<LoginPage />} />
-        <Route path="/register"     element={<RegisterPage />} />
-        <Route path="/unauthorized" element={<UnauthorizedPage />} />
+        <Route path="/login"           element={<LoginPage />} />
+        <Route path="/register"        element={<RegisterPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password"  element={<ResetPasswordPage />} />
+        <Route path="/unauthorized"    element={<UnauthorizedPage />} />
 
         {/* Onboarding – requires auth, no AppShell, Owner/Manager only */}
         <Route path="/onboarding" element={
@@ -111,6 +118,18 @@ export default function AppRouter() {
         <Route path="/products" element={
           <ProtectedRoute roles={ALL_ROLES}>
             <Shell><ProductsPage /></Shell>
+          </ProtectedRoute>
+        } />
+
+        <Route path="/categories" element={
+          <ProtectedRoute roles={ALL_ROLES}>
+            <Shell><CategoriesPage /></Shell>
+          </ProtectedRoute>
+        } />
+
+        <Route path="/notifications" element={
+          <ProtectedRoute roles={VIEWER_ROUTES}>
+            <Shell><NotificationsPage /></Shell>
           </ProtectedRoute>
         } />
 
@@ -175,6 +194,7 @@ export default function AppRouter() {
           <Route path="subscriptions"   element={<Suspense fallback={<PageSpinner />}><SaSubscriptionsPage /></Suspense>} />
           <Route path="sync-monitor"    element={<Suspense fallback={<PageSpinner />}><SaSyncMonitorPage /></Suspense>} />
           <Route path="audit-logs"      element={<Suspense fallback={<PageSpinner />}><SaAuditLogsPage /></Suspense>} />
+          <Route path="system/payment-accounts" element={<Suspense fallback={<PageSpinner />}><SaPaymentAccountsPage /></Suspense>} />
         </Route>
 
         {/* Fallback */}

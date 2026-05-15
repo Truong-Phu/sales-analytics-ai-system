@@ -4,7 +4,7 @@ import { AuthContext } from '../context/AuthContext'
 /**
  * Hook tiện ích để truy cập AuthContext từ bất kỳ component nào.
  * Trả về: { user, loading, login, logout, setLang,
- *           isAdmin, isOwner, isManager, isStaff,
+ *           isOwner, isManager, isStaff,
  *           canEdit, canViewReport, canManageUsers }
  */
 export function useAuth() {
@@ -16,16 +16,15 @@ export function useAuth() {
   return {
     ...ctx,
     // Role shortcuts
-    isAdmin:   role === 'Admin',
     isOwner:   role === 'Owner',
     isManager: role === 'Manager',
     isStaff:   role === 'Staff',
     isDataIT:  role === 'DataIT',
     isViewer:  role === 'Viewer',
     // Permission helpers
-    canEdit:        ['Admin', 'Owner', 'Manager', 'Staff'].includes(role),
-    canViewReport:  ['Admin', 'Owner', 'Manager'].includes(role),
-    canManageUsers: ['Admin', 'Owner', 'Manager'].includes(role),
+    canEdit:        ['Owner', 'Manager', 'Staff'].includes(role),
+    canViewReport:  ['Owner', 'Manager'].includes(role),
+    canManageUsers: ['Owner', 'Manager'].includes(role),
   }
 }
 

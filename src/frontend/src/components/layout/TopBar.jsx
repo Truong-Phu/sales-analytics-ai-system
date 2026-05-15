@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { NavLink, useNavigate } from 'react-router-dom'
+import { NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import { useTheme } from '../../hooks/useTheme'
 import { useTranslation } from 'react-i18next'
@@ -292,16 +292,9 @@ function NotificationBell() {
   )
 }
 
-// ── MegaMenu cho "Bán hàng" — Orders/Products/Categories/Customers ───────────
-function MegaMenu({ onClose }) {
+// ── MegaMenu chung — dùng cho cả "Bán hàng" và "Phân tích AI" ────────────────
+function MegaMenu({ items, onClose }) {
   const navigate = useNavigate()
-  const { t } = useTranslation()
-  const items = [
-    { labelKey: 'nav.orders',      descKey: 'nav.ordersDesc',      icon: 'receipt_long', href: '/orders' },
-    { labelKey: 'nav.products',    descKey: 'nav.productsDesc',    icon: 'inventory_2',  href: '/products' },
-    { labelKey: 'nav.categories',  descKey: 'nav.categoriesDesc',  icon: 'category',     href: '/categories' },
-    { labelKey: 'nav.customers',   descKey: 'nav.customersDesc',   icon: 'people',       href: '/customers' },
-  ]
 
   return (
     <div
@@ -321,10 +314,10 @@ function MegaMenu({ onClose }) {
             </span>
             <div>
               <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                {t(item.labelKey)}
+                {item.label}
               </div>
               <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                {t(item.descKey)}
+                {item.desc}
               </div>
             </div>
           </button>
@@ -335,8 +328,9 @@ function MegaMenu({ onClose }) {
 }
 
 // ── NavTab ────────────────────────────────────────────────────────────────────
-function NavTab({ href, icon, label, hasMega = false }) {
+function NavTab({ href, icon, label, hasMega = false, menuItems = [] }) {
   const [megaOpen, setMegaOpen] = useState(false)
+  const { pathname } = useLocation()
   const ref = useRef(null)
 
   useEffect(() => {
@@ -347,21 +341,23 @@ function NavTab({ href, icon, label, hasMega = false }) {
   }, [hasMega])
 
   if (hasMega) {
+    const isChildActive = menuItems.some(item => pathname.startsWith(item.href))
     return (
       <div ref={ref} className="relative">
         <button
           onClick={() => setMegaOpen(o => !o)}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium
                      transition-colors hover:bg-[--bg-elevated]"
-          style={{ color: megaOpen ? 'var(--primary-500)' : 'var(--text-secondary)' }}
+          style={{ color: megaOpen || isChildActive ? 'var(--primary-500)' : 'var(--text-secondary)' }}
         >
           <span className="icon icon-sm">{icon}</span>
-          {label}
-          <span className="icon icon-sm text-xs">
+          {/* Label ẩn trên < lg, chỉ hiện icon */}
+          <span className="hidden lg:inline">{label}</span>
+          <span className="icon icon-sm text-xs hidden lg:inline">
             {megaOpen ? 'expand_less' : 'expand_more'}
           </span>
         </button>
-        {megaOpen && <MegaMenu onClose={() => setMegaOpen(false)} />}
+        {megaOpen && <MegaMenu items={menuItems} onClose={() => setMegaOpen(false)} />}
       </div>
     )
   }
@@ -386,47 +382,118 @@ function NavTab({ href, icon, label, hasMega = false }) {
           <span className="icon icon-sm" style={{ color: isActive ? 'var(--primary-500)' : undefined }}>
             {icon}
           </span>
-          {label}
+          {/* Label ẩn trên < lg, chỉ hiện icon */}
+          <span className="hidden lg:inline">{label}</span>
         </>
       )}
     </NavLink>
   )
 }
 
+// ── MobileMenu — dropdown khi nhấn hamburger trên < md ───────────────────────
+function MobileMenu({ navTabs, showDataSync, showAdmin, onClose }) {
+  const navigate  = useNavigate()
+  const { t }     = useTranslation()
+
+  // Flatten tất cả nav items (kể cả mega-menu children)
+  const allItems = navTabs.flatMap(tab => {
+    if (tab.hasMega) {
+      return [
+        { href: tab.href, icon: tab.icon, label: tab.label, isHeader: true },
+        ...(tab.menuItems || []).map(item => ({ ...item, isChild: true })),
+      ]
+    }
+    return [{ href: tab.href, icon: tab.icon, label: tab.label }]
+  })
+
+  if (showDataSync) allItems.push({ href: '/data-sync', icon: 'sync', label: t('nav.dataSync') })
+  if (showAdmin)    allItems.push({ href: '/admin',     icon: 'manage_accounts', label: t('nav.admin') })
+
+  return (
+    <>
+      {/* Overlay để đóng menu khi click ngoài */}
+      <div
+        className="fixed inset-0 z-[149]"
+        onClick={onClose}
+      />
+      {/* Dropdown menu */}
+      <div
+        className="lcard scale-in absolute top-full left-0 right-0 mt-1 mx-3 p-3 z-[150] flex flex-col gap-0.5"
+        style={{ boxShadow: 'var(--shadow-lg)' }}
+      >
+        {allItems.map((item, idx) => (
+          <button
+            key={idx}
+            onClick={() => { navigate(item.href); onClose() }}
+            className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-left
+                       transition-colors hover:bg-[--bg-elevated]"
+            style={{ paddingLeft: item.isChild ? 32 : 12 }}
+          >
+            <span className="icon icon-sm shrink-0" style={{ color: 'var(--primary-500)' }}>
+              {item.icon}
+            </span>
+            <span
+              className="text-sm font-medium"
+              style={{ color: 'var(--text-primary)', opacity: item.isChild ? 0.8 : 1 }}
+            >
+              {item.label}
+            </span>
+          </button>
+        ))}
+      </div>
+    </>
+  )
+}
+
 // ── TopBar ────────────────────────────────────────────────────────────────────
 export default function TopBar() {
-  const { open: openCmdK } = useCmdK()
-  const { user } = useAuth()
-  const { t } = useTranslation()
+  const { open: openCmdK }  = useCmdK()
+  const { user }            = useAuth()
+  const { t }               = useTranslation()
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+
+  const salesMenuItems = [
+    { label: t('nav.orders'),     desc: t('nav.ordersDesc',     'Xem và quản lý đơn hàng'),     icon: 'receipt_long', href: '/orders' },
+    { label: t('nav.products'),   desc: t('nav.productsDesc',   'Quản lý kho sản phẩm'),         icon: 'inventory_2',  href: '/products' },
+    { label: t('nav.categories'), desc: t('nav.categoriesDesc', 'Phân loại sản phẩm'),           icon: 'category',     href: '/categories' },
+    { label: t('nav.customers'),  desc: t('nav.customersDesc',  'Thông tin khách hàng'),          icon: 'people',       href: '/customers' },
+  ]
+
+  const aiMenuItems = [
+    { label: t('nav.forecast',        'Dự báo doanh thu'),     desc: 'Prophet AI – xu hướng và seasonality', icon: 'trending_up',  href: '/forecast' },
+    { label: t('nav.anomaly',         'Phát hiện bất thường'), desc: 'Cảnh báo dữ liệu bất thường',          icon: 'crisis_alert', href: '/anomaly' },
+    { label: t('nav.recommendations', 'Gợi ý thông minh'),     desc: 'Hỏi AI & Insights tự động',            icon: 'psychology',   href: '/recommendations' },
+  ]
 
   const navTabs = [
     { href: '/dashboard', icon: 'dashboard',      label: t('nav.dashboard') },
-    { href: '/orders',    icon: 'receipt_long',   label: t('nav.sales'), hasMega: true },
-    { href: '/forecast',  icon: 'trending_up',    label: t('nav.ai') },
+    { href: '/orders',    icon: 'receipt_long',   label: t('nav.sales'),  hasMega: true, menuItems: salesMenuItems },
+    { href: '/forecast',  icon: 'auto_awesome',   label: t('nav.ai'),     hasMega: true, menuItems: aiMenuItems },
     { href: '/report',    icon: 'picture_as_pdf', label: t('nav.report') },
   ]
 
-  const showDataSync = ['DataIT', 'Admin', 'Owner'].includes(user?.role)
+  const showDataSync = ['DataIT', 'Owner'].includes(user?.role)
+  const showAdmin    = user?.role === 'Owner'
 
   return (
     <header
-      className="lcard-glass sticky top-0 z-50 border-b h-14 flex items-center px-6"
+      className="lcard-glass sticky top-0 z-50 border-b h-14 flex items-center px-4 md:px-6 relative"
       style={{ borderColor: 'var(--border)' }}
     >
-      {/* LEFT — Logo */}
-      <div className="flex items-center gap-2.5 mr-6">
+      {/* LEFT — Logo (luôn hiển thị) */}
+      <div className="flex items-center gap-2.5 mr-4 md:mr-6 shrink-0">
         <LuminaLogo size={28} />
         <div className="leading-tight">
           <span className="font-bold text-sm" style={{ color: 'var(--text-primary)' }}>
             MSAS
           </span>
           <span className="text-xs block leading-none" style={{ color: 'var(--text-tertiary)' }}>
-            Multi-channel Sales
+            Bán hàng đa kênh
           </span>
         </div>
       </div>
 
-      {/* CENTER — Nav tabs (hidden on mobile) */}
+      {/* CENTER — Nav tabs: ẩn hoàn toàn < md, icon-only < lg */}
       <nav className="hidden md:flex items-center gap-1 flex-1">
         {navTabs.map(tab => (
           <NavTab key={tab.href} {...tab} />
@@ -434,37 +501,33 @@ export default function TopBar() {
         {showDataSync && (
           <NavTab href="/data-sync" icon="sync" label={t('nav.dataSync')} />
         )}
-        {user?.role === 'Admin' && (
+        {showAdmin && (
           <NavTab href="/admin" icon="manage_accounts" label={t('nav.admin')} />
         )}
       </nav>
 
-      {/* RIGHT — Actions */}
-      <div className="flex items-center gap-2 ml-auto">
-        {/* Search button — desktop */}
+      {/* RIGHT — Actions (luôn hiển thị) */}
+      <div className="flex items-center gap-1.5 ml-auto">
+        {/* Search button — chỉ desktop (md+) */}
         <button
           onClick={openCmdK}
           className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm
                      border transition-colors hover:bg-[--bg-elevated] cursor-pointer"
           style={{
             borderColor: 'var(--border)',
-            color: 'var(--text-tertiary)',
-            background: 'var(--bg-surface)',
+            color:       'var(--text-tertiary)',
+            background:  'var(--bg-surface)',
           }}
         >
           <span className="icon icon-sm">search</span>
-          <span>{t('common.search')}</span>
+          <span className="hidden lg:inline">{t('common.search')}</span>
           <kbd
-            className="ml-2 text-[10px] px-1.5 py-0.5 rounded"
+            className="ml-2 text-[10px] px-1.5 py-0.5 rounded hidden lg:inline"
             style={{ background: 'var(--bg-elevated)', color: 'var(--text-tertiary)' }}
           >
             Ctrl K
           </kbd>
         </button>
-
-        <NotificationBell />
-        <LangToggle />
-        <ThemeToggle />
 
         {/* Mobile search icon */}
         <button
@@ -474,8 +537,32 @@ export default function TopBar() {
           <span className="icon text-base" style={{ color: 'var(--text-secondary)' }}>search</span>
         </button>
 
+        <NotificationBell />
+        <LangToggle />
+        <ThemeToggle />
         <UserAvatar />
+
+        {/* Hamburger — chỉ < md */}
+        <button
+          onClick={() => setMobileMenuOpen(o => !o)}
+          className="lbtn lbtn-ghost w-8 h-8 p-0 justify-center rounded-lg md:hidden"
+          title="Menu"
+        >
+          <span className="icon text-base" style={{ color: 'var(--text-secondary)' }}>
+            {mobileMenuOpen ? 'close' : 'menu'}
+          </span>
+        </button>
       </div>
+
+      {/* Mobile dropdown menu */}
+      {mobileMenuOpen && (
+        <MobileMenu
+          navTabs={navTabs}
+          showDataSync={showDataSync}
+          showAdmin={showAdmin}
+          onClose={() => setMobileMenuOpen(false)}
+        />
+      )}
     </header>
   )
 }
