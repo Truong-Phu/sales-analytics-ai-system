@@ -1,20 +1,31 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { useAuth } from '../../hooks/useAuth'
 import { useTheme } from '../../hooks/useTheme'
+import i18n from '../../i18n'
 
 const NAV = [
-  { to: '/sa',               icon: 'dashboard',       label: 'Dashboard',       exact: true },
-  { to: '/sa/companies',     icon: 'business',        label: 'Companies' },
-  { to: '/sa/users',         icon: 'group',           label: 'Users' },
-  { to: '/sa/subscriptions', icon: 'workspace_premium', label: 'Subscriptions' },
-  { to: '/sa/sync-monitor',  icon: 'sync',            label: 'Sync Monitor' },
-  { to: '/sa/audit-logs',    icon: 'history',         label: 'Audit Logs' },
+  { to: '/sa',                           icon: 'dashboard',         label: 'Dashboard',          labelVi: 'Tổng quan',            exact: true },
+  { to: '/sa/companies',                 icon: 'business',          label: 'Companies',           labelVi: 'Công ty' },
+  { to: '/sa/users',                     icon: 'group',             label: 'Users',               labelVi: 'Người dùng' },
+  { to: '/sa/subscriptions',             icon: 'workspace_premium', label: 'Subscriptions',       labelVi: 'Đăng ký' },
+  { to: '/sa/sync-monitor',              icon: 'sync',              label: 'Sync Monitor',        labelVi: 'Giám sát Sync' },
+  { to: '/sa/audit-logs',                icon: 'history',           label: 'Audit Logs',          labelVi: 'Nhật ký' },
+  { to: '/sa/system/payment-accounts',   icon: 'payments',          label: 'Payment Accounts',    labelVi: 'Tài khoản thanh toán' },
 ]
 
 export default function AdminLayout() {
   const { user, logout } = useAuth()
   const { isDark }       = useTheme()
   const navigate         = useNavigate()
+  const { t }            = useTranslation()
+
+  const currentLang = i18n.language?.startsWith('en') ? 'en' : 'vi'
+  const toggleLang  = () => {
+    const next = currentLang === 'vi' ? 'en' : 'vi'
+    i18n.changeLanguage(next)
+    localStorage.setItem('lang', next)
+  }
 
   return (
     <div className={`min-h-screen flex ${isDark ? 'dark' : ''}`}
@@ -41,7 +52,7 @@ export default function AdminLayout() {
           </div>
           <div>
             <div className="text-white text-sm font-semibold leading-tight">Super Admin</div>
-            <div className="text-xs" style={{ color: 'rgba(255,255,255,0.4)' }}>System Panel</div>
+            <div className="text-xs" style={{ color: 'rgba(255,255,255,0.4)' }}>Bảng điều khiển</div>
           </div>
         </div>
 
@@ -62,7 +73,7 @@ export default function AdminLayout() {
                 color:      isActive ? '#A5B4FC' : undefined,
               })}>
               <span className="icon text-lg">{item.icon}</span>
-              {item.label}
+              {currentLang === 'vi' ? item.labelVi : item.label}
             </NavLink>
           ))}
         </nav>
@@ -77,7 +88,7 @@ export default function AdminLayout() {
             onMouseEnter={e => { e.currentTarget.style.color = '#fff'; e.currentTarget.style.background = 'rgba(255,255,255,0.05)' }}
             onMouseLeave={e => { e.currentTarget.style.color = 'rgba(255,255,255,0.45)'; e.currentTarget.style.background = 'transparent' }}>
             <span className="icon text-base">arrow_back</span>
-            Back to App
+            {currentLang === 'vi' ? 'Về ứng dụng' : 'Back to App'}
           </button>
           <div className="flex items-center gap-2 px-2 py-1">
             <div className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0"
@@ -105,14 +116,27 @@ export default function AdminLayout() {
           }}>
           <span className="text-xs font-medium px-2 py-1 rounded-full"
             style={{ background: 'rgba(99,102,241,0.10)', color: '#6366F1' }}>
-            Super Admin Mode
+            {t('sa.mode')}
           </span>
-          <button onClick={logout}
-            className="flex items-center gap-1.5 text-xs"
-            style={{ color: 'var(--text-tertiary)' }}>
-            <span className="icon text-base">logout</span>
-            Logout
-          </button>
+
+          <div className="flex items-center gap-2">
+            {/* Language toggle */}
+            <button
+              onClick={toggleLang}
+              className="h-8 px-2.5 flex items-center gap-1.5 rounded-lg border text-xs font-medium transition-colors"
+              style={{ borderColor: 'var(--border)', background: 'var(--bg-base)', color: 'var(--text-secondary)' }}
+              title={currentLang === 'vi' ? 'Switch to English' : 'Chuyển sang tiếng Việt'}>
+              <span className="icon text-sm">language</span>
+              {currentLang === 'vi' ? 'VI' : 'EN'}
+            </button>
+
+            <button onClick={logout}
+              className="flex items-center gap-1.5 text-xs"
+              style={{ color: 'var(--text-tertiary)' }}>
+              <span className="icon text-base">logout</span>
+              {currentLang === 'vi' ? 'Đăng xuất' : 'Logout'}
+            </button>
+          </div>
         </header>
 
         {/* Page content */}

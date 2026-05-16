@@ -488,7 +488,7 @@ export default function TopBar() {
             MSAS
           </span>
           <span className="text-xs block leading-none" style={{ color: 'var(--text-tertiary)' }}>
-            Bán hàng đa kênh
+            {t('topbar.subtitle')}
           </span>
         </div>
       </div>

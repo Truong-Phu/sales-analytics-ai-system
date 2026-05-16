@@ -206,6 +206,76 @@ public class DashboardService
         )).ToList();
     }
 
+    // ── Mobile endpoints (revenue-trend, top-products, channel-revenue) ─────────
+
+    private static readonly Dictionary<string, string> _channelColors =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["shopee"]      = "#EE4D2D",
+            ["lazada"]      = "#0F146D",
+            ["tiktok"]      = "#010101",
+            ["tiktok shop"] = "#010101",
+            ["facebook"]    = "#1877F2",
+            ["website"]     = "#6B7280",
+            ["zalo"]        = "#0066CC",
+        };
+
+    public async Task<List<object>> GetRevenueTrendAsync(int days, Guid? companyId)
+    {
+        if (days < 1)  days = 7;
+        if (days > 90) days = 90;
+        var to   = DateOnly.FromDateTime(DateTime.UtcNow);
+        var from = to.AddDays(-(days - 1));
+
+        await using var conn = new NpgsqlConnection(_connStr);
+        await conn.OpenAsync();
+
+        var rows = await GetRevenueByDayAsync(conn, from, to, null, companyId);
+        var dayLabels = new[] { "CN", "T2", "T3", "T4", "T5", "T6", "T7" };
+        return rows.Select(r => (object)new
+        {
+            label = dayLabels[(int)r.Date.DayOfWeek],
+            date  = r.Date.ToString("MM-dd"),
+            value = r.NetRevenue,
+        }).ToList();
+    }
+
+    public async Task<List<object>> GetTopProductsMobileAsync(int limit, Guid? companyId)
+    {
+        if (limit < 1)  limit = 5;
+        if (limit > 20) limit = 20;
+        var to   = DateOnly.FromDateTime(DateTime.UtcNow);
+        var from = to.AddDays(-30);
+
+        await using var conn = new NpgsqlConnection(_connStr);
+        await conn.OpenAsync();
+
+        var rows = await GetTopProductsAsync(conn, from, to, null, companyId);
+        return rows.Take(limit).Select(r => (object)new
+        {
+            name    = r.ProductName,
+            channel = r.Channel,
+            revenue = r.Revenue,
+        }).ToList();
+    }
+
+    public async Task<List<object>> GetChannelRevenueMobileAsync(Guid? companyId)
+    {
+        var to   = DateOnly.FromDateTime(DateTime.UtcNow);
+        var from = to.AddDays(-30);
+
+        await using var conn = new NpgsqlConnection(_connStr);
+        await conn.OpenAsync();
+
+        var rows = await GetRevenueByChannelAsync(conn, from, to, companyId);
+        return rows.Select(r => (object)new
+        {
+            channel = r.ChannelName,
+            revenue = r.Revenue,
+            color   = _channelColors.GetValueOrDefault(r.ChannelName.ToLower(), "#6366F1"),
+        }).ToList();
+    }
+
     // ── Top products ─────────────────────────────────────────────────────────
 
     private static async Task<List<TopProduct>> GetTopProductsAsync(

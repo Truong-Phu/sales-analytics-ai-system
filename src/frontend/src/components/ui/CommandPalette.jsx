@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, createContext, useContext, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useAuth } from '../../hooks/useAuth'
 
 const CmdKContext = createContext(null)
 
@@ -8,20 +9,20 @@ function removeAccents(str) {
   return str.normalize('NFD').replace(/\p{Mn}/gu, '').toLowerCase()
 }
 
-// ── All searchable items ──────────────────────────────────────────────────────
+// ── All searchable items — roles: null = all logged-in users ─────────────────
 const ITEMS = [
-  { id: 'dashboard', label: 'Dashboard',              desc: 'Tổng quan kinh doanh',     href: '/dashboard',     icon: 'dashboard' },
-  { id: 'orders',    label: 'Đơn hàng',               desc: 'Quản lý đơn hàng',          href: '/orders',        icon: 'receipt_long' },
-  { id: 'products',  label: 'Sản phẩm',               desc: 'Quản lý sản phẩm',          href: '/products',      icon: 'inventory_2' },
-  { id: 'customers', label: 'Khách hàng',             desc: 'Quản lý khách hàng',        href: '/customers',     icon: 'people' },
-  { id: 'forecast',  label: 'Dự báo AI',              desc: 'Dự báo doanh thu Prophet',  href: '/forecast',      icon: 'trending_up' },
-  { id: 'anomaly',   label: 'Phát hiện bất thường',   desc: 'Radar cảnh báo',            href: '/anomaly',       icon: 'crisis_alert' },
-  { id: 'recommend', label: 'Hỏi AI',                 desc: 'Gợi ý kinh doanh',         href: '/recommendations', icon: 'psychology' },
-  { id: 'report',    label: 'Xuất báo cáo',           desc: 'Export PDF báo cáo',        href: '/report',        icon: 'picture_as_pdf' },
-  { id: 'datasync',  label: 'Đồng bộ dữ liệu',       desc: 'Kết nối sàn TMĐT',         href: '/data-sync',     icon: 'sync' },
-  { id: 'etl',       label: 'ETL Monitor',            desc: 'Giám sát pipeline dữ liệu', href: '/etl-monitor',   icon: 'monitoring' },
-  { id: 'admin',     label: 'Quản trị',               desc: 'Quản lý người dùng',        href: '/admin',         icon: 'manage_accounts' },
-  { id: 'settings',  label: 'Cài đặt',               desc: 'Tuỳ chỉnh hệ thống',       href: '/settings',      icon: 'settings' },
+  { id: 'dashboard', label: 'Tổng quan',             desc: 'Tổng quan kinh doanh',     href: '/dashboard',       icon: 'dashboard',        roles: null },
+  { id: 'orders',    label: 'Đơn hàng',             desc: 'Quản lý đơn hàng',          href: '/orders',          icon: 'receipt_long',     roles: null },
+  { id: 'products',  label: 'Sản phẩm',             desc: 'Quản lý sản phẩm',          href: '/products',        icon: 'inventory_2',      roles: null },
+  { id: 'customers', label: 'Khách hàng',           desc: 'Quản lý khách hàng',        href: '/customers',       icon: 'people',           roles: null },
+  { id: 'forecast',  label: 'Dự báo AI',            desc: 'Dự báo doanh thu Prophet',  href: '/forecast',        icon: 'trending_up',      roles: null },
+  { id: 'anomaly',   label: 'Phát hiện bất thường', desc: 'Radar cảnh báo',            href: '/anomaly',         icon: 'crisis_alert',     roles: null },
+  { id: 'recommend', label: 'Hỏi AI',               desc: 'Gợi ý kinh doanh',         href: '/recommendations', icon: 'psychology',       roles: null },
+  { id: 'report',    label: 'Xuất báo cáo',         desc: 'Export PDF báo cáo',        href: '/report',          icon: 'picture_as_pdf',   roles: null },
+  { id: 'datasync',  label: 'Đồng bộ dữ liệu',     desc: 'Kết nối sàn TMĐT',         href: '/data-sync',       icon: 'sync',             roles: ['Owner', 'DataIT'] },
+  { id: 'etl',       label: 'Giám sát ETL',          desc: 'Giám sát pipeline dữ liệu', href: '/etl-monitor',     icon: 'monitoring',       roles: ['Owner', 'DataIT'] },
+  { id: 'admin',     label: 'Quản trị',             desc: 'Quản lý người dùng',        href: '/admin',           icon: 'manage_accounts',  roles: ['Owner'] },
+  { id: 'settings',  label: 'Cài đặt',             desc: 'Tuỳ chỉnh hệ thống',       href: '/settings',        icon: 'settings',         roles: null },
 ]
 
 // ── Provider ──────────────────────────────────────────────────────────────────
@@ -62,20 +63,26 @@ function CommandPaletteModal({ onClose }) {
   const [query, setQuery]     = useState('')
   const [cursor, setCursor]   = useState(0)
   const navigate              = useNavigate()
+  const { user }              = useAuth()
   const inputRef              = useRef(null)
   const listRef               = useRef(null)
 
   useEffect(() => { inputRef.current?.focus() }, [])
 
+  // Lọc items theo role — null = hiển thị cho tất cả
+  const visibleItems = ITEMS.filter(item =>
+    !item.roles || item.roles.includes(user?.role)
+  )
+
   const filtered = query.trim()
-    ? ITEMS.filter(item => {
+    ? visibleItems.filter(item => {
         const q = removeAccents(query)
         return (
           removeAccents(item.label).includes(q) ||
           removeAccents(item.desc).includes(q)
         )
       })
-    : ITEMS
+    : visibleItems
 
   useEffect(() => { setCursor(0) }, [query])
 

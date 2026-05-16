@@ -25,6 +25,57 @@ public class DashboardController(DashboardService service, ITenantContext tenant
         return Ok(data);
     }
 
+    /// <summary>Xu hướng doanh thu N ngày gần nhất — dùng cho mobile DashboardScreen.</summary>
+    [HttpGet("revenue-trend")]
+    [Authorize(Roles = "Owner,Manager,DataIT,Viewer,SuperAdmin")]
+    public async Task<IActionResult> GetRevenueTrend([FromQuery] int days = 7)
+    {
+        var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
+        try
+        {
+            var data = await service.GetRevenueTrendAsync(days, companyId);
+            return Ok(data);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(503, new { message = "Lỗi kết nối database.", detail = ex.Message });
+        }
+    }
+
+    /// <summary>Top N sản phẩm bán chạy 30 ngày gần nhất — dùng cho mobile DashboardScreen.</summary>
+    [HttpGet("top-products")]
+    [Authorize(Roles = "Owner,Manager,DataIT,Viewer,SuperAdmin")]
+    public async Task<IActionResult> GetTopProducts([FromQuery] int limit = 5)
+    {
+        var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
+        try
+        {
+            var data = await service.GetTopProductsMobileAsync(limit, companyId);
+            return Ok(data);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(503, new { message = "Lỗi kết nối database.", detail = ex.Message });
+        }
+    }
+
+    /// <summary>Doanh thu theo kênh 30 ngày gần nhất — dùng cho mobile DashboardScreen.</summary>
+    [HttpGet("channel-revenue")]
+    [Authorize(Roles = "Owner,Manager,DataIT,Viewer,SuperAdmin")]
+    public async Task<IActionResult> GetChannelRevenue()
+    {
+        var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
+        try
+        {
+            var data = await service.GetChannelRevenueMobileAsync(companyId);
+            return Ok(data);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(503, new { message = "Lỗi kết nối database.", detail = ex.Message });
+        }
+    }
+
     /// <summary>So sánh doanh thu & đơn hàng hôm nay vs hôm qua</summary>
     [HttpGet("today-vs-yesterday")]
     [Authorize(Roles = "Owner,Manager,DataIT,Staff,Viewer,SuperAdmin")]

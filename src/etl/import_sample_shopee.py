@@ -24,6 +24,7 @@ ORDER_FILES = [
     os.path.join(BASE, "shopee_orders_2024_q3.json"),
     os.path.join(BASE, "shopee_orders_2024_q4.json"),
     os.path.join(BASE, "shopee_orders_2025_q1.json"),
+    os.path.join(BASE, "shopee_orders_2025_2026.json"),
 ]
 
 

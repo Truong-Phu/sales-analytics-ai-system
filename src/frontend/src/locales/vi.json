@@ -651,6 +651,9 @@
     "deleteSuccess": "Đã xóa thông báo",
     "markReadSuccess": "Đã đánh dấu đã đọc"
   },
+  "topbar": {
+    "subtitle": "Bán hàng đa kênh"
+  },
   "subscription": {
     "title": "Gói dịch vụ & Thanh toán",
     "tabs": {

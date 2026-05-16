@@ -652,6 +652,9 @@
     "deleteSuccess": "Notification deleted",
     "markReadSuccess": "Marked as read"
   },
+  "topbar": {
+    "subtitle": "Multi-channel Sales"
+  },
   "subscription": {
     "title": "Subscription & Billing",
     "tabs": {
