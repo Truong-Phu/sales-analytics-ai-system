@@ -634,6 +634,149 @@ class OfflineETL:
         return stats
 
 
+# ── OLTP → DW (direct path, bypass staging) ─────────────────────────────────────
+
+def run_oltp_to_dw(company_id: Optional[str] = None, channel: Optional[str] = None) -> dict:
+    """
+    Đọc public.orders (OLTP) và push vào dw.fact_sales.
+
+    Dùng sau khi import JSON/API trực tiếp vào OLTP mà không qua staging.
+    Idempotent: ON CONFLICT (external_order_id) DO NOTHING.
+
+    Args:
+        company_id: UUID công ty (bỏ trống → dùng COMPANY_EMAIL mặc định).
+        channel: Lọc theo channel_type ('SHOPEE', 'TIKTOK_SHOP', 'LAZADA').
+                 None = tất cả kênh.
+    Returns:
+        dict: {'total_orders', 'inserted', 'skipped'}
+    """
+    import sys as _sys
+    _sys.path.insert(0, os.path.dirname(__file__))
+    from import_common import DB_DSN, COMPANY_EMAIL  # type: ignore
+
+    _CHANNEL_MAP = {
+        "SHOPEE":      "shopee",
+        "TIKTOK_SHOP": "tiktok",
+        "LAZADA":      "lazada",
+        "FACEBOOK":    "facebook",
+        "WEBSITE":     "website",
+    }
+
+    conn = psycopg2.connect(DB_DSN)
+
+    # -- Lấy danh sách order từ OLTP ------------------------------------------
+    where_parts = ["o.company_id = (SELECT id FROM public.companies WHERE email = %s)"]
+    params: list = [COMPANY_EMAIL]
+
+    if channel:
+        where_parts.append("sc.channel_type = %s")
+        params.append(channel.upper())
+
+    where_clause = " AND ".join(where_parts)
+
+    with conn.cursor() as cur:
+        cur.execute(f"""
+            SELECT
+                o.order_id,
+                o.external_order_id,
+                sc.channel_type,
+                c.full_name,
+                c.province,
+                o.payment_method,
+                o.order_date,
+                o.status,
+                o.total_amount,
+                o.discount_amount,
+                o.shipping_fee
+            FROM public.orders o
+            JOIN public.sales_channels sc ON o.channel_id = sc.channel_id
+            JOIN public.customers      c  ON o.customer_id = c.customer_id
+            WHERE {where_clause}
+            ORDER BY o.order_date
+        """, params)
+        orders = cur.fetchall()
+
+    print(f"  [run_oltp_to_dw] Tim thay {len(orders)} don hang → chuyen len DW...")
+
+    fact_records: List[Dict] = []
+
+    for row in orders:
+        (order_id, ext_id, channel_type, cust_name, province, payment_method,
+         order_date, status, total_amount, discount_amount, shipping_fee) = row
+
+        # -- Lấy product + tổng số lượng từ order_items -----------------------
+        with conn.cursor() as cur2:
+            cur2.execute("""
+                SELECT
+                    p.sku,
+                    p.product_name,
+                    SUM(oi.quantity)                       AS total_qty,
+                    SUM(oi.unit_price * oi.quantity)       AS gross_rev,
+                    COALESCE(SUM(p.cost_price * oi.quantity), 0) AS total_cost
+                FROM public.order_items oi
+                JOIN public.products p ON oi.product_id = p.product_id
+                WHERE oi.order_id = %s
+                GROUP BY p.sku, p.product_name
+                ORDER BY gross_rev DESC
+                LIMIT 1
+            """, (order_id,))
+            item_row = cur2.fetchone()
+
+        if item_row:
+            sku, prod_name, total_qty, gross_rev, total_cost = item_row
+        else:
+            sku, prod_name = "UNKNOWN", "Unknown Product"
+            total_qty = 1
+            gross_rev = float(total_amount or 0)
+            total_cost = gross_rev * 0.6
+
+        gross_revenue = float(gross_rev  or total_amount or 0)
+        net_revenue   = float(total_amount or 0)
+        cost_amount   = float(total_cost) if total_cost else gross_revenue * 0.6
+        gross_profit  = net_revenue - cost_amount
+        profit_margin = round((gross_profit / net_revenue * 100) if net_revenue > 0 else 0, 2)
+        is_returned   = (status == "RETURNED")
+
+        fact_records.append({
+            "_external_order_id": ext_id or f"ORDER_{order_id}",
+            "_channel_name":      _CHANNEL_MAP.get(channel_type, channel_type.lower()),
+            "_customer_name":     cust_name or "Khach hang",
+            "_product_sku":       sku,
+            "_product_name":      prod_name,
+            "_order_date":        order_date,
+            "_province":          province or "Khac",
+            "_payment_method":    payment_method or "COD",
+            "order_count":    1,
+            "item_quantity":  int(total_qty or 1),
+            "gross_revenue":  round(gross_revenue, 2),
+            "discount_amount": round(float(discount_amount or 0), 2),
+            "net_revenue":    round(net_revenue, 2),
+            "cost_amount":    round(cost_amount, 2),
+            "gross_profit":   round(gross_profit, 2),
+            "profit_margin":  profit_margin,
+            "shipping_fee":   round(float(shipping_fee or 0), 2),
+            "return_count":   1 if is_returned else 0,
+            "return_amount":  round(net_revenue, 2) if is_returned else 0.0,
+        })
+
+    # Reset cache trước khi load để tránh stale data
+    _channel_cache.clear()
+    _region_cache.clear()
+    _payment_cache.clear()
+    _product_cache.clear()
+    _customer_cache.clear()
+
+    inserted, skipped = _load_offline_records(conn, fact_records)
+    conn.commit()
+    conn.close()
+
+    logger.info(
+        "run_oltp_to_dw: total_orders=%d, inserted=%d, skipped=%d",
+        len(orders), inserted, skipped,
+    )
+    return {"total_orders": len(orders), "inserted": inserted, "skipped": skipped}
+
+
 # ── Chạy trực tiếp ────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(levelname)s | %(name)s | %(message)s")

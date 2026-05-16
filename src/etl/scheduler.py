@@ -239,6 +239,67 @@ def raw_load_dw_job() -> None:
         logger.error("RawLoadDW Job thất bại: %s", exc, exc_info=True)
 
 
+def oltp_etl_failsafe_job() -> None:
+    """
+    Job 7: Failsafe ETL – đảm bảo DW luôn sync với OLTP.
+    Chạy mỗi 6 tiếng tại phút thứ 5 (5 phút sau etl_main).
+    Dùng run_oltp_to_dw() để đọc trực tiếp OLTP → DW, không qua staging.
+    """
+    logger.info("=== OLTP→DW Failsafe ETL bắt đầu ===")
+    try:
+        etl_path = os.path.dirname(__file__)
+        if etl_path not in sys.path:
+            sys.path.insert(0, etl_path)
+        from offline_etl import run_oltp_to_dw  # type: ignore
+        result = run_oltp_to_dw()
+        logger.info(
+            "=== OLTP→DW Failsafe hoàn thành: orders=%d | inserted=%d | skipped=%d ===",
+            result.get("total_orders", 0),
+            result.get("inserted", 0),
+            result.get("skipped", 0),
+        )
+    except Exception as exc:
+        logger.error("OLTP→DW Failsafe thất bại: %s", exc, exc_info=True)
+
+
+def staging_cleanup_job() -> None:
+    """
+    Job 8: Dọn dẹp staging data cũ hơn 7 ngày.
+    Chạy lúc 2:00 AM hàng ngày để tiết kiệm storage.
+    """
+    logger.info("=== Staging Cleanup bắt đầu ===")
+    dsn = os.getenv("DATABASE_URL")
+    if not dsn:
+        logger.error("Staging Cleanup: DATABASE_URL chưa cấu hình")
+        return
+    try:
+        import psycopg2  # type: ignore
+        conn = psycopg2.connect(dsn)
+        tables = [
+            "staging.shopee_orders_raw",
+            "staging.lazada_orders_raw",
+            "staging.tiktok_orders_raw",
+        ]
+        total_deleted = 0
+        with conn.cursor() as cur:
+            for tbl in tables:
+                try:
+                    cur.execute(
+                        f"DELETE FROM {tbl} WHERE created_at < NOW() - INTERVAL '7 days'"
+                    )
+                    n = cur.rowcount
+                    total_deleted += n
+                    if n > 0:
+                        logger.info("  Xóa %d bản ghi cũ từ %s", n, tbl)
+                except Exception as tbl_exc:
+                    logger.warning("  Bỏ qua %s: %s", tbl, tbl_exc)
+        conn.commit()
+        conn.close()
+        logger.info("=== Staging Cleanup hoàn thành: xóa %d bản ghi ===", total_deleted)
+    except Exception as exc:
+        logger.error("Staging Cleanup thất bại: %s", exc, exc_info=True)
+
+
 def main() -> None:
     """Khởi động scheduler."""
     cfg = _get_config()
@@ -314,6 +375,28 @@ def main() -> None:
         misfire_grace_time=300,
     )
 
+    # Job 7: OLTP→DW failsafe – mỗi 6 tiếng tại phút 5 (sau etl_main)
+    scheduler.add_job(
+        oltp_etl_failsafe_job,
+        trigger=CronTrigger(minute=5, hour="*/6", timezone=cfg["timezone"]),
+        id="oltp_etl_failsafe",
+        name="OLTP→DW Failsafe ETL (*/6h phút 5)",
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=600,
+    )
+
+    # Job 8: Staging cleanup – 2:00 AM hàng ngày
+    scheduler.add_job(
+        staging_cleanup_job,
+        trigger=CronTrigger(hour=2, minute=0, timezone=cfg["timezone"]),
+        id="staging_cleanup",
+        name="Staging Data Cleanup (2:00 AM hàng ngày)",
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=300,
+    )
+
     # Xử lý Ctrl+C và SIGTERM sạch sẽ
     def _shutdown(signum, frame):
         logger.info("Nhận tín hiệu dừng – scheduler đang tắt...")
@@ -326,7 +409,8 @@ def main() -> None:
     logger.info(
         "Scheduler khởi động | cron='%s' | timezone=%s | batch_size=%d\n"
         "Jobs: etl_main | google_scraper (*/2h) | facebook_daily_scrape (6:00) | "
-        "raw_clean | raw_normalize | raw_load_dw",
+        "raw_clean | raw_normalize | raw_load_dw | "
+        "oltp_etl_failsafe (*/6h phút 5) | staging_cleanup (2:00 AM)",
         cfg["cron"], cfg["timezone"], cfg["batch_size"],
     )
     scheduler.start()

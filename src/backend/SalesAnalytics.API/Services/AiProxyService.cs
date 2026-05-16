@@ -96,6 +96,27 @@ public class AiProxyService
     public async Task<object?> GetConnectorHealthAsync()
         => await GetJsonAsync("/health/connectors");
 
+    /// <summary>
+    /// Kích hoạt ETL OLTP→DW trên Python FastAPI.
+    /// POST /etl/oltp-to-dw với body { "channel": "shopee" } hoặc {}.
+    /// Trả về null nếu AI Service không khả dụng (controller tự fallback).
+    /// </summary>
+    public async Task<Dictionary<string, object?>?> TriggerOltpToDwAsync(string? channel = null)
+    {
+        try
+        {
+            var body    = new { channel };
+            var json    = JsonSerializer.Serialize(body);
+            var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+            var resp    = await _http.PostAsync("/etl/oltp-to-dw", content);
+            if (!resp.IsSuccessStatusCode) return null;
+            var raw  = await resp.Content.ReadAsStringAsync();
+            return JsonSerializer.Deserialize<Dictionary<string, object?>>(raw, _jsonOpts);
+        }
+        catch (HttpRequestException)  { return null; }
+        catch (TaskCanceledException) { return null; }
+    }
+
     // ── Private ─────────────────────────────────────────────────────────────
 
     private async Task<object?> GetJsonAsync(string url)

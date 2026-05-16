@@ -4,46 +4,25 @@ import MockToast from '../../components/ui/MockToast'
 import { getSyncStatus, triggerSync } from '../../api/syncApi'
 import { MOCK_DATA_SYNC } from '../../mockData/dataSync'
 import api from '../../api/axios'
+import { showToast } from '../../utils/toast'
 
 const API_BASE = import.meta.env.VITE_API_URL ?? ''
 
 async function fetchKeywords() {
-  const r = await fetch(`${API_BASE}/api/scraper/keywords`, {
-    headers: { Authorization: `Bearer ${localStorage.getItem('token') ?? ''}` },
-  })
-  if (!r.ok) throw new Error('Lỗi tải keywords')
-  return (await r.json()).keywords
+  const r = await api.get('/api/scraper/keywords')
+  return r.data.keywords
 }
 
 async function addKeyword(keyword, sourceType = 'google') {
-  const r = await fetch(`${API_BASE}/api/scraper/keywords`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${localStorage.getItem('token') ?? ''}`,
-    },
-    body: JSON.stringify({ keyword, sourceType }),
-  })
-  if (!r.ok) {
-    const data = await r.json().catch(() => ({}))
-    throw new Error(data.message ?? 'Lỗi thêm keyword')
-  }
+  await api.post('/api/scraper/keywords', { keyword, sourceType })
 }
 
 async function toggleKeyword(id) {
-  const r = await fetch(`${API_BASE}/api/scraper/keywords/${id}/toggle`, {
-    method: 'PUT',
-    headers: { Authorization: `Bearer ${localStorage.getItem('token') ?? ''}` },
-  })
-  if (!r.ok) throw new Error('Lỗi toggle keyword')
+  await api.put(`/api/scraper/keywords/${id}/toggle`)
 }
 
 async function deleteKeyword(id) {
-  const r = await fetch(`${API_BASE}/api/scraper/keywords/${id}`, {
-    method: 'DELETE',
-    headers: { Authorization: `Bearer ${localStorage.getItem('token') ?? ''}` },
-  })
-  if (!r.ok) throw new Error('Lỗi xóa keyword')
+  await api.delete(`/api/scraper/keywords/${id}`)
 }
 
 function KeywordManager() {
@@ -70,7 +49,7 @@ function KeywordManager() {
       setInput('')
       await load()
     } catch (e) {
-      setError(e.message)
+      setError(e.response?.data?.message ?? e.message ?? 'Lỗi thêm keyword')
     } finally {
       setBusy(false)
     }
@@ -98,7 +77,7 @@ function KeywordManager() {
         </h2>
         <span className="text-xs ml-1 px-2 py-0.5 rounded-full"
               style={{ background: 'rgba(100,116,139,0.10)', color: 'var(--text-tertiary)' }}>
-          {keywords.filter(k => k.isActive).length} active
+          {keywords.filter(k => k.isActive).length} đang hoạt động
         </span>
       </div>
 
@@ -293,6 +272,124 @@ function SourceCard({ src, syncing, onSync, t }) {
           <span className="icon text-base">sync</span>
         )}
         {t('dataSync.syncNow')}
+      </button>
+    </div>
+  )
+}
+
+// ── ETL Pipeline Card (OLTP → DW) ────────────────────────────────────────────
+function EtlPipelineCard({ t }) {
+  const [jobId,    setJobId]    = useState(null)
+  const [status,   setStatus]   = useState(null) // null | 'running' | 'completed' | 'failed'
+  const [progress, setProgress] = useState(0)
+  const [message,  setMessage]  = useState('')
+  const [doneAt,   setDoneAt]   = useState(null)
+  const pollRef = useRef(null)
+
+  const stopPolling = () => {
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null }
+  }
+
+  const poll = async (jid) => {
+    try {
+      const res = await api.get(`/api/sync/status/${jid}`)
+      const d   = res.data
+      setProgress(d.progress ?? 0)
+      setMessage(d.message  ?? '')
+      setStatus(d.status)
+      if (d.status === 'completed' || d.status === 'failed') {
+        stopPolling()
+        if (d.status === 'completed') setDoneAt(new Date().toLocaleTimeString('vi-VN'))
+      }
+    } catch { /* ignore */ }
+  }
+
+  const handleTrigger = async () => {
+    setStatus('running'); setProgress(0); setMessage('Đang khởi động...'); setDoneAt(null)
+    try {
+      const res = await api.post('/api/sync/trigger', {})
+      const jid = res.data.jobId
+      setJobId(jid)
+      setMessage(res.data.message || 'Đang xử lý...')
+      stopPolling()
+      pollRef.current = setInterval(() => poll(jid), 1500)
+    } catch (err) {
+      setStatus('failed')
+      setMessage(err.response?.data?.message || 'Không thể kết nối server')
+    }
+  }
+
+  // Cleanup khi unmount
+  useEffect(() => () => stopPolling(), [])
+
+  const isRunning = status === 'running'
+
+  return (
+    <div className="lcard p-5 space-y-4">
+      <div className="flex items-center gap-2">
+        <span className="icon" style={{ fontSize: 20, color: 'var(--primary-500)' }}>
+          {isRunning ? 'hourglass_empty' : 'storage'}
+        </span>
+        <h2 className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>
+          ETL Pipeline – OLTP → Data Warehouse
+        </h2>
+      </div>
+
+      <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+        Chuyển toàn bộ đơn hàng từ database OLTP lên Data Warehouse (fact_sales + dim tables)
+        để Dashboard và AI có dữ liệu mới nhất.
+      </p>
+
+      {/* Progress bar */}
+      {status === 'running' && (
+        <div className="space-y-1.5">
+          <div className="flex justify-between text-xs" style={{ color: 'var(--text-tertiary)' }}>
+            <span>{message}</span>
+            <span>{progress}%</span>
+          </div>
+          <div className="h-2 rounded-full overflow-hidden" style={{ background: 'var(--bg-elevated)' }}>
+            <div
+              className="h-full rounded-full transition-all duration-500"
+              style={{ width: `${progress}%`, background: 'var(--primary-500)' }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Kết quả */}
+      {status === 'completed' && (
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs"
+             style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.25)', color: 'var(--accent-500)' }}>
+          <span className="icon" style={{ fontSize: 16 }}>check_circle</span>
+          <span>Đồng bộ thành công lúc <strong>{doneAt}</strong> — {message}</span>
+        </div>
+      )}
+      {status === 'failed' && (
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs"
+             style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', color: '#EF4444' }}>
+          <span className="icon" style={{ fontSize: 16 }}>error_outline</span>
+          <span>{message}</span>
+        </div>
+      )}
+
+      <button
+        onClick={handleTrigger}
+        disabled={isRunning}
+        className="lbtn lbtn-primary w-full justify-center disabled:opacity-50"
+        style={{ height: 40 }}
+      >
+        {isRunning ? (
+          <>
+            <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full"
+                  style={{ animation: 'spin 0.7s linear infinite' }} />
+            Đang đồng bộ...
+          </>
+        ) : (
+          <>
+            <span className="icon text-base">sync_alt</span>
+            Đồng bộ ngay
+          </>
+        )}
       </button>
     </div>
   )
@@ -587,8 +684,15 @@ export default function DataSyncPage() {
 
   const handleSync = async source => {
     setSyncing(s => ({ ...s, [source]: true }))
-    try { await triggerSync(source); await fetchStatus() } catch { /* ignore */ }
-    finally { setSyncing(s => ({ ...s, [source]: false })) }
+    try {
+      await triggerSync(source)
+      await fetchStatus()
+    } catch (err) {
+      const msg = err.response?.data?.message || 'Lỗi hệ thống, vui lòng thử lại sau'
+      showToast(msg, 'error')
+    } finally {
+      setSyncing(s => ({ ...s, [source]: false }))
+    }
   }
 
   const handleSyncAll = async () => {
@@ -603,7 +707,7 @@ export default function DataSyncPage() {
   const TABS = [
     { key: 'sync',   label: t('dataSync.title'),  icon: 'sync' },
     { key: 'import', label: t('nav.import'),       icon: 'upload_file' },
-    { key: 'scraper',label: 'Keywords Scraper',   icon: 'search' },
+    { key: 'scraper',label: 'Từ khóa Scraper',     icon: 'search' },
   ]
 
   return (
@@ -674,17 +778,22 @@ export default function DataSyncPage() {
                     style={{ borderColor: 'var(--border-strong)', borderTopColor: 'var(--primary-500)', animation: 'spin 0.8s linear infinite' }} />
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-              {sources.map(src => (
-                <SourceCard
-                  key={src.sourceKey}
-                  src={src}
-                  syncing={syncing[src.sourceKey]}
-                  onSync={() => handleSync(src.sourceKey)}
-                  t={t}
-                />
-              ))}
-            </div>
+            <>
+              {/* ETL Pipeline card – đồng bộ ngay toàn bộ OLTP→DW */}
+              <EtlPipelineCard t={t} />
+
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {sources.map(src => (
+                  <SourceCard
+                    key={src.sourceKey}
+                    src={src}
+                    syncing={syncing[src.sourceKey]}
+                    onSync={() => handleSync(src.sourceKey)}
+                    t={t}
+                  />
+                ))}
+              </div>
+            </>
           )}
         </>
       )}

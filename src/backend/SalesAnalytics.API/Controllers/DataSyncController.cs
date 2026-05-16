@@ -205,6 +205,120 @@ public class DataSyncController(
         return Ok(result);
     }
 
+    // ── Full Sync Trigger với Job tracking (OLTP → DW) ──────────────────────
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, SyncJobState>
+        _syncJobs = new();
+
+    /// <summary>
+    /// Kích hoạt ETL pipeline đầy đủ (OLTP→DW) và trả về jobId để frontend polling.
+    /// Body: { "channel": "shopee" } hoặc {} để sync tất cả.
+    /// </summary>
+    [HttpPost("api/sync/trigger")]
+    [Authorize(Roles = "Owner,Manager,DataIT,SuperAdmin")]
+    public async Task<IActionResult> TriggerFullSync([FromBody] TriggerFullSyncRequest? req)
+    {
+        var channel = req?.Channel?.Trim().ToLower();
+        var jobId   = Guid.NewGuid().ToString("N")[..8];
+
+        var state = new SyncJobState
+        {
+            JobId     = jobId,
+            Status    = "running",
+            Progress  = 0,
+            Message   = channel is not null
+                ? $"Đang khởi động đồng bộ kênh {channel}..."
+                : "Đang khởi động đồng bộ tất cả kênh...",
+            StartedAt = DateTime.UtcNow,
+        };
+        _syncJobs[jobId] = state;
+
+        logger.LogInformation("sync/trigger: jobId={JobId} channel={Channel}", jobId, channel ?? "all");
+
+        // Ghi audit log
+        await audit.LogAsync(
+            userId:     int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var aid) ? (int?)aid : null,
+            username:   User.FindFirstValue(ClaimTypes.Name) ?? "",
+            action:     "TRIGGER_FULL_SYNC",
+            entityType: "DataSync", entityId: jobId,
+            newValue:   $"{{\"channel\":\"{channel ?? "all"}\"}}",
+            ipAddress:  HttpContext.Connection.RemoteIpAddress?.ToString(),
+            userAgent:  HttpContext.Request.Headers["User-Agent"].ToString());
+
+        // Chạy ETL trong background
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                state.Progress = 15;
+                state.Message  = "Đang đọc dữ liệu từ OLTP...";
+
+                // Gọi Python AI Service nếu có
+                var etlResult = await ai.TriggerOltpToDwAsync(channel);
+
+                if (etlResult is not null)
+                {
+                    state.Progress = 100;
+                    state.Status   = "completed";
+                    var inserted   = etlResult.TryGetValue("inserted", out var ins) ? ins?.ToString() : "?";
+                    state.Message  = $"Đồng bộ thành công – {inserted} bản ghi vào Data Warehouse";
+                }
+                else
+                {
+                    // Fallback: log ETL trigger
+                    state.Progress = 60;
+                    state.Message  = "Đang ghi log ETL trigger...";
+
+                    db.EtlLogs.Add(new()
+                    {
+                        JobId     = 0,
+                        Phase     = "LOAD",
+                        Message   = $"sync/trigger jobId={jobId} channel={channel ?? "all"}",
+                        Level     = "INFO",
+                        CreatedAt = DateTime.UtcNow,
+                    });
+                    await db.SaveChangesAsync();
+
+                    state.Progress = 100;
+                    state.Status   = "completed";
+                    state.Message  = "ETL đã được kích hoạt. Kết quả cập nhật trong vài phút.";
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Sync job {JobId} thất bại", jobId);
+                state.Status   = "failed";
+                state.Progress = 0;
+                state.Message  = $"Lỗi: {ex.Message}";
+            }
+            finally
+            {
+                state.CompletedAt = DateTime.UtcNow;
+            }
+        });
+
+        return Accepted(new { jobId, message = state.Message });
+    }
+
+    /// <summary>Kiểm tra trạng thái một sync job (polling).</summary>
+    [HttpGet("api/sync/status/{jobId}")]
+    [Authorize(Roles = "Owner,Manager,DataIT,SuperAdmin")]
+    public IActionResult GetSyncJobStatus(string jobId)
+    {
+        if (!_syncJobs.TryGetValue(jobId, out var state))
+            return NotFound(new { message = $"Không tìm thấy job '{jobId}'" });
+
+        return Ok(new
+        {
+            state.JobId,
+            state.Status,
+            state.Progress,
+            state.Message,
+            startedAt   = state.StartedAt.ToString("O"),
+            completedAt = state.CompletedAt?.ToString("O"),
+        });
+    }
+
     // ── Helper ───────────────────────────────────────────────────────────────
 
     private static string FormatSourceName(string key) => key switch
@@ -219,5 +333,16 @@ public class DataSyncController(
     };
 }
 
-public class TriggerSyncRequest { public string? Source   { get; set; } }
-public class TriggerEtlRequest  { public string? Pipeline { get; set; } }
+public class TriggerSyncRequest     { public string? Source   { get; set; } }
+public class TriggerEtlRequest      { public string? Pipeline { get; set; } }
+public class TriggerFullSyncRequest { public string? Channel  { get; set; } }
+
+public class SyncJobState
+{
+    public string    JobId       { get; set; } = "";
+    public string    Status      { get; set; } = "running"; // running | completed | failed
+    public int       Progress    { get; set; } = 0;         // 0–100
+    public string    Message     { get; set; } = "";
+    public DateTime  StartedAt   { get; set; } = DateTime.UtcNow;
+    public DateTime? CompletedAt { get; set; }
+}

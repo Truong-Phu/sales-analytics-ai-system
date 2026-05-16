@@ -10,6 +10,7 @@ from import_common import (
     get_conn, get_company_id, get_channel_id, get_category_map,
     map_tiktok_status, norm_payment, parse_ts,
     upsert_products, upsert_customer, insert_order, insert_order_items,
+    trigger_etl_after_import,
 )
 from generate_sample_data import PRODUCTS, TIKTOK_SKUS
 
@@ -118,6 +119,8 @@ def main():
     print(f"[TikTok] XONG: {total_orders} don hang, {total_items} items")
     cur.close()
     conn.close()
+
+    trigger_etl_after_import(company_id, "TIKTOK_SHOP")
 
 
 if __name__ == "__main__":

@@ -4,6 +4,7 @@
 import_common.py - Ham dung chung cho cac import script.
 """
 import os
+import sys
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -214,6 +215,20 @@ def insert_order(cur, order_code: str, ext_id: str,
 
 
 # -- Insert order items -------------------------------------------------------
+
+def trigger_etl_after_import(company_id: str, channel: str) -> dict:
+    """Tu dong chay ETL sau khi import xong: OLTP → DW."""
+    sys.path.insert(0, os.path.dirname(__file__))
+    print(f">>> Import xong → Bat dau ETL (OLTP→DW) kenh {channel}...")
+    try:
+        from offline_etl import run_oltp_to_dw  # type: ignore
+        result = run_oltp_to_dw(company_id=company_id, channel=channel)
+        print(f"    ETL xong: inserted={result['inserted']}, skipped={result['skipped']}")
+        return result
+    except Exception as e:
+        print(f"    [!] ETL loi: {e}")
+        return {"error": str(e), "inserted": 0, "skipped": 0}
+
 
 def insert_order_items(cur, order_id: int, items: list, prod_map: dict):
     for it in items:
