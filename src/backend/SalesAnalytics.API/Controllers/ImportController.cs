@@ -9,8 +9,10 @@ namespace SalesAnalytics.API.Controllers;
 
 /// <summary>
 /// Import dữ liệu thủ công từ file CSV.
-/// POST /api/import/{type}     — import file CSV
+/// POST /api/import/{type}          — import file CSV (generic)
+/// POST /api/import/platform-orders — import đơn hàng từ Shopee/TikTok/Lazada (auto-detect format)
 /// GET  /api/import/template/{type} — tải file CSV mẫu
+/// GET  /api/import/template/platform/{source} — tải template sàn TMĐT
 /// </summary>
 [ApiController]
 [Route("api/import")]
@@ -80,6 +82,460 @@ public class ImportController(IConfiguration cfg, ITenantContext tenant) : Contr
 
         var bytes = Encoding.UTF8.GetBytes(header + "\r\n");
         return File(bytes, "text/csv", filename);
+    }
+
+    // ── GET /api/import/template/platform/{source} ────────────────────────────
+    // Trả về template CSV chuẩn format của từng sàn TMĐT.
+    [HttpGet("template/platform/{source}")]
+    public IActionResult GetPlatformTemplate(string source)
+    {
+        // Đường dẫn tuyệt đối tới thư mục templates trong docs/
+        var basePath = Path.Combine(
+            Directory.GetCurrentDirectory(),           // thư mục chạy app
+            "..", "..", "..", "..",                    // lên về D:\graduation_thesis\
+            "docs", "sample-data", "templates"
+        );
+
+        var (fileName, displayName) = source.ToLower() switch
+        {
+            "shopee" => ("template_shopee.csv", "template_shopee.csv"),
+            "tiktok" => ("template_tiktok.csv", "template_tiktok.csv"),
+            "lazada" => ("template_lazada.csv", "template_lazada.csv"),
+            _        => (null, null),
+        };
+
+        if (fileName is null)
+            return NotFound(new { message = "Nguồn không hợp lệ. Chọn: shopee, tiktok, lazada." });
+
+        var fullPath = Path.GetFullPath(Path.Combine(basePath, fileName));
+        if (!System.IO.File.Exists(fullPath))
+        {
+            // Fallback: trả về header-only nếu file template chưa có
+            var fallbackHeader = source.ToLower() switch
+            {
+                "shopee" => "Mã đơn hàng,Trạng thái đơn hàng,Ngày đặt hàng,Tên người dùng (Tên đăng nhập),Tên người nhận,Số điện thoại,Tỉnh,Tên sản phẩm,SKU sản phẩm,Giá niêm yết (VND),Số lượng,Tổng giá sản phẩm (VND),Tổng thanh toán,Phương thức thanh toán,Mã vận đơn",
+                "tiktok" => "Order ID,Order Status,Buyer Username,Recipient,Phone #,Province,City,Product Name,Seller SKU,Original Price,After-discount Price,Quantity,Subtotal,Tracking ID,Shipping Provider,Order Creation Time,Order Amount,Payment Method",
+                "lazada" => "Order ID,Order Number,Created At,Updated At,Status,Customer Name,Customer Email,Shipping Name,Shipping Phone,Shipping Address,Shipping City,Payment Method,Item Name,SKU,Seller SKU,Unit Price,Paid Price,Quantity,Shipping Provider,Tracking Code,Shipping Fee,Order Value",
+                _        => "",
+            };
+            return File(Encoding.UTF8.GetBytes(fallbackHeader + "\r\n"), "text/csv", displayName);
+        }
+
+        var csvBytes = System.IO.File.ReadAllBytes(fullPath);
+        return File(csvBytes, "text/csv", displayName);
+    }
+
+    // ── POST /api/import/platform-orders ─────────────────────────────────────
+    // Auto-detect format từ header CSV → parse → insert OLTP
+    [HttpPost("platform-orders")]
+    public async Task<IActionResult> ImportPlatformOrders(IFormFile file, [FromQuery] string source = "auto")
+    {
+        if (file is null || file.Length == 0)
+            return BadRequest(new { message = "File không hợp lệ." });
+
+        List<string[]> rows;
+        try { rows = ParseCsv(file.OpenReadStream()); }
+        catch { return BadRequest(new { message = "Không thể đọc file. Kiểm tra định dạng CSV." }); }
+
+        if (rows.Count < 2) return BadRequest(new { message = "File trống hoặc chỉ có header." });
+
+        var headers = rows[0];
+
+        // Auto-detect platform từ header nếu source = "auto"
+        var platform = source.ToLower() switch
+        {
+            "shopee" => "shopee",
+            "tiktok" => "tiktok",
+            "lazada" => "lazada",
+            _ => DetectPlatform(headers),
+        };
+
+        if (platform is null)
+            return BadRequest(new
+            {
+                message = "Không nhận diện được format sàn. Vui lòng chọn nguồn (shopee/tiktok/lazada) hoặc kiểm tra header CSV.",
+                detectedHeaders = headers.Take(5),
+            });
+
+        NpgsqlConnection conn;
+        try { conn = new NpgsqlConnection(_connStr); await conn.OpenAsync(); }
+        catch { return StatusCode(503, new { message = "Không thể kết nối cơ sở dữ liệu." }); }
+        await using var _ = conn;
+
+        int success = 0, skipped = 0;
+        var errors = new List<object>();
+
+        for (int r = 1; r < rows.Count; r++)
+        {
+            try
+            {
+                var mapped = platform switch
+                {
+                    "shopee" => MapShopeeRow(rows[r], headers),
+                    "tiktok" => MapTikTokRow(rows[r], headers),
+                    "lazada" => MapLazadaRow(rows[r], headers),
+                    _        => null,
+                };
+
+                if (mapped is null || string.IsNullOrEmpty(mapped.OrderCode)) { skipped++; continue; }
+
+                // Chuẩn hóa status → MSAS internal (record dùng with-expression)
+                mapped = mapped with { Status = NormalizeStatus(mapped.Status, platform) };
+
+                var affected = await UpsertOrder(conn, mapped);
+                if (affected > 0) success++; else skipped++;
+            }
+            catch (Exception ex)
+            {
+                errors.Add(new { row = r + 1, message = ex.Message });
+                skipped++;
+            }
+        }
+
+        return Ok(new
+        {
+            success,
+            skipped,
+            errors,
+            platform,
+            message = $"Đã import {success} đơn hàng từ {platform}. Đang đồng bộ lên Data Warehouse..."
+        });
+    }
+
+    // ── Platform detection ───────────────────────────────────────────────────
+
+    private static string? DetectPlatform(string[] headers)
+    {
+        var h = headers.Select(x => x.Trim().ToLower()).ToHashSet();
+        // Shopee: có "mã đơn hàng" + "tên người dùng (tên đăng nhập)"
+        if (h.Contains("mã đơn hàng") && h.Any(x => x.Contains("tên người dùng")))
+            return "shopee";
+        // TikTok: có "order id" + "buyer username" + "sku id"
+        if (h.Contains("order id") && h.Contains("buyer username"))
+            return "tiktok";
+        // Lazada: có "order id" + "order number" + "customer email"
+        if (h.Contains("order id") && h.Contains("order number") && h.Contains("customer email"))
+            return "lazada";
+        return null;
+    }
+
+    // ── Field mappers ─────────────────────────────────────────────────────────
+
+    private record MappedOrder(
+        string OrderCode, string CustomerUsername, string RecipientName,
+        string Phone, string Province, string District,
+        string ProductName, string Sku, decimal UnitPrice, decimal SalePrice,
+        int Quantity, decimal TotalAmount, decimal ShippingFee,
+        string PaymentMethod, string TrackingNumber, string Status,
+        DateTime OrderDate, string Channel);
+
+    private static int HeaderIndex(string[] headers, params string[] candidates)
+    {
+        var h = headers.Select(x => x.Trim().ToLower()).ToList();
+        foreach (var c in candidates)
+        {
+            var idx = h.FindIndex(x => x == c.ToLower());
+            if (idx >= 0) return idx;
+        }
+        return -1;
+    }
+
+    private static string ColVal(string[] row, int idx) =>
+        idx >= 0 && idx < row.Length ? row[idx].Trim('"', ' ') : string.Empty;
+
+    private static MappedOrder? MapShopeeRow(string[] row, string[] headers)
+    {
+        var code = ColVal(row, HeaderIndex(headers, "Mã đơn hàng"));
+        if (string.IsNullOrEmpty(code)) return null;
+
+        var orderDate = DateTime.TryParse(
+            ColVal(row, HeaderIndex(headers, "Ngày đặt hàng")), out var od) ? od : DateTime.UtcNow;
+        var totalStr  = ColVal(row, HeaderIndex(headers, "Tổng thanh toán"));
+        decimal.TryParse(totalStr.Replace(",",""), NumberStyles.Any, CultureInfo.InvariantCulture, out var total);
+        var priceStr  = ColVal(row, HeaderIndex(headers, "Giá niêm yết (VND)"));
+        decimal.TryParse(priceStr.Replace(",",""), NumberStyles.Any, CultureInfo.InvariantCulture, out var salePrice);
+        var origStr   = ColVal(row, HeaderIndex(headers, "Giá gốc (VND)"));
+        decimal.TryParse(origStr.Replace(",",""), NumberStyles.Any, CultureInfo.InvariantCulture, out var origPrice);
+        var qtyStr    = ColVal(row, HeaderIndex(headers, "Số lượng"));
+        int.TryParse(qtyStr, out var qty); if (qty <= 0) qty = 1;
+        var feeStr    = ColVal(row, HeaderIndex(headers, "Phí vận chuyển (VND)"));
+        decimal.TryParse(feeStr.Replace(",",""), NumberStyles.Any, CultureInfo.InvariantCulture, out var shippingFee);
+
+        return new MappedOrder(
+            OrderCode:       code,
+            CustomerUsername: ColVal(row, HeaderIndex(headers, "Tên người dùng (Tên đăng nhập)")),
+            RecipientName:   ColVal(row, HeaderIndex(headers, "Tên người nhận")),
+            Phone:           ColVal(row, HeaderIndex(headers, "Số điện thoại")),
+            Province:        ColVal(row, HeaderIndex(headers, "Tỉnh")),
+            District:        ColVal(row, HeaderIndex(headers, "Thành phố")),
+            ProductName:     ColVal(row, HeaderIndex(headers, "Tên sản phẩm")),
+            Sku:             ColVal(row, HeaderIndex(headers, "SKU sản phẩm")),
+            UnitPrice:       origPrice > 0 ? origPrice : salePrice,
+            SalePrice:       salePrice,
+            Quantity:        qty,
+            TotalAmount:     total,
+            ShippingFee:     shippingFee,
+            PaymentMethod:   ColVal(row, HeaderIndex(headers, "Phương thức thanh toán")),
+            TrackingNumber:  ColVal(row, HeaderIndex(headers, "Mã vận đơn")),
+            Status:          ColVal(row, HeaderIndex(headers, "Trạng thái đơn hàng")),
+            OrderDate:       orderDate,
+            Channel:         "shopee"
+        );
+    }
+
+    private static MappedOrder? MapTikTokRow(string[] row, string[] headers)
+    {
+        var code = ColVal(row, HeaderIndex(headers, "Order ID"));
+        if (string.IsNullOrEmpty(code)) return null;
+
+        var createTimeStr = ColVal(row, HeaderIndex(headers, "Order Creation Time"));
+        var orderDate = DateTime.TryParse(createTimeStr, out var od) ? od : DateTime.UtcNow;
+        var totalStr  = ColVal(row, HeaderIndex(headers, "Order Amount"));
+        decimal.TryParse(totalStr.Replace(",",""), NumberStyles.Any, CultureInfo.InvariantCulture, out var total);
+        var afterDiscStr = ColVal(row, HeaderIndex(headers, "After-discount Price"));
+        decimal.TryParse(afterDiscStr.Replace(",",""), NumberStyles.Any, CultureInfo.InvariantCulture, out var salePrice);
+        var origStr = ColVal(row, HeaderIndex(headers, "Original Price"));
+        decimal.TryParse(origStr.Replace(",",""), NumberStyles.Any, CultureInfo.InvariantCulture, out var origPrice);
+        var subStr = ColVal(row, HeaderIndex(headers, "Subtotal"));
+        decimal.TryParse(subStr.Replace(",",""), NumberStyles.Any, CultureInfo.InvariantCulture, out var subtotal);
+        var qtyStr = ColVal(row, HeaderIndex(headers, "Quantity"));
+        int.TryParse(qtyStr, out var qty); if (qty <= 0) qty = 1;
+
+        return new MappedOrder(
+            OrderCode:       code,
+            CustomerUsername: ColVal(row, HeaderIndex(headers, "Buyer Username")),
+            RecipientName:   ColVal(row, HeaderIndex(headers, "Recipient")),
+            Phone:           ColVal(row, HeaderIndex(headers, "Phone #")),
+            Province:        ColVal(row, HeaderIndex(headers, "Province")),
+            District:        ColVal(row, HeaderIndex(headers, "City")),
+            ProductName:     ColVal(row, HeaderIndex(headers, "Product Name")),
+            Sku:             ColVal(row, HeaderIndex(headers, "Seller SKU")),
+            UnitPrice:       origPrice > 0 ? origPrice : salePrice,
+            SalePrice:       salePrice,
+            Quantity:        qty,
+            TotalAmount:     total > 0 ? total : subtotal,
+            ShippingFee:     0,
+            PaymentMethod:   ColVal(row, HeaderIndex(headers, "Payment Method")),
+            TrackingNumber:  ColVal(row, HeaderIndex(headers, "Tracking ID")),
+            Status:          ColVal(row, HeaderIndex(headers, "Order Status")),
+            OrderDate:       orderDate,
+            Channel:         "tiktok"
+        );
+    }
+
+    private static MappedOrder? MapLazadaRow(string[] row, string[] headers)
+    {
+        var code = ColVal(row, HeaderIndex(headers, "Order Number", "Order ID"));
+        if (string.IsNullOrEmpty(code)) return null;
+
+        var createdStr = ColVal(row, HeaderIndex(headers, "Created At"));
+        var orderDate = DateTime.TryParse(createdStr, out var od) ? od : DateTime.UtcNow;
+        var totalStr  = ColVal(row, HeaderIndex(headers, "Order Value"));
+        decimal.TryParse(totalStr.Replace(",",""), NumberStyles.Any, CultureInfo.InvariantCulture, out var total);
+        var paidStr   = ColVal(row, HeaderIndex(headers, "Paid Price"));
+        decimal.TryParse(paidStr.Replace(",",""), NumberStyles.Any, CultureInfo.InvariantCulture, out var salePrice);
+        var unitStr   = ColVal(row, HeaderIndex(headers, "Unit Price"));
+        decimal.TryParse(unitStr.Replace(",",""), NumberStyles.Any, CultureInfo.InvariantCulture, out var origPrice);
+        var feeStr    = ColVal(row, HeaderIndex(headers, "Shipping Fee"));
+        decimal.TryParse(feeStr.Replace(",",""), NumberStyles.Any, CultureInfo.InvariantCulture, out var shippingFee);
+        var qtyStr    = ColVal(row, HeaderIndex(headers, "Quantity"));
+        int.TryParse(qtyStr, out var qty); if (qty <= 0) qty = 1;
+
+        return new MappedOrder(
+            OrderCode:       code,
+            CustomerUsername: ColVal(row, HeaderIndex(headers, "Customer Email")),
+            RecipientName:   ColVal(row, HeaderIndex(headers, "Shipping Name", "Customer Name")),
+            Phone:           ColVal(row, HeaderIndex(headers, "Shipping Phone")),
+            Province:        ColVal(row, HeaderIndex(headers, "Shipping Region", "Shipping City")),
+            District:        ColVal(row, HeaderIndex(headers, "Shipping City")),
+            ProductName:     ColVal(row, HeaderIndex(headers, "Item Name")),
+            Sku:             ColVal(row, HeaderIndex(headers, "Seller SKU", "SKU")),
+            UnitPrice:       origPrice > 0 ? origPrice : salePrice,
+            SalePrice:       salePrice,
+            Quantity:        qty,
+            TotalAmount:     total,
+            ShippingFee:     shippingFee,
+            PaymentMethod:   ColVal(row, HeaderIndex(headers, "Payment Method")),
+            TrackingNumber:  ColVal(row, HeaderIndex(headers, "Tracking Code")),
+            Status:          ColVal(row, HeaderIndex(headers, "Status")),
+            OrderDate:       orderDate,
+            Channel:         "lazada"
+        );
+    }
+
+    // ── Normalize status → MSAS internal ────────────────────────────────────
+
+    private static string NormalizeStatus(string raw, string platform)
+    {
+        var s = (raw ?? "").Trim().ToUpper();
+        return platform switch
+        {
+            "shopee" => s switch
+            {
+                "COMPLETED" => "completed",
+                "SHIPPED"   => "shipping",
+                "PROCESSED" => "processing",
+                "UNPAID"    => "pending",
+                "CANCELLED" => "cancelled",
+                "RETURN_REFUND" => "returned",
+                _ => "pending",
+            },
+            "tiktok" => s switch
+            {
+                "COMPLETED" or "105" => "completed",
+                "IN_TRANSIT" or "121" => "shipping",
+                "AWAITING_SHIPMENT" or "111" => "processing",
+                "UNPAID" or "100" => "pending",
+                "CANCELLED" or "106" => "cancelled",
+                "RETURNED" or "122" => "returned",
+                _ => "pending",
+            },
+            "lazada" => s switch
+            {
+                "DELIVERED" => "completed",
+                "SHIPPED" or "READY_TO_SHIP" => "shipping",
+                "PENDING" => "pending",
+                "CANCELLED" => "cancelled",
+                "RETURNED" => "returned",
+                _ => "pending",
+            },
+            _ => "pending",
+        };
+    }
+
+    // ── Upsert 1 đơn hàng vào OLTP ───────────────────────────────────────────
+
+    private async Task<int> UpsertOrder(NpgsqlConnection conn, MappedOrder o)
+    {
+        // Tìm company channel_id theo tên kênh
+        var channelSql = """
+            SELECT id FROM public.channels
+            WHERE LOWER(channel_name) = LOWER(@ch) AND company_id = @cid
+            LIMIT 1
+            """;
+        await using var chCmd = new NpgsqlCommand(channelSql, conn);
+        chCmd.Parameters.AddWithValue("ch",  o.Channel);
+        chCmd.Parameters.AddWithValue("cid", tenant.CompanyId);
+        var channelIdObj = await chCmd.ExecuteScalarAsync();
+        // Nếu không có channel thì không thể insert đúng FK — bỏ qua
+        if (channelIdObj is null or DBNull) return 0;
+        int channelId = Convert.ToInt32(channelIdObj);
+
+        // Tìm hoặc tạo customer theo username/phone
+        var customerSql = """
+            INSERT INTO public.customers
+                (email, full_name, phone_number, province, district, is_active, company_id, created_at, updated_at)
+            VALUES
+                (@email, @name, @phone, @province, @district, TRUE, @cid::uuid, NOW(), NOW())
+            ON CONFLICT (email) DO NOTHING
+            RETURNING customer_id
+            """;
+        var customerEmail = string.IsNullOrEmpty(o.CustomerUsername)
+            ? $"{o.Phone}@import.local"
+            : $"{o.CustomerUsername}@import.local";
+
+        await using var cuCmd = new NpgsqlCommand(customerSql, conn);
+        cuCmd.Parameters.AddWithValue("email",    customerEmail);
+        cuCmd.Parameters.AddWithValue("name",     o.RecipientName.Length > 0 ? o.RecipientName : "Unknown");
+        cuCmd.Parameters.AddWithValue("phone",    (object?)o.Phone ?? DBNull.Value);
+        cuCmd.Parameters.AddWithValue("province", (object?)o.Province ?? DBNull.Value);
+        cuCmd.Parameters.AddWithValue("district", (object?)o.District ?? DBNull.Value);
+        cuCmd.Parameters.AddWithValue("cid",      tenant.CompanyId.ToString());
+        var cusIdObj = await cuCmd.ExecuteScalarAsync();
+        int customerId;
+        if (cusIdObj is null or DBNull)
+        {
+            // Đã tồn tại — lấy ID
+            await using var getCmd = new NpgsqlCommand(
+                "SELECT customer_id FROM public.customers WHERE email=@email LIMIT 1", conn);
+            getCmd.Parameters.AddWithValue("email", customerEmail);
+            customerId = Convert.ToInt32(await getCmd.ExecuteScalarAsync() ?? 0);
+        }
+        else
+        {
+            customerId = Convert.ToInt32(cusIdObj);
+        }
+
+        // Tìm hoặc tạo product theo SKU
+        var productSql = """
+            INSERT INTO public.products
+                (sku, product_name, base_price, cost_price, is_active, company_id, created_at, updated_at)
+            VALUES
+                (@sku, @name, @price, 0, TRUE, @cid::uuid, NOW(), NOW())
+            ON CONFLICT (sku) DO NOTHING
+            RETURNING product_id
+            """;
+        await using var prCmd = new NpgsqlCommand(productSql, conn);
+        prCmd.Parameters.AddWithValue("sku",   o.Sku.Length > 0 ? o.Sku : $"IMPORT-{Guid.NewGuid():N}"[..20]);
+        prCmd.Parameters.AddWithValue("name",  o.ProductName.Length > 0 ? o.ProductName : o.Sku);
+        prCmd.Parameters.AddWithValue("price", o.UnitPrice);
+        prCmd.Parameters.AddWithValue("cid",   tenant.CompanyId.ToString());
+        var prodIdObj = await prCmd.ExecuteScalarAsync();
+        int productId;
+        if (prodIdObj is null or DBNull)
+        {
+            await using var getCmd = new NpgsqlCommand(
+                "SELECT product_id FROM public.products WHERE sku=@sku LIMIT 1", conn);
+            getCmd.Parameters.AddWithValue("sku", o.Sku.Length > 0 ? o.Sku : "");
+            productId = Convert.ToInt32(await getCmd.ExecuteScalarAsync() ?? 0);
+        }
+        else { productId = Convert.ToInt32(prodIdObj); }
+
+        if (customerId <= 0 || productId <= 0) return 0;
+
+        // Insert order
+        var orderSql = """
+            INSERT INTO public.orders
+                (order_code, customer_id, channel_id, order_date, status,
+                 total_amount, shipping_fee, payment_method, tracking_number,
+                 company_id, created_at, updated_at)
+            VALUES
+                (@code, @custId, @chanId, @date, @status,
+                 @total, @ship, @pay, @track,
+                 @cid::uuid, NOW(), NOW())
+            ON CONFLICT (order_code) DO NOTHING
+            """;
+        await using var orCmd = new NpgsqlCommand(orderSql, conn);
+        orCmd.Parameters.AddWithValue("code",   o.OrderCode);
+        orCmd.Parameters.AddWithValue("custId", customerId);
+        orCmd.Parameters.AddWithValue("chanId", channelId);
+        orCmd.Parameters.AddWithValue("date",   o.OrderDate.ToUniversalTime());
+        orCmd.Parameters.AddWithValue("status", o.Status);
+        orCmd.Parameters.AddWithValue("total",  o.TotalAmount);
+        orCmd.Parameters.AddWithValue("ship",   o.ShippingFee);
+        orCmd.Parameters.AddWithValue("pay",    (object?)o.PaymentMethod ?? DBNull.Value);
+        orCmd.Parameters.AddWithValue("track",  (object?)(o.TrackingNumber.Length > 0 ? o.TrackingNumber : null) ?? DBNull.Value);
+        orCmd.Parameters.AddWithValue("cid",    tenant.CompanyId.ToString());
+        var orderAff = await orCmd.ExecuteNonQueryAsync();
+
+        if (orderAff > 0)
+        {
+            // Lấy order_id vừa insert để thêm order_item
+            await using var getOrdCmd = new NpgsqlCommand(
+                "SELECT order_id FROM public.orders WHERE order_code=@code LIMIT 1", conn);
+            getOrdCmd.Parameters.AddWithValue("code", o.OrderCode);
+            var orderId = Convert.ToInt32(await getOrdCmd.ExecuteScalarAsync() ?? 0);
+
+            if (orderId > 0)
+            {
+                var itemSql = """
+                    INSERT INTO public.order_items
+                        (order_id, product_id, quantity, unit_price, subtotal, created_at)
+                    VALUES
+                        (@oid, @pid, @qty, @price, @sub, NOW())
+                    ON CONFLICT DO NOTHING
+                    """;
+                await using var itmCmd = new NpgsqlCommand(itemSql, conn);
+                itmCmd.Parameters.AddWithValue("oid",   orderId);
+                itmCmd.Parameters.AddWithValue("pid",   productId);
+                itmCmd.Parameters.AddWithValue("qty",   o.Quantity);
+                itmCmd.Parameters.AddWithValue("price", o.SalePrice > 0 ? o.SalePrice : o.UnitPrice);
+                itmCmd.Parameters.AddWithValue("sub",   (o.SalePrice > 0 ? o.SalePrice : o.UnitPrice) * o.Quantity);
+                await itmCmd.ExecuteNonQueryAsync();
+            }
+        }
+
+        return orderAff;
     }
 
     // ── POST /api/import/orders ───────────────────────────────────────────────
