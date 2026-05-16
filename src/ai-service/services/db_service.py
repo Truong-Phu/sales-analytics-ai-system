@@ -86,7 +86,7 @@ def load_revenue_from_oltp(channel: str = None, company_id: str = None) -> pd.Da
     # OLTP không có cột channel nếu không join — chỉ join khi lọc theo channel
     if channel:
         sql = SQL_OLTP_DAILY_REVENUE.format(
-            channel_filter="JOIN public.channels c ON o.channel_id = c.id\n" + ch_filter,
+            channel_filter="JOIN public.sales_channels c ON o.channel_id = c.channel_id\n" + ch_filter,
             company_filter=cmp_filter,
         )
     else:

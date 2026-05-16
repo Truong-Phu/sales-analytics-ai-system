@@ -21,6 +21,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from routers import forecast, anomaly, trend, recommendation
+from routers.recommendation import customers_router
 
 load_dotenv()
 
@@ -54,6 +55,7 @@ app.include_router(forecast.router)
 app.include_router(anomaly.router)
 app.include_router(trend.router)
 app.include_router(recommendation.router)
+app.include_router(customers_router)
 
 
 @app.get("/health", tags=["System"])

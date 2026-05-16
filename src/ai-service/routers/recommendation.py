@@ -23,6 +23,26 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/recommendation", tags=["Recommendations"])
 
+customers_router = APIRouter(prefix="/customers", tags=["Customers"])
+
+_RFM_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "models", "rfm_segments.json")
+
+
+@customers_router.get("/segments", summary="Phân khúc khách hàng RFM")
+def get_customer_segments():
+    """Load kết quả phân khúc RFM từ file JSON (sinh bởi notebook 04)."""
+    if not os.path.exists(_RFM_PATH):
+        raise HTTPException(
+            status_code=503,
+            detail="RFM data chưa có. Hãy chạy notebook 04_RFM_Analysis.ipynb trước."
+        )
+    try:
+        with open(_RFM_PATH, encoding="utf-8") as f:
+            data = json.load(f)
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Lỗi đọc RFM data: {e}")
+
 
 class Recommendation(BaseModel):
     priority:  str    # "HIGH" | "MEDIUM" | "LOW"
