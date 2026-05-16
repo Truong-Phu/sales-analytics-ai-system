@@ -20,6 +20,7 @@ public class DataSyncController(
     AiProxyService ai,
     IAuditLogService audit,
     ITenantContext tenant,
+    IServiceScopeFactory scopeFactory,
     INotificationService notifications) : ControllerBase
 {
     // ── Trạng thái đồng bộ đa nguồn ─────────────────────────────────────────
@@ -269,7 +270,11 @@ public class DataSyncController(
                     state.Progress = 60;
                     state.Message  = "Đang ghi log ETL trigger...";
 
-                    db.EtlLogs.Add(new()
+                    // Tạo scope mới vì db gốc đã bị dispose khi HTTP request kết thúc
+                    using var scope = scopeFactory.CreateScope();
+                    var ctx = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+                    ctx.EtlLogs.Add(new()
                     {
                         JobId     = 0,
                         Phase     = "LOAD",
@@ -277,7 +282,7 @@ public class DataSyncController(
                         Level     = "INFO",
                         CreatedAt = DateTime.UtcNow,
                     });
-                    await db.SaveChangesAsync();
+                    await ctx.SaveChangesAsync();
 
                     state.Progress = 100;
                     state.Status   = "completed";
