@@ -281,6 +281,121 @@ public class IntegrationsController(
         return Ok(new { success = true, message = "Đã ngắt kết nối Facebook." });
     }
 
+    // ── Facebook Posts (xem bài đăng đã scrape) ──────────────────────────────
+
+    /// <summary>
+    /// Lấy danh sách bài đăng Facebook đã scrape kèm comments và sentiment.
+    /// </summary>
+    [HttpGet("facebook/posts")]
+    public async Task<IActionResult> GetFacebookPosts(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 10)
+    {
+        var companyId = tenant.CompanyId;
+        pageSize = Math.Clamp(pageSize, 1, 50);
+        page     = Math.Max(1, page);
+        int offset = (page - 1) * pageSize;
+
+        // Lấy page_id của company từ bảng integrations qua raw SQL
+        string? pageId = null;
+        using (var conn0 = db.Database.GetDbConnection())
+        {
+            await conn0.OpenAsync();
+            using var cmd0 = conn0.CreateCommand();
+            cmd0.CommandText = @"
+                SELECT account_id FROM public.integrations
+                WHERE company_id = @cid::uuid AND platform = 'facebook'
+                  AND is_active = TRUE AND status = 'connected'
+                ORDER BY connected_at DESC NULLS LAST LIMIT 1";
+            var pc = cmd0.CreateParameter(); pc.ParameterName = "@cid"; pc.Value = companyId.ToString();
+            cmd0.Parameters.Add(pc);
+            var val = await cmd0.ExecuteScalarAsync();
+            pageId = val as string;
+        }
+
+        if (string.IsNullOrEmpty(pageId))
+            return Ok(new { posts = Array.Empty<object>(), total = 0, page, pageSize });
+
+        // Raw SQL để tận dụng JSONB comments
+        var countSql = @"
+            SELECT COUNT(*)
+            FROM public.raw_facebook_data
+            WHERE page_name = @pageId";
+
+        var dataSql = @"
+            SELECT p.id, p.post_id, p.post_content, p.reactions_count,
+                   p.post_date, p.scraped_at, p.comments,
+                   COUNT(f.id) AS fb_comments,
+                   SUM(CASE WHEN f.sentiment='positive' THEN 1 ELSE 0 END) AS pos,
+                   SUM(CASE WHEN f.sentiment='negative' THEN 1 ELSE 0 END) AS neg,
+                   SUM(CASE WHEN f.sentiment='neutral'  THEN 1 ELSE 0 END) AS neu
+            FROM   public.raw_facebook_data p
+            LEFT JOIN public.facebook_feedback f ON f.post_id = p.post_id
+            WHERE  p.page_name = @pageId
+            GROUP  BY p.id, p.post_id, p.post_content, p.reactions_count,
+                      p.post_date, p.scraped_at, p.comments
+            ORDER  BY p.post_date DESC NULLS LAST
+            LIMIT  @limit OFFSET @offset";
+
+        using var conn = db.Database.GetDbConnection();
+        await conn.OpenAsync();
+
+        long total = 0;
+        using (var cmd = conn.CreateCommand())
+        {
+            cmd.CommandText = countSql;
+            var p1 = cmd.CreateParameter(); p1.ParameterName = "@pageId"; p1.Value = pageId; cmd.Parameters.Add(p1);
+            total = (long)(await cmd.ExecuteScalarAsync() ?? 0L);
+        }
+
+        var posts = new List<object>();
+        using (var cmd = conn.CreateCommand())
+        {
+            cmd.CommandText = dataSql;
+            var p1 = cmd.CreateParameter(); p1.ParameterName = "@pageId"; p1.Value = pageId;   cmd.Parameters.Add(p1);
+            var p2 = cmd.CreateParameter(); p2.ParameterName = "@limit";  p2.Value = pageSize; cmd.Parameters.Add(p2);
+            var p3 = cmd.CreateParameter(); p3.ParameterName = "@offset"; p3.Value = offset;   cmd.Parameters.Add(p3);
+
+            using var reader = await cmd.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                // Parse JSONB comments
+                var commentsJson = reader.IsDBNull(6) ? "[]" : reader.GetString(6);
+                List<object> comments = new();
+                try
+                {
+                    var arr = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement[]>(commentsJson);
+                    if (arr != null)
+                        comments = arr.Select(c => (object)new
+                        {
+                            text      = c.TryGetProperty("comment_text", out var t) ? t.GetString() : "",
+                            sentiment = c.TryGetProperty("sentiment",    out var s) ? s.GetString() : "neutral",
+                        }).ToList();
+                }
+                catch { /* ignore parse errors */ }
+
+                posts.Add(new
+                {
+                    id             = reader.GetInt32(0),
+                    postId         = reader.GetString(1),
+                    content        = reader.IsDBNull(2) ? "" : reader.GetString(2),
+                    reactionsCount = reader.IsDBNull(3) ? 0 : reader.GetInt32(3),
+                    postedAt       = reader.IsDBNull(4) ? (DateTime?)null : reader.GetDateTime(4),
+                    scrapedAt      = reader.IsDBNull(5) ? (DateTime?)null : reader.GetDateTime(5),
+                    comments,
+                    sentiment = new
+                    {
+                        positive = reader.IsDBNull(8) ? 0 : Convert.ToInt32(reader.GetValue(8)),
+                        negative = reader.IsDBNull(9) ? 0 : Convert.ToInt32(reader.GetValue(9)),
+                        neutral  = reader.IsDBNull(10)? 0 : Convert.ToInt32(reader.GetValue(10)),
+                    },
+                });
+            }
+        }
+
+        return Ok(new { posts, total, page, pageSize, pageId });
+    }
+
     // ── Scrape Facebook thủ công ─────────────────────────────────────────────
 
     /// <summary>

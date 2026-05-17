@@ -24,7 +24,8 @@ async function disconnectFacebook() {
 }
 
 async function scrapeFacebook() {
-  const r = await api.post('/api/sync/scrape-facebook')
+  // Scrape có thể mất 15-60s (Graph API + DB insert) — override timeout riêng
+  const r = await api.post('/api/sync/scrape-facebook', {}, { timeout: 60_000 })
   return r.data
 }
 
@@ -1251,6 +1252,235 @@ function ConnectorCard({ channel, label, color, icon, guideUrl, guideText, field
   )
 }
 
+// ── Facebook Feed ─────────────────────────────────────────────────────────────
+const SENTIMENT_CFG = {
+  positive: { label: 'Tích cực', color: '#10B981', bg: 'rgba(16,185,129,0.10)', icon: 'sentiment_satisfied' },
+  negative: { label: 'Tiêu cực', color: '#EF4444', bg: 'rgba(239,68,68,0.10)',  icon: 'sentiment_dissatisfied' },
+  neutral:  { label: 'Trung lập', color: '#64748B', bg: 'rgba(100,116,139,0.10)', icon: 'sentiment_neutral' },
+}
+
+function SentimentBadge({ type }) {
+  const cfg = SENTIMENT_CFG[type] ?? SENTIMENT_CFG.neutral
+  return (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
+          style={{ background: cfg.bg, color: cfg.color }}>
+      <span className="icon" style={{ fontSize: 13 }}>{cfg.icon}</span>
+      {cfg.label}
+    </span>
+  )
+}
+
+function FacebookFeed() {
+  const [posts,    setPosts]    = useState([])
+  const [total,    setTotal]    = useState(0)
+  const [page,     setPage]     = useState(1)
+  const [loading,  setLoading]  = useState(true)
+  const [error,    setError]    = useState('')
+  const [expanded, setExpanded] = useState({})   // postId → bool (xem thêm nội dung)
+  const [openCmt,  setOpenCmt]  = useState({})   // postId → bool (xem comments)
+  const PAGE_SIZE = 5
+
+  const load = async (pg = 1) => {
+    setLoading(true); setError('')
+    try {
+      const r = await api.get(`/api/integrations/facebook/posts?page=${pg}&pageSize=${PAGE_SIZE}`)
+      setPosts(r.data.posts ?? [])
+      setTotal(r.data.total ?? 0)
+      setPage(pg)
+    } catch (e) {
+      setError(e.response?.data?.message ?? 'Không thể tải bài đăng')
+    } finally { setLoading(false) }
+  }
+
+  useEffect(() => { load(1) }, [])
+
+  const totalPages = Math.ceil(total / PAGE_SIZE)
+
+  const formatDate = iso => {
+    if (!iso) return ''
+    const d = new Date(iso)
+    return d.toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+  }
+
+  if (loading) return (
+    <div className="lcard p-8 flex justify-center">
+      <span className="w-6 h-6 border-2 rounded-full"
+            style={{ borderColor: 'var(--border-strong)', borderTopColor: '#1877F2', animation: 'spin 0.8s linear infinite' }} />
+    </div>
+  )
+
+  if (error) return (
+    <div className="lcard px-5 py-4 text-sm" style={{ color: '#EF4444' }}>{error}</div>
+  )
+
+  if (posts.length === 0) return (
+    <div className="lcard px-5 py-8 text-center">
+      <span className="icon text-4xl mb-2" style={{ color: 'var(--border-strong)', display: 'block' }}>article</span>
+      <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>Chưa có bài đăng nào. Bấm <strong>"Scrape ngay"</strong> để thu thập.</p>
+    </div>
+  )
+
+  return (
+    <div className="space-y-3">
+      {/* Header */}
+      <div className="flex items-center justify-between px-1">
+        <div className="flex items-center gap-2">
+          <span className="icon text-lg" style={{ color: '#1877F2' }}>article</span>
+          <span className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>
+            Bài đăng Facebook
+          </span>
+          <span className="text-xs px-2 py-0.5 rounded-full"
+                style={{ background: 'rgba(24,119,242,0.10)', color: '#1877F2' }}>
+            {total} bài
+          </span>
+        </div>
+        <button onClick={() => load(page)}
+                className="lbtn !h-7 !px-2.5 text-xs gap-1.5"
+                style={{ color: 'var(--text-secondary)', border: '1px solid var(--border-default)' }}>
+          <span className="icon text-sm">refresh</span> Làm mới
+        </button>
+      </div>
+
+      {/* Post cards */}
+      {posts.map(post => {
+        const isExpanded = expanded[post.postId]
+        const showCmt    = openCmt[post.postId]
+        const content    = post.content ?? ''
+        const truncated  = content.length > 200
+        const displayTxt = !truncated || isExpanded ? content : content.slice(0, 200) + '…'
+        const allComments = post.comments ?? []
+        const { positive = 0, negative = 0, neutral = 0 } = post.sentiment ?? {}
+        const totalSentiment = positive + negative + neutral
+
+        return (
+          <div key={post.postId} className="lcard p-4 space-y-3"
+               style={{ borderLeft: '3px solid #1877F2' }}>
+            {/* Post header */}
+            <div className="flex items-start gap-3">
+              <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0"
+                   style={{ background: '#1877F2' }}>
+                <span className="icon text-white text-base">person</span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>
+                    Phân Tích Kinh Doanh Test
+                  </span>
+                  <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                    {formatDate(post.postedAt)}
+                  </span>
+                </div>
+                <span className="text-xs" style={{ color: '#1877F2' }}>Facebook Page</span>
+              </div>
+              {/* Reaction */}
+              {post.reactionsCount > 0 && (
+                <div className="flex items-center gap-1 text-xs shrink-0"
+                     style={{ color: 'var(--text-tertiary)' }}>
+                  <span className="icon text-sm" style={{ color: '#EF4444' }}>favorite</span>
+                  {post.reactionsCount}
+                </div>
+              )}
+            </div>
+
+            {/* Post content */}
+            <div className="text-sm leading-relaxed whitespace-pre-line"
+                 style={{ color: 'var(--text-primary)' }}>
+              {displayTxt}
+            </div>
+            {truncated && (
+              <button onClick={() => setExpanded(p => ({ ...p, [post.postId]: !isExpanded }))}
+                      className="text-xs font-medium"
+                      style={{ color: '#1877F2', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                {isExpanded ? 'Thu gọn' : 'Xem thêm'}
+              </button>
+            )}
+
+            {/* Sentiment bar */}
+            {totalSentiment > 0 && (
+              <div className="space-y-1.5">
+                <div className="flex gap-1 h-1.5 rounded-full overflow-hidden">
+                  {positive > 0 && (
+                    <div style={{ width: `${(positive/totalSentiment)*100}%`, background: '#10B981' }} />
+                  )}
+                  {neutral > 0 && (
+                    <div style={{ width: `${(neutral/totalSentiment)*100}%`, background: '#94A3B8' }} />
+                  )}
+                  {negative > 0 && (
+                    <div style={{ width: `${(negative/totalSentiment)*100}%`, background: '#EF4444' }} />
+                  )}
+                </div>
+                <div className="flex gap-3 text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                  {positive > 0 && <span style={{ color: '#10B981' }}>👍 {positive} tích cực</span>}
+                  {neutral  > 0 && <span>😐 {neutral} trung lập</span>}
+                  {negative > 0 && <span style={{ color: '#EF4444' }}>👎 {negative} tiêu cực</span>}
+                </div>
+              </div>
+            )}
+
+            {/* Comments toggle */}
+            {allComments.length > 0 && (
+              <div>
+                <button
+                  onClick={() => setOpenCmt(p => ({ ...p, [post.postId]: !showCmt }))}
+                  className="flex items-center gap-1.5 text-xs font-medium"
+                  style={{ color: 'var(--text-secondary)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                  <span className="icon text-sm">chat_bubble_outline</span>
+                  {showCmt ? 'Ẩn bình luận' : `${allComments.length} bình luận`}
+                  <span className="icon text-sm">{showCmt ? 'expand_less' : 'expand_more'}</span>
+                </button>
+
+                {showCmt && (
+                  <div className="mt-2 space-y-2 pl-3 border-l-2"
+                       style={{ borderColor: 'var(--border-default)' }}>
+                    {allComments.map((c, i) => (
+                      <div key={i} className="flex gap-2">
+                        <div className="w-6 h-6 rounded-full shrink-0 flex items-center justify-center"
+                             style={{ background: 'var(--bg-elevated)' }}>
+                          <span className="icon text-xs" style={{ color: 'var(--text-tertiary)' }}>person</span>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="rounded-xl px-3 py-2 text-xs"
+                               style={{ background: 'var(--bg-elevated)' }}>
+                            <p style={{ color: 'var(--text-primary)', lineHeight: 1.5 }}>
+                              {c.text || c.comment_text}
+                            </p>
+                          </div>
+                          <div className="mt-0.5 ml-1">
+                            <SentimentBadge type={c.sentiment} />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )
+      })}
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-2 pt-1">
+          <button
+            onClick={() => load(page - 1)} disabled={page <= 1}
+            className="lbtn !h-8 !px-3 text-xs disabled:opacity-40">
+            <span className="icon text-sm">chevron_left</span>
+          </button>
+          <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+            Trang {page} / {totalPages}
+          </span>
+          <button
+            onClick={() => load(page + 1)} disabled={page >= totalPages}
+            className="lbtn !h-8 !px-3 text-xs disabled:opacity-40">
+            <span className="icon text-sm">chevron_right</span>
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Channel Connect Tab ───────────────────────────────────────────────────────
 function ChannelConnectTab() {
   return (
@@ -1264,6 +1494,7 @@ function ChannelConnectTab() {
 
       {/* Facebook – vẫn dùng card chuyên biệt (có Scrape ngay) */}
       <FacebookConnectCard />
+      <FacebookFeed />
 
       {/* Shopee */}
       <ConnectorCard

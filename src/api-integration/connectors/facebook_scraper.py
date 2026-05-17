@@ -68,22 +68,28 @@ _REQUEST_TIMEOUT = 15
 
 def _try_decrypt(ciphertext: str) -> str:
     """
-    Giải mã AES-256-GCM token từ DB.
-    Load crypto_service.py cùng thư mục qua importlib để tránh lỗi relative import
-    khi module được load bằng importlib.util.spec_from_file_location từ AI Service.
-    Fallback: trả về ciphertext nguyên nếu không decrypt được (dev mode không có key).
+    Giải mã AES-256-GCM token từ DB (inline, không dùng importlib lồng nhau).
+    Key đọc từ ENCRYPTION_KEY env (64 hex chars = 32 bytes).
+    Format: base64(nonce[12] + ciphertext + tag[16]) — khớp với CryptoService.cs.
+    Fallback: trả về ciphertext nguyên nếu không decrypt được.
     """
     if not ciphertext:
         return ciphertext
+    key_hex = os.getenv("ENCRYPTION_KEY", "")
+    if len(key_hex) != 64:
+        logger.debug("_try_decrypt: ENCRYPTION_KEY chưa cấu hình, passthrough")
+        return ciphertext
     try:
-        import importlib.util as _ilu
-        _cs_path = Path(__file__).parent / "crypto_service.py"
-        spec = _ilu.spec_from_file_location("_fb_crypto_svc", str(_cs_path))
-        mod  = _ilu.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        return mod.decrypt(ciphertext)
+        import base64 as _b64
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+        key         = bytes.fromhex(key_hex)
+        data        = _b64.b64decode(ciphertext)
+        nonce       = data[:12]
+        ct_with_tag = data[12:]
+        return AESGCM(key).decrypt(nonce, ct_with_tag, None).decode("utf-8")
     except Exception as _e:
-        logger.debug("_try_decrypt fallback (passthrough): %s", _e)
+        print(f"[_try_decrypt] LỖI decrypt: {type(_e).__name__}: {_e}")
+        logger.warning("_try_decrypt lỗi: %s", _e)
         return ciphertext
 
 

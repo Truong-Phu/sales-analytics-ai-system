@@ -15,6 +15,7 @@ Chạy:
 """
 import logging
 import os
+from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import BackgroundTasks, FastAPI
@@ -25,7 +26,9 @@ from routers.recommendation import customers_router
 from routers.cache import router as cache_router, insights_router
 from scheduler import scheduler as _scheduler, retrain_prophet, get_retrain_status
 
-load_dotenv()
+# Chỉ định rõ đường dẫn .env (repo root), tránh find_dotenv() fail khi chạy từ subdirectory
+_ENV_PATH = Path(__file__).resolve().parents[2] / ".env"
+load_dotenv(dotenv_path=_ENV_PATH, override=True)
 
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO"),
@@ -103,6 +106,46 @@ async def trigger_retrain(background_tasks: BackgroundTasks):
 def retrain_status():
     """Trả về trạng thái job retrain hiện tại (polling-friendly)."""
     return get_retrain_status()
+
+
+@app.get("/debug/env", tags=["System"])
+def debug_env():
+    """Debug: kiểm tra env vars và thử decrypt token đầu tiên trong DB."""
+    import base64
+    enc_key = os.getenv("ENCRYPTION_KEY", "")
+    db_url  = os.getenv("DATABASE_URL", "")
+    result  = {
+        "cwd":                os.getcwd(),
+        "encryption_key_len": len(enc_key),
+        "encryption_key_ok":  len(enc_key) == 64,
+        "database_url_set":   bool(db_url),
+        "scraper_mode":       os.getenv("SCRAPER_MODE", ""),
+    }
+    # Thử decrypt token đầu tiên trong DB
+    if db_url and len(enc_key) == 64:
+        try:
+            import psycopg2
+            conn = psycopg2.connect(db_url)
+            cur  = conn.cursor()
+            cur.execute("SELECT access_token FROM public.integrations WHERE platform='facebook' LIMIT 1")
+            row = cur.fetchone()
+            cur.close(); conn.close()
+            if row:
+                token = row[0] or ""
+                try:
+                    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+                    data        = base64.b64decode(token)
+                    nonce       = data[:12]
+                    ct_with_tag = data[12:]
+                    plain       = AESGCM(bytes.fromhex(enc_key)).decrypt(nonce, ct_with_tag, None).decode()
+                    result["decrypt_ok"]      = True
+                    result["token_prefix"]    = plain[:15] + "..."
+                except Exception as e:
+                    result["decrypt_ok"]    = False
+                    result["decrypt_error"] = str(e)
+        except Exception as e:
+            result["db_error"] = str(e)
+    return result
 
 
 @app.get("/health", tags=["System"])
