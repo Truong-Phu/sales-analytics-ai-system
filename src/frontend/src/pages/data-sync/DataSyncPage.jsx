@@ -1270,14 +1270,15 @@ function SentimentBadge({ type }) {
   )
 }
 
-function FacebookFeed() {
+// ── Facebook Posts Modal ──────────────────────────────────────────────────────
+function FacebookPostsModal({ onClose }) {
   const [posts,    setPosts]    = useState([])
   const [total,    setTotal]    = useState(0)
   const [page,     setPage]     = useState(1)
   const [loading,  setLoading]  = useState(true)
   const [error,    setError]    = useState('')
-  const [expanded, setExpanded] = useState({})   // postId → bool (xem thêm nội dung)
-  const [openCmt,  setOpenCmt]  = useState({})   // postId → bool (xem comments)
+  const [expanded, setExpanded] = useState({})
+  const [openCmt,  setOpenCmt]  = useState({})
   const PAGE_SIZE = 5
 
   const load = async (pg = 1) => {
@@ -1298,186 +1299,226 @@ function FacebookFeed() {
 
   const formatDate = iso => {
     if (!iso) return ''
-    const d = new Date(iso)
-    return d.toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+    return new Date(iso).toLocaleString('vi-VN', {
+      day: '2-digit', month: '2-digit', year: 'numeric',
+      hour: '2-digit', minute: '2-digit',
+    })
   }
 
-  if (loading) return (
-    <div className="lcard p-8 flex justify-center">
-      <span className="w-6 h-6 border-2 rounded-full"
-            style={{ borderColor: 'var(--border-strong)', borderTopColor: '#1877F2', animation: 'spin 0.8s linear infinite' }} />
-    </div>
-  )
-
-  if (error) return (
-    <div className="lcard px-5 py-4 text-sm" style={{ color: '#EF4444' }}>{error}</div>
-  )
-
-  if (posts.length === 0) return (
-    <div className="lcard px-5 py-8 text-center">
-      <span className="icon text-4xl mb-2" style={{ color: 'var(--border-strong)', display: 'block' }}>article</span>
-      <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>Chưa có bài đăng nào. Bấm <strong>"Scrape ngay"</strong> để thu thập.</p>
-    </div>
-  )
-
   return (
-    <div className="space-y-3">
-      {/* Header */}
-      <div className="flex items-center justify-between px-1">
-        <div className="flex items-center gap-2">
-          <span className="icon text-lg" style={{ color: '#1877F2' }}>article</span>
-          <span className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>
-            Bài đăng Facebook
-          </span>
-          <span className="text-xs px-2 py-0.5 rounded-full"
-                style={{ background: 'rgba(24,119,242,0.10)', color: '#1877F2' }}>
-            {total} bài
-          </span>
+    /* Backdrop */
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+         style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}
+         onClick={e => e.target === e.currentTarget && onClose()}>
+
+      {/* Modal panel */}
+      <div className="flex flex-col w-full max-w-2xl rounded-2xl overflow-hidden shadow-2xl"
+           style={{ background: 'var(--bg-card)', maxHeight: '85vh' }}>
+
+        {/* Header */}
+        <div className="flex items-center gap-3 px-5 py-4 shrink-0"
+             style={{ borderBottom: '1px solid var(--border-default)' }}>
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center"
+               style={{ background: '#1877F2' }}>
+            <span className="icon text-white text-sm">group</span>
+          </div>
+          <div className="flex-1 min-w-0">
+            <h3 className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>
+              Bài đăng Facebook
+            </h3>
+            {total > 0 && (
+              <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                {total} bài đăng đã thu thập
+              </p>
+            )}
+          </div>
+          <button onClick={() => load(page)}
+                  className="lbtn !h-7 !px-2.5 text-xs gap-1"
+                  style={{ color: 'var(--text-secondary)', border: '1px solid var(--border-default)' }}>
+            <span className="icon text-sm">refresh</span>
+          </button>
+          <button onClick={onClose}
+                  className="lbtn !h-7 !w-7 !p-0 flex items-center justify-center"
+                  style={{ color: 'var(--text-tertiary)', border: '1px solid var(--border-default)' }}>
+            <span className="icon text-base">close</span>
+          </button>
         </div>
-        <button onClick={() => load(page)}
-                className="lbtn !h-7 !px-2.5 text-xs gap-1.5"
-                style={{ color: 'var(--text-secondary)', border: '1px solid var(--border-default)' }}>
-          <span className="icon text-sm">refresh</span> Làm mới
-        </button>
-      </div>
 
-      {/* Post cards */}
-      {posts.map(post => {
-        const isExpanded = expanded[post.postId]
-        const showCmt    = openCmt[post.postId]
-        const content    = post.content ?? ''
-        const truncated  = content.length > 200
-        const displayTxt = !truncated || isExpanded ? content : content.slice(0, 200) + '…'
-        const allComments = post.comments ?? []
-        const { positive = 0, negative = 0, neutral = 0 } = post.sentiment ?? {}
-        const totalSentiment = positive + negative + neutral
-
-        return (
-          <div key={post.postId} className="lcard p-4 space-y-3"
-               style={{ borderLeft: '3px solid #1877F2' }}>
-            {/* Post header */}
-            <div className="flex items-start gap-3">
-              <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0"
-                   style={{ background: '#1877F2' }}>
-                <span className="icon text-white text-base">person</span>
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>
-                    Phân Tích Kinh Doanh Test
-                  </span>
-                  <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                    {formatDate(post.postedAt)}
-                  </span>
-                </div>
-                <span className="text-xs" style={{ color: '#1877F2' }}>Facebook Page</span>
-              </div>
-              {/* Reaction */}
-              {post.reactionsCount > 0 && (
-                <div className="flex items-center gap-1 text-xs shrink-0"
-                     style={{ color: 'var(--text-tertiary)' }}>
-                  <span className="icon text-sm" style={{ color: '#EF4444' }}>favorite</span>
-                  {post.reactionsCount}
-                </div>
-              )}
+        {/* Content — scrollable */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          {loading ? (
+            <div className="flex justify-center py-12">
+              <span className="w-7 h-7 border-2 rounded-full"
+                    style={{ borderColor: 'var(--border-strong)', borderTopColor: '#1877F2', animation: 'spin 0.8s linear infinite' }} />
             </div>
-
-            {/* Post content */}
-            <div className="text-sm leading-relaxed whitespace-pre-line"
-                 style={{ color: 'var(--text-primary)' }}>
-              {displayTxt}
+          ) : error ? (
+            <div className="text-center py-8 text-sm" style={{ color: '#EF4444' }}>{error}</div>
+          ) : posts.length === 0 ? (
+            <div className="text-center py-12">
+              <span className="icon text-5xl mb-3" style={{ color: 'var(--border-strong)', display: 'block' }}>article</span>
+              <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>
+                Chưa có bài đăng nào. Bấm <strong>"Scrape ngay"</strong> để thu thập.
+              </p>
             </div>
-            {truncated && (
-              <button onClick={() => setExpanded(p => ({ ...p, [post.postId]: !isExpanded }))}
-                      className="text-xs font-medium"
-                      style={{ color: '#1877F2', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-                {isExpanded ? 'Thu gọn' : 'Xem thêm'}
-              </button>
-            )}
+          ) : posts.map(post => {
+            const isExp  = expanded[post.postId]
+            const showCm = openCmt[post.postId]
+            const txt    = post.content ?? ''
+            const long   = txt.length > 220
+            const disp   = !long || isExp ? txt : txt.slice(0, 220) + '…'
+            const cmts   = post.comments ?? []
+            const { positive = 0, negative = 0, neutral = 0 } = post.sentiment ?? {}
+            const tot    = positive + negative + neutral
 
-            {/* Sentiment bar */}
-            {totalSentiment > 0 && (
-              <div className="space-y-1.5">
-                <div className="flex gap-1 h-1.5 rounded-full overflow-hidden">
-                  {positive > 0 && (
-                    <div style={{ width: `${(positive/totalSentiment)*100}%`, background: '#10B981' }} />
-                  )}
-                  {neutral > 0 && (
-                    <div style={{ width: `${(neutral/totalSentiment)*100}%`, background: '#94A3B8' }} />
-                  )}
-                  {negative > 0 && (
-                    <div style={{ width: `${(negative/totalSentiment)*100}%`, background: '#EF4444' }} />
+            return (
+              <div key={post.postId} className="rounded-xl p-4 space-y-3"
+                   style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)' }}>
+
+                {/* Post header */}
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0"
+                       style={{ background: '#1877F2' }}>
+                    <span className="icon text-white text-sm">person</span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>
+                      Phân Tích Kinh Doanh Test
+                    </div>
+                    <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                      {formatDate(post.postedAt)}
+                    </div>
+                  </div>
+                  {post.reactionsCount > 0 && (
+                    <div className="flex items-center gap-1 text-xs" style={{ color: '#EF4444' }}>
+                      <span className="icon text-sm">favorite</span> {post.reactionsCount}
+                    </div>
                   )}
                 </div>
-                <div className="flex gap-3 text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                  {positive > 0 && <span style={{ color: '#10B981' }}>👍 {positive} tích cực</span>}
-                  {neutral  > 0 && <span>😐 {neutral} trung lập</span>}
-                  {negative > 0 && <span style={{ color: '#EF4444' }}>👎 {negative} tiêu cực</span>}
-                </div>
-              </div>
-            )}
 
-            {/* Comments toggle */}
-            {allComments.length > 0 && (
-              <div>
-                <button
-                  onClick={() => setOpenCmt(p => ({ ...p, [post.postId]: !showCmt }))}
-                  className="flex items-center gap-1.5 text-xs font-medium"
-                  style={{ color: 'var(--text-secondary)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-                  <span className="icon text-sm">chat_bubble_outline</span>
-                  {showCmt ? 'Ẩn bình luận' : `${allComments.length} bình luận`}
-                  <span className="icon text-sm">{showCmt ? 'expand_less' : 'expand_more'}</span>
-                </button>
+                {/* Content */}
+                <p className="text-sm leading-relaxed whitespace-pre-line"
+                   style={{ color: 'var(--text-primary)' }}>{disp}</p>
+                {long && (
+                  <button onClick={() => setExpanded(p => ({ ...p, [post.postId]: !isExp }))}
+                          className="text-xs font-medium"
+                          style={{ color: '#1877F2', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                    {isExp ? 'Thu gọn ▲' : 'Xem thêm ▼'}
+                  </button>
+                )}
 
-                {showCmt && (
-                  <div className="mt-2 space-y-2 pl-3 border-l-2"
-                       style={{ borderColor: 'var(--border-default)' }}>
-                    {allComments.map((c, i) => (
-                      <div key={i} className="flex gap-2">
-                        <div className="w-6 h-6 rounded-full shrink-0 flex items-center justify-center"
-                             style={{ background: 'var(--bg-elevated)' }}>
-                          <span className="icon text-xs" style={{ color: 'var(--text-tertiary)' }}>person</span>
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="rounded-xl px-3 py-2 text-xs"
-                               style={{ background: 'var(--bg-elevated)' }}>
-                            <p style={{ color: 'var(--text-primary)', lineHeight: 1.5 }}>
-                              {c.text || c.comment_text}
-                            </p>
+                {/* Sentiment bar */}
+                {tot > 0 && (
+                  <div className="space-y-1">
+                    <div className="flex h-1.5 rounded-full overflow-hidden gap-px">
+                      {positive > 0 && <div style={{ flex: positive, background: '#10B981' }} />}
+                      {neutral  > 0 && <div style={{ flex: neutral,  background: '#94A3B8' }} />}
+                      {negative > 0 && <div style={{ flex: negative, background: '#EF4444' }} />}
+                    </div>
+                    <div className="flex gap-3 text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                      {positive > 0 && <span style={{ color: '#10B981' }}>👍 {positive}</span>}
+                      {neutral  > 0 && <span>😐 {neutral}</span>}
+                      {negative > 0 && <span style={{ color: '#EF4444' }}>👎 {negative}</span>}
+                    </div>
+                  </div>
+                )}
+
+                {/* Comments */}
+                {cmts.length > 0 && (
+                  <div>
+                    <button onClick={() => setOpenCmt(p => ({ ...p, [post.postId]: !showCm }))}
+                            className="flex items-center gap-1 text-xs"
+                            style={{ color: 'var(--text-secondary)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                      <span className="icon text-sm">chat_bubble_outline</span>
+                      {showCm ? 'Ẩn bình luận' : `${cmts.length} bình luận`}
+                      <span className="icon text-sm">{showCm ? 'expand_less' : 'expand_more'}</span>
+                    </button>
+                    {showCm && (
+                      <div className="mt-2 space-y-2 pl-3 border-l-2"
+                           style={{ borderColor: 'var(--border-default)' }}>
+                        {cmts.map((c, i) => (
+                          <div key={i} className="flex gap-2">
+                            <div className="w-6 h-6 rounded-full shrink-0 flex items-center justify-center"
+                                 style={{ background: 'var(--bg-card)' }}>
+                              <span className="icon text-xs" style={{ color: 'var(--text-tertiary)' }}>person</span>
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="rounded-xl px-3 py-2 text-xs"
+                                   style={{ background: 'var(--bg-card)' }}>
+                                <p style={{ color: 'var(--text-primary)', lineHeight: 1.5 }}>
+                                  {c.text || c.comment_text}
+                                </p>
+                              </div>
+                              <div className="mt-0.5 ml-1">
+                                <SentimentBadge type={c.sentiment} />
+                              </div>
+                            </div>
                           </div>
-                          <div className="mt-0.5 ml-1">
-                            <SentimentBadge type={c.sentiment} />
-                          </div>
-                        </div>
+                        ))}
                       </div>
-                    ))}
+                    )}
                   </div>
                 )}
               </div>
-            )}
-          </div>
-        )
-      })}
-
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-2 pt-1">
-          <button
-            onClick={() => load(page - 1)} disabled={page <= 1}
-            className="lbtn !h-8 !px-3 text-xs disabled:opacity-40">
-            <span className="icon text-sm">chevron_left</span>
-          </button>
-          <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-            Trang {page} / {totalPages}
-          </span>
-          <button
-            onClick={() => load(page + 1)} disabled={page >= totalPages}
-            className="lbtn !h-8 !px-3 text-xs disabled:opacity-40">
-            <span className="icon text-sm">chevron_right</span>
-          </button>
+            )
+          })}
         </div>
-      )}
+
+        {/* Pagination footer */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-center gap-3 px-5 py-3 shrink-0"
+               style={{ borderTop: '1px solid var(--border-default)' }}>
+            <button onClick={() => load(page - 1)} disabled={page <= 1 || loading}
+                    className="lbtn !h-8 !px-3 text-xs disabled:opacity-40">
+              <span className="icon text-sm">chevron_left</span> Trước
+            </button>
+            <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+              {page} / {totalPages}
+            </span>
+            <button onClick={() => load(page + 1)} disabled={page >= totalPages || loading}
+                    className="lbtn !h-8 !px-3 text-xs disabled:opacity-40">
+              Sau <span className="icon text-sm">chevron_right</span>
+            </button>
+          </div>
+        )}
+      </div>
     </div>
+  )
+}
+
+// ── Facebook Feed trigger button (dùng trong FacebookConnectCard) ─────────────
+function FacebookFeed() {
+  const [open,  setOpen]  = useState(false)
+  const [count, setCount] = useState(null)  // null = chưa biết, 0 = không có
+
+  useEffect(() => {
+    api.get('/api/integrations/facebook/posts?page=1&pageSize=1')
+      .then(r => setCount(r.data.total ?? 0))
+      .catch(() => setCount(0))
+  }, [])
+
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        className="lbtn w-full justify-center gap-2"
+        style={{
+          height: 38,
+          border: '1px solid rgba(24,119,242,0.35)',
+          color: '#1877F2',
+          background: 'rgba(24,119,242,0.06)',
+        }}
+      >
+        <span className="icon text-base">article</span>
+        Xem bài đăng đã thu thập
+        {count !== null && count > 0 && (
+          <span className="px-1.5 py-0.5 rounded-full text-xs font-semibold"
+                style={{ background: '#1877F2', color: '#fff' }}>
+            {count}
+          </span>
+        )}
+      </button>
+      {open && <FacebookPostsModal onClose={() => setOpen(false)} />}
+    </>
   )
 }
 
