@@ -3,11 +3,12 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "start": "npx expo start",
-    "start:tunnel": "npx expo start --tunnel",
-    "android": "npx expo start --android",
-    "ios": "npx expo start --ios",
-    "web": "npx expo start --web"
+    "get-ip": "node get-ip.js",
+    "start": "node get-ip.js && npx expo start",
+    "start:tunnel": "node get-ip.js && npx expo start --tunnel",
+    "android": "node get-ip.js && npx expo start --android",
+    "ios": "node get-ip.js && npx expo start --ios",
+    "web": "node get-ip.js && npx expo start --web"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "^3.0.2",
@@ -16,6 +17,8 @@
     "@react-navigation/stack": "^7.8.9",
     "axios": "^1.14.0",
     "expo": "~54.0.33",
+    "expo-device": "~7.0.1",
+    "expo-notifications": "~0.32.17",
     "expo-secure-store": "~15.0.8",
     "expo-status-bar": "~3.0.9",
     "react": "19.1.0",

@@ -7,13 +7,15 @@ import { useAuth }                  from '../context/AuthContext'
 import { colors }                   from '../components/theme'
 
 // Screens
-import LoginScreen          from '../screens/LoginScreen'
-import DashboardScreen      from '../screens/DashboardScreen'
-import OrdersScreen         from '../screens/OrdersScreen'
-import AddOrderScreen       from '../screens/AddOrderScreen'
-import AlertsScreen         from '../screens/AlertsScreen'
-import ProfileScreen        from '../screens/ProfileScreen'
-import ChangePasswordScreen from '../screens/ChangePasswordScreen'
+import LoginScreen           from '../screens/LoginScreen'
+import ForgotPasswordScreen  from '../screens/ForgotPasswordScreen'
+import ResetPasswordScreen   from '../screens/ResetPasswordScreen'
+import DashboardScreen       from '../screens/DashboardScreen'
+import OrdersScreen          from '../screens/OrdersScreen'
+import AddOrderScreen        from '../screens/AddOrderScreen'
+import AlertsScreen          from '../screens/AlertsScreen'
+import ProfileScreen         from '../screens/ProfileScreen'
+import ChangePasswordScreen  from '../screens/ChangePasswordScreen'
 
 const Tab   = createBottomTabNavigator()
 const Stack = createStackNavigator()
@@ -122,8 +124,18 @@ function MainTabs() {
 // Auth stack (chưa login)
 function AuthNavigator() {
   return (
-    <AuthStack.Navigator screenOptions={{ headerShown: false }}>
-      <AuthStack.Screen name="Login" component={LoginScreen} />
+    <AuthStack.Navigator
+      screenOptions={{
+        headerShown: true,
+        headerStyle:      { backgroundColor: colors.surfaceContainerLow },
+        headerTintColor:  colors.primary,
+        headerTitleStyle: { fontWeight: '700', color: colors.onSurface },
+        cardStyle:        { backgroundColor: colors.surface },
+      }}
+    >
+      <AuthStack.Screen name="Login"          component={LoginScreen}          options={{ headerShown: false }} />
+      <AuthStack.Screen name="ForgotPassword" component={ForgotPasswordScreen} options={{ title: 'Quên mật khẩu' }} />
+      <AuthStack.Screen name="ResetPassword"  component={ResetPasswordScreen}  options={{ title: 'Đặt mật khẩu mới' }} />
     </AuthStack.Navigator>
   )
 }

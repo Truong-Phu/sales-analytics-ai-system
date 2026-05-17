@@ -3,29 +3,43 @@ import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator,
 } from 'react-native'
+import { Ionicons } from '@expo/vector-icons'
 import { useAuth } from '../context/AuthContext'
 import { colors, radius } from '../components/theme'
 
-export default function LoginScreen() {
+export default function LoginScreen({ navigation }) {
   const { login } = useAuth()
-  const [username, setUsername] = useState('')
-  const [password, setPassword] = useState('')
-  const [loading,  setLoading]  = useState(false)
-  const [error,    setError]    = useState('')
+
+  // Ô duy nhất: người dùng nhập email hoặc username
+  const [identifier,    setIdentifier]    = useState('')
+  const [password,      setPassword]      = useState('')
+  const [loading,       setLoading]       = useState(false)
+  const [error,         setError]         = useState('')
+  const [showPassword,  setShowPassword]  = useState(false)
 
   const handleLogin = async () => {
-    if (!username || !password) { setError('Vui lòng nhập tên đăng nhập và mật khẩu'); return }
+    if (!identifier || !password) {
+      setError('Vui lòng nhập Email/Tên đăng nhập và mật khẩu')
+      return
+    }
     setError('')
     setLoading(true)
     try {
-      await login(username.trim(), password)
+      await login(identifier.trim(), password)
       // Navigation tự động xử lý bởi AppNavigator khi user !== null
     } catch (err) {
+      if (!err.response) {
+        // Lỗi mạng: không kết nối được server
+        setError('Không thể kết nối server. Kiểm tra IP backend và kết nối mạng.')
+        return
+      }
       const msg = err.response?.data?.message
       setError(
         msg === 'PENDING_APPROVAL'
-          ? 'Tài khoản đang chờ phê duyệt'
-          : 'Email hoặc mật khẩu không đúng'
+          ? 'Tài khoản đang chờ phê duyệt. Vui lòng chờ phê duyệt từ quản trị viên.'
+          : (err.response?.status === 403
+            ? (msg ?? 'Tài khoản bị khóa hoặc không có quyền truy cập')
+            : (msg ?? 'Email/Tên đăng nhập hoặc mật khẩu không đúng'))
       )
     } finally {
       setLoading(false)
@@ -56,26 +70,49 @@ export default function LoginScreen() {
           </View>
         )}
 
-        <Text style={s.label}>Tên đăng nhập</Text>
+        {/* Single identifier field */}
+        <Text style={s.label}>Email hoặc Tên đăng nhập</Text>
         <TextInput
           style={s.input}
-          placeholder="admin"
+          placeholder="Nhập email hoặc tên đăng nhập"
           placeholderTextColor={colors.outline}
           autoCapitalize="none"
           autoCorrect={false}
-          value={username}
-          onChangeText={setUsername}
+          keyboardType="email-address"
+          value={identifier}
+          onChangeText={setIdentifier}
         />
 
         <Text style={s.label}>Mật khẩu</Text>
-        <TextInput
-          style={s.input}
-          placeholder="••••••••"
-          placeholderTextColor={colors.outline}
-          secureTextEntry
-          value={password}
-          onChangeText={setPassword}
-        />
+        <View style={s.passwordRow}>
+          <TextInput
+            style={[s.input, s.passwordInput]}
+            placeholder="••••••••"
+            placeholderTextColor={colors.outline}
+            secureTextEntry={!showPassword}
+            value={password}
+            onChangeText={setPassword}
+          />
+          <TouchableOpacity
+            style={s.eyeBtn}
+            onPress={() => setShowPassword(v => !v)}
+            activeOpacity={0.7}
+          >
+            <Ionicons
+              name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+              size={20}
+              color={colors.outline}
+            />
+          </TouchableOpacity>
+        </View>
+
+        {/* Quên mật khẩu */}
+        <TouchableOpacity
+          style={s.forgotRow}
+          onPress={() => navigation.navigate('ForgotPassword')}
+        >
+          <Text style={s.forgotText}>Quên mật khẩu?</Text>
+        </TouchableOpacity>
 
         <TouchableOpacity
           style={[s.btn, loading && s.btnDisabled]}
@@ -131,12 +168,20 @@ const s = StyleSheet.create({
     padding: 14, fontSize: 14, color: colors.onSurface,
     marginBottom: 16,
   },
+  passwordRow: { position: 'relative', marginBottom: 0 },
+  passwordInput: { marginBottom: 0, paddingRight: 48 },
+  eyeBtn: {
+    position: 'absolute',
+    right: 14,
+    top: 14,
+  },
+  forgotRow: { alignItems: 'flex-end', marginTop: 8, marginBottom: 20 },
+  forgotText: { fontSize: 13, color: colors.primary },
   btn: {
     backgroundColor: colors.primaryContainer,
     borderRadius: radius.sm,
     paddingVertical: 15,
     alignItems: 'center',
-    marginTop: 4,
   },
   btnDisabled: { opacity: 0.6 },
   btnText: { color: colors.surface, fontSize: 15, fontWeight: '700' },

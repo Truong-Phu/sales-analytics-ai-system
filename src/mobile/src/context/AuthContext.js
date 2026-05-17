@@ -1,6 +1,7 @@
 import React, { createContext, useState, useEffect, useCallback, useContext } from 'react'
 import { storage } from '../api/storage'
 import api from '../api/axios'
+import { registerForPushNotifications } from '../services/pushNotification'
 
 const AuthContext = createContext(null)
 
@@ -38,11 +39,18 @@ export function AuthProvider({ children }) {
       .finally(() => setLoading(false))
   }, [])
 
-  const login = useCallback(async (username, password) => {
-    const { data } = await api.post('/api/auth/login', { username, password })
-    await storage.setItem('access_token', data.accessToken)
-    await storage.setItem('refresh_token', data.refreshToken)
-    const p = parseJwt(data.accessToken)
+  const login = useCallback(async (identifier, password) => {
+    // Phân biệt email hay username để gửi đúng field cho backend
+    const isEmail = typeof identifier === 'string' && identifier.includes('@')
+    const body = isEmail
+      ? { email: identifier, password }
+      : { username: identifier, password }
+    // Backend trả về { success: true, data: { accessToken, refreshToken, ... } }
+    const { data: res } = await api.post('/api/auth/login', body)
+    const tokenData = res.data
+    await storage.setItem('access_token', tokenData.accessToken)
+    await storage.setItem('refresh_token', tokenData.refreshToken)
+    const p = parseJwt(tokenData.accessToken)
     const u = {
       id:    p.sub,
       name:  p['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name'] ?? p.name,
@@ -50,6 +58,8 @@ export function AuthProvider({ children }) {
       role:  p['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'] ?? p.role,
     }
     setUser(u)
+    // Đăng ký push notification sau khi login (fire-and-forget)
+    registerForPushNotifications().catch(() => {})
     return u
   }, [])
 

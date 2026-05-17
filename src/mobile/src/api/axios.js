@@ -3,7 +3,7 @@ import { storage } from './storage'
 
 // Ưu tiên biến môi trường EXPO_PUBLIC_API_URL từ .env
 // Fallback: IP LAN của máy tính (thay 192.168.1.8 bằng IP thật của bạn)
-const BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://192.168.1.8:5136'
+const BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://192.168.1.10:5136'
 
 const api = axios.create({
   baseURL: BASE_URL,
@@ -44,13 +44,15 @@ api.interceptors.response.use(
         const refreshToken = await storage.getItem('refresh_token')
         if (!refreshToken) throw new Error('No refresh token')
 
-        const { data } = await axios.post(`${BASE_URL}/api/auth/refresh`, { refreshToken })
-        await storage.setItem('access_token', data.accessToken)
-        await storage.setItem('refresh_token', data.refreshToken)
+        // Backend trả về { success: true, data: { accessToken, refreshToken } }
+        const { data: res } = await axios.post(`${BASE_URL}/api/auth/refresh`, { refreshToken })
+        const tokenData = res.data
+        await storage.setItem('access_token', tokenData.accessToken)
+        await storage.setItem('refresh_token', tokenData.refreshToken)
 
-        queue.forEach(p => p.resolve(data.accessToken))
+        queue.forEach(p => p.resolve(tokenData.accessToken))
         queue = []
-        original.headers.Authorization = `Bearer ${data.accessToken}`
+        original.headers.Authorization = `Bearer ${tokenData.accessToken}`
         return api(original)
       } catch {
         queue.forEach(p => p.reject(err))
