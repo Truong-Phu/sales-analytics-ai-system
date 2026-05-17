@@ -298,6 +298,20 @@ public class AdminController(
             totalPages = (int)Math.Ceiling((double)total / pageSize) });
     }
 
+    /// <summary>[Dev Only] Trigger SmartAlertJob thủ công để test – không cần chờ 1 giờ</summary>
+    [HttpPost("trigger-alert-job")]
+    [Authorize(Roles = "Owner")]
+    public async Task<IActionResult> TriggerAlertJob(
+        [FromServices] SmartAlertJob alertJob,
+        [FromServices] IWebHostEnvironment env)
+    {
+        if (!env.IsDevelopment())
+            return StatusCode(403, new { message = "Endpoint này chỉ khả dụng trong môi trường Development." });
+
+        await alertJob.RunChecksAsync();
+        return Ok(new { message = "SmartAlertJob đã chạy thủ công. Kiểm tra notifications trong DB và bell icon." });
+    }
+
     // ══════════════════════════════════════════════════════════════════════════
     // PHẦN 2 – Super Admin: quản lý toàn hệ thống (yêu cầu is_super_admin=TRUE)
     // ══════════════════════════════════════════════════════════════════════════

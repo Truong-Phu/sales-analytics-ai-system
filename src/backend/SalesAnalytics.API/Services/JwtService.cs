@@ -14,8 +14,10 @@ public class JwtService
 
     public JwtService(IConfiguration config) => _config = config;
 
-    /// <summary>Tạo Access Token (JWT HS256, thời hạn 60 phút)</summary>
-    public string GenerateAccessToken(User user)
+    /// <summary>Tạo Access Token (JWT HS256, thời hạn 60 phút) – bao gồm claims multi-tenant</summary>
+    /// <param name="user">Người dùng cần tạo token</param>
+    /// <param name="companySlug">Slug của công ty (dùng cho routing), nullable nếu SuperAdmin</param>
+    public string GenerateAccessToken(User user, string? companySlug = null)
     {
         var key     = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_config["Jwt:Secret"]!));
         var creds   = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
@@ -23,14 +25,22 @@ public class JwtService
             double.Parse(_config["Jwt:AccessTokenMinutes"] ?? "60")
         );
 
-        var claims = new[]
+        var claims = new List<Claim>
         {
-            new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
-            new Claim(ClaimTypes.Name,           user.Username),
-            new Claim(ClaimTypes.Role,           user.Role.ToString()),
-            new Claim("fullName",                user.FullName),
-            new Claim("lang",                    user.PreferredLanguage),
+            new(ClaimTypes.NameIdentifier, user.Id.ToString()),
+            new(ClaimTypes.Name,           user.Username),
+            new(ClaimTypes.Role,           user.Role.ToString()),
+            new("fullName",                user.FullName),
+            new("lang",                    user.PreferredLanguage),
+            new("is_super_admin",          user.IsSuperAdmin.ToString()),
         };
+
+        // Thêm company claims (chỉ khi không phải SuperAdmin)
+        if (user.CompanyId.HasValue)
+            claims.Add(new("company_id", user.CompanyId.Value.ToString()));
+
+        if (!string.IsNullOrEmpty(companySlug))
+            claims.Add(new("company_slug", companySlug));
 
         var token = new JwtSecurityToken(
             issuer:             _config["Jwt:Issuer"],

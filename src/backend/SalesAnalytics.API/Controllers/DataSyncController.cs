@@ -36,7 +36,50 @@ public class DataSyncController(
         // EtlLog không có company_id column, nên dùng Join với JobId nếu có, hoặc lọc bằng Message
         var recentLogs = await query.Take(200).ToListAsync();
 
-        var sources = new[] { "shopee", "lazada", "tiktok", "facebook", "ghn", "vnpay" };
+        var sources = new[] { "shopee", "lazada", "tiktok", "facebook", "ghn", "vnpay", "google_analytics" };
+
+        // Map source key → platform name trong bảng integrations
+        var platformMap = new Dictionary<string, string>
+        {
+            ["shopee"]           = "shopee",
+            ["lazada"]           = "lazada",
+            ["tiktok"]           = "tiktok",
+            ["facebook"]         = "facebook",
+            ["ghn"]              = "ghn",
+            ["vnpay"]            = "vnpay",
+            ["google_analytics"] = "google",
+        };
+
+        // Lấy trạng thái is_active + id từ bảng integrations
+        var integrationStatus = new Dictionary<string, (string Id, bool IsActive)>();
+        if (companyId.HasValue)
+        {
+            try
+            {
+                var conn = db.Database.GetDbConnection();
+                if (conn.State != System.Data.ConnectionState.Open)
+                    await conn.OpenAsync();
+                await using var cmd = conn.CreateCommand();
+                cmd.CommandText =
+                    "SELECT id::text, platform, is_active FROM public.integrations WHERE company_id = @cid";
+                var p = cmd.CreateParameter();
+                p.ParameterName = "cid";
+                p.Value = companyId.Value.ToString();
+                cmd.Parameters.Add(p);
+                await using var reader = await cmd.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                {
+                    var platform  = reader.GetString(1);
+                    var sourceKey = platformMap.FirstOrDefault(kv => kv.Value == platform).Key;
+                    if (sourceKey is not null)
+                        integrationStatus[sourceKey] = (reader.GetString(0), reader.GetBoolean(2));
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning("Không đọc được integrations: {Err}", ex.Message);
+            }
+        }
 
         var result = sources.Select(src =>
         {
@@ -49,14 +92,17 @@ public class DataSyncController(
             int       records = last?.RecordsCount ?? 0;
             DateTime? lastAt  = last?.CreatedAt;
 
+            var hasInteg = integrationStatus.TryGetValue(src, out var integ);
             return new
             {
-                sourceKey     = src,
-                sourceName    = FormatSourceName(src),
+                sourceKey       = src,
+                sourceName      = FormatSourceName(src),
                 status,
-                lastSync      = lastAt?.ToString("O"),
-                recordsSynced = records,
-                errorMessage  = errMsg,
+                lastSync        = lastAt?.ToString("O"),
+                recordsSynced   = records,
+                errorMessage    = errMsg,
+                isActive        = hasInteg ? integ.IsActive : true,
+                integrationId   = hasInteg ? integ.Id : (string?)null,
             };
         }).ToList();
 
@@ -81,7 +127,16 @@ public class DataSyncController(
                 RecordsCount = 0,
                 CreatedAt    = DateTime.UtcNow,
             });
-            await db.SaveChangesAsync();
+            try
+            {
+                await db.SaveChangesAsync();
+            }
+            catch (Microsoft.EntityFrameworkCore.DbUpdateException ex)
+            {
+                var innerMsg = ex.InnerException?.Message ?? ex.Message;
+                logger.LogError("SaveChanges lỗi (TriggerSync EtlLog): {Msg}", innerMsg);
+                return StatusCode(500, new { error = innerMsg });
+            }
 
             logger.LogInformation("DataSync trigger: source={Source} company={CompanyId}",
                 req.Source, tenant.CompanyId);
@@ -259,6 +314,11 @@ public class DataSyncController(
 
                 if (etlResult is not null)
                 {
+                    state.Progress = 90;
+                    state.Message  = "Đang làm mới cache AI...";
+                    // Thông báo cho FastAPI xóa cache cũ + tính lại Z-score
+                    await ai.InvalidateCacheAsync();
+
                     state.Progress = 100;
                     state.Status   = "completed";
                     var inserted   = etlResult.TryGetValue("inserted", out var ins) ? ins?.ToString() : "?";
@@ -282,7 +342,16 @@ public class DataSyncController(
                         Level     = "INFO",
                         CreatedAt = DateTime.UtcNow,
                     });
-                    await ctx.SaveChangesAsync();
+                    try
+                    {
+                        await ctx.SaveChangesAsync();
+                    }
+                    catch (Microsoft.EntityFrameworkCore.DbUpdateException ex)
+                    {
+                        var innerMsg = ex.InnerException?.Message ?? ex.Message;
+                        // Background task: chỉ log, không return (không có HttpContext)
+                        logger.LogError("SaveChanges lỗi (TriggerFullSync EtlLog fallback): {Msg}", innerMsg);
+                    }
 
                     state.Progress = 100;
                     state.Status   = "completed";
@@ -324,17 +393,69 @@ public class DataSyncController(
         });
     }
 
+    // ── Toggle bật/tắt kênh tích hợp ────────────────────────────────────────
+
+    /// <summary>Bật/tắt kênh tích hợp. Chỉ Owner và Manager mới có quyền.</summary>
+    [HttpPatch("api/integrations/{id}/toggle")]
+    [Authorize(Roles = "Owner,Manager")]
+    public async Task<IActionResult> ToggleIntegration(string id)
+    {
+        if (!Guid.TryParse(id, out var integId))
+            return BadRequest(new { message = "Integration ID không hợp lệ." });
+
+        var companyId = tenant.CompanyId;
+
+        var rows = await db.Database.ExecuteSqlAsync(
+            $"UPDATE public.integrations SET is_active = NOT is_active, updated_at = NOW() WHERE id = {integId} AND company_id = {companyId}");
+
+        if (rows == 0)
+            return NotFound(new { message = "Integration không tìm thấy hoặc không thuộc công ty này." });
+
+        // Đọc trạng thái mới sau toggle
+        bool newState = true;
+        try
+        {
+            var conn = db.Database.GetDbConnection();
+            if (conn.State != System.Data.ConnectionState.Open)
+                await conn.OpenAsync();
+            await using var cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT is_active FROM public.integrations WHERE id = @id";
+            var p = cmd.CreateParameter(); p.ParameterName = "id"; p.Value = integId; cmd.Parameters.Add(p);
+            var val = await cmd.ExecuteScalarAsync();
+            if (val is bool b) newState = b;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning("Không đọc được is_active sau toggle: {Err}", ex.Message);
+        }
+
+        await audit.LogAsync(
+            userId:     int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var tid) ? (int?)tid : null,
+            username:   User.FindFirstValue(ClaimTypes.Name) ?? "",
+            action:     newState ? "ENABLE_INTEGRATION" : "DISABLE_INTEGRATION",
+            entityType: "Integration", entityId: id,
+            ipAddress:  HttpContext.Connection.RemoteIpAddress?.ToString(),
+            userAgent:  HttpContext.Request.Headers["User-Agent"].ToString());
+
+        return Ok(new
+        {
+            message  = newState ? "Đã bật kênh tích hợp." : "Đã tắt kênh tích hợp.",
+            isActive = newState,
+        });
+    }
+
     // ── Helper ───────────────────────────────────────────────────────────────
 
     private static string FormatSourceName(string key) => key switch
     {
-        "shopee"   => "Shopee",
-        "lazada"   => "Lazada",
-        "tiktok"   => "TikTok Shop",
-        "facebook" => "Facebook",
-        "ghn"      => "GHN",
-        "vnpay"    => "VNPay",
-        _          => key,
+        "shopee"           => "Shopee",
+        "lazada"           => "Lazada",
+        "tiktok"           => "TikTok Shop",
+        "facebook"         => "Facebook",
+        "ghn"              => "GHN",
+        "vnpay"            => "VNPay",
+        "google_analytics" => "Google Analytics",
+        _                  => key,
     };
 }
 

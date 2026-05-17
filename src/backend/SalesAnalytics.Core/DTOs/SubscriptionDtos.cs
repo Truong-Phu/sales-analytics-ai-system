@@ -59,6 +59,11 @@ public record InvoiceDto(
     DateTime  CreatedAt
 );
 
+/// <summary>Yêu cầu bật/tắt tự động gia hạn</summary>
+public record AutoRenewRequest(
+    bool AutoRenew
+);
+
 /// <summary>Webhook callback từ Momo</summary>
 public record MomoWebhookDto(
     string  PartnerCode,

@@ -1,4 +1,3 @@
-using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 
@@ -95,6 +94,36 @@ public class AiProxyService
     /// <summary>Gọi FastAPI /health/connectors → trạng thái tất cả connector.</summary>
     public async Task<object?> GetConnectorHealthAsync()
         => await GetJsonAsync("/health/connectors");
+
+    /// <summary>Gọi FastAPI POST /cache/invalidate sau khi ETL xong.</summary>
+    public async Task<object?> InvalidateCacheAsync()
+    {
+        try
+        {
+            var resp = await _http.PostAsync("/cache/invalidate", null);
+            if (!resp.IsSuccessStatusCode) return null;
+            var body = await resp.Content.ReadAsStringAsync();
+            return JsonSerializer.Deserialize<object>(body, _jsonOpts);
+        }
+        catch (HttpRequestException)  { return null; }
+        catch (TaskCanceledException) { return null; }
+    }
+
+    /// <summary>Lấy AI Insights tổng hợp (forecast + anomaly + RFM).</summary>
+    public async Task<object?> GetInsightsAsync()
+        => await GetJsonAsync("/insights");
+
+    /// <summary>Tổng hợp phản hồi Facebook (sentiment, top issues/praises, recent comments).</summary>
+    public async Task<object?> GetFeedbackSummaryAsync(Guid? companyId = null)
+    {
+        var url = "/feedback/summary";
+        if (companyId.HasValue) url += $"?company_id={companyId.Value}";
+        return await GetJsonAsync(url);
+    }
+
+    /// <summary>Trạng thái cache AI (cache_valid, needs_retrain, file exists...).</summary>
+    public async Task<object?> GetCacheStatusAsync()
+        => await GetJsonAsync("/cache/status");
 
     /// <summary>
     /// Kích hoạt ETL OLTP→DW trên Python FastAPI.

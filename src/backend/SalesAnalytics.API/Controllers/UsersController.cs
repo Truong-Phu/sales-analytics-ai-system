@@ -17,11 +17,13 @@ public class UsersController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly IWebHostEnvironment _env;
+    private readonly ILogger<UsersController> _logger;
 
-    public UsersController(AppDbContext db, IWebHostEnvironment env)
+    public UsersController(AppDbContext db, IWebHostEnvironment env, ILogger<UsersController> logger)
     {
-        _db  = db;
-        _env = env;
+        _db     = db;
+        _env    = env;
+        _logger = logger;
     }
 
     private int CurrentUserId() =>
@@ -32,17 +34,25 @@ public class UsersController : ControllerBase
     [HttpGet("me")]
     public async Task<IActionResult> GetMe()
     {
-        var user = await _db.Users.FindAsync(CurrentUserId());
-        if (user is null) return NotFound();
-
-        return Ok(new
+        try
         {
-            user.Id, user.Username, user.FullName, user.Email,
-            Role     = user.Role.ToString(),
-            user.IsActive, user.AvatarUrl, user.Phone,
-            birthdate = user.Birthdate?.ToString("yyyy-MM-dd"),
-            user.Timezone, user.LangPref, user.LastLoginAt,
-        });
+            var user = await _db.Users.FindAsync(CurrentUserId());
+            if (user is null) return NotFound(new { message = "Không tìm thấy tài khoản." });
+
+            return Ok(new
+            {
+                user.Id, user.Username, user.FullName, user.Email,
+                Role     = user.Role.ToString(),
+                user.IsActive, user.AvatarUrl, user.Phone,
+                birthdate = user.Birthdate?.ToString("yyyy-MM-dd"),
+                user.Timezone, user.LangPref, user.LastLoginAt,
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Lỗi lấy thông tin user id={Id}", CurrentUserId());
+            return StatusCode(503, new { message = "Không thể tải thông tin tài khoản. Vui lòng thử lại." });
+        }
     }
 
     // ── PATCH /api/users/profile ─────────────────────────────────────────────
@@ -50,18 +60,26 @@ public class UsersController : ControllerBase
     [HttpPatch("profile")]
     public async Task<IActionResult> UpdateProfile([FromBody] UpdateProfileRequest req)
     {
-        var user = await _db.Users.FindAsync(CurrentUserId());
-        if (user is null) return NotFound();
+        try
+        {
+            var user = await _db.Users.FindAsync(CurrentUserId());
+            if (user is null) return NotFound(new { message = "Không tìm thấy tài khoản." });
 
-        if (req.FullName  is not null) user.FullName  = req.FullName.Trim();
-        if (req.Phone     is not null) user.Phone     = req.Phone.Trim();
-        if (req.Timezone  is not null) user.Timezone  = req.Timezone;
-        if (req.LangPref  is not null) user.LangPref  = req.LangPref;
-        if (req.Birthdate is not null)
-            user.Birthdate = DateOnly.TryParse(req.Birthdate, out var bd) ? bd : null;
+            if (req.FullName  is not null) user.FullName  = req.FullName.Trim();
+            if (req.Phone     is not null) user.Phone     = req.Phone.Trim();
+            if (req.Timezone  is not null) user.Timezone  = req.Timezone;
+            if (req.LangPref  is not null) user.LangPref  = req.LangPref;
+            if (req.Birthdate is not null)
+                user.Birthdate = DateOnly.TryParse(req.Birthdate, out var bd) ? bd : null;
 
-        await _db.SaveChangesAsync();
-        return Ok(new { message = "Đã cập nhật thông tin." });
+            await _db.SaveChangesAsync();
+            return Ok(new { message = "Đã cập nhật thông tin." });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Lỗi cập nhật profile user id={Id}", CurrentUserId());
+            return StatusCode(503, new { message = "Không thể lưu thông tin. Vui lòng thử lại." });
+        }
     }
 
     // ── POST /api/users/avatar ───────────────────────────────────────────────
@@ -79,23 +97,30 @@ public class UsersController : ControllerBase
         if (ext is not (".jpg" or ".jpeg" or ".png" or ".webp"))
             return BadRequest(new { message = "Chỉ chấp nhận JPG/PNG/WEBP." });
 
-        var user = await _db.Users.FindAsync(CurrentUserId());
-        if (user is null) return NotFound();
+        try
+        {
+            var user = await _db.Users.FindAsync(CurrentUserId());
+            if (user is null) return NotFound(new { message = "Không tìm thấy tài khoản." });
 
-        // Lưu file vào wwwroot/avatars/
-        var webRoot    = _env.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
-        var uploadsDir = Path.Combine(webRoot, "avatars");
-        Directory.CreateDirectory(uploadsDir);
-        var fileName  = $"user_{user.Id}_{DateTime.UtcNow.Ticks}{ext}";
-        var filePath  = Path.Combine(uploadsDir, fileName);
+            var webRoot    = _env.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
+            var uploadsDir = Path.Combine(webRoot, "avatars");
+            Directory.CreateDirectory(uploadsDir);
+            var fileName  = $"user_{user.Id}_{DateTime.UtcNow.Ticks}{ext}";
+            var filePath  = Path.Combine(uploadsDir, fileName);
 
-        await using var stream = System.IO.File.Create(filePath);
-        await avatar.CopyToAsync(stream);
+            await using var stream = System.IO.File.Create(filePath);
+            await avatar.CopyToAsync(stream);
 
-        user.AvatarUrl = $"/avatars/{fileName}";
-        await _db.SaveChangesAsync();
+            user.AvatarUrl = $"/avatars/{fileName}";
+            await _db.SaveChangesAsync();
 
-        return Ok(new { avatarUrl = user.AvatarUrl });
+            return Ok(new { avatarUrl = user.AvatarUrl });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Lỗi upload avatar user id={Id}", CurrentUserId());
+            return StatusCode(503, new { message = "Không thể lưu ảnh đại diện. Vui lòng thử lại." });
+        }
     }
 
     // ── GET /api/users/login-history ────────────────────────────────────────
@@ -103,19 +128,27 @@ public class UsersController : ControllerBase
     [HttpGet("login-history")]
     public async Task<IActionResult> GetLoginHistory()
     {
-        var history = await _db.LoginHistories
-            .Where(l => l.UserId == CurrentUserId())
-            .OrderByDescending(l => l.LoggedAt)
-            .Take(50)
-            .Select(l => new {
-                ip        = l.IpAddress,
-                userAgent = l.UserAgent,
-                time      = l.LoggedAt,
-                status    = l.Status
-            })
-            .ToListAsync();
+        try
+        {
+            var history = await _db.LoginHistories
+                .Where(l => l.UserId == CurrentUserId())
+                .OrderByDescending(l => l.LoggedAt)
+                .Take(50)
+                .Select(l => new {
+                    ip        = l.IpAddress,
+                    userAgent = l.UserAgent,
+                    time      = l.LoggedAt,
+                    status    = l.Status
+                })
+                .ToListAsync();
 
-        return Ok(history);
+            return Ok(history);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Lỗi lấy lịch sử đăng nhập user id={Id}", CurrentUserId());
+            return StatusCode(503, new { message = "Không thể tải lịch sử đăng nhập. Vui lòng thử lại." });
+        }
     }
 
     // ── POST /api/users/logout-all ───────────────────────────────────────────
@@ -123,14 +156,22 @@ public class UsersController : ControllerBase
     [HttpPost("logout-all")]
     public async Task<IActionResult> LogoutAll()
     {
-        var user = await _db.Users.FindAsync(CurrentUserId());
-        if (user is null) return NotFound();
+        try
+        {
+            var user = await _db.Users.FindAsync(CurrentUserId());
+            if (user is null) return NotFound(new { message = "Không tìm thấy tài khoản." });
 
-        user.RefreshToken          = null;
-        user.RefreshTokenExpiresAt = null;
-        await _db.SaveChangesAsync();
+            user.RefreshToken          = null;
+            user.RefreshTokenExpiresAt = null;
+            await _db.SaveChangesAsync();
 
-        return Ok(new { message = "Đã đăng xuất tất cả thiết bị." });
+            return Ok(new { message = "Đã đăng xuất tất cả thiết bị." });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Lỗi logout-all user id={Id}", CurrentUserId());
+            return StatusCode(503, new { message = "Không thể thực hiện đăng xuất. Vui lòng thử lại." });
+        }
     }
 
     // ── GET /api/users/notification-preferences ─────────────────────────────
@@ -138,18 +179,26 @@ public class UsersController : ControllerBase
     [HttpGet("notification-preferences")]
     public async Task<IActionResult> GetNotifPrefs()
     {
-        var prefs = await _db.NotificationPreferences
-            .FirstOrDefaultAsync(n => n.UserId == CurrentUserId());
+        try
+        {
+            var prefs = await _db.NotificationPreferences
+                .FirstOrDefaultAsync(n => n.UserId == CurrentUserId());
 
-        if (prefs is null)
-            return Ok(new { emailNotify = true, anomalyAlert = true, dailyReport = false, weeklyReport = true });
+            if (prefs is null)
+                return Ok(new { emailNotify = true, anomalyAlert = true, dailyReport = false, weeklyReport = true });
 
-        return Ok(new {
-            emailNotify  = prefs.EmailNotify,
-            anomalyAlert = prefs.AnomalyAlert,
-            dailyReport  = prefs.DailyReport,
-            weeklyReport = prefs.WeeklyReport,
-        });
+            return Ok(new {
+                emailNotify  = prefs.EmailNotify,
+                anomalyAlert = prefs.AnomalyAlert,
+                dailyReport  = prefs.DailyReport,
+                weeklyReport = prefs.WeeklyReport,
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Lỗi lấy notification prefs user id={Id}", CurrentUserId());
+            return StatusCode(503, new { message = "Không thể tải tùy chọn thông báo. Vui lòng thử lại." });
+        }
     }
 
     // ── PUT /api/users/notification-preferences ──────────────────────────────
@@ -157,32 +206,40 @@ public class UsersController : ControllerBase
     [HttpPut("notification-preferences")]
     public async Task<IActionResult> UpdateNotifPrefs([FromBody] NotifPrefsRequest req)
     {
-        var prefs = await _db.NotificationPreferences
-            .FirstOrDefaultAsync(n => n.UserId == CurrentUserId());
-
-        if (prefs is null)
+        try
         {
-            _db.NotificationPreferences.Add(new SalesAnalytics.Core.Entities.NotificationPreference
+            var prefs = await _db.NotificationPreferences
+                .FirstOrDefaultAsync(n => n.UserId == CurrentUserId());
+
+            if (prefs is null)
             {
-                UserId       = CurrentUserId(),
-                EmailNotify  = req.EmailNotify,
-                AnomalyAlert = req.AnomalyAlert,
-                DailyReport  = req.DailyReport,
-                WeeklyReport = req.WeeklyReport,
-                UpdatedAt    = DateTime.UtcNow,
-            });
-        }
-        else
-        {
-            prefs.EmailNotify  = req.EmailNotify;
-            prefs.AnomalyAlert = req.AnomalyAlert;
-            prefs.DailyReport  = req.DailyReport;
-            prefs.WeeklyReport = req.WeeklyReport;
-            prefs.UpdatedAt    = DateTime.UtcNow;
-        }
+                _db.NotificationPreferences.Add(new SalesAnalytics.Core.Entities.NotificationPreference
+                {
+                    UserId       = CurrentUserId(),
+                    EmailNotify  = req.EmailNotify,
+                    AnomalyAlert = req.AnomalyAlert,
+                    DailyReport  = req.DailyReport,
+                    WeeklyReport = req.WeeklyReport,
+                    UpdatedAt    = DateTime.UtcNow,
+                });
+            }
+            else
+            {
+                prefs.EmailNotify  = req.EmailNotify;
+                prefs.AnomalyAlert = req.AnomalyAlert;
+                prefs.DailyReport  = req.DailyReport;
+                prefs.WeeklyReport = req.WeeklyReport;
+                prefs.UpdatedAt    = DateTime.UtcNow;
+            }
 
-        await _db.SaveChangesAsync();
-        return Ok(new { message = "Đã lưu tùy chọn thông báo." });
+            await _db.SaveChangesAsync();
+            return Ok(new { message = "Đã lưu tùy chọn thông báo." });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Lỗi lưu notification prefs user id={Id}", CurrentUserId());
+            return StatusCode(503, new { message = "Không thể lưu tùy chọn thông báo. Vui lòng thử lại." });
+        }
     }
 }
 

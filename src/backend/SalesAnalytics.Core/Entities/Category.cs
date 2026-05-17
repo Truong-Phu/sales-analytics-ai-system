@@ -34,6 +34,19 @@ public class Category
     [Column("is_active")]
     public bool IsActive { get; set; } = true;
 
+    /// <summary>Slug URL tự sinh từ tên danh mục</summary>
+    [Column("slug")]
+    [MaxLength(200)]
+    public string? Slug { get; set; }
+
+    /// <summary>Thứ tự hiển thị trong danh sách</summary>
+    [Column("sort_order")]
+    public int SortOrder { get; set; } = 0;
+
+    /// <summary>Company_id (NULL = danh mục dùng chung toàn hệ thống)</summary>
+    [Column("company_id")]
+    public Guid? CompanyId { get; set; }
+
     /// <summary>Thời điểm tạo bản ghi</summary>
     [Column("created_at")]
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

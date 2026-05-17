@@ -26,4 +26,14 @@ public class User
     // Refresh token (lưu trong DB để hỗ trợ rotation)
     public string?   RefreshToken          { get; set; }
     public DateTime? RefreshTokenExpiresAt { get; set; }
+
+    // Reset password token
+    public string?   ResetToken       { get; set; }
+    public DateTime? ResetTokenExpiry { get; set; }
+
+    // Multi-tenant (thêm [2025-05-07])
+    public Guid? CompanyId    { get; set; }     // NULL nếu là SuperAdmin
+    public bool  IsSuperAdmin { get; set; } = false;
+
+    public Company? Company { get; set; }
 }

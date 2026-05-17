@@ -22,11 +22,17 @@ public class AppDbContext : DbContext
     public DbSet<AuditLog>               AuditLogs               => Set<AuditLog>();
     public DbSet<LoginHistory>           LoginHistories          => Set<LoginHistory>();
     public DbSet<NotificationPreference> NotificationPreferences => Set<NotificationPreference>();
+    public DbSet<Notification>           Notifications           => Set<Notification>();
+    public DbSet<PushToken>              PushTokens              => Set<PushToken>();
+    public DbSet<EmailVerification>      EmailVerifications      => Set<EmailVerification>();
 
     // Multi-tenant (thêm [2025-05-07])
     public DbSet<Company>      Companies     => Set<Company>();
     public DbSet<Subscription> Subscriptions => Set<Subscription>();
     public DbSet<Invoice>      Invoices      => Set<Invoice>();
+
+    // Super Admin: tài khoản thanh toán hệ thống
+    public DbSet<SystemPaymentAccount> SystemPaymentAccounts => Set<SystemPaymentAccount>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -53,6 +59,9 @@ public class AppDbContext : DbContext
             e.Property(u => u.Birthdate).HasColumnName("birthdate");
             e.Property(u => u.Timezone).HasColumnName("timezone").HasMaxLength(50).HasDefaultValue("Asia/Ho_Chi_Minh");
             e.Property(u => u.LangPref).HasColumnName("lang_pref").HasMaxLength(10).HasDefaultValue("vi");
+            // Reset password
+            e.Property(u => u.ResetToken).HasColumnName("reset_token").HasMaxLength(200);
+            e.Property(u => u.ResetTokenExpiry).HasColumnName("reset_token_expiry");
             // Multi-tenant columns
             e.Property(u => u.CompanyId).HasColumnName("company_id");
             e.Property(u => u.IsSuperAdmin).HasColumnName("is_super_admin").HasDefaultValue(false);
@@ -85,10 +94,32 @@ public class AppDbContext : DbContext
             e.Property(c => c.OnboardingCompleted).HasColumnName("onboarding_completed").HasDefaultValue(false);
             e.Property(c => c.OnboardingStep).HasColumnName("onboarding_step").HasDefaultValue(0);
             e.Property(c => c.IsActive).HasColumnName("is_active").HasDefaultValue(true);
+            e.Property(c => c.LockReason).HasColumnName("lock_reason");
+            e.Property(c => c.LockedAt).HasColumnName("locked_at");
             e.Property(c => c.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()");
             e.Property(c => c.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("NOW()");
             e.HasIndex(c => c.Slug).IsUnique();
             e.HasIndex(c => c.Email).IsUnique();
+        });
+
+        // ── SystemPaymentAccount ─────────────────────────────────────────────
+        modelBuilder.Entity<SystemPaymentAccount>(e =>
+        {
+            e.ToTable("system_payment_accounts", "public");
+            e.HasKey(a => a.Id);
+            e.Property(a => a.Id).HasColumnName("id").HasDefaultValueSql("gen_random_uuid()");
+            e.Property(a => a.Method).HasColumnName("method").HasMaxLength(50).IsRequired();
+            e.Property(a => a.DisplayName).HasColumnName("display_name").HasMaxLength(200).IsRequired();
+            e.Property(a => a.IsActive).HasColumnName("is_active").HasDefaultValue(true);
+            e.Property(a => a.IsDefault).HasColumnName("is_default").HasDefaultValue(false);
+            e.Property(a => a.Config).HasColumnName("config").HasColumnType("jsonb");
+            e.Property(a => a.ConfigMasked).HasColumnName("config_masked").HasColumnType("jsonb");
+            e.Property(a => a.Note).HasColumnName("note");
+            e.Property(a => a.SortOrder).HasColumnName("sort_order").HasDefaultValue(0);
+            e.Property(a => a.CreatedBy).HasColumnName("created_by");
+            e.Property(a => a.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()");
+            e.Property(a => a.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("NOW()");
+            e.HasIndex(a => a.Method);
         });
 
         // ── Subscription ──────────────────────────────────────────────────────
@@ -154,8 +185,6 @@ public class AppDbContext : DbContext
         // ── Category ─────────────────────────────────────────────────────────
         modelBuilder.Entity<Category>(e =>
         {
-            // Bảng và cột đã khai báo qua [Table] / [Column] attributes
-            // Cần cấu hình self-reference FK và giá trị mặc định
             e.HasOne(c => c.Parent)
              .WithMany(c => c.Children)
              .HasForeignKey(c => c.ParentId)
@@ -163,7 +192,54 @@ public class AppDbContext : DbContext
 
             e.Property(c => c.Level).HasDefaultValue((short)1);
             e.Property(c => c.IsActive).HasDefaultValue(true);
+            e.Property(c => c.SortOrder).HasDefaultValue(0);
             e.Property(c => c.CreatedAt).HasDefaultValueSql("NOW()");
+            e.Property(c => c.Slug).HasMaxLength(200);
+            e.HasIndex(c => c.Slug).IsUnique().HasFilter("slug IS NOT NULL");
+            e.HasIndex(c => c.CompanyId);
+        });
+
+        // ── EmailVerification ────────────────────────────────────────────────
+        modelBuilder.Entity<EmailVerification>(e =>
+        {
+            e.Property(v => v.Purpose).HasMaxLength(50).HasDefaultValue("register");
+            e.Property(v => v.IsUsed).HasDefaultValue(false);
+            e.Property(v => v.Attempts).HasDefaultValue(0);
+            e.Property(v => v.CreatedAt).HasDefaultValueSql("NOW()");
+            e.HasIndex(v => new { v.Email, v.Purpose });
+        });
+
+        // ── Notification ─────────────────────────────────────────────────────
+        modelBuilder.Entity<Notification>(e =>
+        {
+            e.Property(n => n.Type).HasMaxLength(50).HasDefaultValue("info");
+            e.Property(n => n.Category).HasMaxLength(50);
+            e.Property(n => n.IsRead).HasDefaultValue(false);
+            e.Property(n => n.SentEmail).HasDefaultValue(false);
+            e.Property(n => n.SentPush).HasDefaultValue(false);
+            e.Property(n => n.Data).HasColumnType("jsonb");
+            e.Property(n => n.Channels).HasColumnType("text[]");
+            e.Property(n => n.CreatedAt).HasDefaultValueSql("NOW()");
+            e.HasOne(n => n.User)
+             .WithMany()
+             .HasForeignKey(n => n.UserId)
+             .OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(n => new { n.UserId, n.IsRead, n.CreatedAt });
+            e.HasIndex(n => new { n.CompanyId, n.CreatedAt });
+        });
+
+        // ── PushToken ────────────────────────────────────────────────────────
+        modelBuilder.Entity<PushToken>(e =>
+        {
+            e.Property(p => p.IsActive).HasDefaultValue(true);
+            e.Property(p => p.LastUsedAt).HasDefaultValueSql("NOW()");
+            e.Property(p => p.CreatedAt).HasDefaultValueSql("NOW()");
+            e.HasOne(p => p.User)
+             .WithMany()
+             .HasForeignKey(p => p.UserId)
+             .OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(p => new { p.UserId, p.ExpoToken }).IsUnique();
+            e.HasIndex(p => new { p.UserId, p.IsActive });
         });
 
         // ── Channel ──────────────────────────────────────────────────────────
@@ -293,8 +369,9 @@ public class AppDbContext : DbContext
         // ── ScraperKeyword ───────────────────────────────────────────────────
         modelBuilder.Entity<ScraperKeyword>(e =>
         {
-            e.HasIndex(k => new { k.Keyword, k.SourceType }).IsUnique();
-            e.HasIndex(k => new { k.IsActive, k.SourceType });
+            // Unique per (keyword, source, company) để cho phép nhiều công ty dùng cùng keyword
+            e.HasIndex(k => new { k.Keyword, k.SourceType, k.CompanyId }).IsUnique();
+            e.HasIndex(k => new { k.IsActive, k.SourceType, k.CompanyId });
             e.Property(k => k.SourceType).HasDefaultValue("google");
             e.Property(k => k.IsActive).HasDefaultValue(true);
             e.Property(k => k.UseCount).HasDefaultValue(0);

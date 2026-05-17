@@ -25,6 +25,15 @@ public class NotificationPreference
     [Column("weekly_report")]
     public bool WeeklyReport { get; set; } = true;
 
+    [Column("sync_error_notify")]
+    public bool SyncErrorNotify { get; set; } = true;
+
+    [Column("subscription_notify")]
+    public bool SubscriptionNotify { get; set; } = true;
+
+    [Column("push_notify")]
+    public bool PushNotify { get; set; } = false;
+
     [Column("updated_at")]
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 

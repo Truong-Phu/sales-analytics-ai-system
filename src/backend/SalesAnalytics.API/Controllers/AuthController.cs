@@ -14,16 +14,65 @@ public class AuthController : ControllerBase
 {
     private readonly AuthService      _authService;
     private readonly IAuditLogService _audit;
+    private readonly IOtpService      _otp;
+    private readonly IEmailService    _email;
 
-    public AuthController(AuthService authService, IAuditLogService audit)
+    public AuthController(AuthService authService, IAuditLogService audit,
+                          IOtpService otp, IEmailService email)
     {
         _authService = authService;
         _audit       = audit;
+        _otp         = otp;
+        _email       = email;
+    }
+
+    // ── POST /api/auth/send-otp ───────────────────────────────────────────────
+    /// <summary>Gửi OTP 6 chữ số qua email trước khi đăng ký</summary>
+    [HttpPost("send-otp")]
+    [AllowAnonymous]
+    public async Task<IActionResult> SendOtp([FromBody] SendOtpRequest req)
+    {
+        if (string.IsNullOrWhiteSpace(req.Email))
+            return BadRequest(new { success = false, message = "Email không hợp lệ." });
+
+        var exists = await _authService.GetUserByEmailAsync(req.Email);
+        if (exists != null)
+            return BadRequest(new { success = false, message = "Email đã được sử dụng." });
+
+        if (!await _otp.CanSendOtpAsync(req.Email, "register"))
+            return BadRequest(new { success = false, message = "Vui lòng chờ 1 phút trước khi gửi lại." });
+
+        var otp  = await _otp.GenerateAndSaveOtpAsync(req.Email, "register");
+        var sent = await _email.SendOtpAsync(req.Email, otp, "register");
+
+        var isDev = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Development";
+        if (isDev) return Ok(new { success = true, message = "Mã OTP đã được gửi.", devOtp = otp });
+        if (!sent) return StatusCode(500, new { success = false, message = "Không thể gửi email. Vui lòng thử lại." });
+        return Ok(new { success = true, message = "Mã OTP đã được gửi đến email của bạn." });
+    }
+
+    // ── POST /api/auth/verify-otp ─────────────────────────────────────────────
+    /// <summary>
+    /// Kiểm tra OTP hợp lệ (peek — KHÔNG consume). Dùng để xác nhận bước 2 trước khi
+    /// người dùng fill form đăng ký. OTP thực sự được consume tại /register endpoint.
+    /// </summary>
+    [HttpPost("verify-otp")]
+    [AllowAnonymous]
+    public async Task<IActionResult> VerifyOtp([FromBody] VerifyOtpRequest req)
+    {
+        if (string.IsNullOrWhiteSpace(req.Email) || string.IsNullOrWhiteSpace(req.Otp))
+            return BadRequest(new { success = false, message = "Dữ liệu không hợp lệ." });
+
+        var valid = await _otp.PeekOtpAsync(req.Email, req.Otp.Trim(), req.Purpose ?? "register");
+        if (!valid)
+            return BadRequest(new { success = false, message = "Mã OTP không đúng hoặc đã hết hạn." });
+
+        return Ok(new { success = true, message = "Xác thực thành công." });
     }
 
     /// <summary>
     /// Đăng ký tài khoản Owner mới – tạo Company + User + Subscription Free.
-    /// Tự động đăng nhập và trả về JWT sau khi tạo thành công.
+    /// Yêu cầu xác thực OTP nếu otpCode được truyền vào.
     /// </summary>
     [HttpPost("register")]
     [AllowAnonymous]
@@ -31,6 +80,14 @@ public class AuthController : ControllerBase
     {
         if (!ModelState.IsValid)
             return BadRequest(new { success = false, message = "Dữ liệu không hợp lệ.", errors = ModelState });
+
+        // Consume OTP (verify + đánh dấu đã dùng) — verify-otp endpoint chỉ peek, register mới consume
+        if (!string.IsNullOrWhiteSpace(req.OtpCode))
+        {
+            var otpValid = await _otp.VerifyOtpAsync(req.Email, req.OtpCode.Trim(), "register");
+            if (!otpValid)
+                return BadRequest(new { success = false, message = "Mã OTP không hợp lệ hoặc đã hết hạn." });
+        }
 
         var ip        = HttpContext.Connection.RemoteIpAddress?.ToString();
         var userAgent = HttpContext.Request.Headers["User-Agent"].ToString();
@@ -46,6 +103,9 @@ public class AuthController : ControllerBase
                 action: "REGISTER", entityType: "User",
                 entityId: response.UserId.ToString(), status: "SUCCESS",
                 ipAddress: ip, userAgent: userAgent);
+
+            // Gửi email chào mừng (fire-and-forget)
+            _ = _email.SendWelcomeAsync(req.Email, req.CompanyName, req.FullName);
 
             return Ok(new { success = true, message, data = response });
         }
@@ -134,7 +194,7 @@ public class AuthController : ControllerBase
         return Ok(new { success = true, data = result });
     }
 
-    /// <summary>Yêu cầu reset mật khẩu — gửi token qua email (hoặc log nếu là dev)</summary>
+    /// <summary>Yêu cầu reset mật khẩu — gửi OTP 6 chữ số qua Resend</summary>
     [HttpPost("forgot-password")]
     [AllowAnonymous]
     public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordRequest req)
@@ -143,21 +203,19 @@ public class AuthController : ControllerBase
             return BadRequest(new { success = false, message = "Email không hợp lệ." });
 
         // Luôn trả về success để tránh email enumeration attack
-        var user = await _authService.InitiatePasswordResetAsync(req.Email);
+        var user = await _authService.GetUserByEmailAsync(req.Email);
 
         if (user != null)
         {
-            // DEV mode: trả về token trong response (không cần SMTP thật)
-            var isDev = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Development";
-            if (isDev)
+            // Kiểm tra rate limit
+            if (await _otp.CanSendOtpAsync(req.Email, "forgot_password"))
             {
-                var token = await _authService.GetResetTokenAsync(req.Email);
-                return Ok(new
-                {
-                    success = true,
-                    message = "Nếu email tồn tại, chúng tôi đã gửi hướng dẫn.",
-                    devToken = token   // Chỉ trả về trong Development!
-                });
+                var otp  = await _otp.GenerateAndSaveOtpAsync(req.Email, "forgot_password");
+                var sent = await _email.SendPasswordResetAsync(req.Email, otp);
+
+                var isDev = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Development";
+                if (isDev)
+                    return Ok(new { success = true, message = "Nếu email tồn tại, chúng tôi đã gửi hướng dẫn.", devOtp = otp });
             }
         }
 

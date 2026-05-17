@@ -40,7 +40,7 @@ public class SmartAlertJob : BackgroundService
         }
     }
 
-    private async Task RunChecksAsync()
+    public async Task RunChecksAsync()
     {
         _logger.LogInformation("SmartAlertJob: bắt đầu kiểm tra – {Time:HH:mm}", DateTime.Now);
         try
@@ -69,6 +69,7 @@ public class SmartAlertJob : BackgroundService
                 db.Notifications.AddRange(notifs);
                 await db.SaveChangesAsync();
                 _logger.LogInformation("SmartAlertJob: tạo {Count} cảnh báo mới", notifs.Count);
+                await SendAlertEmailsAsync(scope, db, notifs);
             }
             else
             {
@@ -249,5 +250,42 @@ public class SmartAlertJob : BackgroundService
             IsRead    = false,
             CreatedAt = now,
         }).ToList();
+    }
+
+    private async Task SendAlertEmailsAsync(IServiceScope scope, AppDbContext db, List<Notification> notifs)
+    {
+        try
+        {
+            var emailService = scope.ServiceProvider.GetRequiredService<IEmailService>();
+            var userIds      = notifs.Select(n => n.UserId).Distinct().ToList();
+
+            var users = await db.Users
+                .Where(u => userIds.Contains(u.Id))
+                .Select(u => new { u.Id, u.Email })
+                .ToListAsync();
+
+            // Users đã tắt EmailNotify hoặc AnomalyAlert → không gửi
+            var disabledIds = (await db.NotificationPreferences
+                .Where(p => userIds.Contains(p.UserId) && (!p.EmailNotify || !p.AnomalyAlert))
+                .Select(p => p.UserId)
+                .ToListAsync()).ToHashSet();
+
+            foreach (var user in users)
+            {
+                if (disabledIds.Contains(user.Id)) continue;
+
+                var userNotifs = notifs.Where(n => n.UserId == user.Id).ToList();
+                var title = userNotifs.Count == 1
+                    ? userNotifs[0].Title
+                    : $"[MSAS] {userNotifs.Count} cảnh báo mới";
+                var body = string.Join("\n\n", userNotifs.Select(n => $"• {n.Title}\n  {n.Body}"));
+
+                await emailService.SendAlertAsync(user.Email, title, body);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "SmartAlertJob: lỗi gửi email cảnh báo");
+        }
     }
 }

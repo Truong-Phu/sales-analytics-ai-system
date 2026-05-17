@@ -216,6 +216,36 @@ public class SubscriptionController : ControllerBase
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // PATCH /api/subscription/auto-renew
+    // Bật / tắt tự động gia hạn gói dịch vụ
+    // ─────────────────────────────────────────────────────────────────────────
+    /// <summary>Bật / tắt tính năng tự động gia hạn</summary>
+    [HttpPatch("auto-renew")]
+    [Authorize(Roles = "Owner")]
+    public async Task<IActionResult> ToggleAutoRenew([FromBody] AutoRenewRequest req)
+    {
+        var companyId = _tenant.CompanyId;
+        if (companyId is null) return Forbid();
+
+        var sub = await _db.Subscriptions
+            .Where(s => s.CompanyId == companyId.Value)
+            .OrderByDescending(s => s.CreatedAt)
+            .FirstOrDefaultAsync();
+
+        if (sub is null)
+            return NotFound(new { success = false, message = "Chưa có gói dịch vụ" });
+
+        sub.AutoRenew = req.AutoRenew;
+        sub.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+
+        _logger.LogInformation("Cập nhật AutoRenew={AutoRenew} cho company {CompanyId}",
+            req.AutoRenew, companyId);
+
+        return Ok(new { success = true, message = req.AutoRenew ? "Đã bật tự động gia hạn" : "Đã tắt tự động gia hạn" });
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // GET /api/subscription/invoices
     // Lịch sử hóa đơn của company
     // ─────────────────────────────────────────────────────────────────────────

@@ -65,6 +65,46 @@ public class AiController(AiProxyService ai, ITenantContext tenant) : Controller
         return Ok(result);
     }
 
+    /// <summary>Tổng hợp phản hồi Facebook (sentiment, top issues/praises, recent comments)</summary>
+    [HttpGet("feedback-summary")]
+    [Authorize(Roles = "Owner,Manager,DataIT,SuperAdmin")]
+    public async Task<IActionResult> FeedbackSummary()
+    {
+        var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
+        var result    = await ai.GetFeedbackSummaryAsync(companyId);
+        if (result is null) return Ok(new { total_comments = 0, positive = 0, negative = 0, neutral = 0,
+            top_issues = Array.Empty<string>(), top_praises = Array.Empty<string>(), recent_comments = Array.Empty<object>() });
+        return Ok(result);
+    }
+
+    /// <summary>AI Insights tổng hợp từ forecast + anomaly + RFM (cache 1h)</summary>
+    [HttpGet("insights")]
+    public async Task<IActionResult> Insights()
+    {
+        var result = await ai.GetInsightsAsync();
+        if (result is null) return StatusCode(503, new { message = "AI Service không khả dụng." });
+        return Ok(result);
+    }
+
+    /// <summary>Trạng thái cache AI</summary>
+    [HttpGet("cache/status")]
+    public async Task<IActionResult> CacheStatus()
+    {
+        var result = await ai.GetCacheStatusAsync();
+        if (result is null) return StatusCode(503, new { message = "AI Service không khả dụng." });
+        return Ok(result);
+    }
+
+    /// <summary>Xóa cache AI sau khi ETL xong (gọi tự động từ DataSyncController)</summary>
+    [HttpPost("cache/invalidate")]
+    [Authorize(Roles = "Owner,DataIT,SuperAdmin")]
+    public async Task<IActionResult> InvalidateCache()
+    {
+        var result = await ai.InvalidateCacheAsync();
+        if (result is null) return StatusCode(503, new { message = "AI Service không khả dụng." });
+        return Ok(result);
+    }
+
     /// <summary>
     /// Hỏi AI bằng câu hỏi tự nhiên – nhận gợi ý dựa trên dữ liệu thực tế.
     /// Pipeline: câu hỏi → QueryEngine → AI (Claude/OpenAI/fallback) → gợi ý.

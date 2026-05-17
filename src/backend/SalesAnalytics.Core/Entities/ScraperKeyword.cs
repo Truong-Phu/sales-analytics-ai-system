@@ -34,6 +34,10 @@ public class ScraperKeyword
     [Column("created_by")]
     public int? CreatedBy { get; set; }
 
+    // Multi-tenant isolation — thêm 2026-05-14
+    [Column("company_id")]
+    public Guid? CompanyId { get; set; }
+
     [ForeignKey(nameof(CreatedBy))]
     public User? Creator { get; set; }
 }
