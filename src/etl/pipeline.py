@@ -9,7 +9,6 @@ Sau khi load thành công → đánh dấu staging là is_processed=TRUE và com
 Nếu có lỗi → rollback, log error, không mất dữ liệu staging.
 """
 import logging
-import time
 from datetime import datetime, timezone
 from typing import Dict, Optional
 

@@ -87,14 +87,24 @@ class TikTokShopConnector(BaseConnector):
         self.logger.info(f"TikTok Shop authenticated: shop_id={self.shop_id}")
 
     def refresh_token(self) -> None:
-        refresh_tok = os.getenv("TIKTOK_REFRESH_TOKEN", "")
+        """Làm mới access_token TikTok, lưu token mới vào DB."""
+        refresh_tok = self._integration.get("refresh_token", "")
+        if not refresh_tok:
+            raise AuthError("TikTok refresh_token chưa có trong DB — cần hoàn thành OAuth2 trước")
         path = "/api/token/refresh"
         params = self._build_params(path, {"refresh_token": refresh_tok})
         resp = self.post(f"{TIKTOK_BASE_URL}{path}", params=params)
         if resp.get("code") != 0:
             raise AuthError(f"TikTok refresh thất bại: {resp.get('message')}")
         self.access_token = resp["data"]["access_token"]
-        self.logger.info("TikTok access_token đã được làm mới")
+        new_refresh = resp["data"].get("refresh_token", refresh_tok)
+        self._repo.update_tokens(
+            integration_id=self._integration["id"],
+            access_token=self.access_token,
+            refresh_token=new_refresh,
+            token_expiry=resp["data"].get("expires_in"),
+        )
+        self.logger.info("TikTok access_token đã được làm mới và lưu vào DB")
 
     def sync_orders(self, lookback_days: int = 7) -> int:
         """Đồng bộ đơn hàng TikTok Shop vào staging."""

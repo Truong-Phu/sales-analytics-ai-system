@@ -13,7 +13,6 @@ Chạy: python generate_sample_data.py
 """
 
 import json
-import math
 import os
 import random
 from datetime import datetime, timedelta, timezone
@@ -1162,5 +1161,158 @@ def main():
     print("═" * 55)
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# 8. MỞ RỘNG DỮ LIỆU 2025-04-02 → 2026-05-16
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _extended_seasonal_weight(dt: datetime) -> float:
+    """Trọng số theo mùa VN mở rộng (2025-04-02 đến 2026-05-16).
+
+    Bao gồm:
+      - Tết Nguyên Đán 2026 (17/01/2026): giảm ngày chính, tăng trước Tết
+      - 8/3/2025: Ngày Quốc tế Phụ nữ (+50%)
+      - 1/6/2025: Ngày Quốc tế Thiếu nhi (+20%)
+      - Flash sale 15/6/2025: anomaly +350% (kiểm thử anomaly detection)
+      - 11/11/2025: Double Eleven (+400%)
+      - Black Friday 28/11/2025: +250%
+      - 12/12/2025: Double Twelve (+300%)
+    """
+    # Ngày đặc biệt dạng dict {date: multiplier}
+    special = {
+        # 8/3/2025: Ngày Quốc tế Phụ nữ
+        datetime(2025, 3, 8).date():   1.50,
+        # Flash sale 15/6/2025: anomaly doanh thu tăng đột biến 350%
+        datetime(2025, 6, 15).date():  4.50,
+        # 1/6/2025: Ngày Quốc tế Thiếu nhi
+        datetime(2025, 6, 1).date():   1.20,
+        # 11/11/2025: Double Eleven (mua sắm lớn nhất năm)
+        datetime(2025, 11, 11).date(): 5.00,
+        # Black Friday 28/11/2025
+        datetime(2025, 11, 28).date(): 3.50,
+        # 12/12/2025: Double Twelve
+        datetime(2025, 12, 12).date(): 4.00,
+        # Tết 2026: 3 ngày cận Tết tăng mạnh (mua quà, áo mới)
+        datetime(2026, 1, 13).date():  2.0,
+        datetime(2026, 1, 14).date():  2.0,
+        datetime(2026, 1, 15).date():  1.8,
+        # Tết 2026 ngày chính: giảm mạnh (đóng cửa, nghỉ lễ)
+        datetime(2026, 1, 16).date():  0.4,
+        datetime(2026, 1, 17).date():  0.4,
+        datetime(2026, 1, 18).date():  0.5,
+    }
+
+    d = dt.date()
+    if d in special:
+        return special[d]
+
+    # Trọng số nền theo tháng (thời trang VN)
+    m = dt.month
+    weights = {
+        4:  0.95, 5:  1.0,  6:  1.1,  7:  0.75, 8:  0.85,
+        9:  0.80, 10: 1.0,  11: 1.4,  12: 1.5,
+        1:  0.70, 2:  0.90, 3:  1.05,
+    }
+    return weights.get(m, 1.0)
+
+
+def _generate_dates_extended(start: datetime, end: datetime, count: int) -> list:
+    """Tạo danh sách ngày phân phối theo seasonal weight mở rộng."""
+    delta_days = (end - start).days
+    day_list   = [start + timedelta(days=d) for d in range(delta_days + 1)]
+    day_weights = [_extended_seasonal_weight(d) for d in day_list]
+
+    total_w    = sum(day_weights)
+    day_weights = [w / total_w for w in day_weights]
+    chosen     = random.choices(day_list, weights=day_weights, k=count)
+
+    result = []
+    for d in chosen:
+        result.append(d.replace(
+            hour=random.randint(7, 22),
+            minute=random.randint(0, 59),
+            second=random.randint(0, 59),
+        ))
+    return sorted(result)
+
+
+def _order_status_extended(channel: str, sku: str, dt: datetime):
+    """Trạng thái đơn hàng mở rộng.
+
+    Đặc biệt: BOOT-NU-001 tháng 8/2025 có tỷ lệ hoàn 28%
+    (mô phỏng đợt lỗi size từ nhà cung cấp — dùng để test anomaly detection).
+    """
+    # Anomaly: tháng 8/2025, BOOT-NU-001 tỷ lệ hoàn tăng lên 28%
+    if sku == "BOOT-NU-001" and dt.year == 2025 and dt.month == 8:
+        if random.random() < 0.28:
+            if channel == "shopee":
+                return "RETURN_REFUND"
+            if channel == "tiktok":
+                return 122  # Delivered (returned)
+            return "returned"
+    return _order_status(channel, dt, sku)
+
+
+def generate_extended_data() -> None:
+    """Tạo thêm dữ liệu từ 2025-04-02 đến 2026-05-16 cho 3 sàn.
+
+    Số lượng đơn ước tính:
+      Shopee : ~350 đơn (~410 ngày, trung bình ~0.85 đơn/ngày)
+      TikTok : ~280 đơn
+      Lazada : ~230 đơn
+
+    Seasonal events đặc biệt được nhúng để kiểm thử:
+      - Anomaly HIGH : flash sale 15/6/2025
+      - Anomaly LOW  : ngày Tết 2026
+      - Return spike : BOOT-NU-001 tháng 8/2025
+    """
+    ext_start = datetime(2025, 4, 2)
+    ext_end   = datetime(2026, 5, 16, 23, 59, 59)
+
+    # ── SHOPEE Extended ───────────────────────────────────────────────────────
+    print("\n[Shopee Extended 2025-04-02 → 2026-05-16]")
+    retention: list = []
+    dates  = _generate_dates_extended(ext_start, ext_end, 350)
+    orders = []
+    for i, dt in enumerate(dates):
+        sku    = _pick_product(SHOPEE_SKUS)
+        cust   = _pick_customer(retention, CUSTOMERS)
+        status = _order_status_extended("shopee", sku, dt)
+        orders.append(_shopee_order(i + 1, dt, cust, sku, status))
+    save_json({"orders": orders},
+              os.path.join(SHOPEE_DIR, "shopee_orders_2025_2026.json"))
+
+    # ── TIKTOK Extended ───────────────────────────────────────────────────────
+    print("\n[TikTok Extended 2025-04-02 → 2026-05-16]")
+    retention = []
+    dates  = _generate_dates_extended(ext_start, ext_end, 280)
+    orders = []
+    for i, dt in enumerate(dates):
+        sku    = _pick_product(TIKTOK_SKUS)
+        cust   = _pick_customer(retention, CUSTOMERS)
+        status = _order_status_extended("tiktok", sku, dt)
+        orders.append(_tiktok_order(i + 1, dt, cust, sku, status))
+    save_json({"orders": orders},
+              os.path.join(TIKTOK_DIR, "tiktok_orders_2025_2026.json"))
+
+    # ── LAZADA Extended ───────────────────────────────────────────────────────
+    print("\n[Lazada Extended 2025-04-02 → 2026-05-16]")
+    retention = []
+    dates  = _generate_dates_extended(ext_start, ext_end, 230)
+    orders = []
+    for i, dt in enumerate(dates):
+        sku    = _pick_product(LAZADA_SKUS)
+        cust   = _pick_customer(retention, CUSTOMERS)
+        status = _order_status_extended("lazada", sku, dt)
+        orders.append(_lazada_order(i + 1, dt, cust, sku, status))
+    save_json({"orders": orders},
+              os.path.join(LAZADA_DIR, "lazada_orders_2025_2026.json"))
+
+    print("\n[Extended] Xong! Bước tiếp theo:")
+    print("  python src/etl/import_sample_shopee.py --file docs/sample-data/shopee/shopee_orders_2025_2026.json")
+    print("  python src/etl/import_sample_tiktok.py --file docs/sample-data/tiktok/tiktok_orders_2025_2026.json")
+    print("  python src/etl/import_sample_lazada.py --file docs/sample-data/lazada/lazada_orders_2025_2026.json")
+
+
 if __name__ == "__main__":
     main()
+    generate_extended_data()

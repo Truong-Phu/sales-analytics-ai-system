@@ -101,10 +101,10 @@ class LazadaConnector(BaseConnector):
         self.logger.info("Lazada authenticated")
 
     def refresh_token(self) -> None:
-        """Làm mới access_token Lazada."""
-        refresh_tok = os.getenv("LAZADA_REFRESH_TOKEN", "")
+        """Làm mới access_token Lazada, lưu token mới vào DB."""
+        refresh_tok = self._integration.get("refresh_token", "")
         if not refresh_tok:
-            raise AuthError("LAZADA_REFRESH_TOKEN chưa được cấu hình")
+            raise AuthError("Lazada refresh_token chưa có trong DB — cần hoàn thành OAuth2 trước")
 
         api_path = "/auth/token/refresh"
         params   = self._build_params(api_path, {"refresh_token": refresh_tok})
@@ -114,7 +114,14 @@ class LazadaConnector(BaseConnector):
             raise AuthError(f"Lazada refresh token thất bại: {resp.get('message')}")
 
         self.access_token = resp["access_token"]
-        self.logger.info("Lazada access_token đã được làm mới")
+        new_refresh = resp.get("refresh_token", refresh_tok)
+        self._repo.update_tokens(
+            integration_id=self._integration["id"],
+            access_token=self.access_token,
+            refresh_token=new_refresh,
+            token_expiry=resp.get("expires_in"),
+        )
+        self.logger.info("Lazada access_token đã được làm mới và lưu vào DB")
 
     # ── Sync orders ──────────────────────────────────────────────────────────
 

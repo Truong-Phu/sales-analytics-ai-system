@@ -12,13 +12,20 @@ PROMPTS.md
 # Python
 __pycache__/
 *.pyc
+*.pyo
 *.pkl
 *.env
 src/ai-service/models/*.pkl
 src/ai-service/models/*.json
+.pytest_cache/
+coverage/
+*.coverage
 
 # Node
 node_modules/
+dist/
+build/
+.vite/
 
 venv/
 .venv/
@@ -28,12 +35,25 @@ src/.venv/
 .vs/
 *.csproj.user
 *.suo
+*.user
+
+# IDE
+.vscode/settings.json
+.idea/
 
 # Word temp files
 ~WRL*.tmp
 
+# OS
+.DS_Store
+Thumbs.db
+
 # Scripts (local only)
 scripts/
+
+# Logs
+*.log
+logs/
 
 # Environment secrets (không push lên GitHub)
 # Root
@@ -48,6 +68,8 @@ src/frontend/.env
 src/frontend/.env.local
 src/frontend/.env.*.local
 src/mobile/.env
+src/mobile/.env.local
+src/mobile/.env.*.local
 
 # Credentials (service account JSON, OAuth keys...)
 credentials/
@@ -63,3 +85,6 @@ src/backend/SalesAnalytics.API/appsettings.Development.json
 
 # Docker volumes & data
 docker/data/
+
+# Notebooks output
+notebooks/output/
