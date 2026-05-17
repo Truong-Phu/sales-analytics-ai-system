@@ -266,10 +266,14 @@
       "multichannel": "Đa kênh",
       "customer": "Khách hàng",
       "marketing": "Marketing & ROI",
-      "inventory": "Tồn kho & Vận hành"
+      "inventory": "Tồn kho & Vận hành",
+      "website":   "Website (GA4)"
     },
     "preset": {
       "year2025": "2025",
+      "today": "Hôm nay",
+      "week":  "7 ngày",
+      "month": "30 ngày",
       "30d": "30 ngày",
       "90d": "90 ngày",
       "custom": "Tùy chọn"
@@ -290,7 +294,17 @@
       "roas": "ROAS theo kênh",
       "cac": "CAC vs ROAS theo kênh",
       "inventory": "Tồn kho hiện tại vs Dự báo nhu cầu",
-      "returnRate": "Tỷ lệ hoàn trả theo sản phẩm (%)"
+      "returnRate": "Tỷ lệ hoàn trả theo sản phẩm (%)",
+      "websiteTraffic": "Lượt truy cập website theo ngày",
+      "topSources": "Nguồn traffic",
+      "topPages": "Trang phổ biến nhất",
+      "deviceShare": "Thiết bị truy cập",
+      "fbAdsTrend": "Chi phí & doanh thu Facebook Ads",
+      "fbCampaigns": "Hiệu suất chiến dịch",
+      "totalSessions": "Tổng phiên",
+      "totalUsers": "Người dùng",
+      "bounceRate": "Tỷ lệ thoát",
+      "avgDuration": "Thời gian TB"
     },
     "series": {
       "revenue": "Doanh thu",

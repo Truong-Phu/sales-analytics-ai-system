@@ -266,10 +266,14 @@
       "multichannel": "Multi-channel",
       "customer": "Customers",
       "marketing": "Marketing & ROI",
-      "inventory": "Inventory & Ops"
+      "inventory": "Inventory & Ops",
+      "website":   "Website (GA4)"
     },
     "preset": {
       "year2025": "2025",
+      "today": "Today",
+      "week":  "7 days",
+      "month": "30 days",
       "30d": "30 days",
       "90d": "90 days",
       "custom": "Custom"
@@ -290,7 +294,17 @@
       "roas": "ROAS by Channel",
       "cac": "CAC vs ROAS by Channel",
       "inventory": "Current Stock vs Demand Forecast",
-      "returnRate": "Return Rate by Product (%)"
+      "returnRate": "Return Rate by Product (%)",
+      "websiteTraffic": "Website Traffic by Day",
+      "topSources": "Traffic Sources",
+      "topPages": "Top Pages",
+      "deviceShare": "Device Breakdown",
+      "fbAdsTrend": "Facebook Ads Spend & Revenue",
+      "fbCampaigns": "Campaign Performance",
+      "totalSessions": "Total Sessions",
+      "totalUsers": "Users",
+      "bounceRate": "Bounce Rate",
+      "avgDuration": "Avg. Duration"
     },
     "series": {
       "revenue": "Revenue",

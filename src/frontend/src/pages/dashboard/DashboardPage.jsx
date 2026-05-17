@@ -9,7 +9,8 @@ import {
 } from 'recharts'
 import { SkeletonCard } from '../../components/ui/Skeleton'
 import MockToast from '../../components/ui/MockToast'
-import { getDashboard, getTodayVsYesterday, getDrillDownOrders, getDrillDownCustomers } from '../../api/dashboardApi'
+import { getDashboard, getTodayVsYesterday, getDrillDownOrders, getDrillDownCustomers,
+         getWebsiteAnalytics, getFbAds } from '../../api/dashboardApi'
 import { getInsights } from '../../api/aiApi'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -1361,7 +1362,7 @@ function HeatmapGrid({ data }) {
 }
 
 // ── Tab: 5 — Marketing & ROI ──────────────────────────────────────────────────
-function TabMarketing({ data }) {
+function TabMarketing({ data, fbAdsData }) {
   const { t } = useTranslation()
   // Toggle ẩn/hiện bảng hiệu quả Marketing — mặc định ẩn
   const [showMarketingTable, setShowMarketingTable] = useState(false)
@@ -1524,6 +1525,225 @@ function TabMarketing({ data }) {
                 </div>
               )
             })}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Facebook Ads section ── */}
+      {fbAdsData && (() => {
+        const { summary: fb = {}, daily: fbDaily = [], byCampaign = [], byAdType = [] } = fbAdsData
+        const fbKpis = [
+          { label: 'Tổng chi phí',       value: fmtM(fb.totalSpend   ?? 0), icon: 'paid',          color: '#EC4899' },
+          { label: 'Tổng lượt nhấp',     value: (fb.totalClicks ?? 0).toLocaleString(), icon: 'ads_click', color: '#6366F1' },
+          { label: 'ROAS',               value: `${fb.roas ?? 0}x`,         icon: 'trending_up',   color: '#10B981' },
+          { label: 'CPA',                value: fmtM(fb.cpa ?? 0),          icon: 'person_add',    color: '#F59E0B' },
+        ]
+        return (
+          <>
+            <div className="flex items-center gap-2 mt-2 px-4 py-2.5 rounded-xl text-sm font-medium"
+              style={{ background: 'rgba(99,102,241,0.08)', color: 'var(--primary-700)', border: '1px solid rgba(99,102,241,0.2)' }}>
+              <span className="icon text-base">facebook</span>
+              Facebook Ads Performance
+              {fbAdsData.isMock && <span className="ml-2 text-xs opacity-70">(dữ liệu mẫu)</span>}
+            </div>
+
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              {fbKpis.map((k, i) => (
+                <div key={i} className="lcard p-4 flex items-start gap-3">
+                  <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
+                    style={{ background: `${k.color}20` }}>
+                    <span className="icon text-base" style={{ color: k.color }}>{k.icon}</span>
+                  </div>
+                  <div>
+                    <p className="text-caption" style={{ color: 'var(--text-tertiary)' }}>{k.label}</p>
+                    <p className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>{k.value}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-12 gap-4">
+              {/* Daily spend vs revenue */}
+              <div className="lcard p-5 col-span-12 lg:col-span-7">
+                <SectionTitle>{t('dashboard.chart.fbAdsTrend')}</SectionTitle>
+                <ResponsiveContainer width="100%" height={250}>
+                  <ComposedChart data={fbDaily} margin={{ top: 5, right: 16, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                    <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'var(--text-tertiary)' }} axisLine={false} tickLine={false}
+                      tickFormatter={v => v.slice(5)} />
+                    <YAxis yAxisId="left"  tick={{ fontSize: 10, fill: 'var(--text-tertiary)' }} axisLine={false} tickLine={false} width={44}
+                      tickFormatter={v => `${(v/1_000_000).toFixed(0)}M`} />
+                    <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10, fill: 'var(--text-tertiary)' }} axisLine={false} tickLine={false} width={36}
+                      tickFormatter={v => `${v}x`} />
+                    <Tooltip formatter={(v, name) => name === 'ROAS' ? `${v}x` : fmtM(v)} />
+                    <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
+                    <Bar  yAxisId="left"  dataKey="spend"   name="Chi phí"   fill="#EC4899" radius={[3,3,0,0]} />
+                    <Bar  yAxisId="left"  dataKey="revenue" name="Doanh thu" fill="#6366F1" radius={[3,3,0,0]} />
+                    <Line yAxisId="right" type="monotone" dataKey="roas" name="ROAS" stroke="#F59E0B" strokeWidth={2} dot={false} />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </div>
+
+              {/* Campaign ROAS */}
+              <div className="lcard p-5 col-span-12 lg:col-span-5">
+                <SectionTitle>{t('dashboard.chart.fbCampaigns')}</SectionTitle>
+                <div className="space-y-3 mt-3">
+                  {byCampaign.map((c, i) => (
+                    <div key={i}>
+                      <div className="flex justify-between text-caption mb-1" style={{ color: 'var(--text-secondary)' }}>
+                        <span className="truncate max-w-[160px]">{c.campaign}</span>
+                        <span className="font-mono font-bold"
+                          style={{ color: c.roas >= 4 ? 'var(--accent-500)' : c.roas >= 2 ? '#F59E0B' : 'var(--color-error)' }}>
+                          {c.roas}x
+                        </span>
+                      </div>
+                      <div className="h-2 rounded-full" style={{ background: 'var(--bg-elevated)' }}>
+                        <div className="h-full rounded-full" style={{ width: `${Math.min(c.roas / 8 * 100, 100)}%`, background: CHART_COLORS[i % CHART_COLORS.length] }} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </>
+        )
+      })()}
+    </div>
+  )
+}
+
+// ── Tab: Website Analytics (GA4) ─────────────────────────────────────────────
+function TabWebsite({ from, to, webData }) {
+  const { t } = useTranslation()
+
+  if (!webData) return (
+    <div className="flex flex-col items-center justify-center h-48 gap-3" style={{ color: 'var(--text-tertiary)' }}>
+      <span className="icon text-4xl">language</span>
+      <span>Đang tải dữ liệu website...</span>
+    </div>
+  )
+
+  const { summary = {}, daily = [], topSources = [], topPages = [], deviceShare = [] } = webData
+
+  const fmtDur = (sec) => {
+    const m = Math.floor((sec ?? 0) / 60)
+    const s = (sec ?? 0) % 60
+    return `${m}:${s.toString().padStart(2, '0')}`
+  }
+
+  const kpis = [
+    { label: t('dashboard.chart.totalSessions'), value: (summary.totalSessions ?? 0).toLocaleString(), icon: 'people_outline', color: '#6366F1' },
+    { label: t('dashboard.chart.totalUsers'),    value: (summary.totalUsers    ?? 0).toLocaleString(), icon: 'person',         color: '#10B981' },
+    { label: t('dashboard.chart.bounceRate'),    value: `${summary.avgBounceRate ?? 0}%`,              icon: 'trending_down',  color: '#F59E0B' },
+    { label: t('dashboard.chart.avgDuration'),   value: fmtDur(summary.avgDurationSec),                icon: 'timer',          color: '#EC4899' },
+  ]
+
+  const deviceColors = ['#6366F1', '#10B981', '#F59E0B']
+
+  return (
+    <div className="space-y-5">
+      {webData.isMock && (
+        <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium"
+          style={{ background: 'rgba(245,158,11,0.1)', color: '#B45309', border: '1px solid rgba(245,158,11,0.3)' }}>
+          <span className="icon text-base">info</span>
+          Đang hiển thị dữ liệu mẫu. Cấu hình GA4 Service Account để xem số liệu thực.
+        </div>
+      )}
+
+      {/* KPI cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {kpis.map((k, i) => (
+          <div key={i} className="lcard p-4 flex items-start gap-3">
+            <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
+              style={{ background: `${k.color}20` }}>
+              <span className="icon text-base" style={{ color: k.color }}>{k.icon}</span>
+            </div>
+            <div>
+              <p className="text-caption" style={{ color: 'var(--text-tertiary)' }}>{k.label}</p>
+              <p className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>{k.value}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Daily sessions + users area chart */}
+      <div className="lcard p-5">
+        <SectionTitle>{t('dashboard.chart.websiteTraffic')}</SectionTitle>
+        <ResponsiveContainer width="100%" height={240}>
+          <AreaChart data={daily} margin={{ top: 5, right: 16, left: 0, bottom: 0 }}>
+            <defs>
+              <linearGradient id="gradSessions" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%"  stopColor="#6366F1" stopOpacity={0.25} />
+                <stop offset="95%" stopColor="#6366F1" stopOpacity={0} />
+              </linearGradient>
+              <linearGradient id="gradUsers" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%"  stopColor="#10B981" stopOpacity={0.2} />
+                <stop offset="95%" stopColor="#10B981" stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+            <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'var(--text-tertiary)' }} axisLine={false} tickLine={false}
+              tickFormatter={v => v.slice(5)} />
+            <YAxis tick={{ fontSize: 10, fill: 'var(--text-tertiary)' }} axisLine={false} tickLine={false} width={44} />
+            <Tooltip />
+            <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
+            <Area type="monotone" dataKey="sessions" name="Sessions" stroke="#6366F1" fill="url(#gradSessions)" strokeWidth={2} dot={false} />
+            <Area type="monotone" dataKey="users"    name="Users"    stroke="#10B981" fill="url(#gradUsers)"    strokeWidth={2} dot={false} />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+
+      <div className="grid grid-cols-12 gap-4">
+        {/* Top traffic sources */}
+        <div className="lcard p-5 col-span-12 lg:col-span-5">
+          <SectionTitle>{t('dashboard.chart.topSources')}</SectionTitle>
+          <div className="space-y-3 mt-3">
+            {topSources.map((src, i) => {
+              const total = topSources.reduce((s, x) => s + x.sessions, 0)
+              const pct   = total > 0 ? ((src.sessions / total) * 100).toFixed(1) : '0.0'
+              return (
+                <div key={i}>
+                  <div className="flex justify-between text-caption mb-1" style={{ color: 'var(--text-secondary)' }}>
+                    <span className="truncate max-w-[180px]">{src.source}</span>
+                    <span className="font-mono">{src.sessions.toLocaleString()} <span style={{ color: 'var(--text-tertiary)' }}>({pct}%)</span></span>
+                  </div>
+                  <div className="h-2 rounded-full" style={{ background: 'var(--bg-elevated)' }}>
+                    <div className="h-full rounded-full" style={{ width: `${pct}%`, background: CHART_COLORS[i % CHART_COLORS.length] }} />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+
+        {/* Device share */}
+        <div className="lcard p-5 col-span-12 lg:col-span-3">
+          <SectionTitle>{t('dashboard.chart.deviceShare')}</SectionTitle>
+          <ResponsiveContainer width="100%" height={190}>
+            <PieChart>
+              <Pie data={deviceShare} dataKey="pct" nameKey="device"
+                cx="50%" cy="50%" outerRadius={65} innerRadius={35} paddingAngle={3}>
+                {deviceShare.map((_, i) => <Cell key={i} fill={deviceColors[i % deviceColors.length]} />)}
+              </Pie>
+              <Tooltip formatter={v => `${v}%`} />
+              <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* Top pages */}
+        <div className="lcard p-5 col-span-12 lg:col-span-4">
+          <SectionTitle>{t('dashboard.chart.topPages')}</SectionTitle>
+          <div className="mt-3">
+            {topPages.map((pg, i) => (
+              <div key={i} className="flex items-center justify-between py-2 text-caption"
+                style={{ borderBottom: '1px solid var(--border)', color: 'var(--text-secondary)' }}>
+                <span className="font-mono truncate max-w-[140px]">{pg.page}</span>
+                <span className="font-semibold tabular-nums" style={{ color: 'var(--text-primary)' }}>
+                  {(pg.views ?? 0).toLocaleString()}
+                </span>
+              </div>
+            ))}
           </div>
         </div>
       </div>
@@ -1760,7 +1980,7 @@ function TabInventory({ data }) {
 export default function DashboardPage() {
   const { t }      = useTranslation()
   const [activeTab,   setActiveTab]   = useState('overview')
-  const [presetKey,   setPresetKey]   = useState('year2025')
+  const [presetKey,   setPresetKey]   = useState('month')
   const [customFrom,  setCustomFrom]  = useState('2025-01-01')
   const [customTo,    setCustomTo]    = useState('2025-12-31')
   const [channel,     setChannel]     = useState('all')
@@ -1770,13 +1990,16 @@ export default function DashboardPage() {
   const [tvy,         setTvy]         = useState(null)
   const [compareMode, setCompareMode] = useState(false)
   const [prevData,    setPrevData]    = useState(null)
+  const [webData,     setWebData]     = useState(null)
+  const [fbAdsData,   setFbAdsData]   = useState(null)
 
   // Định nghĩa bên trong component để t() được gọi đúng context
   const QUICK_PRESETS = [
-    { key: 'year2025', label: t('dashboard.preset.year2025'), from: '2025-01-01',    to: '2025-12-31' },
-    { key: '30d',      label: t('dashboard.preset.30d'),      from: () => relDate(-30), to: () => relDate(0) },
-    { key: '90d',      label: t('dashboard.preset.90d'),      from: () => relDate(-90), to: () => relDate(0) },
-    { key: 'custom',   label: t('dashboard.preset.custom'),   from: null,            to: null },
+    { key: 'today',  label: t('dashboard.preset.today'),  from: () => relDate(0),   to: () => relDate(0)  },
+    { key: 'week',   label: t('dashboard.preset.week'),   from: () => relDate(-6),  to: () => relDate(0)  },
+    { key: 'month',  label: t('dashboard.preset.month'),  from: () => relDate(-29), to: () => relDate(0)  },
+    { key: '90d',    label: t('dashboard.preset.90d'),    from: () => relDate(-90), to: () => relDate(0)  },
+    { key: 'custom', label: t('dashboard.preset.custom'), from: null,               to: null              },
   ]
 
   const TABS = [
@@ -1786,6 +2009,7 @@ export default function DashboardPage() {
     { key: 'customer',     label: t('dashboard.tab.customer'),     icon: 'people'      },
     { key: 'marketing',    label: t('dashboard.tab.marketing'),    icon: 'campaign'    },
     { key: 'inventory',    label: t('dashboard.tab.inventory'),    icon: 'inventory_2' },
+    { key: 'website',      label: t('dashboard.tab.website'),      icon: 'language'    },
   ]
 
   function getRange() {
@@ -1868,6 +2092,14 @@ export default function DashboardPage() {
         revenuePct: 22.5, ordersPct: 13.2,
       }))
   }, [])
+
+  // Fetch GA4 + FB Ads khi date range thay đổi
+  useEffect(() => {
+    const { from, to } = getRange()
+    getWebsiteAnalytics(from, to).then(setWebData).catch(() => setWebData(null))
+    getFbAds(from, to).then(setFbAdsData).catch(() => setFbAdsData(null))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [presetKey, customFrom, customTo])
 
   return (
     <div className="space-y-4">
@@ -2021,8 +2253,9 @@ export default function DashboardPage() {
           {activeTab === 'sales'        && <TabSales        data={data} compareMode={compareMode} prevData={prevData} from={getRange().from} to={getRange().to} />}
           {activeTab === 'multichannel' && <TabMultiChannel data={data} />}
           {activeTab === 'customer'     && <TabCustomer     data={data} />}
-          {activeTab === 'marketing'    && <TabMarketing    data={data} />}
+          {activeTab === 'marketing'    && <TabMarketing    data={data} fbAdsData={fbAdsData} />}
           {activeTab === 'inventory'    && <TabInventory    data={data} />}
+          {activeTab === 'website'      && <TabWebsite      from={getRange().from} to={getRange().to} webData={webData} />}
         </div>
       )}
     </div>
