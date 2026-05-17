@@ -42,6 +42,8 @@ from routers.campaign    import router as campaign_router
 from routers.geo         import router as geo_router
 from routers.leaderboard import router as leaderboard_router
 from routers.narrative   import router as narrative_router
+from routers.supplier    import router as supplier_router
+from routers.price       import router as price_router
 from scheduler import scheduler as _scheduler, retrain_prophet, get_retrain_status
 
 # Chỉ định rõ đường dẫn .env (repo root), tránh find_dotenv() fail khi chạy từ subdirectory
@@ -93,6 +95,8 @@ app.include_router(campaign_router)
 app.include_router(geo_router)
 app.include_router(leaderboard_router)
 app.include_router(narrative_router)
+app.include_router(supplier_router)
+app.include_router(price_router)
 
 
 @app.on_event("startup")

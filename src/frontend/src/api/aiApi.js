@@ -179,3 +179,15 @@ export const getLeaderboard = (params = {}) =>
 /** Sinh nhận xét tự động bằng ngôn ngữ tự nhiên */
 export const getNarrative = (params = {}) =>
   api.get('/api/ai/narrative', { params }).then(r => r.data)
+
+/** Hiệu suất nhà cung cấp – tỷ lệ đúng hạn, thời gian giao hàng */
+export const getSupplierPerformance = (params = {}) =>
+  api.get('/api/ai/supplier', { params }).then(r => r.data)
+
+/** Thông minh giá – so sánh giá sản phẩm với thị trường */
+export const getPriceIntelligence = (params = {}) =>
+  api.get('/api/ai/price', { params }).then(r => r.data)
+
+/** Tổng hợp phản hồi cảm xúc từ mạng xã hội */
+export const getFeedbackSummary = (params = {}) =>
+  api.get('/api/ai/feedback-summary', { params }).then(r => r.data)

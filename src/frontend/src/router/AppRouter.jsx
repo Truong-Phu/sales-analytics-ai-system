@@ -49,6 +49,11 @@ const AttributionPage = lazy(() => import('../pages/attribution/AttributionPage'
 const CampaignPage    = lazy(() => import('../pages/campaign/CampaignPage'))
 const LeaderboardPage = lazy(() => import('../pages/leaderboard/LeaderboardPage'))
 const NarrativePage   = lazy(() => import('../pages/narrative/NarrativePage'))
+const GeoPage         = lazy(() => import('../pages/geo/GeoPage'))
+const SupplierPage    = lazy(() => import('../pages/supplier/SupplierPage'))
+const PricePage       = lazy(() => import('../pages/price/PricePage'))
+const SentimentPage   = lazy(() => import('../pages/sentiment/SentimentPage'))
+const NlqPage         = lazy(() => import('../pages/nlq/NlqPage'))
 
 // Roles constants
 const ALL_ROLES     = ['Owner', 'Manager', 'Staff', 'DataIT']
@@ -215,6 +220,31 @@ export default function AppRouter() {
         <Route path="/narrative" element={
           <ProtectedRoute roles={ANALYST_ROLES}>
             <Shell><NarrativePage /></Shell>
+          </ProtectedRoute>
+        } />
+        <Route path="/geo" element={
+          <ProtectedRoute roles={ANALYST_ROLES}>
+            <Shell><GeoPage /></Shell>
+          </ProtectedRoute>
+        } />
+        <Route path="/supplier" element={
+          <ProtectedRoute roles={ANALYST_ROLES}>
+            <Shell><SupplierPage /></Shell>
+          </ProtectedRoute>
+        } />
+        <Route path="/price" element={
+          <ProtectedRoute roles={ANALYST_ROLES}>
+            <Shell><PricePage /></Shell>
+          </ProtectedRoute>
+        } />
+        <Route path="/sentiment" element={
+          <ProtectedRoute roles={ANALYST_ROLES}>
+            <Shell><SentimentPage /></Shell>
+          </ProtectedRoute>
+        } />
+        <Route path="/nlq" element={
+          <ProtectedRoute roles={ANALYST_ROLES}>
+            <Shell><NlqPage /></Shell>
           </ProtectedRoute>
         } />
 

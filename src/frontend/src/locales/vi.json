@@ -226,7 +226,17 @@
     "leaderboard": "Bảng Xếp hạng",
     "leaderboardDesc": "Hiệu suất bán hàng",
     "narrative": "Nhận xét Thông minh",
-    "narrativeDesc": "Tự động sinh báo cáo ngôn ngữ tự nhiên"
+    "narrativeDesc": "Tự động sinh báo cáo ngôn ngữ tự nhiên",
+    "geo": "Bản đồ Nhiệt",
+    "geoDesc": "Phân bổ khách hàng theo tỉnh/thành",
+    "supplier": "Hiệu suất NCC",
+    "supplierDesc": "Đánh giá nhà cung cấp & thời gian giao hàng",
+    "price": "Thông minh Giá",
+    "priceDesc": "Theo dõi giá đối thủ cạnh tranh",
+    "sentiment": "Cảm xúc Đánh giá",
+    "sentimentDesc": "Phân tích phản hồi khách hàng",
+    "nlq": "Hỏi AI",
+    "nlqDesc": "Truy vấn dữ liệu bằng ngôn ngữ tự nhiên"
   },
   "dashboard": {
     "title": "Tổng quan kinh doanh",

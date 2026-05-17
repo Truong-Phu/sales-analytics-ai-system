@@ -145,7 +145,6 @@ public class AiController(AiProxyService ai, ITenantContext tenant) : Controller
 
         return Ok(result);
     }
-}
 
     // ── Chức năng sáng tạo mới ────────────────────────────────────────────────
 
@@ -266,6 +265,33 @@ public class AiController(AiProxyService ai, ITenantContext tenant) : Controller
     {
         var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
         var qs = $"narrative?days={days}&language={language}"
+            + (companyId.HasValue ? $"&company_id={companyId}" : "");
+        var result = await ai.ProxyGetAsync(qs);
+        if (result is null) return StatusCode(503, new { message = "AI Service không khả dụng." });
+        return Ok(result);
+    }
+
+    /// <summary>Hiệu suất nhà cung cấp – tỷ lệ đúng hạn, thời gian giao hàng</summary>
+    [HttpGet("supplier")]
+    public async Task<IActionResult> SupplierPerformance([FromQuery] int days = 90)
+    {
+        var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
+        var qs = $"supplier?days={days}"
+            + (companyId.HasValue ? $"&company_id={companyId}" : "");
+        var result = await ai.ProxyGetAsync(qs);
+        if (result is null) return StatusCode(503, new { message = "AI Service không khả dụng." });
+        return Ok(result);
+    }
+
+    /// <summary>Thông minh giá – so sánh giá sản phẩm với thị trường</summary>
+    [HttpGet("price")]
+    public async Task<IActionResult> PriceIntelligence(
+        [FromQuery] string? category = null,
+        [FromQuery] int days = 30)
+    {
+        var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
+        var qs = $"price?days={days}"
+            + (category is not null ? $"&category={category}" : "")
             + (companyId.HasValue ? $"&company_id={companyId}" : "");
         var result = await ai.ProxyGetAsync(qs);
         if (result is null) return StatusCode(503, new { message = "AI Service không khả dụng." });

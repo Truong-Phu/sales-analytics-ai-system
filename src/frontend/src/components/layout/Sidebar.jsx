@@ -31,6 +31,11 @@ const NAV_ITEMS = [
   { to: '/campaign',        icon: 'campaign',         labelKey: 'nav.campaign',        roles: ['Owner','Manager','DataIT'] },
   { to: '/leaderboard',     icon: 'leaderboard',      labelKey: 'nav.leaderboard',     roles: ['Owner','Manager','Staff','DataIT'] },
   { to: '/narrative',       icon: 'auto_awesome',     labelKey: 'nav.narrative',       roles: ['Owner','Manager','DataIT'] },
+  { to: '/geo',             icon: 'map',              labelKey: 'nav.geo',             roles: ['Owner','Manager','DataIT'] },
+  { to: '/supplier',        icon: 'local_shipping',   labelKey: 'nav.supplier',        roles: ['Owner','Manager','DataIT'] },
+  { to: '/price',           icon: 'price_check',      labelKey: 'nav.price',           roles: ['Owner','Manager','DataIT'] },
+  { to: '/sentiment',       icon: 'sentiment_satisfied', labelKey: 'nav.sentiment',    roles: ['Owner','Manager','DataIT'] },
+  { to: '/nlq',             icon: 'chat',             labelKey: 'nav.nlq',             roles: ['Owner','Manager','DataIT'] },
   // Reports
   { divider: 'nav.sectionReports' },
   { to: '/report',          icon: 'picture_as_pdf',   labelKey: 'nav.report',          roles: ['Owner','Manager','DataIT'] },

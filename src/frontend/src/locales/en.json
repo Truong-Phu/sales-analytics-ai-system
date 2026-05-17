@@ -226,7 +226,17 @@
     "leaderboard": "Leaderboard",
     "leaderboardDesc": "Performance rankings",
     "narrative": "Smart Narrative",
-    "narrativeDesc": "Auto-generated insights"
+    "narrativeDesc": "Auto-generated insights",
+    "geo": "Geo Heatmap",
+    "geoDesc": "Customer distribution by province",
+    "supplier": "Supplier Performance",
+    "supplierDesc": "Supplier reliability & lead time",
+    "price": "Price Intelligence",
+    "priceDesc": "Competitor price monitoring",
+    "sentiment": "Review Sentiment",
+    "sentimentDesc": "Customer feedback analysis",
+    "nlq": "Ask AI",
+    "nlqDesc": "Natural language data queries"
   },
   "dashboard": {
     "title": "Business Overview",
