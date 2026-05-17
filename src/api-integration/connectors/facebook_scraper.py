@@ -703,6 +703,64 @@ class FacebookScraper:
 
         return inserted, skipped
 
+    # ── Sync-delete: xóa posts đã bị xóa trên Facebook ──────────────────────
+
+    def sync_delete_removed_posts(self, fetched_post_ids: list[str], page_name: str) -> int:
+        """
+        Sau khi fetch API, so sánh post_ids trả về với DB.
+        Xóa mọi record trong raw_facebook_data (và facebook_feedback) có
+        post_id không còn xuất hiện trên Facebook.
+
+        Chỉ gọi ở online mode để tránh xóa nhầm khi chạy offline/demo.
+        """
+        if not self.db_url or not page_name:
+            return 0
+        if not fetched_post_ids:
+            logger.warning("sync_delete: fetched_post_ids rỗng — bỏ qua để tránh xóa toàn bộ")
+            return 0
+        try:
+            conn = psycopg2.connect(self.db_url)
+            cur  = conn.cursor()
+
+            # Xóa comments trong facebook_feedback của posts đã bị xóa
+            cur.execute(
+                """
+                DELETE FROM public.facebook_feedback
+                WHERE post_id IN (
+                    SELECT post_id FROM public.raw_facebook_data
+                    WHERE page_name = %s
+                      AND post_id != ALL(%s::text[])
+                )
+                """,
+                (page_name, fetched_post_ids),
+            )
+            comments_deleted = cur.rowcount
+
+            # Xóa posts không còn trên Facebook
+            cur.execute(
+                """
+                DELETE FROM public.raw_facebook_data
+                WHERE page_name = %s
+                  AND post_id != ALL(%s::text[])
+                """,
+                (page_name, fetched_post_ids),
+            )
+            posts_deleted = cur.rowcount
+
+            conn.commit()
+            cur.close()
+            conn.close()
+
+            if posts_deleted or comments_deleted:
+                logger.info(
+                    "sync_delete page='%s': xóa %d posts + %d comments đã bị xóa trên FB",
+                    page_name, posts_deleted, comments_deleted,
+                )
+            return posts_deleted
+        except Exception as e:
+            logger.error("sync_delete lỗi: %s", e, exc_info=True)
+            return 0
+
     # ── Entry points ──────────────────────────────────────────────────────────
 
     def run(self) -> dict:
@@ -747,6 +805,12 @@ class FacebookScraper:
 
         csv_path = self.export_csv(records)
         inserted, skipped = self.save_to_db(records)
+
+        # Sync-delete: xóa posts đã bị xóa trên Facebook khỏi DB
+        if self.mode != "offline" and records:
+            _page_name = records[0].get("page_name", "")
+            _post_ids  = [r["post_id"] for r in records if r.get("post_id")]
+            self.sync_delete_removed_posts(_post_ids, _page_name)
 
         # Lấy comments chi tiết và lưu vào facebook_feedback
         all_comments: list[dict] = []

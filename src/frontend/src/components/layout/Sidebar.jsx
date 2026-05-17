@@ -1,58 +1,79 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import { useTranslation } from 'react-i18next'
 
-// Cấu trúc nav items – label là i18n key (nav.xxx)
+// ── Nav items — subgroup có thể thu gọn, divider là tiêu đề section ──────────
 const NAV_ITEMS = [
   // ── Phân tích cốt lõi ────────────────────────────────────────────────────
   { divider: 'nav.sectionAnalytics' },
-  { to: '/dashboard',       icon: 'dashboard',           labelKey: 'nav.dashboard',       roles: ['Owner','Manager','DataIT','Staff','Viewer'] },
-  { to: '/forecast',        icon: 'trending_up',         labelKey: 'nav.forecast',        roles: ['Owner','Manager','DataIT'] },
-  { to: '/anomaly',         icon: 'crisis_alert',        labelKey: 'nav.anomaly',         roles: ['Owner','Manager','DataIT'] },
-  { to: '/recommendations', icon: 'psychology',          labelKey: 'nav.recommendations', roles: ['Owner','Manager','DataIT'] },
+  { to: '/dashboard',       icon: 'dashboard',    labelKey: 'nav.dashboard',       roles: ['Owner','Manager','DataIT','Staff','Viewer'] },
+  { to: '/forecast',        icon: 'trending_up',  labelKey: 'nav.forecast',        roles: ['Owner','Manager','DataIT'] },
+  { to: '/anomaly',         icon: 'crisis_alert', labelKey: 'nav.anomaly',         roles: ['Owner','Manager','DataIT'] },
+  { to: '/recommendations', icon: 'psychology',   labelKey: 'nav.recommendations', roles: ['Owner','Manager','DataIT'] },
 
-  // ── 15 chức năng AI sáng tạo ─────────────────────────────────────────────
+  // ── AI Nâng cao — 3 nhóm thu gọn ─────────────────────────────────────────
   { divider: 'nav.sectionAiAdvanced' },
-  // Nhóm 1 – AI/ML Nâng cao
-  { to: '/narrative',       icon: 'auto_awesome',        labelKey: 'nav.narrative',       roles: ['Owner','Manager','DataIT'] },
-  { to: '/churn',           icon: 'person_off',          labelKey: 'nav.churn',           roles: ['Owner','Manager','DataIT'] },
-  { to: '/basket',          icon: 'shopping_bag',        labelKey: 'nav.basket',          roles: ['Owner','Manager','DataIT'] },
-  { to: '/whatif',          icon: 'science',             labelKey: 'nav.whatIf',          roles: ['Owner','Manager','DataIT'] },
-  // Nhóm 2 – Business Intelligence
-  { to: '/geo',             icon: 'map',                 labelKey: 'nav.geo',             roles: ['Owner','Manager','DataIT'] },
-  { to: '/campaign',        icon: 'campaign',            labelKey: 'nav.campaign',        roles: ['Owner','Manager','DataIT'] },
-  { to: '/attribution',     icon: 'account_tree',        labelKey: 'nav.attribution',     roles: ['Owner','Manager','DataIT'] },
-  { to: '/supplier',        icon: 'local_shipping',      labelKey: 'nav.supplier',        roles: ['Owner','Manager','DataIT'] },
-  // Nhóm 3 – UX Sáng tạo
-  { to: '/leaderboard',     icon: 'leaderboard',         labelKey: 'nav.leaderboard',     roles: ['Owner','Manager','Staff','DataIT'] },
-  { to: '/inventory',       icon: 'inventory',           labelKey: 'nav.inventory',       roles: ['Owner','Manager','Staff','DataIT'] },
-  // Nhóm 4 – Data & Integration
-  { to: '/sentiment',       icon: 'sentiment_satisfied', labelKey: 'nav.sentiment',       roles: ['Owner','Manager','DataIT'] },
-  { to: '/price',           icon: 'price_check',         labelKey: 'nav.price',           roles: ['Owner','Manager','DataIT'] },
+
+  {
+    subgroup: 'aiml',
+    labelKey: 'nav.groupAiMl',
+    icon:     'model_training',
+    roles:    ['Owner','Manager','DataIT'],
+    children: [
+      { to: '/narrative', icon: 'auto_awesome',        labelKey: 'nav.narrative', roles: ['Owner','Manager','DataIT'] },
+      { to: '/churn',     icon: 'person_off',          labelKey: 'nav.churn',     roles: ['Owner','Manager','DataIT'] },
+      { to: '/basket',    icon: 'shopping_bag',        labelKey: 'nav.basket',    roles: ['Owner','Manager','DataIT'] },
+      { to: '/whatif',    icon: 'science',             labelKey: 'nav.whatIf',    roles: ['Owner','Manager','DataIT'] },
+    ],
+  },
+  {
+    subgroup: 'market',
+    labelKey: 'nav.groupMarket',
+    icon:     'show_chart',
+    roles:    ['Owner','Manager','DataIT','Staff'],
+    children: [
+      { to: '/geo',         icon: 'map',          labelKey: 'nav.geo',         roles: ['Owner','Manager','DataIT'] },
+      { to: '/campaign',    icon: 'campaign',     labelKey: 'nav.campaign',    roles: ['Owner','Manager','DataIT'] },
+      { to: '/attribution', icon: 'account_tree', labelKey: 'nav.attribution', roles: ['Owner','Manager','DataIT'] },
+      { to: '/leaderboard', icon: 'leaderboard',  labelKey: 'nav.leaderboard', roles: ['Owner','Manager','Staff','DataIT'] },
+    ],
+  },
+  {
+    subgroup: 'opsai',
+    labelKey: 'nav.groupOpsAi',
+    icon:     'tune',
+    roles:    ['Owner','Manager','DataIT','Staff'],
+    children: [
+      { to: '/supplier',  icon: 'local_shipping',      labelKey: 'nav.supplier',  roles: ['Owner','Manager','DataIT'] },
+      { to: '/inventory', icon: 'inventory',           labelKey: 'nav.inventory', roles: ['Owner','Manager','Staff','DataIT'] },
+      { to: '/sentiment', icon: 'sentiment_satisfied', labelKey: 'nav.sentiment', roles: ['Owner','Manager','DataIT'] },
+      { to: '/price',     icon: 'price_check',         labelKey: 'nav.price',     roles: ['Owner','Manager','DataIT'] },
+    ],
+  },
 
   // ── Quản lý dữ liệu ──────────────────────────────────────────────────────
   { divider: 'nav.sectionData' },
-  { to: '/orders',          icon: 'receipt_long',        labelKey: 'nav.orders',          roles: ['Owner','Manager','Staff','DataIT','Viewer'] },
-  { to: '/products',        icon: 'inventory_2',         labelKey: 'nav.products',        roles: ['Owner','Manager','Staff','DataIT'] },
-  { to: '/categories',      icon: 'category',            labelKey: 'nav.categories',      roles: ['Owner','Manager','Staff','DataIT'] },
-  { to: '/customers',       icon: 'people',              labelKey: 'nav.customers',       roles: ['Owner','Manager','DataIT'] },
-  { to: '/customers/rfm',   icon: 'pie_chart',           labelKey: 'nav.rfmAnalysis',     roles: ['Owner','Manager','DataIT'] },
+  { to: '/orders',        icon: 'receipt_long', labelKey: 'nav.orders',      roles: ['Owner','Manager','Staff','DataIT','Viewer'] },
+  { to: '/products',      icon: 'inventory_2',  labelKey: 'nav.products',    roles: ['Owner','Manager','Staff','DataIT'] },
+  { to: '/categories',    icon: 'category',     labelKey: 'nav.categories',  roles: ['Owner','Manager','Staff','DataIT'] },
+  { to: '/customers',     icon: 'people',       labelKey: 'nav.customers',   roles: ['Owner','Manager','DataIT'] },
+  { to: '/customers/rfm', icon: 'pie_chart',    labelKey: 'nav.rfmAnalysis', roles: ['Owner','Manager','DataIT'] },
 
   // ── Vận hành & ETL ───────────────────────────────────────────────────────
   { divider: 'nav.sectionOperations' },
-  { to: '/data-sync',       icon: 'sync',                labelKey: 'nav.dataSync',        roles: ['DataIT','Owner'] },
-  { to: '/etl-monitor',     icon: 'monitoring',          labelKey: 'nav.etlMonitor',      roles: ['DataIT','Owner'] },
+  { to: '/data-sync',    icon: 'sync',       labelKey: 'nav.dataSync',   roles: ['DataIT','Owner'] },
+  { to: '/etl-monitor',  icon: 'monitoring', labelKey: 'nav.etlMonitor', roles: ['DataIT','Owner'] },
 
   // ── Báo cáo ──────────────────────────────────────────────────────────────
   { divider: 'nav.sectionReports' },
-  { to: '/report',          icon: 'picture_as_pdf',      labelKey: 'nav.report',          roles: ['Owner','Manager','DataIT'] },
+  { to: '/report', icon: 'picture_as_pdf', labelKey: 'nav.report', roles: ['Owner','Manager','DataIT'] },
 
   // ── Quản trị ─────────────────────────────────────────────────────────────
   { divider: 'nav.sectionAdmin' },
-  { to: '/notifications',   icon: 'notifications',       labelKey: 'nav.notifications',   roles: ['Owner','Manager','Staff','DataIT','Viewer'] },
-  { to: '/admin',           icon: 'manage_accounts',     labelKey: 'nav.admin',           roles: ['Owner'] },
-  { to: '/settings',        icon: 'settings',            labelKey: 'nav.settings',        roles: ['Owner','Manager','Staff','DataIT','Viewer'] },
+  { to: '/notifications', icon: 'notifications',  labelKey: 'nav.notifications', roles: ['Owner','Manager','Staff','DataIT','Viewer'] },
+  { to: '/admin',         icon: 'manage_accounts', labelKey: 'nav.admin',         roles: ['Owner'] },
+  { to: '/settings',      icon: 'settings',        labelKey: 'nav.settings',      roles: ['Owner','Manager','Staff','DataIT','Viewer'] },
 ]
 
 const ROLE_BADGE = {
@@ -65,19 +86,27 @@ const ROLE_BADGE = {
 
 export default function Sidebar({ isOpen, onClose }) {
   const { user, logout } = useAuth()
-  const navigate = useNavigate()
-  const { t } = useTranslation()
-  const [collapsed, setCollapsed] = useState(false)
+  const navigate         = useNavigate()
+  const { t }            = useTranslation()
+  const [collapsed,   setCollapsed]   = useState(false)
+  // Mặc định nhóm đầu mở, 2 nhóm sau đóng
+  const [openGroups, setOpenGroups]   = useState({ aiml: true, market: false, opsai: false })
+
+  const toggleGroup = useCallback(
+    key => setOpenGroups(g => ({ ...g, [key]: !g[key] })),
+    [],
+  )
 
   const handleLogout = () => { logout(); navigate('/login', { replace: true }) }
 
-  // Lọc nav items theo role
+  // Lọc item theo role, giữ subgroup nếu có ít nhất 1 child visible
   const visibleItems = NAV_ITEMS.filter(item => {
-    if (item.divider) return true
+    if (item.divider)   return true
+    if (item.subgroup)  return item.children?.some(c => c.roles?.includes(user?.role)) ?? false
     return item.roles?.includes(user?.role)
   })
 
-  // Bỏ divider cuối/kề nhau
+  // Bỏ divider cuối / divider kề nhau
   const cleanItems = visibleItems.filter((item, i) => {
     if (!item.divider) return true
     const next = visibleItems[i + 1]
@@ -85,16 +114,13 @@ export default function Sidebar({ isOpen, onClose }) {
   })
 
   const badge = ROLE_BADGE[user?.role] ?? ROLE_BADGE.Staff
-  const w = collapsed ? 'w-[68px]' : 'w-[240px]'
+  const w     = collapsed ? 'w-[68px]' : 'w-[240px]'
 
   return (
     <>
       {/* Overlay mobile */}
       {isOpen && (
-        <div
-          className="fixed inset-0 bg-black/50 z-40 md:hidden"
-          onClick={onClose}
-        />
+        <div className="fixed inset-0 bg-black/50 z-40 md:hidden" onClick={onClose} />
       )}
 
       {/* Sidebar */}
@@ -121,26 +147,106 @@ export default function Sidebar({ isOpen, onClose }) {
             className="w-8 h-8 flex items-center justify-center rounded-lg
                        text-outline hover:text-primary hover:bg-surface-container-low
                        transition-colors shrink-0"
-            title={collapsed ? t('nav.dashboard') : ''}
           >
-            <span className="icon text-base">
-              {collapsed ? 'menu_open' : 'menu'}
-            </span>
+            <span className="icon text-base">{collapsed ? 'menu_open' : 'menu'}</span>
           </button>
         </div>
 
         {/* Nav */}
         <nav className="flex flex-col gap-0.5 flex-1 px-3">
-          {cleanItems.map((item, i) => {
+          {cleanItems.flatMap((item, i) => {
+            // ── Divider ──
             if (item.divider) {
-              if (collapsed) return null
-              return (
+              if (collapsed) return []
+              return [(
                 <div key={`div-${i}`} className="section-title px-2 pt-4 pb-1">
                   {t(item.divider)}
                 </div>
-              )
+              )]
             }
-            return (
+
+            // ── Subgroup thu gọn ──
+            if (item.subgroup) {
+              const visChildren = item.children?.filter(c => c.roles?.includes(user?.role)) ?? []
+
+              // Collapsed sidebar: hiện thẳng các icon con, không có header nhóm
+              if (collapsed) {
+                return visChildren.map(child => (
+                  <NavLink
+                    key={child.to}
+                    to={child.to}
+                    onClick={onClose}
+                    className={({ isActive }) =>
+                      `nav-item justify-center !px-2 ${isActive ? 'nav-item-active' : ''}`
+                    }
+                    title={t(child.labelKey)}
+                  >
+                    {({ isActive }) => (
+                      <span className={`icon shrink-0 ${isActive ? 'icon-fill' : ''}`}>
+                        {child.icon}
+                      </span>
+                    )}
+                  </NavLink>
+                ))
+              }
+
+              // Expanded sidebar: header toggle + children khi mở
+              const isOpen = openGroups[item.subgroup] ?? false
+              return [(
+                <div key={`sg-${item.subgroup}`}>
+                  <button
+                    onClick={() => toggleGroup(item.subgroup)}
+                    className="nav-item w-full"
+                    style={{ justifyContent: 'space-between' }}
+                  >
+                    <span className="flex items-center gap-3 min-w-0">
+                      <span className="icon shrink-0">{item.icon}</span>
+                      <span className="text-sm truncate">{t(item.labelKey)}</span>
+                    </span>
+                    <span
+                      className="icon shrink-0"
+                      style={{
+                        fontSize: '18px',
+                        transition: 'transform 0.2s',
+                        transform: isOpen ? 'rotate(180deg)' : 'none',
+                      }}
+                    >
+                      expand_more
+                    </span>
+                  </button>
+
+                  {isOpen && (
+                    <div
+                      className="ml-3 border-l flex flex-col gap-0.5 py-0.5"
+                      style={{ borderColor: 'var(--border)' }}
+                    >
+                      {visChildren.map(child => (
+                        <NavLink
+                          key={child.to}
+                          to={child.to}
+                          onClick={onClose}
+                          className={({ isActive }) =>
+                            `nav-item pl-3 ${isActive ? 'nav-item-active' : ''}`
+                          }
+                        >
+                          {({ isActive }) => (
+                            <>
+                              <span className={`icon shrink-0 ${isActive ? 'icon-fill' : ''}`}>
+                                {child.icon}
+                              </span>
+                              <span className="text-sm truncate">{t(child.labelKey)}</span>
+                            </>
+                          )}
+                        </NavLink>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )]
+            }
+
+            // ── Nav item thường ──
+            return [(
               <NavLink
                 key={item.to}
                 to={item.to}
@@ -152,16 +258,12 @@ export default function Sidebar({ isOpen, onClose }) {
               >
                 {({ isActive }) => (
                   <>
-                    <span className={`icon shrink-0 ${isActive ? 'icon-fill' : ''}`}>
-                      {item.icon}
-                    </span>
-                    {!collapsed && (
-                      <span className="text-sm truncate">{t(item.labelKey)}</span>
-                    )}
+                    <span className={`icon shrink-0 ${isActive ? 'icon-fill' : ''}`}>{item.icon}</span>
+                    {!collapsed && <span className="text-sm truncate">{t(item.labelKey)}</span>}
                   </>
                 )}
               </NavLink>
-            )
+            )]
           })}
         </nav>
 
@@ -193,7 +295,7 @@ export default function Sidebar({ isOpen, onClose }) {
           </div>
         )}
 
-        {/* Collapsed: chỉ hiện logout icon */}
+        {/* Collapsed: chỉ logout icon */}
         {collapsed && (
           <div className="pt-4 border-t border-outline-variant/10 px-3 pb-2">
             <button
