@@ -131,7 +131,19 @@ class GoogleScraper:
     def _load_scraper_config(self, company_id: str) -> None:
         """Tải cookies/headers từ integrations additional_config."""
         try:
-            from .integration_repository import IntegrationRepository
+            # Relative import fail khi load qua importlib.util → dùng absolute import
+            try:
+                from .integration_repository import IntegrationRepository
+            except ImportError:
+                import importlib.util as _ilu
+                _spec = _ilu.spec_from_file_location(
+                    "integration_repository",
+                    str(Path(__file__).parent / "integration_repository.py"),
+                )
+                _mod = _ilu.module_from_spec(_spec)
+                _spec.loader.exec_module(_mod)
+                IntegrationRepository = _mod.IntegrationRepository
+
             repo  = IntegrationRepository()
             integ = repo.get_integration(company_id, "google")
             if integ:
@@ -141,7 +153,7 @@ class GoogleScraper:
                 if cookies:
                     self._session.cookies.update(cookies)
         except Exception as exc:
-            logger.warning(f"Không thể load Google scraper config từ DB: {exc}")
+            logger.warning("Không thể load Google scraper config từ DB: %s", exc)
 
     # ── DB Keyword Management ─────────────────────────────────────────────────
 
@@ -326,39 +338,80 @@ class GoogleScraper:
         """
         Parse HTML trang Google SERP, trích xuất URL kết quả.
 
-        Google render URL dạng /url?q=ACTUAL_URL&... hoặc href trực tiếp
-        trong thẻ <a> bên trong <div class="g">.
+        Google thay đổi class name thường xuyên → dùng nhiều chiến lược
+        để tăng độ bền với mọi version HTML:
+          1. Tìm /url?q=... trong toàn bộ href (cách đáng tin nhất)
+          2. jsname="UWckNb" — organic result link (khá ổn định 2024–2025)
+          3. div[data-ved] > a — fallback data attribute
+          4. h3 > a — title link trong result block
+          5. div.g a — selector cũ (dự phòng)
         """
         soup = BeautifulSoup(html, "html.parser")
-        urls = []
-        seen = set()
+        urls: list[str] = []
+        seen: set[str]  = set()
 
-        # Selector chính: thẻ <a> trong các result block
-        for a_tag in soup.select("div.g a, div[data-hveid] a"):
-            href = a_tag.get("href", "")
+        _GOOGLE_HOSTS = ("google.com", "google.co.", "googleusercontent",
+                         "googleapis", "gstatic", "youtube.com")
+
+        def _is_google(href: str) -> bool:
+            return any(h in href for h in _GOOGLE_HOSTS)
+
+        def _try_add(href: str) -> bool:
+            """Chuẩn hóa href, thêm vào danh sách nếu hợp lệ. Trả True nếu thêm được."""
             if not href:
-                continue
-
+                return False
             # Giải mã /url?q=... format
             if href.startswith("/url?"):
-                parsed = urllib.parse.parse_qs(urllib.parse.urlparse(href).query)
-                actual = parsed.get("q", [""])[0]
-                if actual and actual.startswith("http"):
-                    href = actual
-
-            # Bỏ URL nội bộ Google, javascript, empty
+                qs = urllib.parse.parse_qs(urllib.parse.urlparse(href).query)
+                href = qs.get("q", [""])[0]
             if not href.startswith("http"):
-                continue
-            if "google.com" in href or "googleusercontent" in href:
-                continue
+                return False
+            if _is_google(href):
+                return False
             if href in seen:
-                continue
-
+                return False
             seen.add(href)
             urls.append(href)
+            return True
 
+        # Chiến lược 1: mọi <a href="/url?q=..."> trong trang (đáng tin nhất)
+        for a in soup.find_all("a", href=lambda h: h and h.startswith("/url?q=")):
+            _try_add(a["href"])
             if len(urls) >= _MAX_URLS_PER_KW:
                 break
+
+        # Chiến lược 2: jsname="UWckNb" – organic result link (ổn định 2024-2025)
+        if len(urls) < _MAX_URLS_PER_KW:
+            for a in soup.find_all("a", attrs={"jsname": "UWckNb"}):
+                _try_add(a.get("href", ""))
+                if len(urls) >= _MAX_URLS_PER_KW:
+                    break
+
+        # Chiến lược 3: div[data-ved] > a (thẻ thường bao organic results)
+        if len(urls) < _MAX_URLS_PER_KW:
+            for a in soup.select("div[data-ved] > a[href]"):
+                _try_add(a.get("href", ""))
+                if len(urls) >= _MAX_URLS_PER_KW:
+                    break
+
+        # Chiến lược 4: h3 > a và div.g a (selector cũ, fallback)
+        if len(urls) < _MAX_URLS_PER_KW:
+            for a in soup.select("h3 a[href], div.g a[href]"):
+                _try_add(a.get("href", ""))
+                if len(urls) >= _MAX_URLS_PER_KW:
+                    break
+
+        # Chiến lược 5: quét toàn bộ <a href="https://..."> ngoài Google
+        if len(urls) < 3:
+            for a in soup.find_all("a", href=lambda h: h and h.startswith("https://")):
+                _try_add(a.get("href", ""))
+                if len(urls) >= _MAX_URLS_PER_KW:
+                    break
+
+        if not urls:
+            # Ghi log một đoạn HTML để debug (100 char đầu body)
+            body_preview = html[:300].replace("\n", " ")
+            logger.debug("SERP parse 0 URL. HTML preview: %s", body_preview)
 
         return urls
 
@@ -587,9 +640,33 @@ class GoogleScraper:
 
     # ── Database ──────────────────────────────────────────────────────────────
 
+    def _fetch_keyword_id_map(self, cur, keywords: list[str]) -> dict[str, int]:
+        """Tra cứu keyword_id từ scraper_keywords theo danh sách keyword string.
+
+        Returns:
+            dict mapping keyword_string → id (chỉ những keyword tồn tại trong DB).
+        """
+        if not keywords:
+            return {}
+        try:
+            cur.execute(
+                """
+                SELECT id, keyword FROM public.scraper_keywords
+                WHERE keyword = ANY(%s) AND source_type = 'google'
+                """,
+                (keywords,),
+            )
+            return {row[1]: row[0] for row in cur.fetchall()}
+        except Exception as e:
+            logger.debug("Không tra được keyword_id: %s", e)
+            return {}
+
     def save_to_db(self, records: list[dict]) -> tuple[int, int]:
         """
         INSERT các bản ghi vào raw_google_data, bỏ qua bản ghi trùng hash.
+        Lưu đầy đủ: keyword_id (FK), company_id, product_name, category,
+        price, sales_count, trend_description, source_domain.
+        expires_at tự tính bởi trigger DB (scraped_at + 30 ngày).
 
         Returns:
             (inserted, skipped)
@@ -609,6 +686,7 @@ class GoogleScraper:
             conn = psycopg2.connect(self.db_url)
             cur  = conn.cursor()
 
+            # Dedup theo content_hash
             hashes = [r.get("content_hash") for r in records if r.get("content_hash")]
             if hashes:
                 cur.execute(
@@ -620,25 +698,48 @@ class GoogleScraper:
             else:
                 existing = set()
 
+            # Tra cứu keyword_id một lần cho tất cả keywords trong batch
+            unique_keywords = list({r.get("keyword", "") for r in records if r.get("keyword")})
+            kw_id_map = self._fetch_keyword_id_map(cur, unique_keywords)
+
+            cid = self.company_id or None  # UUID string hoặc None
+
             for r in records:
                 ch = r.get("content_hash")
                 if ch and ch in existing:
                     skipped += 1
                     continue
 
+                kw  = r.get("keyword", "")
+                kid = kw_id_map.get(kw)  # None nếu keyword chưa có trong DB
+
                 cur.execute(
                     """
                     INSERT INTO public.raw_google_data
-                        (keyword, title, snippet, url, position, content_hash)
-                    VALUES (%s, %s, %s, %s, %s, %s)
+                        (keyword, keyword_id, company_id,
+                         title, snippet, url, position, content_hash,
+                         product_name, category, price, sales_count,
+                         trend_description, source_domain)
+                    VALUES (%s, %s, %s::uuid,
+                            %s, %s, %s, %s, %s,
+                            %s, %s, %s, %s,
+                            %s, %s)
                     """,
                     (
-                        r.get("keyword"),
+                        kw,
+                        kid,
+                        cid,
                         r.get("title"),
-                        r.get("snippet") or r.get("trend_description"),
+                        r.get("snippet"),
                         r.get("url"),
                         r.get("position"),
                         ch,
+                        r.get("product_name"),
+                        r.get("category"),
+                        r.get("price"),
+                        r.get("sales_count"),
+                        r.get("trend_description"),
+                        r.get("source_domain"),
                     ),
                 )
                 inserted += 1

@@ -364,6 +364,48 @@ def send_daily_kpi_email() -> None:
         logger.error("Gửi KPI email thất bại: %s", e)
 
 
+# ── Cleanup raw_google_data hết hạn ──────────────────────────────────────────
+
+def cleanup_expired_google_data() -> None:
+    """Xóa các bản ghi raw_google_data đã quá expires_at.
+
+    Chạy hàng ngày lúc 03:30 — sau update_anomaly (01:00) và trước retrain (CN 02:00).
+    Ghi log số dòng đã xóa để monitor qua /health endpoint.
+    """
+    try:
+        db_url = os.getenv("DATABASE_URL", "")
+        if not db_url:
+            logger.warning("cleanup_expired_google_data: DATABASE_URL chưa cấu hình — bỏ qua")
+            return
+
+        import psycopg2
+        conn = psycopg2.connect(db_url)
+        cur  = conn.cursor()
+
+        # Đếm trước khi xóa để log
+        cur.execute(
+            "SELECT COUNT(*) FROM public.raw_google_data WHERE expires_at < NOW()"
+        )
+        count = cur.fetchone()[0]
+
+        if count == 0:
+            logger.info("cleanup_google: không có bản ghi hết hạn")
+            cur.close()
+            conn.close()
+            return
+
+        cur.execute(
+            "DELETE FROM public.raw_google_data WHERE expires_at < NOW()"
+        )
+        conn.commit()
+        cur.close()
+        conn.close()
+        logger.info("cleanup_google: đã xóa %d bản ghi hết hạn (expires_at < NOW())", count)
+
+    except Exception as e:
+        logger.error("cleanup_expired_google_data lỗi: %s", e)
+
+
 # ── APScheduler setup ─────────────────────────────────────────────────────────
 # Khởi tạo scheduler với timezone Việt Nam
 scheduler = BackgroundScheduler(timezone="Asia/Ho_Chi_Minh")
@@ -391,6 +433,15 @@ scheduler.add_job(
     update_rfm_segments,
     CronTrigger(day_of_week="mon", hour=3, minute=0),
     id="update_rfm",
+    replace_existing=True,
+    misfire_grace_time=3600,
+)
+
+# Hàng ngày 03:30 — xóa raw_google_data hết hạn (TTL 30 ngày)
+scheduler.add_job(
+    cleanup_expired_google_data,
+    CronTrigger(hour=3, minute=30),
+    id="cleanup_google_data",
     replace_existing=True,
     misfire_grace_time=3600,
 )

@@ -53,7 +53,6 @@ const GeoPage         = lazy(() => import('../pages/geo/GeoPage'))
 const SupplierPage    = lazy(() => import('../pages/supplier/SupplierPage'))
 const PricePage       = lazy(() => import('../pages/price/PricePage'))
 const SentimentPage   = lazy(() => import('../pages/sentiment/SentimentPage'))
-const NlqPage         = lazy(() => import('../pages/nlq/NlqPage'))
 
 // Roles constants
 const ALL_ROLES     = ['Owner', 'Manager', 'Staff', 'DataIT']
@@ -240,11 +239,6 @@ export default function AppRouter() {
         <Route path="/sentiment" element={
           <ProtectedRoute roles={ANALYST_ROLES}>
             <Shell><SentimentPage /></Shell>
-          </ProtectedRoute>
-        } />
-        <Route path="/nlq" element={
-          <ProtectedRoute roles={ANALYST_ROLES}>
-            <Shell><NlqPage /></Shell>
           </ProtectedRoute>
         } />
 

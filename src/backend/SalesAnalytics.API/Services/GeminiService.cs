@@ -13,6 +13,12 @@ public class GeminiService(
     AppDbContext           db,
     ILogger<GeminiService> logger)
 {
+    // ── DTO records cho SqlQuery (không cần EF mapping) ─────────────────────
+    private record TrendRow(string Keyword, int HitCount, int UrlCount);
+    private record PageItemRow(string Keyword, string? Title, string? Snippet, string? SourceDomain, string? ProductName);
+    private record CountRow(int Total);
+    private record SentimentRow(string Sentiment, int Cnt);
+    private record CommentRow(string Message, string AuthorName, string Sentiment, int LikeCount);
     private readonly string _apiKey = cfg["Gemini:ApiKey"] ?? "";
     private readonly string _model  = cfg["Gemini:Model"]  ?? "gemini-2.0-flash";
     private readonly int    _maxTok = int.TryParse(cfg["Gemini:MaxTokens"],    out var t) ? t : 1024;
@@ -90,6 +96,169 @@ public class GeminiService(
         }
     }
 
+    // ── Build context xu hướng thị trường từ raw_google_data ────────────────
+
+    private async Task<string> BuildMarketContext(Guid companyId)
+    {
+        try
+        {
+            // Toàn bộ keywords + số lần xuất hiện + số URL duy nhất (không giới hạn)
+            var trends = await db.Database
+                .SqlQuery<TrendRow>($"""
+                    SELECT keyword,
+                           CAST(COUNT(*)           AS INTEGER) AS hit_count,
+                           CAST(COUNT(DISTINCT url) AS INTEGER) AS url_count
+                    FROM   public.raw_google_data
+                    WHERE  scraped_at >= NOW() - INTERVAL '30 days'
+                      AND  (company_id = {companyId} OR company_id IS NULL)
+                      AND  keyword IS NOT NULL
+                    GROUP  BY keyword
+                    ORDER  BY hit_count DESC
+                    """)
+                .ToListAsync();
+
+            // Toàn bộ nội dung thu thập: title, snippet, product_name, domain (không giới hạn)
+            var items = await db.Database
+                .SqlQuery<PageItemRow>($"""
+                    SELECT keyword,
+                           title,
+                           COALESCE(snippet, trend_description) AS snippet,
+                           source_domain,
+                           product_name
+                    FROM   public.raw_google_data
+                    WHERE  scraped_at >= NOW() - INTERVAL '30 days'
+                      AND  (company_id = {companyId} OR company_id IS NULL)
+                      AND  (title IS NOT NULL OR snippet IS NOT NULL OR trend_description IS NOT NULL)
+                    ORDER  BY scraped_at DESC
+                    """)
+                .ToListAsync();
+
+            var totalResult = await db.Database
+                .SqlQuery<CountRow>($"""
+                    SELECT CAST(COUNT(*) AS INTEGER) AS total
+                    FROM   public.raw_google_data
+                    WHERE  scraped_at >= NOW() - INTERVAL '30 days'
+                      AND  (company_id = {companyId} OR company_id IS NULL)
+                    """)
+                .FirstOrDefaultAsync();
+
+            if (!trends.Any())
+                return "Chưa có dữ liệu xu hướng thị trường. Hãy chạy Google Scraper trong Data Sync để thu thập dữ liệu.";
+
+            var total = totalResult?.Total ?? 0;
+
+            // Phần 1: danh sách keywords
+            var kwLines = string.Join("\n", trends.Select((t, i) =>
+                $"  {i + 1}. \"{t.Keyword}\" — {t.HitCount} lần xuất hiện, {t.UrlCount} URL duy nhất"));
+
+            // Phần 2: toàn bộ nội dung thu thập
+            var itemLines = string.Join("\n", items.Select(it =>
+            {
+                var parts = new List<string> { $"KW: \"{it.Keyword}\"" };
+                if (!string.IsNullOrWhiteSpace(it.SourceDomain)) parts.Add($"Trang: {it.SourceDomain}");
+                if (!string.IsNullOrWhiteSpace(it.ProductName))  parts.Add($"SP: {it.ProductName}");
+                if (!string.IsNullOrWhiteSpace(it.Title))        parts.Add($"Tiêu đề: {it.Title}");
+                if (!string.IsNullOrWhiteSpace(it.Snippet))      parts.Add($"Mô tả: {it.Snippet}");
+                return "  • " + string.Join(" | ", parts);
+            }));
+
+            return $"""
+                === DỮ LIỆU XU HƯỚNG THỊ TRƯỜNG ===
+                Thu thập từ Google Search trong 30 ngày qua — tổng {total} URL từ {trends.Count} từ khóa.
+
+                [Từ khóa xu hướng ({trends.Count} từ khóa)]
+                {kwLines}
+
+                [Toàn bộ nội dung thu thập được ({items.Count} bản ghi)]
+                {(itemLines.Length > 0 ? itemLines : "  (Chưa có nội dung)")}
+
+                BẮT BUỘC: Chỉ phân tích và trả lời dựa trên dữ liệu thực tế ở trên.
+                Không được tự bịa số liệu hay xu hướng ngoài dữ liệu đã cung cấp.
+                Trả lời bằng tiếng Việt, rõ ràng và có căn cứ từ dữ liệu.
+                """;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning("BuildMarketContext lỗi: {Msg}", ex.Message);
+            return "Dữ liệu xu hướng thị trường chưa có. Hãy chạy Google Scraper trong Data Sync trước.";
+        }
+    }
+
+    // ── Build context phản hồi KH từ facebook_feedback ──────────────────────
+
+    private async Task<string> BuildFeedbackContext(Guid companyId)
+    {
+        try
+        {
+            // Thống kê sentiment tổng hợp
+            var sentiments = await db.Database
+                .SqlQuery<SentimentRow>($"""
+                    SELECT sentiment,
+                           CAST(COUNT(*) AS INTEGER) AS cnt
+                    FROM   public.facebook_feedback
+                    WHERE  (company_id = {companyId} OR company_id IS NULL)
+                    GROUP  BY sentiment
+                    """)
+                .ToListAsync();
+
+            // Toàn bộ bình luận — không giới hạn, nội dung đầy đủ
+            var comments = await db.Database
+                .SqlQuery<CommentRow>($"""
+                    SELECT message,
+                           COALESCE(author_name, 'Ẩn danh') AS author_name,
+                           COALESCE(sentiment, 'neutral')   AS sentiment,
+                           COALESCE(like_count, 0)          AS like_count
+                    FROM   public.facebook_feedback
+                    WHERE  (company_id = {companyId} OR company_id IS NULL)
+                      AND  message IS NOT NULL
+                    ORDER  BY scraped_at DESC NULLS LAST
+                    """)
+                .ToListAsync();
+
+            if (!sentiments.Any())
+                return "Chưa có dữ liệu phản hồi khách hàng từ Facebook. Hãy kết nối Facebook Page trong Data Sync.";
+
+            var total  = sentiments.Sum(s => s.Cnt);
+            var pos    = sentiments.FirstOrDefault(s => s.Sentiment == "positive")?.Cnt ?? 0;
+            var neg    = sentiments.FirstOrDefault(s => s.Sentiment == "negative")?.Cnt ?? 0;
+            var neu    = sentiments.FirstOrDefault(s => s.Sentiment == "neutral") ?.Cnt ?? 0;
+            var posPct = total > 0 ? Math.Round(pos * 100.0 / total, 1) : 0;
+            var negPct = total > 0 ? Math.Round(neg * 100.0 / total, 1) : 0;
+            var neuPct = total > 0 ? Math.Round(neu * 100.0 / total, 1) : 0;
+
+            // Toàn bộ bình luận, nội dung đầy đủ không cắt bớt
+            var commentLines = comments.Any()
+                ? string.Join("\n", comments.Select(c =>
+                    $"  [{c.Sentiment.ToUpper()}] {c.AuthorName}"
+                    + (c.LikeCount > 0 ? $" ({c.LikeCount} like)" : "")
+                    + $": {c.Message}"))
+                : "  (Chưa có bình luận)";
+
+            return $"""
+                === DỮ LIỆU PHẢN HỒI KHÁCH HÀNG TỪ FACEBOOK PAGE ===
+                Tổng {total} bình luận đã thu thập.
+
+                [Thống kê cảm xúc]
+                - Tích cực : {pos} bình luận ({posPct}%)
+                - Tiêu cực : {neg} bình luận ({negPct}%)
+                - Trung tính: {neu} bình luận ({neuPct}%)
+
+                [Toàn bộ bình luận ({comments.Count} bình luận)]
+                {commentLines}
+
+                BẮT BUỘC: Phân tích dựa trên toàn bộ bình luận thực tế ở trên.
+                Nêu vấn đề nổi bật (tiêu cực nhiều nhất), điểm được khen (tích cực nhiều nhất),
+                và đề xuất hành động cụ thể. Không được tự bịa nội dung ngoài dữ liệu đã cung cấp.
+                Trả lời bằng tiếng Việt.
+                """;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning("BuildFeedbackContext lỗi: {Msg}", ex.Message);
+            return "Dữ liệu phản hồi Facebook chưa có. Hãy kết nối Facebook Page trong Data Sync.";
+        }
+    }
+
     // ── Gợi ý câu hỏi thông minh theo tab ────────────────────────────────────
 
     public Task<List<string>> GetSmartSuggestions(Guid? companyId, string tab)
@@ -130,18 +299,22 @@ public class GeminiService(
         if (string.IsNullOrWhiteSpace(_apiKey))
             return "Gemini API key chưa được cấu hình. Vui lòng liên hệ quản trị viên.";
 
-        // Lấy context dữ liệu thực tế (chỉ với tab business và có companyId)
-        var context = (tab == "business" && companyId.HasValue)
-            ? await BuildBusinessContext(companyId.Value)
-            : string.Empty;
+        // Lấy context dữ liệu thực tế từ DB theo từng tab
+        var context = (tab, companyId.HasValue) switch
+        {
+            ("business", true) => await BuildBusinessContext(companyId!.Value),
+            ("market",   true) => await BuildMarketContext  (companyId!.Value),
+            ("feedback", true) => await BuildFeedbackContext(companyId!.Value),
+            _                  => string.Empty,
+        };
 
-        // System prompt theo từng tab
+        // System prompt: mỗi tab có vai trò AI riêng + context dữ liệu thực
         var systemPrompt = tab switch
         {
-            "business" => $"Bạn là AI phân tích kinh doanh chuyên nghiệp cho doanh nghiệp Việt Nam. {context}",
-            "market"   => "Bạn là AI chuyên phân tích xu hướng thị trường thương mại điện tử Việt Nam. Trả lời bằng tiếng Việt, súc tích và thực tế.",
-            "feedback" => "Bạn là AI phân tích phản hồi và cảm xúc khách hàng (sentiment analysis). Trả lời bằng tiếng Việt, có ví dụ cụ thể.",
-            _          => $"Bạn là AI hỗ trợ kinh doanh. {context}",
+            "business" => $"Bạn là AI phân tích kinh doanh chuyên nghiệp cho doanh nghiệp Việt Nam. BẮT BUỘC chỉ trả lời dựa trên dữ liệu sau, không tự bịa số liệu. {context}",
+            "market"   => $"Bạn là AI chuyên phân tích xu hướng thị trường thương mại điện tử Việt Nam. BẮT BUỘC chỉ phân tích dựa trên dữ liệu sau, không tự bịa số liệu. {context}",
+            "feedback" => $"Bạn là AI phân tích phản hồi và cảm xúc khách hàng (sentiment analysis). BẮT BUỘC chỉ phân tích dựa trên dữ liệu sau, không tự bịa số liệu. {context}",
+            _          => $"Bạn là AI hỗ trợ kinh doanh cho doanh nghiệp Việt Nam. {context}",
         };
 
         // Xây dựng mảng contents (lịch sử chat + tin nhắn mới)

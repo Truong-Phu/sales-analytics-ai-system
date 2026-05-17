@@ -5,44 +5,54 @@ import { useTranslation } from 'react-i18next'
 
 // Cấu trúc nav items – label là i18n key (nav.xxx)
 const NAV_ITEMS = [
-  // Analytics
-  { to: '/dashboard',       icon: 'dashboard',        labelKey: 'nav.dashboard',       roles: ['Owner','Manager','DataIT','Viewer'] },
-  { to: '/forecast',        icon: 'trending_up',      labelKey: 'nav.forecast',        roles: ['Owner','Manager','DataIT'] },
-  { to: '/anomaly',         icon: 'crisis_alert',     labelKey: 'nav.anomaly',         roles: ['Owner','Manager','DataIT'] },
-  { to: '/recommendations', icon: 'psychology',       labelKey: 'nav.recommendations', roles: ['Owner','Manager'] },
-  // Operations
-  { divider: 'nav.sectionOperations' },
-  { to: '/data-sync',       icon: 'sync',             labelKey: 'nav.dataSync',        roles: ['DataIT','Owner'] },
-  { to: '/etl-monitor',     icon: 'monitoring',       labelKey: 'nav.etlMonitor',      roles: ['DataIT','Owner'] },
-  // Data
-  { divider: 'nav.sectionData' },
-  { to: '/orders',          icon: 'receipt_long',     labelKey: 'nav.orders',          roles: ['Staff','Manager','DataIT','Viewer'] },
-  { to: '/products',        icon: 'inventory_2',      labelKey: 'nav.products',        roles: ['Staff','Manager','DataIT','Owner'] },
-  { to: '/categories',      icon: 'category',         labelKey: 'nav.categories',      roles: ['Staff','Manager','DataIT','Owner'] },
-  { to: '/customers',       icon: 'people',           labelKey: 'nav.customers',       roles: ['Owner','Manager','DataIT'] },
-  { to: '/customers/rfm',   icon: 'pie_chart',        labelKey: 'nav.rfmAnalysis',     roles: ['Owner','Manager','DataIT'] },
-  { to: '/churn',           icon: 'person_off',       labelKey: 'nav.churn',           roles: ['Owner','Manager','DataIT'] },
-  { to: '/basket',          icon: 'shopping_bag',     labelKey: 'nav.basket',          roles: ['Owner','Manager','DataIT'] },
-  { to: '/inventory',       icon: 'inventory',        labelKey: 'nav.inventory',       roles: ['Owner','Manager','Staff','DataIT'] },
-  // AI Advanced
+  // ── Phân tích cốt lõi ────────────────────────────────────────────────────
+  { divider: 'nav.sectionAnalytics' },
+  { to: '/dashboard',       icon: 'dashboard',           labelKey: 'nav.dashboard',       roles: ['Owner','Manager','DataIT','Staff','Viewer'] },
+  { to: '/forecast',        icon: 'trending_up',         labelKey: 'nav.forecast',        roles: ['Owner','Manager','DataIT'] },
+  { to: '/anomaly',         icon: 'crisis_alert',        labelKey: 'nav.anomaly',         roles: ['Owner','Manager','DataIT'] },
+  { to: '/recommendations', icon: 'psychology',          labelKey: 'nav.recommendations', roles: ['Owner','Manager','DataIT'] },
+
+  // ── 15 chức năng AI sáng tạo ─────────────────────────────────────────────
   { divider: 'nav.sectionAiAdvanced' },
-  { to: '/whatif',          icon: 'science',          labelKey: 'nav.whatIf',          roles: ['Owner','Manager','DataIT'] },
-  { to: '/attribution',     icon: 'account_tree',     labelKey: 'nav.attribution',     roles: ['Owner','Manager','DataIT'] },
-  { to: '/campaign',        icon: 'campaign',         labelKey: 'nav.campaign',        roles: ['Owner','Manager','DataIT'] },
-  { to: '/leaderboard',     icon: 'leaderboard',      labelKey: 'nav.leaderboard',     roles: ['Owner','Manager','Staff','DataIT'] },
-  { to: '/narrative',       icon: 'auto_awesome',     labelKey: 'nav.narrative',       roles: ['Owner','Manager','DataIT'] },
-  { to: '/geo',             icon: 'map',              labelKey: 'nav.geo',             roles: ['Owner','Manager','DataIT'] },
-  { to: '/supplier',        icon: 'local_shipping',   labelKey: 'nav.supplier',        roles: ['Owner','Manager','DataIT'] },
-  { to: '/price',           icon: 'price_check',      labelKey: 'nav.price',           roles: ['Owner','Manager','DataIT'] },
-  { to: '/sentiment',       icon: 'sentiment_satisfied', labelKey: 'nav.sentiment',    roles: ['Owner','Manager','DataIT'] },
-  { to: '/nlq',             icon: 'chat',             labelKey: 'nav.nlq',             roles: ['Owner','Manager','DataIT'] },
-  // Reports
+  // Nhóm 1 – AI/ML Nâng cao
+  { to: '/narrative',       icon: 'auto_awesome',        labelKey: 'nav.narrative',       roles: ['Owner','Manager','DataIT'] },
+  { to: '/churn',           icon: 'person_off',          labelKey: 'nav.churn',           roles: ['Owner','Manager','DataIT'] },
+  { to: '/basket',          icon: 'shopping_bag',        labelKey: 'nav.basket',          roles: ['Owner','Manager','DataIT'] },
+  { to: '/whatif',          icon: 'science',             labelKey: 'nav.whatIf',          roles: ['Owner','Manager','DataIT'] },
+  // Nhóm 2 – Business Intelligence
+  { to: '/geo',             icon: 'map',                 labelKey: 'nav.geo',             roles: ['Owner','Manager','DataIT'] },
+  { to: '/campaign',        icon: 'campaign',            labelKey: 'nav.campaign',        roles: ['Owner','Manager','DataIT'] },
+  { to: '/attribution',     icon: 'account_tree',        labelKey: 'nav.attribution',     roles: ['Owner','Manager','DataIT'] },
+  { to: '/supplier',        icon: 'local_shipping',      labelKey: 'nav.supplier',        roles: ['Owner','Manager','DataIT'] },
+  // Nhóm 3 – UX Sáng tạo
+  { to: '/leaderboard',     icon: 'leaderboard',         labelKey: 'nav.leaderboard',     roles: ['Owner','Manager','Staff','DataIT'] },
+  { to: '/inventory',       icon: 'inventory',           labelKey: 'nav.inventory',       roles: ['Owner','Manager','Staff','DataIT'] },
+  // Nhóm 4 – Data & Integration
+  { to: '/sentiment',       icon: 'sentiment_satisfied', labelKey: 'nav.sentiment',       roles: ['Owner','Manager','DataIT'] },
+  { to: '/price',           icon: 'price_check',         labelKey: 'nav.price',           roles: ['Owner','Manager','DataIT'] },
+
+  // ── Quản lý dữ liệu ──────────────────────────────────────────────────────
+  { divider: 'nav.sectionData' },
+  { to: '/orders',          icon: 'receipt_long',        labelKey: 'nav.orders',          roles: ['Owner','Manager','Staff','DataIT','Viewer'] },
+  { to: '/products',        icon: 'inventory_2',         labelKey: 'nav.products',        roles: ['Owner','Manager','Staff','DataIT'] },
+  { to: '/categories',      icon: 'category',            labelKey: 'nav.categories',      roles: ['Owner','Manager','Staff','DataIT'] },
+  { to: '/customers',       icon: 'people',              labelKey: 'nav.customers',       roles: ['Owner','Manager','DataIT'] },
+  { to: '/customers/rfm',   icon: 'pie_chart',           labelKey: 'nav.rfmAnalysis',     roles: ['Owner','Manager','DataIT'] },
+
+  // ── Vận hành & ETL ───────────────────────────────────────────────────────
+  { divider: 'nav.sectionOperations' },
+  { to: '/data-sync',       icon: 'sync',                labelKey: 'nav.dataSync',        roles: ['DataIT','Owner'] },
+  { to: '/etl-monitor',     icon: 'monitoring',          labelKey: 'nav.etlMonitor',      roles: ['DataIT','Owner'] },
+
+  // ── Báo cáo ──────────────────────────────────────────────────────────────
   { divider: 'nav.sectionReports' },
-  { to: '/report',          icon: 'picture_as_pdf',   labelKey: 'nav.report',          roles: ['Owner','Manager','DataIT'] },
-  // Admin
+  { to: '/report',          icon: 'picture_as_pdf',      labelKey: 'nav.report',          roles: ['Owner','Manager','DataIT'] },
+
+  // ── Quản trị ─────────────────────────────────────────────────────────────
   { divider: 'nav.sectionAdmin' },
-  { to: '/admin',           icon: 'manage_accounts',  labelKey: 'nav.admin',           roles: ['Owner'] },
-  { to: '/settings',        icon: 'settings',         labelKey: 'nav.settings',        roles: ['Owner','Manager','Staff','DataIT','Viewer'] },
+  { to: '/notifications',   icon: 'notifications',       labelKey: 'nav.notifications',   roles: ['Owner','Manager','Staff','DataIT','Viewer'] },
+  { to: '/admin',           icon: 'manage_accounts',     labelKey: 'nav.admin',           roles: ['Owner'] },
+  { to: '/settings',        icon: 'settings',            labelKey: 'nav.settings',        roles: ['Owner','Manager','Staff','DataIT','Viewer'] },
 ]
 
 const ROLE_BADGE = {

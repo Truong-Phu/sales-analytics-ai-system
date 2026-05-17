@@ -10,19 +10,51 @@ function removeAccents(str) {
 }
 
 // ── All searchable items — roles: null = all logged-in users ─────────────────
+const AI_ROLES = ['Owner', 'Manager', 'DataIT']
+const OPS_ROLES = ['Owner', 'DataIT']
+
 const ITEMS = [
-  { id: 'dashboard', label: 'Tổng quan',             desc: 'Tổng quan kinh doanh',     href: '/dashboard',       icon: 'dashboard',        roles: null },
-  { id: 'orders',    label: 'Đơn hàng',             desc: 'Quản lý đơn hàng',          href: '/orders',          icon: 'receipt_long',     roles: null },
-  { id: 'products',  label: 'Sản phẩm',             desc: 'Quản lý sản phẩm',          href: '/products',        icon: 'inventory_2',      roles: null },
-  { id: 'customers', label: 'Khách hàng',           desc: 'Quản lý khách hàng',        href: '/customers',       icon: 'people',           roles: null },
-  { id: 'forecast',  label: 'Dự báo AI',            desc: 'Dự báo doanh thu Prophet',  href: '/forecast',        icon: 'trending_up',      roles: null },
-  { id: 'anomaly',   label: 'Phát hiện bất thường', desc: 'Radar cảnh báo',            href: '/anomaly',         icon: 'crisis_alert',     roles: null },
-  { id: 'recommend', label: 'Hỏi AI',               desc: 'Gợi ý kinh doanh',         href: '/recommendations', icon: 'psychology',       roles: null },
-  { id: 'report',    label: 'Xuất báo cáo',         desc: 'Export PDF báo cáo',        href: '/report',          icon: 'picture_as_pdf',   roles: null },
-  { id: 'datasync',  label: 'Đồng bộ dữ liệu',     desc: 'Kết nối sàn TMĐT',         href: '/data-sync',       icon: 'sync',             roles: ['Owner', 'DataIT'] },
-  { id: 'etl',       label: 'Giám sát ETL',          desc: 'Giám sát pipeline dữ liệu', href: '/etl-monitor',     icon: 'monitoring',       roles: ['Owner', 'DataIT'] },
-  { id: 'admin',     label: 'Quản trị',             desc: 'Quản lý người dùng',        href: '/admin',           icon: 'manage_accounts',  roles: ['Owner'] },
-  { id: 'settings',  label: 'Cài đặt',             desc: 'Tuỳ chỉnh hệ thống',       href: '/settings',        icon: 'settings',         roles: null },
+  // Tổng quan
+  { id: 'dashboard',     label: 'Tổng quan',               desc: 'Dashboard KPI kinh doanh',               href: '/dashboard',       icon: 'dashboard',           roles: null },
+
+  // Phân tích AI cốt lõi
+  { id: 'forecast',      label: 'Dự báo doanh thu',        desc: 'Prophet AI – xu hướng & seasonality',    href: '/forecast',        icon: 'trending_up',         roles: AI_ROLES },
+  { id: 'anomaly',       label: 'Phát hiện bất thường',    desc: 'Cảnh báo dữ liệu bất thường',            href: '/anomaly',         icon: 'crisis_alert',        roles: AI_ROLES },
+  { id: 'recommend',     label: 'Gợi ý thông minh',        desc: 'Hỏi AI & Insights tự động',              href: '/recommendations', icon: 'psychology',          roles: AI_ROLES },
+
+  // 13 chức năng AI sáng tạo
+  { id: 'narrative',     label: 'Tường thuật AI',           desc: 'Tự động sinh narrative từ dữ liệu',     href: '/narrative',       icon: 'auto_awesome',        roles: AI_ROLES },
+  { id: 'churn',         label: 'Dự báo rời bỏ',           desc: 'Churn prediction khách hàng',            href: '/churn',           icon: 'person_off',          roles: AI_ROLES },
+  { id: 'basket',        label: 'Phân tích giỏ hàng',       desc: 'Market basket analysis',                 href: '/basket',          icon: 'shopping_bag',        roles: AI_ROLES },
+  { id: 'whatif',        label: 'Phân tích giả định',       desc: 'What-if scenario simulation',            href: '/whatif',          icon: 'science',             roles: AI_ROLES },
+  { id: 'geo',           label: 'Phân tích địa lý',         desc: 'Bản đồ doanh thu theo vùng',             href: '/geo',             icon: 'map',                 roles: AI_ROLES },
+  { id: 'campaign',      label: 'Phân tích chiến dịch',     desc: 'Hiệu quả marketing campaigns',           href: '/campaign',        icon: 'campaign',            roles: AI_ROLES },
+  { id: 'attribution',   label: 'Phân bổ kênh',             desc: 'Marketing attribution model',            href: '/attribution',     icon: 'account_tree',        roles: AI_ROLES },
+  { id: 'supplier',      label: 'Nhà cung cấp',             desc: 'Đánh giá supplier performance',          href: '/supplier',        icon: 'local_shipping',      roles: AI_ROLES },
+  { id: 'leaderboard',   label: 'Bảng xếp hạng',           desc: 'Top sản phẩm & nhân viên',               href: '/leaderboard',     icon: 'leaderboard',         roles: [...AI_ROLES, 'Staff'] },
+  { id: 'inventory',     label: 'Tồn kho thông minh',       desc: 'Dự báo và cảnh báo tồn kho',            href: '/inventory',       icon: 'inventory',           roles: [...AI_ROLES, 'Staff'] },
+  { id: 'sentiment',     label: 'Phân tích cảm xúc',        desc: 'Sentiment từ đánh giá khách hàng',       href: '/sentiment',       icon: 'sentiment_satisfied', roles: AI_ROLES },
+  { id: 'price',         label: 'Phân tích giá',            desc: 'Tối ưu chiến lược định giá',             href: '/price',           icon: 'price_check',         roles: AI_ROLES },
+
+  // Quản lý dữ liệu
+  { id: 'orders',        label: 'Đơn hàng',                 desc: 'Xem và quản lý đơn hàng',               href: '/orders',          icon: 'receipt_long',        roles: null },
+  { id: 'products',      label: 'Sản phẩm',                 desc: 'Quản lý kho sản phẩm',                  href: '/products',        icon: 'inventory_2',         roles: null },
+  { id: 'categories',    label: 'Danh mục',                 desc: 'Phân loại sản phẩm',                    href: '/categories',      icon: 'category',            roles: null },
+  { id: 'customers',     label: 'Khách hàng',               desc: 'Thông tin khách hàng',                  href: '/customers',       icon: 'people',              roles: null },
+  { id: 'rfm',           label: 'Phân tích RFM',            desc: 'Phân khúc khách hàng theo RFM',          href: '/customers/rfm',   icon: 'pie_chart',           roles: AI_ROLES },
+
+  // Báo cáo
+  { id: 'report',        label: 'Xuất báo cáo',             desc: 'Export PDF báo cáo chuyên nghiệp',       href: '/report',          icon: 'picture_as_pdf',      roles: AI_ROLES },
+
+  // Vận hành & ETL
+  { id: 'datasync',      label: 'Đồng bộ dữ liệu',         desc: 'Kết nối sàn TMĐT & nguồn dữ liệu',      href: '/data-sync',       icon: 'sync',                roles: OPS_ROLES },
+  { id: 'etl',           label: 'Giám sát ETL',             desc: 'Giám sát pipeline dữ liệu',              href: '/etl-monitor',     icon: 'monitoring',          roles: OPS_ROLES },
+
+  // Quản trị & cài đặt
+  { id: 'admin',         label: 'Quản trị hệ thống',        desc: 'Quản lý người dùng & phân quyền',        href: '/admin',           icon: 'manage_accounts',     roles: ['Owner'] },
+  { id: 'notifications', label: 'Thông báo',                desc: 'Xem tất cả thông báo',                   href: '/notifications',   icon: 'notifications',       roles: null },
+  { id: 'settings',      label: 'Cài đặt',                  desc: 'Tuỳ chỉnh hệ thống',                    href: '/settings',        icon: 'settings',            roles: null },
+  { id: 'password',      label: 'Đổi mật khẩu',            desc: 'Thay đổi mật khẩu tài khoản',            href: '/change-password', icon: 'lock',                roles: null },
 ]
 
 // ── Provider ──────────────────────────────────────────────────────────────────
