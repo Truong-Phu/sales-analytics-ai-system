@@ -120,7 +120,7 @@ def forecast_revenue(
         logger.warning("Chỉ có %d ngày lịch sử — dự báo có thể không chính xác", len(df_history))
 
     # Dự báo
-    future   = model.make_future_dataframe(periods=horizon_days)
+    future = model.make_future_dataframe(periods=horizon_days)
     forecast = model.predict(future)
 
     # Chỉ lấy phần forecast (horizon_days ngày cuối)

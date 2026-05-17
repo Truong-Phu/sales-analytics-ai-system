@@ -4,7 +4,7 @@ from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
-from services.prophet_service import forecast_revenue, get_model_info, get_metrics
+from services.prophet_service import forecast_revenue, get_model_info, get_metrics, get_actual_revenue
 
 router = APIRouter(prefix="/forecast", tags=["Forecast"])
 
@@ -16,11 +16,17 @@ class ForecastPoint(BaseModel):
     upper:    float
 
 
+class ActualPoint(BaseModel):
+    date:   str
+    actual: float
+
+
 class ForecastResponse(BaseModel):
     horizon_days: int
     channel:      Optional[str]
     model_info:   dict
     data:         List[ForecastPoint]
+    actual:       List[ActualPoint] = []   # 90 ngày lịch sử thực tế
 
 
 @router.get(
@@ -40,11 +46,13 @@ def get_forecast(
     try:
         data       = forecast_revenue(horizon_days=horizon, channel=channel)
         model_info = get_model_info()
+        history    = get_actual_revenue(days=90, channel=channel)
         return ForecastResponse(
             horizon_days=horizon,
             channel=channel,
             model_info=model_info,
             data=[ForecastPoint(**p) for p in data],
+            actual=[ActualPoint(**p) for p in history],
         )
     except FileNotFoundError as e:
         raise HTTPException(status_code=503, detail=str(e))

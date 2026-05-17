@@ -5,7 +5,9 @@ Anomaly Service – Phát hiện bất thường trong dữ liệu doanh thu.
 Phương pháp: Z-score + IQR kết hợp, không cần model riêng.
 Phát hiện ngày có doanh thu bất thường cao/thấp so với kỳ vọng.
 """
+import json
 import logging
+import os
 from typing import List
 
 import numpy as np
@@ -75,3 +77,29 @@ def detect_anomalies(
     result.sort(key=lambda x: abs(x["z_score"]), reverse=True)
     logger.info(f"Phát hiện {len(result)} anomaly trong {days} ngày qua")
     return result
+
+
+_ANOMALY_CACHE_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(__file__)), "models", "anomaly_cache.json"
+)
+
+
+def compute_and_cache_anomaly(days: int = 90) -> dict:
+    """Tính lại anomaly và lưu vào anomaly_cache.json (gọi sau ETL)."""
+    from datetime import datetime
+    data = detect_anomalies(days=days)
+    critical = sum(1 for a in data if a.get("severity") == "CRITICAL")
+    warning  = sum(1 for a in data if a.get("severity") == "WARNING")
+    payload = {
+        "computed_at":    datetime.utcnow().isoformat(),
+        "days_analyzed":  days,
+        "total_count":    len(data),
+        "critical_count": critical,
+        "warning_count":  warning,
+        "anomalies":      data,
+    }
+    os.makedirs(os.path.dirname(_ANOMALY_CACHE_PATH), exist_ok=True)
+    with open(_ANOMALY_CACHE_PATH, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+    logger.info("anomaly_cache.json đã cập nhật: %d bất thường", len(data))
+    return payload
