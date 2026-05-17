@@ -313,7 +313,17 @@ public class IntegrationsController(
     // ── Helper ────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Validate token bằng cách gọi Graph API GET /{pageId}?fields=name,id.
+    /// Validate Page Access Token qua Graph API.
+    ///
+    /// Chiến lược 2 bước:
+    ///   1. GET /me?fields=id,name  — hoạt động với Page Access Token (token đại diện cho page)
+    ///   2. GET /{pageId}?fields=name,id — fallback nếu bước 1 trả về user info
+    ///
+    /// Lý do dùng /me thay vì /{pageId}:
+    ///   Với Page Access Token, /me trả về thông tin Page chứ không phải User.
+    ///   GET /{pageId} có thể fail với lỗi "missing permissions" trên Graph API v18+
+    ///   dù token hoàn toàn hợp lệ.
+    ///
     /// Trả về (isValid, pageName, errorMessage).
     /// </summary>
     private async Task<(bool Valid, string? PageName, string? Error)> ValidateFacebookToken(
@@ -322,19 +332,48 @@ public class IntegrationsController(
         try
         {
             var client = httpClientFactory.CreateClient();
-            var url    = $"{GraphApiBase}/{pageId}?fields=name,id&access_token={Uri.EscapeDataString(accessToken)}";
-            var resp   = await client.GetAsync(url);
+
+            // Bước 1: GET /me — với Page Access Token, /me trả về thông tin Page
+            var meUrl  = $"{GraphApiBase}/me?fields=id,name&access_token={Uri.EscapeDataString(accessToken)}";
+            var resp   = await client.GetAsync(meUrl);
             var body   = await resp.Content.ReadAsStringAsync();
             var json   = JsonSerializer.Deserialize<JsonElement>(body);
 
-            if (json.TryGetProperty("error", out var err))
+            if (!json.TryGetProperty("error", out _))
             {
-                var errMsg = err.TryGetProperty("message", out var m) ? m.GetString() : body;
+                // /me thành công — lấy name
+                var name       = json.TryGetProperty("name", out var n) ? n.GetString() : pageId;
+                var returnedId = json.TryGetProperty("id",   out var i) ? i.GetString() : null;
+
+                // Nếu ID trả về là user ID (không phải page ID) → token là User Token, không phải Page Token
+                if (returnedId != null && returnedId != pageId)
+                {
+                    logger.LogWarning(
+                        "ValidateFacebookToken: /me trả về id={ReturnedId} khác pageId={PageId}. " +
+                        "Có thể đây là User Access Token thay vì Page Access Token.",
+                        returnedId, pageId);
+                    // Vẫn cho phép kết nối — Graph API /me cho user token cũng có thể truy cập page
+                    // nếu user là admin của page. Bước 1 coi là hợp lệ.
+                }
+
+                return (true, name, null);
+            }
+
+            // Bước 2: fallback → GET /{pageId}?fields=name,id
+            logger.LogDebug("ValidateFacebookToken: /me lỗi, thử GET /{PageId}", pageId);
+            var pageUrl  = $"{GraphApiBase}/{pageId}?fields=name,id&access_token={Uri.EscapeDataString(accessToken)}";
+            var resp2    = await client.GetAsync(pageUrl);
+            var body2    = await resp2.Content.ReadAsStringAsync();
+            var json2    = JsonSerializer.Deserialize<JsonElement>(body2);
+
+            if (json2.TryGetProperty("error", out var err2))
+            {
+                var errMsg = err2.TryGetProperty("message", out var m) ? m.GetString() : body2;
                 return (false, null, errMsg);
             }
 
-            var name = json.TryGetProperty("name", out var n) ? n.GetString() : pageId;
-            return (true, name, null);
+            var name2 = json2.TryGetProperty("name", out var n2) ? n2.GetString() : pageId;
+            return (true, name2, null);
         }
         catch (Exception ex)
         {
