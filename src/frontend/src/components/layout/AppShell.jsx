@@ -10,24 +10,23 @@ export default function AppShell({ children }) {
     <div
       className={`min-h-screen font-sans transition-colors duration-300 ${isDark ? 'dark' : ''}`}
       style={{
-        background: 'var(--bg-base)',
-        color: 'var(--text-primary)',
-        fontFamily: 'var(--font-sans)',
+        background:  'var(--bg-base)',
+        color:       'var(--text-primary)',
+        fontFamily:  'var(--font-sans)',
       }}
     >
       <CommandPaletteProvider>
-        <TopBar />
+        <div className="flex flex-col min-h-screen">
+          <TopBar />
 
-        <main
-          className="max-w-[1440px] mx-auto px-4 py-5 md:px-8 md:py-6
-                     pb-20 md:pb-6"
-        >
-          <div className="page-enter">
-            {children}
-          </div>
-        </main>
+          <main className="flex-1 px-4 py-5 md:px-8 md:py-6 pb-20 md:pb-6">
+            <div className="page-enter">
+              {children}
+            </div>
+          </main>
 
-        <MobileBottomNav />
+          <MobileBottomNav />
+        </div>
       </CommandPaletteProvider>
     </div>
   )

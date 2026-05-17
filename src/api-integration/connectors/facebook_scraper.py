@@ -88,8 +88,7 @@ def _try_decrypt(ciphertext: str) -> str:
         ct_with_tag = data[12:]
         return AESGCM(key).decrypt(nonce, ct_with_tag, None).decode("utf-8")
     except Exception as _e:
-        print(f"[_try_decrypt] LỖI decrypt: {type(_e).__name__}: {_e}")
-        logger.warning("_try_decrypt lỗi: %s", _e)
+        logger.warning("[_try_decrypt] LỖI decrypt: %s: %s", type(_e).__name__, _e)
         return ciphertext
 
 
@@ -183,7 +182,6 @@ class FacebookScraper:
         """
         if not self.db_url:
             logger.warning("[FB Scraper] DATABASE_URL chưa cấu hình — không load được integrations")
-            print("[FB Scraper] CẢNH BÁO: DATABASE_URL trống — bỏ qua load integrations từ DB")
             return
         try:
             conn = psycopg2.connect(self.db_url)
@@ -205,14 +203,11 @@ class FacebookScraper:
             conn.close()
 
             logger.info("[FB Scraper] DB: tìm thấy %d integration(s) cho company=%s", len(rows), company_id)
-            print(f"[FB Scraper] DB query: {len(rows)} facebook integration(s) cho company={company_id}")
 
             for row in rows:
                 rid, cid, account_id, account_name, encrypted_token, additional_config = row
                 decrypted = _try_decrypt(encrypted_token)
                 token_preview = (decrypted[:10] + "...") if decrypted else "EMPTY"
-                print(f"[FB Scraper] Integration: page_id={account_id} "
-                      f"page_name={account_name} token={token_preview}")
                 logger.info("[FB Scraper] Integration loaded: page_id=%s page_name=%s token=%s",
                             account_id, account_name, token_preview)
                 self._integrations.append({
@@ -226,10 +221,8 @@ class FacebookScraper:
 
         except psycopg2.OperationalError as e:
             logger.error("[FB Scraper] Lỗi kết nối PostgreSQL: %s", e)
-            print(f"[FB Scraper] LỖI kết nối PostgreSQL: {e}")
         except Exception as exc:
             logger.error("[FB Scraper] Lỗi load integrations từ DB: %s", exc, exc_info=True)
-            print(f"[FB Scraper] LỖI load integrations: {exc}")
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -340,26 +333,22 @@ class FacebookScraper:
                 raise
             except requests.HTTPError as e:
                 logger.error("Graph API lỗi khi fetch posts: %s", e)
-                print(f"[FB API] LỖI HTTP: {e}")
                 break
             except Exception as e:
                 logger.error("Lỗi kết nối Graph API: %s", e)
-                print(f"[FB API] LỖI kết nối: {e}")
                 break
 
             # Log raw response để debug (500 ký tự đầu)
             raw_preview = json.dumps(data, ensure_ascii=False)[:500]
-            print(f"[FB API Response]: {raw_preview}")
             logger.debug("[FB API Response preview]: %s", raw_preview)
 
             if "error" in data:
                 err_msg = data["error"].get("message", str(data["error"]))
-                print(f"[FB API] Graph API trả về lỗi: {err_msg}")
                 logger.error("[FB API] Graph API lỗi: %s", err_msg)
                 break
 
             raw_posts = data.get("data", [])
-            print(f"[FB API] Số posts trong page này: {len(raw_posts)}")
+            logger.debug("[FB API] So posts trong page nay: %d", len(raw_posts))
 
             for item in raw_posts:
                 post = self._normalize_api_post(item)
@@ -726,12 +715,8 @@ class FacebookScraper:
         Returns:
             dict: {total_scraped, inserted, skipped, csv_path}
         """
-        logger.info("=== FacebookScraper bắt đầu (mode=%s) ===", self.mode)
-        print(f"[FB Scraper] Bắt đầu cho company: {self.company_id or 'dev'}")
-        print(f"[FB Scraper] Page ID: {self.page_id or 'CHƯA CÓ'}")
-        print(f"[FB Scraper] Token (10 ký tự đầu): "
-              f"{(self.page_token[:10] + '...') if self.page_token else 'CHƯA CÓ — sẽ fail!'}")
-        print(f"[FB Scraper] Tổng integrations đã load: {len(self._integrations)}")
+        logger.info("=== FacebookScraper bat dau (mode=%s) company=%s pages=%d ===",
+                    self.mode, self.company_id or "dev", len(self._integrations))
 
         if self.mode == "offline":
             records = self._load_offline_sample()
@@ -739,7 +724,6 @@ class FacebookScraper:
             try:
                 records = self.fetch_posts_api()
             except EnvironmentError:
-                print("[FB Scraper] LỖI: Không có page_token hoặc page_id — kiểm tra kết nối trong DB!")
                 logger.error(
                     "Thiếu FACEBOOK_PAGE_TOKEN hoặc FACEBOOK_PAGE_ID trong .env.\n"
                     "Cách lấy Page Access Token:\n"
@@ -757,14 +741,9 @@ class FacebookScraper:
                 )
                 return {"total_scraped": 0, "inserted": 0, "skipped": 0, "csv_path": None}
 
-        print(f"[FB Scraper] Số posts lấy được: {len(records)}")
+        logger.info("[FB Scraper] So posts lay duoc: %d", len(records))
         if not records:
-            print("[FB Scraper] CẢNH BÁO: Graph API trả về 0 posts")
-            print("[FB Scraper] Kiểm tra: token hết hạn? Page có bài đăng public không?")
-        else:
-            for rec in records:
-                print(f"[FB Scraper] Post {rec['post_id']}: "
-                      f"{rec.get('post_content', '(no content)')[:50]}")
+            logger.warning("[FB Scraper] Graph API tra ve 0 posts — kiem tra token hoac quyen page")
 
         csv_path = self.export_csv(records)
         inserted, skipped = self.save_to_db(records)
@@ -779,7 +758,7 @@ class FacebookScraper:
                     all_comments.extend(coms)
                     time.sleep(0.5)  # Tránh rate limit Graph API
 
-        print(f"[FB Scraper] Tổng comments đã fetch: {len(all_comments)}")
+        logger.info("[FB Scraper] Tong comments da fetch: %d", len(all_comments))
         feedback_stats = self.save_feedback_to_db(
             self.company_id or "", records, all_comments
         )
@@ -823,4 +802,5 @@ if __name__ == "__main__":
         format="%(asctime)s [%(levelname)s] %(name)s – %(message)s",
     )
     scraper = FacebookScraper()
-    print("Test kết nối:", scraper.test_connection())
+    result = scraper.test_connection()
+    logger.info("Test ket noi: %s", result)

@@ -9,7 +9,7 @@ import {
 } from 'recharts'
 import { SkeletonCard } from '../../components/ui/Skeleton'
 import MockToast from '../../components/ui/MockToast'
-import { getDashboard, getTodayVsYesterday } from '../../api/dashboardApi'
+import { getDashboard, getTodayVsYesterday, getDrillDownOrders, getDrillDownCustomers } from '../../api/dashboardApi'
 import { getInsights } from '../../api/aiApi'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -683,9 +683,11 @@ function TabOverview({ data, compareMode, prevData }) {
 }
 
 // ── Tab: 2 — Sales Performance ────────────────────────────────────────────────
-function TabSales({ data, compareMode, prevData }) {
+function TabSales({ data, compareMode, prevData, from, to }) {
   const { t } = useTranslation()
   const [drillProduct,        setDrillProduct]        = useState(null)
+  const [drillOrders,         setDrillOrders]         = useState([])
+  const [drillLoading,        setDrillLoading]        = useState(false)
   // Toggle ẩn/hiện bảng raw data — mặc định ẩn
   const [showChannelTopTable, setShowChannelTopTable] = useState(false)
 
@@ -719,16 +721,26 @@ function TabSales({ data, compareMode, prevData }) {
     })
   })()
 
-  // Mock dữ liệu drill-down đơn hàng của sản phẩm (TODO: gọi API thật)
-  function getMockOrders(productName) {
-    return Array.from({ length: 8 }, (_, i) => ({
-      orderId:   `ORD-${10000 + i}`,
-      date:      `2025-${String(Math.ceil((i+1)/3)).padStart(2,'0')}-${String(10 + i * 3).padStart(2,'0')}`,
-      channel:   ['Shopee','Lazada','TikTok Shop','Facebook'][i % 4],
-      qty:       Math.round(1 + Math.random() * 4),
-      revenue:   Math.round(200_000 + Math.random() * 800_000),
-      status:    ['Hoàn thành','Hoàn thành','Đang giao','Hoàn trả'][i % 4],
-    }))
+  // Khi click bar Pareto: load đơn hàng thật từ DW
+  const handleDrillProduct = async (entry) => {
+    setDrillProduct(entry)
+    setDrillLoading(true)
+    try {
+      const orders = await getDrillDownOrders(entry.productKey ?? entry.ProductId, from, to)
+      setDrillOrders(orders)
+    } catch {
+      // Fallback mock nếu API fail
+      setDrillOrders(Array.from({ length: 8 }, (_, i) => ({
+        orderId: `ORD-${10000 + i}`,
+        date:    `2025-${String(Math.ceil((i+1)/3)).padStart(2,'0')}-${String(10 + i * 3).padStart(2,'0')}`,
+        channel: ['Shopee','Lazada','TikTok Shop','Facebook'][i % 4],
+        qty:     Math.round(1 + Math.random() * 4),
+        revenue: Math.round(200_000 + Math.random() * 800_000),
+        status:  'Hoàn thành',
+      })))
+    } finally {
+      setDrillLoading(false)
+    }
   }
 
   const drillColumns = [
@@ -793,7 +805,7 @@ function TabSales({ data, compareMode, prevData }) {
               <Tooltip content={<ChartTooltip />} />
               <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
               <Bar yAxisId="left" dataKey="revM" name="Doanh thu (M₫)" fill="#6366F1" radius={[4,4,0,0]}
-                onClick={entry => setDrillProduct(entry)} cursor="pointer" />
+                onClick={handleDrillProduct} cursor="pointer" />
               <Line yAxisId="right" type="monotone" dataKey="cumulativePct" name="% Tích lũy"
                 stroke="#F59E0B" strokeWidth={2} dot={{ fill: '#F59E0B', r: 4 }} />
             </ComposedChart>
@@ -877,18 +889,15 @@ function TabSales({ data, compareMode, prevData }) {
       </div>
 
       {/* DrillDownModal khi click bar Pareto */}
-      {drillProduct && (() => {
-        const mockOrders = getMockOrders(drillProduct.productName)
-        return (
-          <DrillDownModal
-            title={`Chi tiết đơn hàng — ${drillProduct.productName || drillProduct.shortName}`}
-            columns={drillColumns}
-            data={mockOrders}
-            onClose={() => setDrillProduct(null)}
-            onExport={() => exportCsv(`orders_${drillProduct.shortName}.csv`, mockOrders)}
-          />
-        )
-      })()}
+      {drillProduct && (
+        <DrillDownModal
+          title={drillLoading ? 'Đang tải...' : `Chi tiết đơn hàng — ${drillProduct.productName || drillProduct.shortName}`}
+          columns={drillColumns}
+          data={drillOrders}
+          onClose={() => { setDrillProduct(null); setDrillOrders([]) }}
+          onExport={() => exportCsv(`orders_${drillProduct.shortName ?? 'product'}.csv`, drillOrders)}
+        />
+      )}
     </div>
   )
 }
@@ -1039,28 +1048,29 @@ function TabMultiChannel({ data }) {
 function TabCustomer({ data }) {
   const { t }        = useTranslation()
   const maxFunnel    = data.funnel[0].value
-  const [drillSeg, setDrillSeg] = useState(null)
+  const [drillSeg,      setDrillSeg]      = useState(null)
+  const [drillCusts,    setDrillCusts]    = useState([])
+  const [drillCustLoad, setDrillCustLoad] = useState(false)
 
-  // Mock danh sách KH theo phân khúc
-  function getMockCustomers(segKey) {
-    const names = ['Nguyễn Văn A','Trần Thị B','Lê Văn C','Phạm Thị D','Hoàng Văn E','Đỗ Thị F','Ngô Văn G','Bùi Thị H']
-    return names.map((name, i) => ({
-      customerId: `KH-${2000 + i}`,
-      name,
-      phone:      `09${String(Math.floor(10000000 + Math.random()*89999999))}`,
-      orders:     segKey === 'vip' ? 8 + i : segKey === 'returning' ? 2 + i : 1,
-      totalSpent: segKey === 'vip' ? (15_000_000 + i * 2_000_000) : segKey === 'returning' ? (3_000_000 + i * 500_000) : 800_000,
-      lastOrder:  `2025-${String(Math.ceil((i+1)/3)).padStart(2,'0')}-15`,
-    }))
+  const handleDrillSeg = async (seg) => {
+    setDrillSeg(seg)
+    setDrillCustLoad(true)
+    try {
+      const custs = await getDrillDownCustomers(seg.key)
+      setDrillCusts(custs)
+    } catch {
+      setDrillCusts([])
+    } finally {
+      setDrillCustLoad(false)
+    }
   }
 
   const custCols = [
-    { key: 'customerId', label: 'Mã KH' },
-    { key: 'name',       label: 'Tên' },
-    { key: 'phone',      label: 'SĐT' },
-    { key: 'orders',     label: 'Số đơn' },
-    { key: 'totalSpent', label: 'Tổng chi', render: v => v.toLocaleString('vi-VN') + ' VND' },
-    { key: 'lastOrder',  label: 'Đơn gần nhất' },
+    { key: 'customerId',   label: 'Mã KH' },
+    { key: 'name',         label: 'Tên' },
+    { key: 'totalOrders',  label: 'Số đơn' },
+    { key: 'totalRevenue', label: 'Tổng chi', render: v => Number(v).toLocaleString('vi-VN') + ' ₫' },
+    { key: 'lastOrderDate',label: 'Đơn gần nhất' },
   ]
 
   return (
@@ -1072,7 +1082,7 @@ function TabCustomer({ data }) {
           return (
             <div key={seg.key}
               className="lcard lcard-hover px-4 py-3 cursor-pointer"
-              onClick={() => setDrillSeg(seg)}
+              onClick={() => handleDrillSeg(seg)}
             >
               <div className="flex items-center gap-2 mb-1">
                 <span className="icon icon-sm" style={{ color: seg.color, fontSize: 18 }}>{seg.icon}</span>
@@ -1148,18 +1158,15 @@ function TabCustomer({ data }) {
       </div>
 
       {/* DrillDown danh sách KH theo phân khúc */}
-      {drillSeg && (() => {
-        const customers = getMockCustomers(drillSeg.key)
-        return (
-          <DrillDownModal
-            title={`Danh sách khách hàng — phân khúc "${drillSeg.label}"`}
-            columns={custCols}
-            data={customers}
-            onClose={() => setDrillSeg(null)}
-            onExport={() => exportCsv(`customers_${drillSeg.key}.csv`, customers)}
-          />
-        )
-      })()}
+      {drillSeg && (
+        <DrillDownModal
+          title={drillCustLoad ? 'Đang tải...' : `Danh sách khách hàng — phân khúc "${drillSeg.label}"`}
+          columns={custCols}
+          data={drillCusts}
+          onClose={() => { setDrillSeg(null); setDrillCusts([]) }}
+          onExport={() => exportCsv(`customers_${drillSeg.key}.csv`, drillCusts)}
+        />
+      )}
 
       {/* Phản hồi mạng xã hội (Facebook) */}
       <SocialFeedbackSection />
@@ -2011,7 +2018,7 @@ export default function DashboardPage() {
       ) : data && (
         <div className="page-enter">
           {activeTab === 'overview'     && <TabOverview     data={data} compareMode={compareMode} prevData={prevData} />}
-          {activeTab === 'sales'        && <TabSales        data={data} compareMode={compareMode} prevData={prevData} />}
+          {activeTab === 'sales'        && <TabSales        data={data} compareMode={compareMode} prevData={prevData} from={getRange().from} to={getRange().to} />}
           {activeTab === 'multichannel' && <TabMultiChannel data={data} />}
           {activeTab === 'customer'     && <TabCustomer     data={data} />}
           {activeTab === 'marketing'    && <TabMarketing    data={data} />}

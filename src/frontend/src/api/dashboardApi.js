@@ -186,6 +186,40 @@ export const deactivateCustomer = (id) =>
 export const getTodayVsYesterday = () =>
   api.get('/api/dashboard/today-vs-yesterday').then(r => r.data)
 
+// ── Drill-down: đơn hàng theo sản phẩm (Dashboard Pareto) ────────────────────
+
+export const getDrillDownOrders = async (productKey, from, to, limit = 50) => {
+  const params = { limit }
+  if (productKey) params.productKey = productKey
+  if (from)       params.from       = from
+  if (to)         params.to         = to
+  const res = await api.get('/api/orders', { params }).then(r => r.data)
+  return (res.data ?? []).map(o => ({
+    orderId:  o.ExternalOrderId ?? o.externalOrderId ?? `#${o.SalesKey ?? o.salesKey}`,
+    date:     (o.SaleDate ?? o.saleDate ?? '').toString().slice(0, 10),
+    channel:  o.ChannelName  ?? o.channelName  ?? '—',
+    qty:      o.Quantity     ?? o.quantity     ?? 0,
+    revenue:  Number(o.NetRevenue    ?? o.netRevenue    ?? 0),
+    status:   o.Status       ?? '—',
+  }))
+}
+
+// ── Drill-down: danh sách KH theo phân khúc (Dashboard Customer tab) ──────────
+
+export const getDrillDownCustomers = async (segment, limit = 50) => {
+  const segMap = { new: 'NEW', returning: 'RETURNING', vip: 'VIP', atrisk: 'AT_RISK' }
+  const res = await api.get('/api/customers', {
+    params: { segment: segMap[segment] ?? segment, limit },
+  }).then(r => r.data)
+  return (res.data ?? []).map(c => ({
+    customerId:    c.CustomerCode  ?? c.customerCode  ?? `#${c.CustomerId ?? c.customerId}`,
+    name:          c.FullName      ?? c.fullName      ?? '—',
+    totalOrders:   Number(c.TotalOrders  ?? c.totalOrders  ?? 0),
+    totalRevenue:  Number(c.TotalRevenue ?? c.totalRevenue ?? 0),
+    lastOrderDate: (c.LastOrderDate ?? c.lastOrderDate ?? '').toString().slice(0, 10),
+  }))
+}
+
 // ── Product Channel Prices ────────────────────────────────────────────────────
 
 export const getChannelPrices = (productId) =>

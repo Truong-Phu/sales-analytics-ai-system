@@ -35,10 +35,12 @@ public class CustomersController(
     [HttpGet]
     [Authorize(Roles = "Owner,Manager,DataIT,SuperAdmin")]
     public async Task<IActionResult> GetCustomers(
-        [FromQuery] string? search  = null,
-        [FromQuery] string? segment = null,   // VIP | REGULAR | NEW | INACTIVE
-        [FromQuery] int     page    = 1,
-        [FromQuery] int     limit   = 20)
+        [FromQuery] string?   search  = null,
+        [FromQuery] string?   segment = null,   // VIP | REGULAR | NEW | INACTIVE
+        [FromQuery] DateOnly? from    = null,
+        [FromQuery] DateOnly? to      = null,
+        [FromQuery] int       page    = 1,
+        [FromQuery] int       limit   = 20)
     {
         if (page  < 1) page  = 1;
         if (limit < 1 || limit > 100) limit = 20;
@@ -71,6 +73,8 @@ public class CustomersController(
                   AND (@search    IS NULL OR dc.full_name     ILIKE '%' || @search  || '%'
                                           OR dc.customer_code ILIKE '%' || @search  || '%')
                   AND (@segment   IS NULL OR dc.segment_label = @segment)
+                  AND (@from      IS NULL OR dd.full_date >= @from::date OR dd.full_date IS NULL)
+                  AND (@to        IS NULL OR dd.full_date <= @to::date   OR dd.full_date IS NULL)
                   AND (@companyId IS NULL OR fs.company_id = @companyId::uuid OR fs.company_id IS NULL)
                 GROUP BY dc.customer_key, dc.customer_id, dc.customer_code, dc.full_name,
                          dc.email, dc.province, dc.region, dc.segment_label, dc.effective_from
@@ -82,23 +86,31 @@ public class CustomersController(
                 SELECT COUNT(DISTINCT dc.customer_key)
                 FROM dw.dim_customer dc
                 LEFT JOIN dw.fact_sales fs ON fs.customer_key = dc.customer_key
+                LEFT JOIN dw.dim_date   dd ON fs.date_key     = dd.date_key
                 WHERE dc.is_current = TRUE
                   AND (@search    IS NULL OR dc.full_name     ILIKE '%' || @search  || '%'
                                           OR dc.customer_code ILIKE '%' || @search  || '%')
                   AND (@segment   IS NULL OR dc.segment_label = @segment)
+                  AND (@from      IS NULL OR dd.full_date >= @from::date OR dd.full_date IS NULL)
+                  AND (@to        IS NULL OR dd.full_date <= @to::date   OR dd.full_date IS NULL)
                   AND (@companyId IS NULL OR fs.company_id = @companyId::uuid OR fs.company_id IS NULL)
                 """;
 
+            void BindParams(NpgsqlCommand c)
+            {
+                c.Parameters.Add(new NpgsqlParameter("search",    NpgsqlDbType.Text) { Value = (object?)search    ?? DBNull.Value });
+                c.Parameters.Add(new NpgsqlParameter("segment",   NpgsqlDbType.Text) { Value = (object?)segment   ?? DBNull.Value });
+                c.Parameters.Add(new NpgsqlParameter("from",      NpgsqlDbType.Text) { Value = from.HasValue ? (object)from.Value.ToString("yyyy-MM-dd") : DBNull.Value });
+                c.Parameters.Add(new NpgsqlParameter("to",        NpgsqlDbType.Text) { Value = to.HasValue   ? (object)to.Value.ToString("yyyy-MM-dd")   : DBNull.Value });
+                c.Parameters.Add(new NpgsqlParameter("companyId", NpgsqlDbType.Text) { Value = (object?)companyId?.ToString() ?? DBNull.Value });
+            }
+
             await using var countCmd = new NpgsqlCommand(countSql, conn);
-            countCmd.Parameters.Add(new NpgsqlParameter("search",    NpgsqlDbType.Text) { Value = (object?)search    ?? DBNull.Value });
-            countCmd.Parameters.Add(new NpgsqlParameter("segment",   NpgsqlDbType.Text) { Value = (object?)segment   ?? DBNull.Value });
-            countCmd.Parameters.Add(new NpgsqlParameter("companyId", NpgsqlDbType.Text) { Value = (object?)companyId?.ToString() ?? DBNull.Value });
+            BindParams(countCmd);
             var total = Convert.ToInt32(await countCmd.ExecuteScalarAsync());
 
             await using var cmd = new NpgsqlCommand(sql, conn);
-            cmd.Parameters.Add(new NpgsqlParameter("search",    NpgsqlDbType.Text) { Value = (object?)search    ?? DBNull.Value });
-            cmd.Parameters.Add(new NpgsqlParameter("segment",   NpgsqlDbType.Text) { Value = (object?)segment   ?? DBNull.Value });
-            cmd.Parameters.Add(new NpgsqlParameter("companyId", NpgsqlDbType.Text) { Value = (object?)companyId?.ToString() ?? DBNull.Value });
+            BindParams(cmd);
             cmd.Parameters.AddWithValue("limit",  limit);
             cmd.Parameters.AddWithValue("offset", (page - 1) * limit);
 

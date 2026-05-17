@@ -1092,7 +1092,7 @@ def save_json(data, path):
 
 def main():
     print("═" * 55)
-    print("MSAS — Tạo dữ liệu mẫu")
+    print("MSAS — Tạo dữ liệu mẫu (volume cao để train Prophet tốt hơn)")
     print("═" * 55)
 
     # Khoảng thời gian
@@ -1107,16 +1107,16 @@ def main():
     flash_sale_day   = datetime(2024, 11, 11)   # 11/11 Double Eleven
     tiktok_drop_week = datetime(2025, 1, 13)    # TikTok doanh thu giảm 40%
 
-    # ── SHOPEE ────────────────────────────────────────────────
+    # ── SHOPEE ─── (tăng 3× số đơn để Prophet có đủ data points) ──
     print("\n[Shopee]")
-    data = generate_shopee_orders(SHOPEE_SKUS, q3_2024_start, q3_2024_end, 65)
+    data = generate_shopee_orders(SHOPEE_SKUS, q3_2024_start, q3_2024_end, 200)
     save_json(data, os.path.join(SHOPEE_DIR, "shopee_orders_2024_q3.json"))
 
-    data = generate_shopee_orders(SHOPEE_SKUS, q4_2024_start, q4_2024_end, 100,
+    data = generate_shopee_orders(SHOPEE_SKUS, q4_2024_start, q4_2024_end, 320,
                                   flash_sale_date=flash_sale_day)
     save_json(data, os.path.join(SHOPEE_DIR, "shopee_orders_2024_q4.json"))
 
-    data = generate_shopee_orders(SHOPEE_SKUS, q1_2025_start, q1_2025_end, 112)
+    data = generate_shopee_orders(SHOPEE_SKUS, q1_2025_start, q1_2025_end, 340)
     save_json(data, os.path.join(SHOPEE_DIR, "shopee_orders_2025_q1.json"))
 
     products_shopee = {"items": [_shopee_product(p) for p in PRODUCTS if p["sku"] in SHOPEE_SKUS]}
@@ -1126,10 +1126,10 @@ def main():
     print("\n[TikTok Shop]")
     tiktok_prods = [p for p in PRODUCTS if p["sku"] in TIKTOK_SKUS]
 
-    data = generate_tiktok_orders(TIKTOK_SKUS, q4_2024_start, q4_2024_end, 80)
+    data = generate_tiktok_orders(TIKTOK_SKUS, q4_2024_start, q4_2024_end, 250)
     save_json(data, os.path.join(TIKTOK_DIR, "tiktok_orders_2024_q4.json"))
 
-    data = generate_tiktok_orders(TIKTOK_SKUS, q1_2025_start, q1_2025_end, 80,
+    data = generate_tiktok_orders(TIKTOK_SKUS, q1_2025_start, q1_2025_end, 240,
                                   tiktok_drop_start=tiktok_drop_week)
     save_json(data, os.path.join(TIKTOK_DIR, "tiktok_orders_2025_q1.json"))
 
@@ -1140,10 +1140,10 @@ def main():
     print("\n[Lazada]")
     lazada_prods = [p for p in PRODUCTS if p["sku"] in LAZADA_SKUS]
 
-    data = generate_lazada_orders(LAZADA_SKUS, q4_2024_start, q4_2024_end, 70)
+    data = generate_lazada_orders(LAZADA_SKUS, q4_2024_start, q4_2024_end, 210)
     save_json(data, os.path.join(LAZADA_DIR, "lazada_orders_2024_q4.json"))
 
-    data = generate_lazada_orders(LAZADA_SKUS, q1_2025_start, q1_2025_end, 70)
+    data = generate_lazada_orders(LAZADA_SKUS, q1_2025_start, q1_2025_end, 210)
     save_json(data, os.path.join(LAZADA_DIR, "lazada_orders_2025_q1.json"))
 
     products_lazada = {"products": [_lazada_product(p, i) for i, p in enumerate(lazada_prods)]}
@@ -1255,11 +1255,6 @@ def _order_status_extended(channel: str, sku: str, dt: datetime):
 def generate_extended_data() -> None:
     """Tạo thêm dữ liệu từ 2025-04-02 đến 2026-05-16 cho 3 sàn.
 
-    Số lượng đơn ước tính:
-      Shopee : ~350 đơn (~410 ngày, trung bình ~0.85 đơn/ngày)
-      TikTok : ~280 đơn
-      Lazada : ~230 đơn
-
     Seasonal events đặc biệt được nhúng để kiểm thử:
       - Anomaly HIGH : flash sale 15/6/2025
       - Anomaly LOW  : ngày Tết 2026
@@ -1271,7 +1266,7 @@ def generate_extended_data() -> None:
     # ── SHOPEE Extended ───────────────────────────────────────────────────────
     print("\n[Shopee Extended 2025-04-02 → 2026-05-16]")
     retention: list = []
-    dates  = _generate_dates_extended(ext_start, ext_end, 350)
+    dates  = _generate_dates_extended(ext_start, ext_end, 1100)
     orders = []
     for i, dt in enumerate(dates):
         sku    = _pick_product(SHOPEE_SKUS)
@@ -1284,7 +1279,7 @@ def generate_extended_data() -> None:
     # ── TIKTOK Extended ───────────────────────────────────────────────────────
     print("\n[TikTok Extended 2025-04-02 → 2026-05-16]")
     retention = []
-    dates  = _generate_dates_extended(ext_start, ext_end, 280)
+    dates  = _generate_dates_extended(ext_start, ext_end, 880)
     orders = []
     for i, dt in enumerate(dates):
         sku    = _pick_product(TIKTOK_SKUS)
@@ -1297,7 +1292,7 @@ def generate_extended_data() -> None:
     # ── LAZADA Extended ───────────────────────────────────────────────────────
     print("\n[Lazada Extended 2025-04-02 → 2026-05-16]")
     retention = []
-    dates  = _generate_dates_extended(ext_start, ext_end, 230)
+    dates  = _generate_dates_extended(ext_start, ext_end, 720)
     orders = []
     for i, dt in enumerate(dates):
         sku    = _pick_product(LAZADA_SKUS)
@@ -1313,6 +1308,112 @@ def generate_extended_data() -> None:
     print("  python src/etl/import_sample_lazada.py --file docs/sample-data/lazada/lazada_orders_2025_2026.json")
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# 9. DỮ LIỆU LỊCH SỬ 2023-01-01 → 2024-06-30 (18 tháng để Prophet detect seasonality)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _hist_seasonal_weight(dt: datetime) -> float:
+    """Seasonal weight cho 2023-2024 — tương tự VN fashion market."""
+    special = {
+        datetime(2023, 1, 22).date(): 0.35,  # Tết Nguyên Đán 2023 (ngày chính)
+        datetime(2023, 1, 23).date(): 0.35,
+        datetime(2023, 1, 15).date(): 2.0,   # Cận Tết tăng
+        datetime(2023, 1, 16).date(): 2.2,
+        datetime(2023, 1, 17).date(): 1.8,
+        datetime(2023, 3, 8).date():  1.5,   # 8/3
+        datetime(2023, 11, 11).date(): 5.0,  # Double 11 2023
+        datetime(2023, 11, 24).date(): 3.5,  # Black Friday 2023
+        datetime(2023, 12, 12).date(): 4.0,  # Double 12 2023
+        datetime(2024, 2, 10).date(): 0.35,  # Tết 2024 (ngày chính Giáp Thìn)
+        datetime(2024, 2, 7).date():  2.0,   # Cận Tết 2024
+        datetime(2024, 2, 8).date():  2.2,
+        datetime(2024, 2, 9).date():  1.8,
+        datetime(2024, 3, 8).date():  1.5,   # 8/3/2024
+        datetime(2024, 6, 15).date(): 2.5,   # Mid-year sale 2024
+    }
+    d = dt.date()
+    if d in special:
+        return special[d]
+    m = dt.month
+    weights = {
+        1: 0.70, 2: 0.85, 3: 1.05, 4: 0.95, 5: 1.0, 6: 1.1,
+        7: 0.75, 8: 0.85, 9: 0.80, 10: 1.0, 11: 1.4, 12: 1.5,
+    }
+    return weights.get(m, 1.0)
+
+
+def generate_historical_2023() -> None:
+    """Tạo dữ liệu lịch sử Jan 2023 → Jun 2024 để Prophet có 3.5 năm dữ liệu.
+
+    Với tổng ~4,400 đơn (3 sàn), Prophet sẽ có:
+      - 540 ngày dữ liệu, trung bình ~8 đơn/ngày/sàn → mỗi ngày đều có revenue
+      - Bắt được 2 mùa Tết + 2 lần Double 11 → detect yearly seasonality tốt
+      - MAPE ước tính giảm từ ~40% xuống ~15-25%
+    """
+    hist_start = datetime(2023, 1, 1)
+    hist_end   = datetime(2024, 6, 30, 23, 59, 59)
+    hist_days  = (hist_end - hist_start).days  # ~546 ngày
+
+    def _gen_dates(count: int) -> list:
+        day_list    = [hist_start + timedelta(days=d) for d in range(hist_days + 1)]
+        day_weights = [_hist_seasonal_weight(d) for d in day_list]
+        total_w     = sum(day_weights)
+        day_weights = [w / total_w for w in day_weights]
+        chosen      = random.choices(day_list, weights=day_weights, k=count)
+        return sorted([
+            d.replace(hour=random.randint(7, 22),
+                      minute=random.randint(0, 59),
+                      second=random.randint(0, 59))
+            for d in chosen
+        ])
+
+    # ── SHOPEE ────────────────────────────────────────────────────────────────
+    print(f"\n[Shopee Historical 2023-01 → 2024-06]")
+    retention: list = []
+    dates  = _gen_dates(1750)  # ~3.2 đơn/ngày × 546 ngày
+    orders = []
+    for i, dt in enumerate(dates):
+        sku    = _pick_product(SHOPEE_SKUS)
+        cust   = _pick_customer(retention, CUSTOMERS)
+        status = _order_status("shopee", dt, sku)
+        orders.append(_shopee_order(i + 1, dt, cust, sku, status))
+    save_json({"orders": orders},
+              os.path.join(SHOPEE_DIR, "shopee_orders_2023_2024h1.json"))
+
+    # ── TIKTOK SHOP ───────────────────────────────────────────────────────────
+    print(f"\n[TikTok Historical 2023-01 → 2024-06]")
+    # TikTok ra mắt VN mạnh từ giữa 2023 → Q1 thấp hơn, sau đó tăng
+    retention = []
+    dates = _gen_dates(1300)
+    orders = []
+    for i, dt in enumerate(dates):
+        sku    = _pick_product(TIKTOK_SKUS)
+        cust   = _pick_customer(retention, CUSTOMERS)
+        status = _order_status("tiktok", dt, sku)
+        orders.append(_tiktok_order(i + 1, dt, cust, sku, status))
+    save_json({"orders": orders},
+              os.path.join(TIKTOK_DIR, "tiktok_orders_2023_2024h1.json"))
+
+    # ── LAZADA ────────────────────────────────────────────────────────────────
+    print(f"\n[Lazada Historical 2023-01 → 2024-06]")
+    retention = []
+    dates = _gen_dates(1050)
+    orders = []
+    for i, dt in enumerate(dates):
+        sku    = _pick_product(LAZADA_SKUS)
+        cust   = _pick_customer(retention, CUSTOMERS)
+        status = _order_status("lazada", dt, sku)
+        orders.append(_lazada_order(i + 1, dt, cust, sku, status))
+    save_json({"orders": orders},
+              os.path.join(LAZADA_DIR, "lazada_orders_2023_2024h1.json"))
+
+    print(f"\n[Historical 2023-2024H1] Xong! Import bằng:")
+    print("  python src/etl/import_sample_shopee.py --file docs/sample-data/shopee/shopee_orders_2023_2024h1.json")
+    print("  python src/etl/import_sample_tiktok.py --file docs/sample-data/tiktok/tiktok_orders_2023_2024h1.json")
+    print("  python src/etl/import_sample_lazada.py --file docs/sample-data/lazada/lazada_orders_2023_2024h1.json")
+
+
 if __name__ == "__main__":
     main()
-    generate_extended_data()
+    generate_historical_2023()  # Dữ liệu lịch sử 2023-2024H1 (18 tháng baseline)
+    generate_extended_data()    # Dữ liệu mở rộng 2025-04-02 → 2026-05-16

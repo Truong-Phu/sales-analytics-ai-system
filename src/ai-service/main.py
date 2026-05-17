@@ -22,9 +22,17 @@ Endpoints mới (chức năng sáng tạo):
 Chạy:
   uvicorn main:app --host 0.0.0.0 --port 8001 --reload
 """
+import io
 import logging
 import os
+import sys
 from pathlib import Path
+
+# Đảm bảo stdout/stderr dùng UTF-8 trên Windows (tránh lỗi charmap với tiếng Việt)
+if sys.stdout.encoding and sys.stdout.encoding.lower() != 'utf-8':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+if sys.stderr.encoding and sys.stderr.encoding.lower() != 'utf-8':
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
 from dotenv import load_dotenv
 from fastapi import BackgroundTasks, FastAPI

@@ -21,6 +21,7 @@ from generate_sample_data import PRODUCTS, SHOPEE_SKUS
 BASE = os.path.join(os.path.dirname(__file__), "..", "..", "docs", "sample-data", "shopee")
 
 ORDER_FILES = [
+    os.path.join(BASE, "shopee_orders_2023_2024h1.json"),   # Historical baseline
     os.path.join(BASE, "shopee_orders_2024_q3.json"),
     os.path.join(BASE, "shopee_orders_2024_q4.json"),
     os.path.join(BASE, "shopee_orders_2025_q1.json"),
@@ -143,4 +144,11 @@ def main():
 
 
 if __name__ == "__main__":
+    # --file <path> cho phép import 1 file cụ thể thay vì toàn bộ ORDER_FILES
+    if "--file" in sys.argv:
+        idx = sys.argv.index("--file")
+        if idx + 1 < len(sys.argv):
+            extra = sys.argv[idx + 1]
+            if extra not in ORDER_FILES:
+                ORDER_FILES.append(extra)
     main()

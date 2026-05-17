@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Security.Claims;
 using System.Text;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -17,7 +18,7 @@ namespace SalesAnalytics.API.Controllers;
 [ApiController]
 [Route("api/import")]
 [Authorize(Roles = "Owner,Manager")]
-public class ImportController(IConfiguration cfg, ITenantContext tenant) : ControllerBase
+public class ImportController(IConfiguration cfg, ITenantContext tenant, IAuditLogService audit) : ControllerBase
 {
     private readonly string _connStr = cfg.GetConnectionString("Default")!;
 
@@ -190,6 +191,21 @@ public class ImportController(IConfiguration cfg, ITenantContext tenant) : Contr
                 errors.Add(new { row = r + 1, message = ex.Message });
                 skipped++;
             }
+        }
+
+        // Ghi audit log để trace ai đã import gì
+        if (success > 0)
+        {
+            var userId   = int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var uid) ? (int?)uid : null;
+            var username = User.FindFirstValue(ClaimTypes.Name) ?? "";
+            await audit.LogAsync(
+                userId:     userId,
+                username:   username,
+                action:     "IMPORT_CSV",
+                entityType: "Order",
+                entityId:   platform,
+                newValue:   $"imported={success} skipped={skipped} file={file.FileName}",
+                status:     "SUCCESS");
         }
 
         return Ok(new

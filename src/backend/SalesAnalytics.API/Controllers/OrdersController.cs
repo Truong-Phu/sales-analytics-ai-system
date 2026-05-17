@@ -37,10 +37,14 @@ public class OrdersController(
     [HttpGet]
     [Authorize(Roles = "Owner,Manager,Staff,DataIT,SuperAdmin")]
     public async Task<IActionResult> GetOrders(
-        [FromQuery] string? search = null,
-        [FromQuery] string? status = null,
-        [FromQuery] int     page   = 1,
-        [FromQuery] int     limit  = 20)
+        [FromQuery] string?   search     = null,
+        [FromQuery] string?   status     = null,
+        [FromQuery] int?      productKey = null,   // drill-down: DW surrogate key của sản phẩm
+        [FromQuery] DateOnly? from       = null,
+        [FromQuery] DateOnly? to         = null,
+        [FromQuery] string?   channel    = null,
+        [FromQuery] int       page       = 1,
+        [FromQuery] int       limit      = 20)
     {
         if (page  < 1) page  = 1;
         if (limit < 1 || limit > 100) limit = 20;
@@ -70,11 +74,15 @@ public class OrdersController(
                 JOIN dw.dim_channel dc ON fs.channel_key = dc.channel_key
                 JOIN dw.dim_product dp ON fs.product_key = dp.product_key
                 WHERE dp.is_current = TRUE
-                  AND (@status    IS NULL OR dc.channel_name ILIKE '%' || @status || '%')
-                  AND (@search    IS NULL OR
+                  AND (@status     IS NULL OR dc.channel_name ILIKE '%' || @status  || '%')
+                  AND (@channel    IS NULL OR dc.channel_name ILIKE '%' || @channel || '%')
+                  AND (@productKey IS NULL OR fs.product_key = @productKey)
+                  AND (@from       IS NULL OR dd.full_date >= @from::date)
+                  AND (@to         IS NULL OR dd.full_date <= @to::date)
+                  AND (@search     IS NULL OR
                        fs.external_order_id ILIKE '%' || @search || '%' OR
                        dp.product_name      ILIKE '%' || @search || '%')
-                  AND (@companyId IS NULL OR fs.company_id = @companyId::uuid)
+                  AND (@companyId  IS NULL OR fs.company_id = @companyId::uuid)
                 ORDER BY dd.full_date DESC, fs.sales_key DESC
                 LIMIT @limit OFFSET @offset
                 """;
@@ -86,23 +94,34 @@ public class OrdersController(
                 JOIN dw.dim_channel dc ON fs.channel_key = dc.channel_key
                 JOIN dw.dim_product dp ON fs.product_key = dp.product_key
                 WHERE dp.is_current = TRUE
-                  AND (@status    IS NULL OR dc.channel_name ILIKE '%' || @status || '%')
-                  AND (@search    IS NULL OR
+                  AND (@status     IS NULL OR dc.channel_name ILIKE '%' || @status  || '%')
+                  AND (@channel    IS NULL OR dc.channel_name ILIKE '%' || @channel || '%')
+                  AND (@productKey IS NULL OR fs.product_key = @productKey)
+                  AND (@from       IS NULL OR dd.full_date >= @from::date)
+                  AND (@to         IS NULL OR dd.full_date <= @to::date)
+                  AND (@search     IS NULL OR
                        fs.external_order_id ILIKE '%' || @search || '%' OR
                        dp.product_name      ILIKE '%' || @search || '%')
-                  AND (@companyId IS NULL OR fs.company_id = @companyId::uuid)
+                  AND (@companyId  IS NULL OR fs.company_id = @companyId::uuid)
                 """;
 
+            void BindParams(NpgsqlCommand c)
+            {
+                c.Parameters.Add(new NpgsqlParameter("status",     NpgsqlDbType.Text)    { Value = (object?)status    ?? DBNull.Value });
+                c.Parameters.Add(new NpgsqlParameter("channel",    NpgsqlDbType.Text)    { Value = (object?)channel   ?? DBNull.Value });
+                c.Parameters.Add(new NpgsqlParameter("productKey", NpgsqlDbType.Integer) { Value = (object?)productKey ?? DBNull.Value });
+                c.Parameters.Add(new NpgsqlParameter("from",       NpgsqlDbType.Text)    { Value = from.HasValue ? (object)from.Value.ToString("yyyy-MM-dd") : DBNull.Value });
+                c.Parameters.Add(new NpgsqlParameter("to",         NpgsqlDbType.Text)    { Value = to.HasValue   ? (object)to.Value.ToString("yyyy-MM-dd")   : DBNull.Value });
+                c.Parameters.Add(new NpgsqlParameter("search",     NpgsqlDbType.Text)    { Value = (object?)search    ?? DBNull.Value });
+                c.Parameters.Add(new NpgsqlParameter("companyId",  NpgsqlDbType.Text)    { Value = (object?)companyId?.ToString() ?? DBNull.Value });
+            }
+
             await using var countCmd = new NpgsqlCommand(countSql, conn);
-            countCmd.Parameters.Add(new NpgsqlParameter("status",    NpgsqlDbType.Text) { Value = (object?)status    ?? DBNull.Value });
-            countCmd.Parameters.Add(new NpgsqlParameter("search",    NpgsqlDbType.Text) { Value = (object?)search    ?? DBNull.Value });
-            countCmd.Parameters.Add(new NpgsqlParameter("companyId", NpgsqlDbType.Text) { Value = (object?)companyId?.ToString() ?? DBNull.Value });
+            BindParams(countCmd);
             var total = Convert.ToInt32(await countCmd.ExecuteScalarAsync());
 
             await using var cmd = new NpgsqlCommand(sql, conn);
-            cmd.Parameters.Add(new NpgsqlParameter("status",    NpgsqlDbType.Text) { Value = (object?)status    ?? DBNull.Value });
-            cmd.Parameters.Add(new NpgsqlParameter("search",    NpgsqlDbType.Text) { Value = (object?)search    ?? DBNull.Value });
-            cmd.Parameters.Add(new NpgsqlParameter("companyId", NpgsqlDbType.Text) { Value = (object?)companyId?.ToString() ?? DBNull.Value });
+            BindParams(cmd);
             cmd.Parameters.AddWithValue("limit",  limit);
             cmd.Parameters.AddWithValue("offset", (page - 1) * limit);
 
