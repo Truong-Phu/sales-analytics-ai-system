@@ -1,4 +1,6 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using SalesAnalytics.Core.Entities;
 
 namespace SalesAnalytics.Infrastructure.Data;
@@ -7,6 +9,9 @@ namespace SalesAnalytics.Infrastructure.Data;
 public class AppDbContext : DbContext
 {
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
+
+    // Helper để parse JSON — tránh optional-argument trong expression tree
+    private static JsonDocument _ParseJson(string v) => JsonDocument.Parse(v);
 
     // ── DbSets ────────────────────────────────────────────────────────────────
     public DbSet<User>        Users        => Set<User>();
@@ -112,8 +117,16 @@ public class AppDbContext : DbContext
             e.Property(a => a.DisplayName).HasColumnName("display_name").HasMaxLength(200).IsRequired();
             e.Property(a => a.IsActive).HasColumnName("is_active").HasDefaultValue(true);
             e.Property(a => a.IsDefault).HasColumnName("is_default").HasDefaultValue(false);
-            e.Property(a => a.Config).HasColumnName("config").HasColumnType("jsonb");
-            e.Property(a => a.ConfigMasked).HasColumnName("config_masked").HasColumnType("jsonb");
+            // ValueConverter: JsonDocument ↔ string — cần để InMemory provider (tests) hoạt động.
+            // Dùng static helper _ParseJson thay vì JsonDocument.Parse(v) trực tiếp
+            // vì expression tree không cho phép gọi method có optional arguments.
+            var jsonDocConverter = new ValueConverter<JsonDocument, string>(
+                v => v.RootElement.GetRawText(),
+                v => _ParseJson(v));
+            e.Property(a => a.Config).HasColumnName("config").HasColumnType("jsonb")
+             .HasConversion(jsonDocConverter);
+            e.Property(a => a.ConfigMasked).HasColumnName("config_masked").HasColumnType("jsonb")
+             .HasConversion(jsonDocConverter);
             e.Property(a => a.Note).HasColumnName("note");
             e.Property(a => a.SortOrder).HasColumnName("sort_order").HasDefaultValue(0);
             e.Property(a => a.CreatedBy).HasColumnName("created_by");

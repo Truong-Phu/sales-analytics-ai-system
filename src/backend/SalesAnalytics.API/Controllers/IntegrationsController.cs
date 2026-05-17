@@ -433,6 +433,43 @@ public class IntegrationsController(
         }
     }
 
+    /// <summary>
+    /// Kích hoạt scrape Google Search thủ công (gọi Python AI Service).
+    /// Không cần credentials — chỉ cần có keywords trong bảng scraper_keywords.
+    /// </summary>
+    [HttpPost("/api/sync/scrape-google")]
+    [Authorize(Roles = "Owner,Manager,DataIT,SuperAdmin")]
+    public async Task<IActionResult> ScrapeGoogle()
+    {
+        var companyId = tenant.CompanyId;
+
+        var client = httpClientFactory.CreateClient("AiService");
+        try
+        {
+            var response = await client.PostAsJsonAsync(
+                $"/scrape/google?company_id={companyId}",
+                new { });
+
+            if (response.IsSuccessStatusCode)
+            {
+                var result = await response.Content.ReadFromJsonAsync<JsonElement>();
+                return Ok(result);
+            }
+
+            var errBody = await response.Content.ReadAsStringAsync();
+            logger.LogWarning("AI Service scrape-google thất bại: {Status} {Body}", response.StatusCode, errBody);
+            return StatusCode((int)response.StatusCode, new
+            {
+                message = "AI Service không thể scrape Google. Vui lòng kiểm tra kết nối."
+            });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Lỗi gọi AI Service scrape-google");
+            return StatusCode(503, new { message = "AI Service không khả dụng." });
+        }
+    }
+
     // ── Helper ────────────────────────────────────────────────────────────────
 
     /// <summary>

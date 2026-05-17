@@ -1522,6 +1522,119 @@ function FacebookFeed() {
   )
 }
 
+// ── Google Scraper Card ───────────────────────────────────────────────────────
+function GoogleScraperCard() {
+  const [scraping, setScraping] = useState(false)
+  const [result,   setResult]   = useState(null)
+
+  const handleScrape = async () => {
+    setScraping(true); setResult(null)
+    try {
+      // Scrape Google có thể mất 60-120s tùy số keywords và rate limit
+      const r = await api.post('/api/sync/scrape-google', {}, { timeout: 120_000 })
+      setResult(r.data)
+    } catch (e) {
+      setResult({ success: false, message: e.response?.data?.message ?? 'Lỗi không xác định' })
+    } finally {
+      setScraping(false)
+    }
+  }
+
+  return (
+    <div className="lcard p-5 space-y-5">
+      {/* Header */}
+      <div className="flex items-center gap-3">
+        <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0"
+             style={{ background: 'rgba(66,133,244,0.12)' }}>
+          <span className="icon" style={{ fontSize: 24, color: '#4285F4' }}>travel_explore</span>
+        </div>
+        <div className="flex-1">
+          <h2 className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>
+            Google Search Scraper
+          </h2>
+          <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
+            Thu thập xu hướng thị trường — không cần credentials
+          </p>
+        </div>
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium"
+              style={{ background: 'rgba(16,185,129,0.10)', color: 'var(--accent-500)', border: '1px solid rgba(16,185,129,0.30)' }}>
+          <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--accent-500)' }} />
+          Sẵn sàng
+        </span>
+      </div>
+
+      {/* Hướng dẫn */}
+      <div className="rounded-xl px-4 py-3 text-xs space-y-1"
+           style={{ background: 'rgba(66,133,244,0.07)', border: '1px solid rgba(66,133,244,0.20)', color: '#4285F4' }}>
+        <div className="font-semibold flex items-center gap-1.5 mb-1">
+          <span className="icon" style={{ fontSize: 14 }}>info</span>
+          Cách hoạt động
+        </div>
+        <ol className="space-y-0.5 list-decimal list-inside" style={{ color: 'var(--text-secondary)', lineHeight: 1.7 }}>
+          <li>Đọc từ khóa từ tab <strong>Từ khóa Scraper</strong> (source: Google)</li>
+          <li>Tìm kiếm Google với từng từ khóa (20 URL/keyword, tối đa 80 URL)</li>
+          <li>Crawl nội dung: tên sản phẩm, giá, xu hướng, domain nguồn</li>
+          <li>Lưu vào <code style={{ background: 'var(--bg-elevated)', padding: '0 3px', borderRadius: 3 }}>raw_google_data</code> — bỏ qua bản ghi trùng</li>
+        </ol>
+        <div className="mt-2 pt-2" style={{ borderTop: '1px solid rgba(66,133,244,0.20)', color: 'var(--text-tertiary)' }}>
+          Nếu Google giới hạn (429): thêm keywords vào tab <strong>Từ khóa</strong> và thử lại sau vài phút.
+        </div>
+      </div>
+
+      {/* Kết quả scrape */}
+      {result && (
+        <div className="rounded-xl px-4 py-3 text-xs space-y-1"
+             style={{
+               background: result.success !== false ? 'rgba(16,185,129,0.08)' : 'rgba(239,68,68,0.08)',
+               border:     `1px solid ${result.success !== false ? 'rgba(16,185,129,0.25)' : 'rgba(239,68,68,0.25)'}`,
+               color:      result.success !== false ? 'var(--accent-500)' : '#EF4444',
+             }}>
+          {result.success !== false ? (
+            <>
+              <div className="font-semibold flex items-center gap-1.5">
+                <span className="icon" style={{ fontSize: 14 }}>check_circle</span>
+                Scrape hoàn tất
+              </div>
+              <div style={{ color: 'var(--text-secondary)' }}>
+                {result.total_scraped} kết quả · {result.inserted} mới · {result.skipped} bỏ qua
+              </div>
+              {result.total_scraped === 0 && result.message && (
+                <div style={{ color: '#F59E0B' }}>{result.message}</div>
+              )}
+            </>
+          ) : (
+            <>
+              <div className="font-semibold">Scrape thất bại</div>
+              <div>{result.message}</div>
+              {result.hint && <div style={{ color: 'var(--text-tertiary)' }}>{result.hint}</div>}
+            </>
+          )}
+        </div>
+      )}
+
+      <button
+        onClick={handleScrape}
+        disabled={scraping}
+        className="lbtn lbtn-primary w-full justify-center disabled:opacity-50"
+        style={{ height: 42 }}
+      >
+        {scraping ? (
+          <>
+            <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full"
+                  style={{ animation: 'spin 0.7s linear infinite' }} />
+            Đang scrape Google...
+          </>
+        ) : (
+          <>
+            <span className="icon text-base">search</span>
+            Scrape Google ngay
+          </>
+        )}
+      </button>
+    </div>
+  )
+}
+
 // ── Channel Connect Tab ───────────────────────────────────────────────────────
 function ChannelConnectTab() {
   return (
@@ -1533,9 +1646,12 @@ function ChannelConnectTab() {
         </p>
       </div>
 
-      {/* Facebook – vẫn dùng card chuyên biệt (có Scrape ngay) */}
+      {/* Facebook – card chuyên biệt có Scrape ngay + xem bài đăng */}
       <FacebookConnectCard />
       <FacebookFeed />
+
+      {/* Google Scraper – không cần credentials, chỉ cần keywords */}
+      <GoogleScraperCard />
 
       {/* Shopee */}
       <ConnectorCard

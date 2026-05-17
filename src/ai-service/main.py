@@ -358,6 +358,125 @@ def feedback_summary(company_id: str = ""):
     }
 
 
+@app.post("/scrape/google", tags=["Scraper"])
+async def scrape_google(company_id: str):
+    """
+    Kích hoạt scrape Google Search thủ công cho một tenant.
+    Đọc keywords từ bảng scraper_keywords theo company_id.
+    Lưu kết quả vào raw_google_data (dedup by content_hash).
+    """
+    import sys
+    from pathlib import Path
+
+    connectors_dir = (
+        Path(__file__).resolve().parents[1]
+        / "api-integration" / "connectors"
+    )
+    api_int_dir = connectors_dir.parent
+    for p in [str(connectors_dir), str(api_int_dir)]:
+        if p not in sys.path:
+            sys.path.insert(0, p)
+
+    try:
+        import importlib.util
+        spec   = importlib.util.spec_from_file_location(
+            "google_scraper", str(connectors_dir / "google_scraper.py")
+        )
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        scraper = module.GoogleScraper(company_id=company_id)
+        result  = scraper.run()
+
+        total   = result.get("total_scraped", 0)
+        return {
+            "success":       True,
+            "company_id":    company_id,
+            "total_scraped": total,
+            "inserted":      result.get("inserted", 0),
+            "skipped":       result.get("skipped", 0),
+            "csv_path":      result.get("csv_path"),
+            "message": (
+                f"Đã scrape {total} bản ghi từ Google Search"
+                if total > 0
+                else "Không thu thập được kết quả. Có thể Google đang giới hạn hoặc chưa có keywords."
+            ),
+        }
+    except Exception as e:
+        logger.error("Scrape Google thất bại: company=%s error=%s", company_id, e)
+        return {
+            "success":       False,
+            "company_id":    company_id,
+            "total_scraped": 0,
+            "message":       f"Lỗi: {str(e)[:200]}",
+            "hint":          "Kiểm tra log FastAPI terminal để biết thêm chi tiết",
+        }
+
+
+@app.get("/trends/summary", tags=["Scraper"])
+def get_trends_summary(company_id: str = "", days: int = 30):
+    """
+    Trả về tóm tắt xu hướng từ dữ liệu Google Search đã scrape.
+    Dùng để hiển thị trên Dashboard tab Thị trường.
+    Trả về: top keywords theo số lần xuất hiện trong N ngày gần nhất.
+    """
+    from services.db_service import query_df
+
+    where_clauses = [f"scraped_at >= NOW() - INTERVAL '{int(days)} days'"]
+    params: dict = {}
+
+    if company_id:
+        where_clauses.append("company_id = %(cid)s::uuid")
+        params["cid"] = company_id
+
+    where_sql = "WHERE " + " AND ".join(where_clauses)
+
+    sql = f"""
+        SELECT keyword,
+               COUNT(*)           AS hit_count,
+               MIN(scraped_at)    AS first_seen,
+               MAX(scraped_at)    AS last_seen,
+               COUNT(DISTINCT url) AS unique_urls
+        FROM   public.raw_google_data
+        {where_sql}
+        GROUP  BY keyword
+        ORDER  BY hit_count DESC
+        LIMIT  10
+    """
+    df = query_df(sql, params or None)
+
+    total_sql = f"""
+        SELECT COUNT(*) AS total
+        FROM   public.raw_google_data
+        {where_sql}
+    """
+    df_total  = query_df(total_sql, params or None)
+    total_cnt = int(df_total["total"].iloc[0]) if not df_total.empty else 0
+
+    if df.empty:
+        return {
+            "trending":      [],
+            "total_records": total_cnt,
+            "days":          days,
+            "note":          "Chưa có dữ liệu — hãy chạy Scrape Google trước",
+        }
+
+    return {
+        "trending": [
+            {
+                "keyword":     row["keyword"],
+                "hits":        int(row["hit_count"]),
+                "unique_urls": int(row.get("unique_urls", 0)),
+                "first_seen":  str(row.get("first_seen", "")),
+                "last_seen":   str(row.get("last_seen", "")),
+            }
+            for _, row in df.iterrows()
+        ],
+        "total_records": total_cnt,
+        "days":          days,
+    }
+
+
 @app.get("/", include_in_schema=False)
 def root():
     return {"message": "Sales Analytics AI Service – truy cập /docs để xem API"}
