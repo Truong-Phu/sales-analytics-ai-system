@@ -66,6 +66,27 @@ _GRAPH_BASE = "https://graph.facebook.com/v18.0"
 _REQUEST_TIMEOUT = 15
 
 
+def _try_decrypt(ciphertext: str) -> str:
+    """
+    Giải mã AES-256-GCM token từ DB.
+    Load crypto_service.py cùng thư mục qua importlib để tránh lỗi relative import
+    khi module được load bằng importlib.util.spec_from_file_location từ AI Service.
+    Fallback: trả về ciphertext nguyên nếu không decrypt được (dev mode không có key).
+    """
+    if not ciphertext:
+        return ciphertext
+    try:
+        import importlib.util as _ilu
+        _cs_path = Path(__file__).parent / "crypto_service.py"
+        spec = _ilu.spec_from_file_location("_fb_crypto_svc", str(_cs_path))
+        mod  = _ilu.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod.decrypt(ciphertext)
+    except Exception as _e:
+        logger.debug("_try_decrypt fallback (passthrough): %s", _e)
+        return ciphertext
+
+
 def _analyze_sentiment(text: str) -> str:
     """
     Phân tích sentiment đơn giản dựa trên từ khóa.
@@ -147,17 +168,62 @@ class FacebookScraper:
         )
 
     def _load_integrations_from_db(self, company_id: str) -> None:
-        """Tải tất cả Facebook Page integrations của company từ DB."""
+        """
+        Tải Facebook Page integrations của company từ DB — dùng psycopg2 trực tiếp.
+
+        KHÔNG dùng relative import (IntegrationRepository) vì module này được load
+        qua importlib.util.spec_from_file_location từ AI Service, không có package
+        context nên relative import sẽ fail silently.
+        """
+        if not self.db_url:
+            logger.warning("[FB Scraper] DATABASE_URL chưa cấu hình — không load được integrations")
+            print("[FB Scraper] CẢNH BÁO: DATABASE_URL trống — bỏ qua load integrations từ DB")
+            return
         try:
-            from .integration_repository import IntegrationRepository
-            repo = IntegrationRepository()
-            self._integrations = repo.get_all_active(platform="facebook")
-            # Lọc theo company_id cụ thể
-            self._integrations = [
-                i for i in self._integrations if i["company_id"] == company_id
-            ]
+            conn = psycopg2.connect(self.db_url)
+            cur  = conn.cursor()
+            cur.execute(
+                """
+                SELECT id, company_id, account_id, account_name, access_token, additional_config
+                FROM   public.integrations
+                WHERE  company_id = %s::uuid
+                  AND  platform   = 'facebook'
+                  AND  is_active  = TRUE
+                  AND  status     = 'connected'
+                ORDER  BY connected_at DESC NULLS LAST
+                """,
+                (company_id,),
+            )
+            rows = cur.fetchall()
+            cur.close()
+            conn.close()
+
+            logger.info("[FB Scraper] DB: tìm thấy %d integration(s) cho company=%s", len(rows), company_id)
+            print(f"[FB Scraper] DB query: {len(rows)} facebook integration(s) cho company={company_id}")
+
+            for row in rows:
+                rid, cid, account_id, account_name, encrypted_token, additional_config = row
+                decrypted = _try_decrypt(encrypted_token)
+                token_preview = (decrypted[:10] + "...") if decrypted else "EMPTY"
+                print(f"[FB Scraper] Integration: page_id={account_id} "
+                      f"page_name={account_name} token={token_preview}")
+                logger.info("[FB Scraper] Integration loaded: page_id=%s page_name=%s token=%s",
+                            account_id, account_name, token_preview)
+                self._integrations.append({
+                    "id":                str(rid),
+                    "company_id":        str(cid),
+                    "account_id":        account_id or "",
+                    "account_name":      account_name or "",
+                    "access_token":      decrypted,
+                    "additional_config": additional_config if isinstance(additional_config, dict) else {},
+                })
+
+        except psycopg2.OperationalError as e:
+            logger.error("[FB Scraper] Lỗi kết nối PostgreSQL: %s", e)
+            print(f"[FB Scraper] LỖI kết nối PostgreSQL: {e}")
         except Exception as exc:
-            logger.warning(f"Không thể load integrations từ DB: {exc}")
+            logger.error("[FB Scraper] Lỗi load integrations từ DB: %s", exc, exc_info=True)
+            print(f"[FB Scraper] LỖI load integrations: {exc}")
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -268,12 +334,28 @@ class FacebookScraper:
                 raise
             except requests.HTTPError as e:
                 logger.error("Graph API lỗi khi fetch posts: %s", e)
+                print(f"[FB API] LỖI HTTP: {e}")
                 break
             except Exception as e:
                 logger.error("Lỗi kết nối Graph API: %s", e)
+                print(f"[FB API] LỖI kết nối: {e}")
                 break
 
-            for item in data.get("data", []):
+            # Log raw response để debug (500 ký tự đầu)
+            raw_preview = json.dumps(data, ensure_ascii=False)[:500]
+            print(f"[FB API Response]: {raw_preview}")
+            logger.debug("[FB API Response preview]: %s", raw_preview)
+
+            if "error" in data:
+                err_msg = data["error"].get("message", str(data["error"]))
+                print(f"[FB API] Graph API trả về lỗi: {err_msg}")
+                logger.error("[FB API] Graph API lỗi: %s", err_msg)
+                break
+
+            raw_posts = data.get("data", [])
+            print(f"[FB API] Số posts trong page này: {len(raw_posts)}")
+
+            for item in raw_posts:
                 post = self._normalize_api_post(item)
                 posts.append(post)
                 fetched += 1
@@ -463,6 +545,99 @@ class FacebookScraper:
         logger.info("Đã xuất CSV: %s (%d dòng)", out_path, len(rows))
         return out_path
 
+    # ── Lưu comments vào facebook_feedback ───────────────────────────────────
+
+    def fetch_comments_detail(self, post_id: str) -> list[dict]:
+        """
+        Lấy comments chi tiết của 1 post (id, message, from, like_count).
+        Dùng cho luồng lưu vào facebook_feedback.
+        """
+        if not self.page_token:
+            return []
+        try:
+            data = self._graph_get(
+                f"{post_id}/comments",
+                {
+                    "fields": "id,message,from,created_time,like_count",
+                    "limit":  100,
+                },
+            )
+            return [
+                {
+                    "comment_id":  c.get("id", ""),
+                    "post_id":     post_id,
+                    "message":     c.get("message", ""),
+                    "author_name": c.get("from", {}).get("name", "Anonymous"),
+                    "like_count":  c.get("like_count", 0),
+                    "created_at":  c.get("created_time"),
+                }
+                for c in data.get("data", [])
+            ]
+        except Exception as e:
+            logger.warning("fetch_comments_detail %s: %s", post_id, e)
+            return []
+
+    def save_feedback_to_db(self, company_id: str, posts: list[dict], comments: list[dict]) -> dict:
+        """
+        Lưu comments (đã có post_id) vào bảng facebook_feedback.
+        Thực hiện ON CONFLICT (comment_id) DO UPDATE để cập nhật sentiment.
+        Returns: dict thống kê {posts_scraped, comments_scraped, positive, negative, neutral}
+        """
+        if not self.db_url:
+            logger.error("DATABASE_URL chưa cấu hình — không thể lưu facebook_feedback.")
+            return {"posts_scraped": len(posts), "comments_scraped": 0,
+                    "positive": 0, "negative": 0, "neutral": 0}
+
+        inserted = 0
+        pos = neg = neu = 0
+        try:
+            conn = psycopg2.connect(self.db_url)
+            cur  = conn.cursor()
+            for c in comments:
+                msg       = c.get("message", "")
+                sentiment = _analyze_sentiment(msg)
+                if sentiment == "positive": pos += 1
+                elif sentiment == "negative": neg += 1
+                else: neu += 1
+
+                cur.execute(
+                    """
+                    INSERT INTO public.facebook_feedback
+                        (company_id, post_id, comment_id, message,
+                         author_name, sentiment, like_count, created_at, scraped_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                    ON CONFLICT (comment_id) DO UPDATE SET
+                        sentiment  = EXCLUDED.sentiment,
+                        scraped_at = NOW()
+                    """,
+                    (
+                        company_id,
+                        c.get("post_id"),
+                        c.get("comment_id"),
+                        msg,
+                        c.get("author_name", "Anonymous"),
+                        sentiment,
+                        c.get("like_count", 0),
+                        c.get("created_at"),
+                    ),
+                )
+                inserted += 1
+            conn.commit()
+            cur.close()
+            conn.close()
+            logger.info("facebook_feedback: %d comments upserted (pos=%d neg=%d neu=%d)",
+                        inserted, pos, neg, neu)
+        except Exception as e:
+            logger.error("Lỗi lưu facebook_feedback: %s", e, exc_info=True)
+
+        return {
+            "posts_scraped":    len(posts),
+            "comments_scraped": inserted,
+            "positive":         pos,
+            "negative":         neg,
+            "neutral":          neu,
+        }
+
     # ── Database ──────────────────────────────────────────────────────────────
 
     def save_to_db(self, records: list[dict]) -> tuple[int, int]:
@@ -546,6 +721,11 @@ class FacebookScraper:
             dict: {total_scraped, inserted, skipped, csv_path}
         """
         logger.info("=== FacebookScraper bắt đầu (mode=%s) ===", self.mode)
+        print(f"[FB Scraper] Bắt đầu cho company: {self.company_id or 'dev'}")
+        print(f"[FB Scraper] Page ID: {self.page_id or 'CHƯA CÓ'}")
+        print(f"[FB Scraper] Token (10 ký tự đầu): "
+              f"{(self.page_token[:10] + '...') if self.page_token else 'CHƯA CÓ — sẽ fail!'}")
+        print(f"[FB Scraper] Tổng integrations đã load: {len(self._integrations)}")
 
         if self.mode == "offline":
             records = self._load_offline_sample()
@@ -553,6 +733,7 @@ class FacebookScraper:
             try:
                 records = self.fetch_posts_api()
             except EnvironmentError:
+                print("[FB Scraper] LỖI: Không có page_token hoặc page_id — kiểm tra kết nối trong DB!")
                 logger.error(
                     "Thiếu FACEBOOK_PAGE_TOKEN hoặc FACEBOOK_PAGE_ID trong .env.\n"
                     "Cách lấy Page Access Token:\n"
@@ -570,18 +751,48 @@ class FacebookScraper:
                 )
                 return {"total_scraped": 0, "inserted": 0, "skipped": 0, "csv_path": None}
 
+        print(f"[FB Scraper] Số posts lấy được: {len(records)}")
+        if not records:
+            print("[FB Scraper] CẢNH BÁO: Graph API trả về 0 posts")
+            print("[FB Scraper] Kiểm tra: token hết hạn? Page có bài đăng public không?")
+        else:
+            for rec in records:
+                print(f"[FB Scraper] Post {rec['post_id']}: "
+                      f"{rec.get('post_content', '(no content)')[:50]}")
+
         csv_path = self.export_csv(records)
         inserted, skipped = self.save_to_db(records)
 
+        # Lấy comments chi tiết và lưu vào facebook_feedback
+        all_comments: list[dict] = []
+        if self.page_token and self.mode != "offline":
+            for rec in records[:20]:  # Giới hạn 20 posts để tránh rate limit
+                pid = rec.get("post_id", "")
+                if pid:
+                    coms = self.fetch_comments_detail(pid)
+                    all_comments.extend(coms)
+                    time.sleep(0.5)  # Tránh rate limit Graph API
+
+        print(f"[FB Scraper] Tổng comments đã fetch: {len(all_comments)}")
+        feedback_stats = self.save_feedback_to_db(
+            self.company_id or "", records, all_comments
+        )
+
         summary = {
-            "total_scraped": len(records),
-            "inserted":      inserted,
-            "skipped":       skipped,
-            "csv_path":      str(csv_path) if csv_path else None,
+            "total_scraped":    len(records),
+            "inserted":         inserted,
+            "skipped":          skipped,
+            "csv_path":         str(csv_path) if csv_path else None,
+            "comments_scraped": feedback_stats.get("comments_scraped", 0),
+            "sentiment": {
+                "positive": feedback_stats.get("positive", 0),
+                "negative": feedback_stats.get("negative", 0),
+                "neutral":  feedback_stats.get("neutral",  0),
+            },
         }
         logger.info(
-            "=== FacebookScraper xong: scraped=%d | inserted=%d | skipped=%d ===",
-            len(records), inserted, skipped,
+            "=== FacebookScraper xong: scraped=%d | inserted=%d | skipped=%d | comments=%d ===",
+            len(records), inserted, skipped, feedback_stats.get("comments_scraped", 0),
         )
         return summary
 

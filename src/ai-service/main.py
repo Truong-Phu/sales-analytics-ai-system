@@ -186,21 +186,133 @@ async def scrape_facebook(company_id: str, background_tasks: BackgroundTasks):
         scraper = module.FacebookScraper(company_id=company_id)
         result  = scraper.run()
 
+        posts_found = result.get("total_scraped", 0)
+        inserted    = result.get("inserted", 0)
         return {
-            "success":       True,
+            "success":          True,
+            "company_id":       company_id,
+            "total_scraped":    posts_found,
+            "inserted":         inserted,
+            "skipped":          result.get("skipped", 0),
+            "csv_path":         result.get("csv_path"),
+            "comments_scraped": result.get("comments_scraped", 0),
+            "sentiment":        result.get("sentiment", {}),
+            "message": (
+                f"Đã scrape {posts_found} bài đăng, {inserted} mới"
+                if posts_found > 0
+                else "Không tìm thấy bài đăng. Kiểm tra token và quyền truy cập."
+            ),
+        }
+    except ValueError as e:
+        return {
+            "success":       False,
             "company_id":    company_id,
-            "total_scraped": result.get("total_scraped", 0),
-            "inserted":      result.get("inserted", 0),
-            "skipped":       result.get("skipped", 0),
-            "csv_path":      result.get("csv_path"),
+            "total_scraped": 0,
+            "message":       str(e),
+            "hint":          "Thử ngắt kết nối và kết nối lại với token mới",
         }
     except Exception as e:
         logger.error("Scrape Facebook thất bại: company=%s error=%s", company_id, e)
         return {
-            "success":    False,
-            "company_id": company_id,
-            "error":      str(e),
+            "success":       False,
+            "company_id":    company_id,
+            "total_scraped": 0,
+            "message":       f"Lỗi không xác định: {str(e)[:200]}",
+            "hint":          "Kiểm tra log FastAPI terminal để biết thêm chi tiết",
         }
+
+
+@app.get("/feedback/summary", tags=["Feedback"])
+def feedback_summary(company_id: str = ""):
+    """
+    Tổng hợp phản hồi mạng xã hội (Facebook comments) theo company.
+    Trả về: tổng số, tỉ lệ sentiment, top issues/praises, 5 comment gần nhất.
+    """
+    from services.db_service import get_conn, query_df
+    import pandas as pd
+
+    # Nếu không có company_id → dùng toàn bộ dữ liệu (dev mode)
+    where = "WHERE company_id = %(cid)s::uuid" if company_id else ""
+    params = {"cid": company_id} if company_id else {}
+
+    # Tổng hợp theo sentiment
+    agg_sql = f"""
+        SELECT sentiment, COUNT(*) AS cnt
+        FROM   public.facebook_feedback
+        {where}
+        GROUP  BY sentiment
+    """
+    df_agg = query_df(agg_sql, params or None)
+
+    total    = int(df_agg["cnt"].sum()) if not df_agg.empty else 0
+    pos      = int(df_agg.loc[df_agg["sentiment"] == "positive", "cnt"].sum())
+    neg      = int(df_agg.loc[df_agg["sentiment"] == "negative", "cnt"].sum())
+    neu      = int(df_agg.loc[df_agg["sentiment"] == "neutral",  "cnt"].sum())
+
+    # 5 comment gần nhất
+    recent_sql = f"""
+        SELECT comment_id, message, author_name, sentiment, like_count,
+               created_at, scraped_at
+        FROM   public.facebook_feedback
+        {where}
+        ORDER  BY scraped_at DESC NULLS LAST
+        LIMIT  5
+    """
+    df_recent = query_df(recent_sql, params or None)
+    recent_comments = []
+    if not df_recent.empty:
+        for _, row in df_recent.iterrows():
+            recent_comments.append({
+                "comment_id":  row.get("comment_id", ""),
+                "message":     row.get("message", ""),
+                "author_name": row.get("author_name", ""),
+                "sentiment":   row.get("sentiment", "neutral"),
+                "like_count":  int(row.get("like_count", 0)),
+                "created_at":  str(row.get("created_at", "")),
+            })
+
+    # Trích xuất top issues / praises từ negative / positive messages
+    def extract_keywords(messages: list[str], kwlist: list[str]) -> list[str]:
+        counts: dict[str, int] = {}
+        for msg in messages:
+            msg_lower = msg.lower()
+            for kw in kwlist:
+                if kw in msg_lower:
+                    counts[kw] = counts.get(kw, 0) + 1
+        return [k for k, _ in sorted(counts.items(), key=lambda x: -x[1])][:3]
+
+    NEGATIVE_KW = ["giao chậm", "sai size", "sai màu", "không phản hồi",
+                   "kém chất lượng", "lỗi", "hỏng", "fake", "giả", "thất vọng"]
+    POSITIVE_KW = ["giao nhanh", "chất vải đẹp", "nhiệt tình", "đúng mô tả",
+                   "chính hãng", "ổn", "tốt", "đẹp", "recommend"]
+
+    neg_msgs_sql = f"""
+        SELECT message FROM public.facebook_feedback
+        {where + (' AND' if where else 'WHERE')} sentiment = 'negative'
+        LIMIT 100
+    """
+    pos_msgs_sql = f"""
+        SELECT message FROM public.facebook_feedback
+        {where + (' AND' if where else 'WHERE')} sentiment = 'positive'
+        LIMIT 100
+    """
+    df_neg = query_df(neg_msgs_sql, params or None)
+    df_pos = query_df(pos_msgs_sql, params or None)
+    neg_msgs = df_neg["message"].tolist() if not df_neg.empty else []
+    pos_msgs = df_pos["message"].tolist() if not df_pos.empty else []
+
+    return {
+        "total_comments":   total,
+        "positive":         pos,
+        "negative":         neg,
+        "neutral":          neu,
+        "positive_pct":     round(pos / total * 100, 1) if total else 0,
+        "negative_pct":     round(neg / total * 100, 1) if total else 0,
+        "neutral_pct":      round(neu / total * 100, 1) if total else 0,
+        "top_issues":       extract_keywords(neg_msgs, NEGATIVE_KW),
+        "top_praises":      extract_keywords(pos_msgs, POSITIVE_KW),
+        "recent_comments":  recent_comments,
+    }
 
 
 @app.get("/", include_in_schema=False)

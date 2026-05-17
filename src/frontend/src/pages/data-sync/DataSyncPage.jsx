@@ -28,6 +28,11 @@ async function scrapeFacebook() {
   return r.data
 }
 
+async function validateFacebookToken() {
+  const r = await api.get('/api/integrations/facebook/validate')
+  return r.data
+}
+
 const API_BASE = import.meta.env.VITE_API_URL ?? ''
 
 async function fetchKeywords() {
@@ -769,14 +774,16 @@ function ImportTab() {
 
 // ── Facebook Connection Card ──────────────────────────────────────────────────
 function FacebookConnectCard() {
-  const [status,      setStatus]      = useState(null)   // null | { connected, pageId, pageName, ... }
-  const [loading,     setLoading]     = useState(true)
-  const [pageId,      setPageId]      = useState('')
-  const [token,       setToken]       = useState('')
-  const [connecting,  setConnecting]  = useState(false)
-  const [scraping,    setScraping]    = useState(false)
-  const [scrapeResult, setScrapeResult] = useState(null)
-  const [error,       setError]       = useState('')
+  const [status,        setStatus]        = useState(null)   // null | { connected, pageId, pageName, ... }
+  const [loading,       setLoading]       = useState(true)
+  const [pageId,        setPageId]        = useState('')
+  const [token,         setToken]         = useState('')
+  const [connecting,    setConnecting]    = useState(false)
+  const [scraping,      setScraping]      = useState(false)
+  const [scrapeResult,  setScrapeResult]  = useState(null)
+  const [error,         setError]         = useState('')
+  const [validating,    setValidating]    = useState(false)
+  const [validateResult, setValidateResult] = useState(null) // { valid, message, hint? }
 
   const loadStatus = async () => {
     setLoading(true)
@@ -829,6 +836,18 @@ function FacebookConnectCard() {
       setScrapeResult({ success: false, error: e.response?.data?.message ?? 'Lỗi scrape' })
     } finally {
       setScraping(false)
+    }
+  }
+
+  const handleValidate = async () => {
+    setValidating(true); setValidateResult(null)
+    try {
+      const r = await validateFacebookToken()
+      setValidateResult(r)
+    } catch (e) {
+      setValidateResult({ valid: false, message: e.response?.data?.message ?? 'Lỗi kiểm tra token' })
+    } finally {
+      setValidating(false)
     }
   }
 
@@ -903,6 +922,26 @@ function FacebookConnectCard() {
             )}
           </div>
 
+          {/* Validate token result */}
+          {validateResult && (
+            <div className="rounded-xl px-4 py-3 text-xs space-y-1"
+                 style={{
+                   background: validateResult.valid ? 'rgba(16,185,129,0.08)' : 'rgba(239,68,68,0.08)',
+                   border:     `1px solid ${validateResult.valid ? 'rgba(16,185,129,0.25)' : 'rgba(239,68,68,0.30)'}`,
+                   color:      validateResult.valid ? 'var(--accent-500)' : '#EF4444',
+                 }}>
+              <div className="flex items-center gap-1.5 font-semibold">
+                <span className="icon" style={{ fontSize: 14 }}>
+                  {validateResult.valid ? 'verified' : 'warning'}
+                </span>
+                {validateResult.message}
+              </div>
+              {validateResult.hint && (
+                <div style={{ color: 'var(--text-secondary)' }}>{validateResult.hint}</div>
+              )}
+            </div>
+          )}
+
           {/* Scrape result */}
           {scrapeResult && (
             <div className="rounded-xl px-4 py-3 text-xs space-y-1"
@@ -917,19 +956,27 @@ function FacebookConnectCard() {
                   <div style={{ color: 'var(--text-secondary)' }}>
                     {scrapeResult.total_scraped} bài đăng · {scrapeResult.inserted} mới · {scrapeResult.skipped} bỏ qua
                   </div>
+                  {scrapeResult.message && scrapeResult.total_scraped === 0 && (
+                    <div style={{ color: '#F59E0B' }}>{scrapeResult.message}</div>
+                  )}
                 </>
               ) : (
-                <div>{scrapeResult.error}</div>
+                <>
+                  <div>{scrapeResult.error ?? scrapeResult.message}</div>
+                  {scrapeResult.hint && (
+                    <div style={{ color: 'var(--text-secondary)' }}>{scrapeResult.hint}</div>
+                  )}
+                </>
               )}
             </div>
           )}
 
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             <button
               onClick={handleScrape}
               disabled={scraping}
               className="lbtn lbtn-primary flex-1 justify-center disabled:opacity-50"
-              style={{ height: 38 }}
+              style={{ height: 38, minWidth: 120 }}
             >
               {scraping ? (
                 <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full"
@@ -938,6 +985,21 @@ function FacebookConnectCard() {
                 <span className="icon text-base">sync</span>
               )}
               {scraping ? 'Đang scrape...' : 'Scrape ngay'}
+            </button>
+            <button
+              onClick={handleValidate}
+              disabled={validating}
+              className="lbtn flex-shrink-0 px-3 disabled:opacity-50"
+              style={{ height: 38, border: '1px solid rgba(245,158,11,0.35)', color: '#F59E0B', background: 'rgba(245,158,11,0.06)' }}
+              title="Kiểm tra token còn hợp lệ không"
+            >
+              {validating ? (
+                <span className="w-4 h-4 border-2 rounded-full"
+                      style={{ borderColor: 'rgba(245,158,11,0.30)', borderTopColor: '#F59E0B', animation: 'spin 0.8s linear infinite' }} />
+              ) : (
+                <span className="icon text-base">verified_user</span>
+              )}
+              Kiểm tra token
             </button>
             <button
               onClick={handleDisconnect}
@@ -1026,6 +1088,169 @@ function FacebookConnectCard() {
   )
 }
 
+// ── Generic Connector Card ────────────────────────────────────────────────────
+function ConnectorCard({ channel, label, color, icon, guideUrl, guideText, fields, statusUrl, connectUrl, disconnectUrl }) {
+  const [status,     setStatus]     = useState(null)
+  const [loading,    setLoading]    = useState(true)
+  const [form,       setForm]       = useState(() => Object.fromEntries(fields.map(f => [f.key, ''])))
+  const [showPwd,    setShowPwd]    = useState({})
+  const [connecting, setConnecting] = useState(false)
+  const [error,      setError]      = useState('')
+
+  const loadStatus = async () => {
+    setLoading(true)
+    try { setStatus(await api.get(statusUrl).then(r => r.data)) }
+    catch { setStatus({ connected: false }) }
+    finally { setLoading(false) }
+  }
+
+  useEffect(() => { loadStatus() }, [])
+
+  const handleConnect = async () => {
+    const empty = fields.filter(f => f.required && !form[f.key]?.trim())
+    if (empty.length) { setError(`Vui lòng nhập: ${empty.map(f => f.label).join(', ')}`); return }
+    setConnecting(true); setError('')
+    try {
+      await api.post(connectUrl, form)
+      showToast(`Kết nối ${label} thành công!`, 'success')
+      await loadStatus()
+    } catch (e) {
+      setError(e.response?.data?.message ?? e.message ?? 'Lỗi kết nối')
+    } finally { setConnecting(false) }
+  }
+
+  const handleDisconnect = async () => {
+    if (!confirm(`Bạn chắc chắn muốn ngắt kết nối ${label}?`)) return
+    try {
+      await api.delete(disconnectUrl)
+      showToast(`Đã ngắt kết nối ${label}.`, 'info')
+      await loadStatus()
+    } catch (e) { showToast(e.response?.data?.message ?? 'Lỗi', 'error') }
+  }
+
+  if (loading) return (
+    <div className="lcard p-8 flex justify-center">
+      <span className="w-6 h-6 border-2 rounded-full"
+            style={{ borderColor: 'var(--border-strong)', borderTopColor: color, animation: 'spin 0.8s linear infinite' }} />
+    </div>
+  )
+
+  return (
+    <div className="lcard p-5 space-y-5">
+      {/* Header */}
+      <div className="flex items-center gap-3">
+        <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0"
+             style={{ background: `${color}18` }}>
+          <span className="icon" style={{ fontSize: 24, color }}>{icon}</span>
+        </div>
+        <div className="flex-1 min-w-0">
+          <h2 className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>{label}</h2>
+          {guideUrl && (
+            <a href={guideUrl} target="_blank" rel="noopener noreferrer"
+               className="text-xs underline" style={{ color }}>
+              {guideText ?? 'Hướng dẫn lấy credentials'}
+            </a>
+          )}
+        </div>
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium"
+              style={{
+                background: status?.connected ? 'rgba(16,185,129,0.10)' : 'rgba(100,116,139,0.10)',
+                color:      status?.connected ? 'var(--accent-500)' : '#64748B',
+                border:     `1px solid ${status?.connected ? 'rgba(16,185,129,0.30)' : 'rgba(100,116,139,0.25)'}`,
+              }}>
+          <span className="w-1.5 h-1.5 rounded-full"
+                style={{ background: status?.connected ? 'var(--accent-500)' : '#94A3B8' }} />
+          {status?.connected ? 'Đã kết nối' : 'Chưa kết nối'}
+        </span>
+      </div>
+
+      {status?.connected ? (
+        <div className="space-y-4">
+          <div className="rounded-xl px-4 py-3 space-y-1.5"
+               style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.20)' }}>
+            <div className="flex items-center gap-2 text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+              <span className="icon" style={{ fontSize: 16, color: 'var(--accent-500)' }}>check_circle</span>
+              {status.accountName || status.accountId}
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-xs" style={{ color: 'var(--text-tertiary)' }}>
+              {status.accountId && <div><span className="font-medium">ID:</span> {status.accountId}</div>}
+              {status.connectedAt && (
+                <div>
+                  <span className="font-medium">Kết nối lúc:</span>{' '}
+                  {new Date(status.connectedAt).toLocaleString('vi-VN')}
+                </div>
+              )}
+            </div>
+          </div>
+          <button onClick={handleDisconnect}
+                  className="lbtn w-full justify-center"
+                  style={{ height: 38, border: '1px solid rgba(239,68,68,0.30)', color: '#EF4444', background: 'rgba(239,68,68,0.06)' }}>
+            <span className="icon text-base">link_off</span>
+            Ngắt kết nối
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {fields.map(f => (
+            <div key={f.key}>
+              <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>
+                {f.label} {f.required && <span style={{ color: '#EF4444' }}>*</span>}
+              </label>
+              {f.type === 'select' ? (
+                <select value={form[f.key]} onChange={e => setForm(v => ({ ...v, [f.key]: e.target.value }))}
+                        className="lbtn w-full !h-9 !px-3 text-sm border"
+                        style={{ background: 'var(--bg-elevated)', borderColor: 'var(--border-default)' }}>
+                  {f.options?.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              ) : (
+                <div className="relative">
+                  <input
+                    type={f.secret && !showPwd[f.key] ? 'password' : 'text'}
+                    value={form[f.key]}
+                    onChange={e => setForm(v => ({ ...v, [f.key]: e.target.value }))}
+                    placeholder={f.hint ?? ''}
+                    className="lbtn w-full !h-9 !px-3 text-sm border pr-9"
+                    style={{ background: 'var(--bg-elevated)', borderColor: 'var(--border-default)', fontFamily: f.secret ? 'monospace' : 'inherit' }}
+                  />
+                  {f.secret && (
+                    <button onClick={() => setShowPwd(p => ({ ...p, [f.key]: !p[f.key] }))}
+                            className="absolute right-2 top-1/2 -translate-y-1/2"
+                            title={showPwd[f.key] ? 'Ẩn' : 'Hiện'}>
+                      <span className="icon text-base" style={{ color: 'var(--text-tertiary)' }}>
+                        {showPwd[f.key] ? 'visibility_off' : 'visibility'}
+                      </span>
+                    </button>
+                  )}
+                </div>
+              )}
+              {f.hint && f.type !== 'select' && (
+                <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>{f.hint}</p>
+              )}
+            </div>
+          ))}
+
+          {error && (
+            <div className="text-xs px-3 py-2 rounded-lg"
+                 style={{ background: 'rgba(239,68,68,0.08)', color: '#EF4444', border: '1px solid rgba(239,68,68,0.25)' }}>
+              {error}
+            </div>
+          )}
+
+          <button onClick={handleConnect} disabled={connecting}
+                  className="lbtn lbtn-primary w-full justify-center disabled:opacity-50"
+                  style={{ height: 42 }}>
+            {connecting
+              ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full"
+                      style={{ animation: 'spin 0.7s linear infinite' }} />
+              : <span className="icon text-base">link</span>}
+            {connecting ? 'Đang kết nối...' : `Kết nối ${label}`}
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Channel Connect Tab ───────────────────────────────────────────────────────
 function ChannelConnectTab() {
   return (
@@ -1036,8 +1261,86 @@ function ChannelConnectTab() {
           Thông tin xác thực được mã hóa AES-256-GCM và lưu theo từng tenant.
         </p>
       </div>
+
+      {/* Facebook – vẫn dùng card chuyên biệt (có Scrape ngay) */}
       <FacebookConnectCard />
-      {/* Có thể thêm ShopeeConnectCard, LazadaConnectCard... ở đây sau */}
+
+      {/* Shopee */}
+      <ConnectorCard
+        channel="shopee" label="Shopee" color="#EE4D2D" icon="storefront"
+        guideUrl="https://open.shopee.com/developer-guide/16"
+        guideText="Lấy credentials tại open.shopee.com"
+        statusUrl="/api/integrations/shopee/status"
+        connectUrl="/api/integrations/shopee"
+        disconnectUrl="/api/integrations/shopee"
+        fields={[
+          { key: 'partnerId',   label: 'Partner ID',    required: true, hint: 'Shopee Open Platform → App List' },
+          { key: 'partnerKey',  label: 'Partner Key',   required: true, hint: 'App → Credentials', secret: true },
+          { key: 'shopId',      label: 'Shop ID',       required: true, hint: 'Seller Center → Profile → Shop ID' },
+          { key: 'accessToken', label: 'Access Token',  required: true, hint: 'Lấy qua OAuth flow', secret: true },
+        ]}
+      />
+
+      {/* Lazada */}
+      <ConnectorCard
+        channel="lazada" label="Lazada" color="#0F146D" icon="store"
+        guideUrl="https://open.lazada.com/apps/doc/doc.htm"
+        guideText="Lấy credentials tại open.lazada.com"
+        statusUrl="/api/integrations/lazada/status"
+        connectUrl="/api/integrations/lazada"
+        disconnectUrl="/api/integrations/lazada"
+        fields={[
+          { key: 'appKey',      label: 'App Key',       required: true, hint: 'Lazada Open Platform → My Apps' },
+          { key: 'appSecret',   label: 'App Secret',    required: true, hint: 'Cùng trang với App Key', secret: true },
+          { key: 'accessToken', label: 'Access Token',  required: true, hint: 'Lấy qua OAuth tại open.lazada.com', secret: true },
+        ]}
+      />
+
+      {/* TikTok Shop */}
+      <ConnectorCard
+        channel="tiktok" label="TikTok Shop" color="#010101" icon="play_circle"
+        guideUrl="https://partner.tiktokshop.com/docv2/page/63faf02007c1e302f3595a73"
+        guideText="Lấy credentials tại partner.tiktokshop.com"
+        statusUrl="/api/integrations/tiktok/status"
+        connectUrl="/api/integrations/tiktok"
+        disconnectUrl="/api/integrations/tiktok"
+        fields={[
+          { key: 'appKey',      label: 'App Key',       required: true, hint: 'TikTok Shop Partner Center → Apps' },
+          { key: 'appSecret',   label: 'App Secret',    required: true, hint: 'App → App Secret', secret: true },
+          { key: 'shopId',      label: 'Shop ID',       required: true, hint: 'Shop Management → Shop ID' },
+          { key: 'accessToken', label: 'Access Token',  required: true, hint: 'Lấy qua OAuth flow', secret: true },
+        ]}
+      />
+
+      {/* GHN */}
+      <ConnectorCard
+        channel="ghn" label="GHN (Giao Hàng Nhanh)" color="#F59E0B" icon="local_shipping"
+        guideUrl="https://sso.ghn.vn"
+        guideText="Đăng nhập sso.ghn.vn → Tài khoản → API"
+        statusUrl="/api/integrations/ghn/status"
+        connectUrl="/api/integrations/ghn"
+        disconnectUrl="/api/integrations/ghn"
+        fields={[
+          { key: 'token',  label: 'API Token', required: true, hint: 'sso.ghn.vn → Tài khoản → API Token', secret: true },
+          { key: 'shopId', label: 'Shop ID',   required: true, hint: 'GHN Seller → Thông tin cửa hàng → Mã cửa hàng' },
+        ]}
+      />
+
+      {/* VNPay */}
+      <ConnectorCard
+        channel="vnpay" label="VNPay" color="#005BAA" icon="payments"
+        guideUrl="https://sandbox.vnpayment.vn/merchantv2"
+        guideText="Lấy thông tin tại sandbox.vnpayment.vn"
+        statusUrl="/api/integrations/vnpay/status"
+        connectUrl="/api/integrations/vnpay"
+        disconnectUrl="/api/integrations/vnpay"
+        fields={[
+          { key: 'merchantId',  label: 'Merchant ID (TMN Code)', required: true, hint: 'VNPay Merchant Portal → Thông tin' },
+          { key: 'hashSecret',  label: 'Hash Secret',            required: true, hint: 'Cùng trang với Merchant ID', secret: true },
+          { key: 'environment', label: 'Môi trường', type: 'select',
+            options: [{ value: 'sandbox', label: 'Sandbox (Test)' }, { value: 'production', label: 'Production (Thật)' }] },
+        ]}
+      />
     </div>
   )
 }
