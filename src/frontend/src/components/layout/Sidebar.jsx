@@ -20,6 +20,17 @@ const NAV_ITEMS = [
   { to: '/products',        icon: 'inventory_2',      labelKey: 'nav.products',        roles: ['Staff','Manager','DataIT','Owner'] },
   { to: '/categories',      icon: 'category',         labelKey: 'nav.categories',      roles: ['Staff','Manager','DataIT','Owner'] },
   { to: '/customers',       icon: 'people',           labelKey: 'nav.customers',       roles: ['Owner','Manager','DataIT'] },
+  { to: '/customers/rfm',   icon: 'pie_chart',        labelKey: 'nav.rfmAnalysis',     roles: ['Owner','Manager','DataIT'] },
+  { to: '/churn',           icon: 'person_off',       labelKey: 'nav.churn',           roles: ['Owner','Manager','DataIT'] },
+  { to: '/basket',          icon: 'shopping_bag',     labelKey: 'nav.basket',          roles: ['Owner','Manager','DataIT'] },
+  { to: '/inventory',       icon: 'inventory',        labelKey: 'nav.inventory',       roles: ['Owner','Manager','Staff','DataIT'] },
+  // AI Advanced
+  { divider: 'nav.sectionAiAdvanced' },
+  { to: '/whatif',          icon: 'science',          labelKey: 'nav.whatIf',          roles: ['Owner','Manager','DataIT'] },
+  { to: '/attribution',     icon: 'account_tree',     labelKey: 'nav.attribution',     roles: ['Owner','Manager','DataIT'] },
+  { to: '/campaign',        icon: 'campaign',         labelKey: 'nav.campaign',        roles: ['Owner','Manager','DataIT'] },
+  { to: '/leaderboard',     icon: 'leaderboard',      labelKey: 'nav.leaderboard',     roles: ['Owner','Manager','Staff','DataIT'] },
+  { to: '/narrative',       icon: 'auto_awesome',     labelKey: 'nav.narrative',       roles: ['Owner','Manager','DataIT'] },
   // Reports
   { divider: 'nav.sectionReports' },
   { to: '/report',          icon: 'picture_as_pdf',   labelKey: 'nav.report',          roles: ['Owner','Manager','DataIT'] },

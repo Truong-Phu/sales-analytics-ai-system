@@ -15,3 +15,8 @@ joblib>=1.4.2
 httpx>=0.27.0
 pydantic>=2.7.1
 anthropic>=0.25.0
+
+# Chức năng mới – Tháng 5/2026
+mlxtend>=0.23.0          # Market Basket Analysis (Apriori algorithm)
+apscheduler>=3.10.4      # Job scheduler (KPI email hàng ngày)
+jinja2>=3.1.4            # Template engine cho email KPI

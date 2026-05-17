@@ -77,6 +77,16 @@ public class AiController(AiProxyService ai, ITenantContext tenant) : Controller
         return Ok(result);
     }
 
+    /// <summary>Phân khúc khách hàng RFM (kết quả từ notebook 04)</summary>
+    [HttpGet("customers/segments")]
+    [Authorize(Roles = "Owner,Manager,DataIT,SuperAdmin")]
+    public async Task<IActionResult> RfmSegments()
+    {
+        var result = await ai.GetRfmSegmentsAsync();
+        if (result is null) return StatusCode(503, new { message = "RFM data chưa có. Hãy chạy notebook 04_RFM_Analysis.ipynb." });
+        return Ok(result);
+    }
+
     /// <summary>AI Insights tổng hợp từ forecast + anomaly + RFM (cache 1h)</summary>
     [HttpGet("insights")]
     public async Task<IActionResult> Insights()
@@ -133,6 +143,132 @@ public class AiController(AiProxyService ai, ITenantContext tenant) : Controller
                 message = "AI Service tạm thời không khả dụng. Vui lòng thử lại sau."
             });
 
+        return Ok(result);
+    }
+}
+
+    // ── Chức năng sáng tạo mới ────────────────────────────────────────────────
+
+    /// <summary>Dự báo nguy cơ churn khách hàng (RandomForest + RFM)</summary>
+    [HttpGet("churn")]
+    public async Task<IActionResult> ChurnPrediction(
+        [FromQuery] int topN = 50,
+        [FromQuery] bool retrain = false)
+    {
+        var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
+        var result = await ai.ProxyGetAsync($"churn?top_n={topN}&retrain={retrain.ToString().ToLower()}"
+            + (companyId.HasValue ? $"&company_id={companyId}" : ""));
+        if (result is null) return StatusCode(503, new { message = "AI Service không khả dụng." });
+        return Ok(result);
+    }
+
+    /// <summary>Phân tích sản phẩm hay mua chung – Market Basket Analysis (Apriori)</summary>
+    [HttpGet("basket")]
+    public async Task<IActionResult> BasketAnalysis(
+        [FromQuery] int days = 180,
+        [FromQuery] double minSupport = 0.02,
+        [FromQuery] double minConfidence = 0.3,
+        [FromQuery] double minLift = 1.0,
+        [FromQuery] int topN = 20)
+    {
+        var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
+        var qs = $"basket?days={days}&min_support={minSupport}&min_confidence={minConfidence}&min_lift={minLift}&top_n={topN}"
+            + (companyId.HasValue ? $"&company_id={companyId}" : "");
+        var result = await ai.ProxyGetAsync(qs);
+        if (result is null) return StatusCode(503, new { message = "AI Service không khả dụng." });
+        return Ok(result);
+    }
+
+    /// <summary>Thông minh dự báo tồn kho và gợi ý đặt thêm hàng</summary>
+    [HttpGet("inventory")]
+    public async Task<IActionResult> InventoryIntelligence(
+        [FromQuery] int days = 30,
+        [FromQuery] string? status = null)
+    {
+        var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
+        var qs = $"inventory?days={days}"
+            + (status is not null ? $"&status={status}" : "")
+            + (companyId.HasValue ? $"&company_id={companyId}" : "");
+        var result = await ai.ProxyGetAsync(qs);
+        if (result is null) return StatusCode(503, new { message = "AI Service không khả dụng." });
+        return Ok(result);
+    }
+
+    /// <summary>Mô phỏng kịch bản What-If (thay đổi giá, discount, kênh mới...)</summary>
+    [HttpPost("whatif")]
+    public async Task<IActionResult> WhatIfSimulator([FromBody] object body)
+    {
+        var result = await ai.ProxyPostAsync("whatif", body);
+        if (result is null) return StatusCode(503, new { message = "AI Service không khả dụng." });
+        return Ok(result);
+    }
+
+    /// <summary>Phân bổ doanh thu theo kênh bán hàng và ROI quảng cáo</summary>
+    [HttpGet("attribution")]
+    public async Task<IActionResult> ChannelAttribution(
+        [FromQuery] int days = 30,
+        [FromQuery] string model = "last_touch")
+    {
+        var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
+        var qs = $"attribution?days={days}&model={model}"
+            + (companyId.HasValue ? $"&company_id={companyId}" : "");
+        var result = await ai.ProxyGetAsync(qs);
+        if (result is null) return StatusCode(503, new { message = "AI Service không khả dụng." });
+        return Ok(result);
+    }
+
+    /// <summary>Lên lịch chiến dịch marketing thông minh (seasonal analysis)</summary>
+    [HttpGet("campaign")]
+    public async Task<IActionResult> CampaignPlanner([FromQuery] int daysAhead = 60)
+    {
+        var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
+        var qs = $"campaign?days_ahead={daysAhead}"
+            + (companyId.HasValue ? $"&company_id={companyId}" : "");
+        var result = await ai.ProxyGetAsync(qs);
+        if (result is null) return StatusCode(503, new { message = "AI Service không khả dụng." });
+        return Ok(result);
+    }
+
+    /// <summary>Phân bổ khách hàng theo địa lý (dữ liệu cho Geo Heatmap)</summary>
+    [HttpGet("geo")]
+    public async Task<IActionResult> GeoDistribution(
+        [FromQuery] int days = 30,
+        [FromQuery] string metric = "customers")
+    {
+        var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
+        var qs = $"geo?days={days}&metric={metric}"
+            + (companyId.HasValue ? $"&company_id={companyId}" : "");
+        var result = await ai.ProxyGetAsync(qs);
+        if (result is null) return StatusCode(503, new { message = "AI Service không khả dụng." });
+        return Ok(result);
+    }
+
+    /// <summary>Bảng xếp hạng hiệu suất bán hàng (sản phẩm/khách hàng/kênh/nhân viên)</summary>
+    [HttpGet("leaderboard")]
+    public async Task<IActionResult> Leaderboard(
+        [FromQuery] string category = "product",
+        [FromQuery] int days = 30,
+        [FromQuery] int topN = 10)
+    {
+        var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
+        var qs = $"leaderboard?category={category}&days={days}&top_n={topN}"
+            + (companyId.HasValue ? $"&company_id={companyId}" : "");
+        var result = await ai.ProxyGetAsync(qs);
+        if (result is null) return StatusCode(503, new { message = "AI Service không khả dụng." });
+        return Ok(result);
+    }
+
+    /// <summary>Sinh nhận xét doanh thu tự động bằng ngôn ngữ tự nhiên (Smart Narrative)</summary>
+    [HttpGet("narrative")]
+    public async Task<IActionResult> SmartNarrative(
+        [FromQuery] int days = 30,
+        [FromQuery] string language = "vi")
+    {
+        var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
+        var qs = $"narrative?days={days}&language={language}"
+            + (companyId.HasValue ? $"&company_id={companyId}" : "");
+        var result = await ai.ProxyGetAsync(qs);
+        if (result is null) return StatusCode(503, new { message = "AI Service không khả dụng." });
         return Ok(result);
     }
 }

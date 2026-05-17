@@ -5,6 +5,7 @@ Jobs được đăng ký:
   - retrain_prophet    : CN 02:00 (Asia/Ho_Chi_Minh) — train lại Prophet nếu MAPE cải thiện
   - update_anomaly     : hàng ngày 01:00 — tính lại Z-score cache
   - update_rfm         : T2 03:00 — cập nhật RFM segments cache
+  - send_daily_kpi     : hàng ngày 08:00 — gửi email KPI tóm tắt cho Owner/Manager
 """
 
 import json
@@ -20,7 +21,7 @@ from apscheduler.triggers.cron import CronTrigger
 from prophet import Prophet
 
 from services.anomaly_service import compute_and_cache_anomaly
-from services.db_service import load_revenue_series
+from services.db_service import load_revenue_series, query_df
 
 logger = logging.getLogger("ai.scheduler")
 
@@ -257,6 +258,112 @@ def get_retrain_status() -> dict:
     }
 
 
+# ── Daily KPI Email ───────────────────────────────────────────────────────────
+
+def send_daily_kpi_email() -> None:
+    """Gửi email tóm tắt KPI hàng ngày 08:00 cho Owner/Manager.
+
+    Cấu hình trong .env:
+        KPI_EMAIL_ENABLED=true
+        KPI_EMAIL_FROM=your@gmail.com
+        KPI_EMAIL_PASSWORD=app_password   # Google App Password
+        KPI_EMAIL_TO=owner@company.com,manager@company.com
+        KPI_EMAIL_SMTP=smtp.gmail.com
+        KPI_EMAIL_PORT=587
+    """
+    import smtplib
+    import ssl
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+    from datetime import date, timedelta
+
+    enabled = os.getenv("KPI_EMAIL_ENABLED", "false").lower() == "true"
+    if not enabled:
+        logger.debug("KPI email disabled (KPI_EMAIL_ENABLED != true)")
+        return
+
+    smtp_host = os.getenv("KPI_EMAIL_SMTP", "smtp.gmail.com")
+    smtp_port = int(os.getenv("KPI_EMAIL_PORT", "587"))
+    from_addr = os.getenv("KPI_EMAIL_FROM", "")
+    password  = os.getenv("KPI_EMAIL_PASSWORD", "")
+    to_addrs  = [a.strip() for a in os.getenv("KPI_EMAIL_TO", "").split(",") if a.strip()]
+
+    if not all([from_addr, password, to_addrs]):
+        logger.warning("KPI email: thiếu config (FROM/PASSWORD/TO) – bỏ qua")
+        return
+
+    try:
+        # Lấy KPI hôm qua
+        yesterday = date.today() - timedelta(days=1)
+        sql_kpi = f"""
+            SELECT
+                SUM(oi.subtotal)          AS revenue,
+                COUNT(DISTINCT o.order_id) AS orders,
+                COUNT(DISTINCT o.customer_id) AS customers
+            FROM public.orders o
+            JOIN public.order_items oi ON o.order_id = o.order_id
+            WHERE DATE(o.order_date) = '{yesterday}'
+              AND o.status NOT IN ('CANCELLED', 'RETURNED')
+        """
+        df_kpi = query_df(sql_kpi)
+        row = df_kpi.iloc[0] if not df_kpi.empty else None
+
+        revenue   = float(row["revenue"]   or 0) if row is not None else 0
+        orders    = int(row["orders"]      or 0) if row is not None else 0
+        customers = int(row["customers"]   or 0) if row is not None else 0
+
+        def fmt(v): return f"{v/1_000_000:.1f}M" if v >= 1_000_000 else f"{v:,.0f}"
+
+        # Template HTML email
+        html = f"""
+        <html><body style="font-family:Arial,sans-serif;max-width:600px;margin:auto">
+        <div style="background:#1a56db;color:white;padding:20px;border-radius:8px 8px 0 0">
+            <h2 style="margin:0">📊 Báo cáo KPI ngày {yesterday}</h2>
+            <p style="margin:5px 0;opacity:.8">Sales Analytics System</p>
+        </div>
+        <div style="background:#f9fafb;padding:20px;border:1px solid #e5e7eb">
+            <table width="100%" cellpadding="10">
+            <tr>
+                <td style="background:white;border-radius:8px;text-align:center;border:1px solid #e5e7eb">
+                    <div style="color:#6b7280;font-size:12px">DOANH THU</div>
+                    <div style="color:#1a56db;font-size:28px;font-weight:bold">{fmt(revenue)} VNĐ</div>
+                </td>
+                <td style="background:white;border-radius:8px;text-align:center;border:1px solid #e5e7eb">
+                    <div style="color:#6b7280;font-size:12px">ĐƠN HÀNG</div>
+                    <div style="color:#059669;font-size:28px;font-weight:bold">{orders:,}</div>
+                </td>
+                <td style="background:white;border-radius:8px;text-align:center;border:1px solid #e5e7eb">
+                    <div style="color:#6b7280;font-size:12px">KHÁCH HÀNG</div>
+                    <div style="color:#7c3aed;font-size:28px;font-weight:bold">{customers:,}</div>
+                </td>
+            </tr>
+            </table>
+            <p style="color:#6b7280;font-size:12px;text-align:center;margin-top:20px">
+                Báo cáo tự động từ Sales Analytics AI Service<br>
+                Truy cập <a href="http://localhost:3000">Dashboard</a> để xem chi tiết
+            </p>
+        </div>
+        </body></html>
+        """
+
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = f"📊 KPI ngày {yesterday}: {fmt(revenue)} VNĐ | {orders} đơn"
+        msg["From"]    = from_addr
+        msg["To"]      = ", ".join(to_addrs)
+        msg.attach(MIMEText(html, "html", "utf-8"))
+
+        context = ssl.create_default_context()
+        with smtplib.SMTP(smtp_host, smtp_port) as server:
+            server.starttls(context=context)
+            server.login(from_addr, password)
+            server.sendmail(from_addr, to_addrs, msg.as_string())
+
+        logger.info("KPI email đã gửi thành công tới %s", to_addrs)
+
+    except Exception as e:
+        logger.error("Gửi KPI email thất bại: %s", e)
+
+
 # ── APScheduler setup ─────────────────────────────────────────────────────────
 # Khởi tạo scheduler với timezone Việt Nam
 scheduler = BackgroundScheduler(timezone="Asia/Ho_Chi_Minh")
@@ -284,6 +391,15 @@ scheduler.add_job(
     update_rfm_segments,
     CronTrigger(day_of_week="mon", hour=3, minute=0),
     id="update_rfm",
+    replace_existing=True,
+    misfire_grace_time=3600,
+)
+
+# Hàng ngày 08:00 — gửi email KPI sáng sớm cho Owner/Manager
+scheduler.add_job(
+    send_daily_kpi_email,
+    CronTrigger(hour=8, minute=0),
+    id="daily_kpi_email",
     replace_existing=True,
     misfire_grace_time=3600,
 )

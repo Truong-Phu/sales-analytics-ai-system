@@ -21,6 +21,7 @@ const OrdersPage          = lazy(() => import('../pages/orders/OrdersPage'))
 const ProductsPage        = lazy(() => import('../pages/products/ProductsPage'))
 const CategoriesPage      = lazy(() => import('../pages/categories/CategoriesPage'))
 const CustomersPage       = lazy(() => import('../pages/customers/CustomersPage'))
+const RfmPage             = lazy(() => import('../pages/customers/RfmPage'))
 const NotificationsPage   = lazy(() => import('../pages/notifications/NotificationsPage'))
 const DataSyncPage        = lazy(() => import('../pages/data-sync/DataSyncPage'))
 const EtlMonitorPage      = lazy(() => import('../pages/etl-monitor/EtlMonitorPage'))
@@ -38,6 +39,16 @@ const SaSubscriptionsPage = lazy(() => import('../pages/sa/SaSubscriptionsPage')
 const SaSyncMonitorPage   = lazy(() => import('../pages/sa/SaSyncMonitorPage'))
 const SaAuditLogsPage         = lazy(() => import('../pages/sa/SaAuditLogsPage'))
 const SaPaymentAccountsPage   = lazy(() => import('../pages/sa/SaPaymentAccountsPage'))
+
+// Chức năng sáng tạo mới
+const ChurnPage       = lazy(() => import('../pages/churn/ChurnPage'))
+const BasketPage      = lazy(() => import('../pages/basket/BasketPage'))
+const InventoryPage   = lazy(() => import('../pages/inventory/InventoryPage'))
+const WhatIfPage      = lazy(() => import('../pages/whatif/WhatIfPage'))
+const AttributionPage = lazy(() => import('../pages/attribution/AttributionPage'))
+const CampaignPage    = lazy(() => import('../pages/campaign/CampaignPage'))
+const LeaderboardPage = lazy(() => import('../pages/leaderboard/LeaderboardPage'))
+const NarrativePage   = lazy(() => import('../pages/narrative/NarrativePage'))
 
 // Roles constants
 const ALL_ROLES     = ['Owner', 'Manager', 'Staff', 'DataIT']
@@ -139,6 +150,12 @@ export default function AppRouter() {
           </ProtectedRoute>
         } />
 
+        <Route path="/customers/rfm" element={
+          <ProtectedRoute roles={ANALYST_ROLES}>
+            <Shell><RfmPage /></Shell>
+          </ProtectedRoute>
+        } />
+
         {/* Operations */}
         <Route path="/data-sync" element={
           <ProtectedRoute roles={DATA_ROLES}>
@@ -156,6 +173,48 @@ export default function AppRouter() {
         <Route path="/report" element={
           <ProtectedRoute roles={ANALYST_ROLES}>
             <Shell><ReportPage /></Shell>
+          </ProtectedRoute>
+        } />
+
+        {/* ── Chức năng sáng tạo mới ── */}
+        <Route path="/churn" element={
+          <ProtectedRoute roles={ANALYST_ROLES}>
+            <Shell><ChurnPage /></Shell>
+          </ProtectedRoute>
+        } />
+        <Route path="/basket" element={
+          <ProtectedRoute roles={ANALYST_ROLES}>
+            <Shell><BasketPage /></Shell>
+          </ProtectedRoute>
+        } />
+        <Route path="/inventory" element={
+          <ProtectedRoute roles={ALL_ROLES}>
+            <Shell><InventoryPage /></Shell>
+          </ProtectedRoute>
+        } />
+        <Route path="/whatif" element={
+          <ProtectedRoute roles={ANALYST_ROLES}>
+            <Shell><WhatIfPage /></Shell>
+          </ProtectedRoute>
+        } />
+        <Route path="/attribution" element={
+          <ProtectedRoute roles={ANALYST_ROLES}>
+            <Shell><AttributionPage /></Shell>
+          </ProtectedRoute>
+        } />
+        <Route path="/campaign" element={
+          <ProtectedRoute roles={ANALYST_ROLES}>
+            <Shell><CampaignPage /></Shell>
+          </ProtectedRoute>
+        } />
+        <Route path="/leaderboard" element={
+          <ProtectedRoute roles={VIEWER_ROUTES}>
+            <Shell><LeaderboardPage /></Shell>
+          </ProtectedRoute>
+        } />
+        <Route path="/narrative" element={
+          <ProtectedRoute roles={ANALYST_ROLES}>
+            <Shell><NarrativePage /></Shell>
           </ProtectedRoute>
         } />
 

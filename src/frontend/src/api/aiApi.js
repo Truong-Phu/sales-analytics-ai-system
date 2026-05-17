@@ -127,6 +127,13 @@ export const getInsights = () =>
   api.get('/api/ai/insights').then(r => r.data)
 
 /**
+ * Phân khúc khách hàng RFM từ notebook 04.
+ * Trả về { computed_at, total_customers, segment_summary, customers[] }
+ */
+export const getRfmSegments = () =>
+  api.get('/api/ai/customers/segments').then(r => r.data)
+
+/**
  * Hỏi AI theo câu hỏi tự nhiên.
  * FastAPI trả về { question, recommendation, data_sources, confidence, note }
  * RecommendationsPage dùng trực tiếp – không cần normalize.
@@ -134,3 +141,41 @@ export const getInsights = () =>
  */
 export const askRecommendation = (body) =>
   api.post('/api/ai/recommend', body).then(r => r.data)
+
+// ── Chức năng sáng tạo mới ────────────────────────────────────────────────────
+
+/** Dự báo churn khách hàng (RandomForest + RFM) */
+export const getChurnPrediction = (params = {}) =>
+  api.get('/api/ai/churn', { params }).then(r => r.data)
+
+/** Phân tích sản phẩm hay mua chung (Apriori) */
+export const getBasketAnalysis = (params = {}) =>
+  api.get('/api/ai/basket', { params }).then(r => r.data)
+
+/** Thông minh dự báo tồn kho */
+export const getInventoryIntelligence = (params = {}) =>
+  api.get('/api/ai/inventory', { params }).then(r => r.data)
+
+/** Mô phỏng kịch bản What-If */
+export const simulateWhatIf = (body) =>
+  api.post('/api/ai/whatif', body).then(r => r.data)
+
+/** Phân bổ doanh thu theo kênh */
+export const getChannelAttribution = (params = {}) =>
+  api.get('/api/ai/attribution', { params }).then(r => r.data)
+
+/** Lên lịch chiến dịch thông minh */
+export const getCampaignPlan = (params = {}) =>
+  api.get('/api/ai/campaign', { params }).then(r => r.data)
+
+/** Phân bổ địa lý khách hàng (Heatmap) */
+export const getGeoDistribution = (params = {}) =>
+  api.get('/api/ai/geo', { params }).then(r => r.data)
+
+/** Bảng xếp hạng hiệu suất */
+export const getLeaderboard = (params = {}) =>
+  api.get('/api/ai/leaderboard', { params }).then(r => r.data)
+
+/** Sinh nhận xét tự động bằng ngôn ngữ tự nhiên */
+export const getNarrative = (params = {}) =>
+  api.get('/api/ai/narrative', { params }).then(r => r.data)

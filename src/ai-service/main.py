@@ -2,13 +2,22 @@
 """
 AI/ML Service – FastAPI
 
-Endpoints:
+Endpoints cốt lõi:
   GET /forecast        – Dự báo doanh thu (Prophet)
-  GET /forecast/model-info – Thông tin model
   GET /anomaly         – Phát hiện bất thường (Z-score)
   GET /trend           – Phân tích xu hướng
   GET /recommendation  – Gợi ý hành động
-  GET /health          – Health check
+
+Endpoints mới (chức năng sáng tạo):
+  GET  /churn          – Dự báo khách hàng có nguy cơ rời bỏ (RandomForest)
+  GET  /basket         – Phân tích sản phẩm hay mua chung (Apriori)
+  GET  /inventory      – Thông minh dự báo tồn kho và gợi ý đặt hàng
+  POST /whatif         – Mô phỏng kịch bản What-If
+  GET  /attribution    – Phân bổ doanh thu theo kênh
+  GET  /campaign       – Lên lịch chiến dịch marketing thông minh
+  GET  /geo            – Phân bổ khách hàng theo địa lý (Heatmap)
+  GET  /leaderboard    – Bảng xếp hạng hiệu suất bán hàng
+  GET  /narrative      – Sinh nhận xét tự động bằng ngôn ngữ tự nhiên
 
 Chạy:
   uvicorn main:app --host 0.0.0.0 --port 8001 --reload
@@ -24,6 +33,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from routers import forecast, anomaly, trend, recommendation
 from routers.recommendation import customers_router
 from routers.cache import router as cache_router, insights_router
+from routers.churn       import router as churn_router
+from routers.basket      import router as basket_router
+from routers.inventory   import router as inventory_router
+from routers.whatif      import router as whatif_router
+from routers.attribution import router as attribution_router
+from routers.campaign    import router as campaign_router
+from routers.geo         import router as geo_router
+from routers.leaderboard import router as leaderboard_router
+from routers.narrative   import router as narrative_router
 from scheduler import scheduler as _scheduler, retrain_prophet, get_retrain_status
 
 # Chỉ định rõ đường dẫn .env (repo root), tránh find_dotenv() fail khi chạy từ subdirectory
@@ -56,7 +74,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Đăng ký routers
+# Đăng ký routers – cốt lõi
 app.include_router(forecast.router)
 app.include_router(anomaly.router)
 app.include_router(trend.router)
@@ -64,6 +82,17 @@ app.include_router(recommendation.router)
 app.include_router(customers_router)
 app.include_router(cache_router)
 app.include_router(insights_router)
+
+# Đăng ký routers – chức năng sáng tạo mới
+app.include_router(churn_router)
+app.include_router(basket_router)
+app.include_router(inventory_router)
+app.include_router(whatif_router)
+app.include_router(attribution_router)
+app.include_router(campaign_router)
+app.include_router(geo_router)
+app.include_router(leaderboard_router)
+app.include_router(narrative_router)
 
 
 @app.on_event("startup")

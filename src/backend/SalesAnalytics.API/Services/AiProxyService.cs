@@ -113,6 +113,10 @@ public class AiProxyService
     public async Task<object?> GetInsightsAsync()
         => await GetJsonAsync("/insights");
 
+    /// <summary>Phân khúc khách hàng RFM từ notebook 04.</summary>
+    public async Task<object?> GetRfmSegmentsAsync()
+        => await GetJsonAsync("/customers/segments");
+
     /// <summary>Tổng hợp phản hồi Facebook (sentiment, top issues/praises, recent comments).</summary>
     public async Task<object?> GetFeedbackSummaryAsync(Guid? companyId = null)
     {
@@ -141,6 +145,28 @@ public class AiProxyService
             if (!resp.IsSuccessStatusCode) return null;
             var raw  = await resp.Content.ReadAsStringAsync();
             return JsonSerializer.Deserialize<Dictionary<string, object?>>(raw, _jsonOpts);
+        }
+        catch (HttpRequestException)  { return null; }
+        catch (TaskCanceledException) { return null; }
+    }
+
+    // ── Generic proxy helpers (dùng cho các chức năng mới) ──────────────────
+
+    /// <summary>Generic GET proxy – forward query string thẳng lên FastAPI.</summary>
+    public Task<object?> ProxyGetAsync(string relativeUrl)
+        => GetJsonAsync("/" + relativeUrl.TrimStart('/'));
+
+    /// <summary>Generic POST proxy – forward body lên FastAPI.</summary>
+    public async Task<object?> ProxyPostAsync(string path, object body)
+    {
+        try
+        {
+            var json    = JsonSerializer.Serialize(body);
+            var content = new StringContent(json, Encoding.UTF8, "application/json");
+            var resp    = await _http.PostAsync("/" + path.TrimStart('/'), content);
+            if (!resp.IsSuccessStatusCode) return null;
+            var raw = await resp.Content.ReadAsStringAsync();
+            return JsonSerializer.Deserialize<object>(raw, _jsonOpts);
         }
         catch (HttpRequestException)  { return null; }
         catch (TaskCanceledException) { return null; }
