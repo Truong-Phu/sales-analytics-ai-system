@@ -5,6 +5,28 @@ import { getSyncStatus, triggerSync } from '../../api/syncApi'
 import { MOCK_DATA_SYNC } from '../../mockData/dataSync'
 import api from '../../api/axios'
 import { showToast } from '../../utils/toast'
+import { useHasRole } from '../../hooks/useAuth'
+
+// ── API helpers cho Facebook Integration ─────────────────────────────────────
+async function getFacebookStatus() {
+  const r = await api.get('/api/integrations/facebook/status')
+  return r.data
+}
+
+async function connectFacebook(pageId, pageAccessToken) {
+  const r = await api.post('/api/integrations/facebook', { pageId, pageAccessToken })
+  return r.data
+}
+
+async function disconnectFacebook() {
+  const r = await api.delete('/api/integrations/facebook')
+  return r.data
+}
+
+async function scrapeFacebook() {
+  const r = await api.post('/api/sync/scrape-facebook')
+  return r.data
+}
 
 const API_BASE = import.meta.env.VITE_API_URL ?? ''
 
@@ -23,6 +45,10 @@ async function toggleKeyword(id) {
 
 async function deleteKeyword(id) {
   await api.delete(`/api/scraper/keywords/${id}`)
+}
+
+async function toggleIntegration(integrationId) {
+  await api.patch(`/api/integrations/${integrationId}/toggle`)
 }
 
 function KeywordManager() {
@@ -110,6 +136,25 @@ function KeywordManager() {
         </button>
       </div>
 
+      {/* Hướng dẫn cài đặt Facebook Scraper */}
+      {srcType === 'facebook' && (
+        <div className="text-xs px-3 py-2.5 rounded-lg space-y-1"
+             style={{ background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.20)', color: '#3B82F6' }}>
+          <div className="flex items-center gap-1.5 font-semibold mb-1">
+            <span className="icon" style={{ fontSize: 14 }}>info</span>
+            Để dùng Facebook Page scraper, cần cấu hình trước:
+          </div>
+          <div style={{ color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+            1. Tạo Facebook App tại <strong>developers.facebook.com</strong><br />
+            2. Thêm thông tin vào <code style={{ background: 'var(--bg-elevated)', padding: '0 3px', borderRadius: 3 }}>appsettings.Development.json</code>:<br />
+            <code style={{ background: 'var(--bg-elevated)', padding: '2px 6px', borderRadius: 3, display: 'inline-block', marginTop: 2 }}>
+              {'"Facebook": \{ "PageId": "YOUR_PAGE_ID", "PageAccessToken": "YOUR_TOKEN" \}'}
+            </code><br />
+            3. Restart backend server
+          </div>
+        </div>
+      )}
+
       {error && (
         <div className="text-xs px-3 py-2 rounded-lg"
              style={{ background: 'rgba(239,68,68,0.08)', color: '#EF4444' }}>
@@ -180,6 +225,7 @@ function KeywordManager() {
 const SOURCE_ICON = {
   shopee: 'storefront', lazada: 'store', tiktok: 'play_circle',
   facebook: 'thumb_up', ghn: 'local_shipping', vnpay: 'payments',
+  google_analytics: 'analytics',
 }
 
 const STATUS_CFG = {
@@ -189,47 +235,59 @@ const STATUS_CFG = {
   error:   { bg: 'rgba(239,68,68,0.10)',   border: 'rgba(239,68,68,0.30)',   color: '#EF4444',              dot: '#EF4444',   icon: 'error_outline',          labelKey: 'dataSync.syncStatus.error'   },
 }
 
-function SourceCard({ src, syncing, onSync, t }) {
+function SourceCard({ src, syncing, onSync, onToggle, canToggle, t }) {
   const s = STATUS_CFG[src.status] ?? STATUS_CFG.idle
   const isBusy = syncing || src.status === 'syncing'
+  const isActive = src.isActive !== false
 
   return (
     <div
       className="lcard p-5 flex flex-col gap-4 transition-all"
       style={{
-        borderLeft: `3px solid ${s.dot}`,
+        borderLeft: `3px solid ${isActive ? s.dot : 'rgba(100,116,139,0.40)'}`,
+        opacity: isActive ? 1 : 0.72,
       }}
     >
       {/* Header */}
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3">
           <span className="icon w-10 h-10 flex items-center justify-center rounded-xl shrink-0"
-                style={{ fontSize: 22, background: 'var(--bg-elevated)', color: 'var(--primary-500)' }}>
+                style={{ fontSize: 22, background: 'var(--bg-elevated)', color: isActive ? 'var(--primary-500)' : 'var(--text-tertiary)' }}>
             {SOURCE_ICON[src.sourceKey] ?? 'api'}
           </span>
           <div>
             <div className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>
               {t(`dataSync.sources.${src.sourceKey}`, src.sourceName)}
             </div>
-            <span
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium mt-0.5"
-              style={{ background: s.bg, border: `1px solid ${s.border}`, color: s.color }}
-            >
-              <span className="w-1.5 h-1.5 rounded-full"
-                    style={{ background: s.dot, ...(src.status === 'syncing' && { animation: 'pulse 1s infinite' }) }} />
-              {t(s.labelKey)}
-            </span>
+            <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+              {isActive ? (
+                <span
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
+                  style={{ background: s.bg, border: `1px solid ${s.border}`, color: s.color }}
+                >
+                  <span className="w-1.5 h-1.5 rounded-full"
+                        style={{ background: s.dot, ...(src.status === 'syncing' && { animation: 'pulse 1s infinite' }) }} />
+                  {t(s.labelKey)}
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
+                      style={{ background: 'rgba(100,116,139,0.10)', border: '1px solid rgba(100,116,139,0.30)', color: '#64748B' }}>
+                  <span className="w-1.5 h-1.5 rounded-full" style={{ background: '#94A3B8' }} />
+                  Đã tắt
+                </span>
+              )}
+            </div>
           </div>
         </div>
         <span
           className="icon"
           style={{
             fontSize: 20,
-            color: s.color,
-            ...(src.status === 'syncing' && { animation: 'spin 1s linear infinite' }),
+            color: isActive ? s.color : '#94A3B8',
+            ...(src.status === 'syncing' && isActive && { animation: 'spin 1s linear infinite' }),
           }}
         >
-          {s.icon}
+          {isActive ? s.icon : 'power_settings_new'}
         </span>
       </div>
 
@@ -249,7 +307,7 @@ function SourceCard({ src, syncing, onSync, t }) {
             </span>
           </div>
         )}
-        {src.errorMessage && (
+        {src.errorMessage && isActive && (
           <div className="flex items-start gap-1.5 mt-1 px-2 py-1.5 rounded-lg"
                style={{ background: 'rgba(239,68,68,0.08)', color: '#EF4444' }}>
             <span className="icon shrink-0" style={{ fontSize: 14 }}>error_outline</span>
@@ -258,21 +316,44 @@ function SourceCard({ src, syncing, onSync, t }) {
         )}
       </div>
 
-      {/* Sync button */}
-      <button
-        onClick={onSync}
-        disabled={isBusy}
-        className="lbtn lbtn-secondary w-full justify-center disabled:opacity-50"
-        style={{ height: 36 }}
-      >
-        {isBusy ? (
-          <span className="w-4 h-4 border-2 rounded-full"
-                style={{ borderColor: 'var(--border-strong)', borderTopColor: 'var(--primary-500)', animation: 'spin 0.8s linear infinite' }} />
+      {/* Footer: Sync button + Toggle */}
+      <div className="flex items-center gap-2">
+        {isActive ? (
+          <button
+            onClick={onSync}
+            disabled={isBusy}
+            className="lbtn lbtn-secondary flex-1 justify-center disabled:opacity-50"
+            style={{ height: 36 }}
+          >
+            {isBusy ? (
+              <span className="w-4 h-4 border-2 rounded-full"
+                    style={{ borderColor: 'var(--border-strong)', borderTopColor: 'var(--primary-500)', animation: 'spin 0.8s linear infinite' }} />
+            ) : (
+              <span className="icon text-base">sync</span>
+            )}
+            {t('dataSync.syncNow')}
+          </button>
         ) : (
-          <span className="icon text-base">sync</span>
+          <p className="flex-1 text-center text-xs py-2" style={{ color: 'var(--text-tertiary)' }}>
+            Kênh đã tắt — không đồng bộ
+          </p>
         )}
-        {t('dataSync.syncNow')}
-      </button>
+        {canToggle && src.integrationId && (
+          <button
+            onClick={() => onToggle(src.integrationId)}
+            className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0 transition-colors"
+            style={{
+              background: isActive ? 'rgba(16,185,129,0.10)' : 'rgba(100,116,139,0.10)',
+              border: `1px solid ${isActive ? 'rgba(16,185,129,0.30)' : 'rgba(100,116,139,0.25)'}`,
+            }}
+            title={isActive ? 'Tắt kênh này' : 'Bật kênh này'}
+          >
+            <span className="icon text-lg" style={{ color: isActive ? 'var(--accent-500)' : '#64748B' }}>
+              {isActive ? 'toggle_on' : 'toggle_off'}
+            </span>
+          </button>
+        )}
+      </div>
     </div>
   )
 }
@@ -395,16 +476,42 @@ function EtlPipelineCard({ t }) {
   )
 }
 
-// ── Import thủ công CSV ───────────────────────────────────────────────────────
-const IMPORT_TYPES = [
-  { key: 'orders',    label: 'Đơn hàng',   icon: 'receipt_long',  required: ['order_code','customer_email','product_sku','quantity','unit_price','channel','order_date','status'] },
-  { key: 'products',  label: 'Sản phẩm',   icon: 'inventory_2',   required: ['sku','name','category','price','stock_quantity'] },
-  { key: 'customers', label: 'Khách hàng', icon: 'people',         required: ['email','full_name'] },
-  { key: 'sales-data',label: 'Doanh thu',  icon: 'bar_chart',     required: ['date','channel','quantity_sold','revenue'] },
+// ── Import thủ công CSV từ sàn TMĐT ──────────────────────────────────────────
+const IMPORT_SOURCES = [
+  {
+    key: 'shopee',   label: 'Shopee',       icon: 'storefront',     color: '#EE4D2D',
+    desc: 'File xuất từ Shopee Seller Center (Orders → Export)',
+    importUrl: '/api/import/platform-orders?source=shopee',
+  },
+  {
+    key: 'tiktok',   label: 'TikTok Shop',  icon: 'play_circle',    color: '#010101',
+    desc: 'File Order Report từ TikTok Shop Partner Center',
+    importUrl: '/api/import/platform-orders?source=tiktok',
+  },
+  {
+    key: 'lazada',   label: 'Lazada',        icon: 'store',          color: '#0F146D',
+    desc: 'File Order Report từ Lazada Seller Center',
+    importUrl: '/api/import/platform-orders?source=lazada',
+  },
+  {
+    key: 'facebook', label: 'Facebook',      icon: 'thumb_up',       color: '#1877F2',
+    desc: 'File CSV export từ Facebook Business Suite (Orders)',
+    importUrl: '/api/import/platform-orders?source=facebook',
+  },
+  {
+    key: 'ghn',      label: 'GHN',           icon: 'local_shipping', color: '#F59E0B',
+    desc: 'File báo cáo vận chuyển từ GHN Seller Portal',
+    importUrl: '/api/import/platform-orders?source=ghn',
+  },
+  {
+    key: 'vnpay',    label: 'VNPay',         icon: 'payments',       color: '#005BAA',
+    desc: 'File lịch sử giao dịch từ VNPay Merchant Portal',
+    importUrl: '/api/import/platform-orders?source=vnpay',
+  },
 ]
 
 function ImportTab() {
-  const [type,       setType]       = useState('orders')
+  const [source,     setSource]     = useState('shopee')
   const [file,       setFile]       = useState(null)
   const [preview,    setPreview]    = useState(null) // { headers, rows, total }
   const [importing,  setImporting]  = useState(false)
@@ -412,7 +519,7 @@ function ImportTab() {
   const [dragOver,   setDragOver]   = useState(false)
   const fileRef = useRef(null)
 
-  const selectedType = IMPORT_TYPES.find(t => t.key === type) ?? IMPORT_TYPES[0]
+  const selectedSource = IMPORT_SOURCES.find(s => s.key === source) ?? IMPORT_SOURCES[0]
 
   // Parse CSV preview (chỉ đọc 5 dòng đầu)
   const parsePreview = (csvFile) => {
@@ -445,11 +552,11 @@ function ImportTab() {
 
   const handleDownloadTemplate = async () => {
     try {
-      const res = await api.get(`/api/import/template/${type}`, { responseType: 'blob' })
+      const res = await api.get(selectedSource.templateUrl, { responseType: 'blob' })
       const url  = URL.createObjectURL(new Blob([res.data], { type: 'text/csv' }))
       const link = document.createElement('a')
       link.href  = url
-      link.download = `template_${type}.csv`
+      link.download = `template_${source}.csv`
       document.body.appendChild(link)
       link.click()
       link.remove()
@@ -464,7 +571,7 @@ function ImportTab() {
     try {
       const fd = new FormData()
       fd.append('file', file)
-      const res = await api.post(`/api/import/${type}`, fd, {
+      const res = await api.post(selectedSource.importUrl, fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
       })
       setResult(res.data)
@@ -477,33 +584,35 @@ function ImportTab() {
 
   const reset = () => { setFile(null); setPreview(null); setResult(null) }
 
-  const missingCols = preview
-    ? selectedType.required.filter(r => !preview.headers.map(h => h.toLowerCase()).includes(r.toLowerCase()))
-    : []
+  // Platform sources không cần validate cột (backend tự detect)
+  const missingCols = []
 
   return (
     <div className="space-y-5">
-      {/* Section 1: chọn loại */}
+      {/* Section 1: chọn nguồn sàn */}
       <div className="lcard p-5">
         <p className="text-xs font-semibold mb-3" style={{ color: 'var(--text-secondary)' }}>
-          CHỌN LOẠI DỮ LIỆU
+          CHỌN NGUỒN DỮ LIỆU
         </p>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {IMPORT_TYPES.map(it => (
+        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+          {IMPORT_SOURCES.map(it => (
             <button
               key={it.key}
-              onClick={() => { setType(it.key); reset() }}
+              onClick={() => { setSource(it.key); reset() }}
               className="flex flex-col items-center gap-2 p-3 rounded-xl border-2 transition-all"
               style={{
-                borderColor: type === it.key ? 'var(--primary-500)' : 'var(--border)',
-                background:  type === it.key ? 'rgba(99,102,241,0.06)' : 'var(--bg-elevated)',
+                borderColor: source === it.key ? it.color : 'var(--border)',
+                background:  source === it.key ? `${it.color}0f` : 'var(--bg-elevated)',
               }}
             >
-              <span className="icon" style={{ fontSize: 22, color: type === it.key ? 'var(--primary-500)' : 'var(--text-tertiary)' }}>
+              <span className="icon" style={{ fontSize: 22, color: source === it.key ? it.color : 'var(--text-tertiary)' }}>
                 {it.icon}
               </span>
-              <span className="text-xs font-medium" style={{ color: type === it.key ? 'var(--primary-500)' : 'var(--text-secondary)' }}>
+              <span className="text-xs font-medium" style={{ color: source === it.key ? it.color : 'var(--text-secondary)' }}>
                 {it.label}
+              </span>
+              <span className="text-xs text-center leading-tight" style={{ color: 'var(--text-tertiary)' }}>
+                {it.desc}
               </span>
             </button>
           ))}
@@ -514,10 +623,6 @@ function ImportTab() {
       <div className="lcard p-5 space-y-4">
         <div className="flex items-center justify-between">
           <p className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>TẢI VÀ IMPORT FILE</p>
-          <button onClick={handleDownloadTemplate} className="lbtn lbtn-secondary !h-7 !px-3 text-xs gap-1">
-            <span className="icon" style={{ fontSize: 14 }}>download</span>
-            Tải template mẫu
-          </button>
         </div>
 
         {/* Dropzone */}
@@ -644,7 +749,10 @@ function ImportTab() {
                  }}>
               <p className="text-sm font-semibold"
                  style={{ color: result.errors?.length > 0 ? '#F59E0B' : 'var(--accent-500)' }}>
-                Import hoàn tất: {result.success} thành công · {result.skipped} bỏ qua
+                {result.message ?? `Đã import ${result.success} đơn hàng — Đang đồng bộ lên Data Warehouse...`}
+              </p>
+              <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                {result.success} thành công · {result.skipped} bỏ qua
               </p>
               {result.errors?.slice(0, 5).map((e, i) => (
                 <p key={i} className="text-xs" style={{ color: '#EF4444' }}>
@@ -659,8 +767,284 @@ function ImportTab() {
   )
 }
 
+// ── Facebook Connection Card ──────────────────────────────────────────────────
+function FacebookConnectCard() {
+  const [status,      setStatus]      = useState(null)   // null | { connected, pageId, pageName, ... }
+  const [loading,     setLoading]     = useState(true)
+  const [pageId,      setPageId]      = useState('')
+  const [token,       setToken]       = useState('')
+  const [connecting,  setConnecting]  = useState(false)
+  const [scraping,    setScraping]    = useState(false)
+  const [scrapeResult, setScrapeResult] = useState(null)
+  const [error,       setError]       = useState('')
+
+  const loadStatus = async () => {
+    setLoading(true)
+    try {
+      setStatus(await getFacebookStatus())
+    } catch {
+      setStatus({ connected: false })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { loadStatus() }, [])
+
+  const handleConnect = async () => {
+    if (!pageId.trim() || !token.trim()) {
+      setError('Vui lòng nhập đầy đủ Page ID và Page Access Token.')
+      return
+    }
+    setConnecting(true); setError('')
+    try {
+      await connectFacebook(pageId.trim(), token.trim())
+      showToast('Kết nối Facebook thành công!', 'success')
+      setPageId(''); setToken('')
+      await loadStatus()
+    } catch (e) {
+      setError(e.response?.data?.message ?? e.message ?? 'Lỗi kết nối')
+    } finally {
+      setConnecting(false)
+    }
+  }
+
+  const handleDisconnect = async () => {
+    if (!confirm('Bạn chắc chắn muốn ngắt kết nối Facebook Page này?')) return
+    try {
+      await disconnectFacebook()
+      showToast('Đã ngắt kết nối Facebook.', 'info')
+      await loadStatus()
+    } catch (e) {
+      showToast(e.response?.data?.message ?? 'Lỗi ngắt kết nối', 'error')
+    }
+  }
+
+  const handleScrape = async () => {
+    setScraping(true); setScrapeResult(null)
+    try {
+      const r = await scrapeFacebook()
+      setScrapeResult(r)
+    } catch (e) {
+      setScrapeResult({ success: false, error: e.response?.data?.message ?? 'Lỗi scrape' })
+    } finally {
+      setScraping(false)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="lcard p-8 flex justify-center">
+        <span className="w-6 h-6 border-2 rounded-full"
+              style={{ borderColor: 'var(--border-strong)', borderTopColor: '#1877F2', animation: 'spin 0.8s linear infinite' }} />
+      </div>
+    )
+  }
+
+  return (
+    <div className="lcard p-5 space-y-5">
+      {/* Header */}
+      <div className="flex items-center gap-3">
+        <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0"
+             style={{ background: 'rgba(24,119,242,0.12)' }}>
+          <span className="icon" style={{ fontSize: 24, color: '#1877F2' }}>thumb_up</span>
+        </div>
+        <div>
+          <h2 className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>Facebook Page</h2>
+          <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
+            Thu thập bài đăng, bình luận và phân tích cảm xúc khách hàng
+          </p>
+        </div>
+        <div className="ml-auto">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium"
+                style={{
+                  background: status?.connected ? 'rgba(16,185,129,0.10)' : 'rgba(100,116,139,0.10)',
+                  color:      status?.connected ? 'var(--accent-500)' : '#64748B',
+                  border:     `1px solid ${status?.connected ? 'rgba(16,185,129,0.30)' : 'rgba(100,116,139,0.25)'}`,
+                }}>
+            <span className="w-1.5 h-1.5 rounded-full"
+                  style={{ background: status?.connected ? 'var(--accent-500)' : '#94A3B8' }} />
+            {status?.connected ? 'Đã kết nối' : 'Chưa kết nối'}
+          </span>
+        </div>
+      </div>
+
+      {/* Đã kết nối → hiện thông tin */}
+      {status?.connected ? (
+        <div className="space-y-4">
+          <div className="rounded-xl px-4 py-3 space-y-2"
+               style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.20)' }}>
+            <div className="flex items-center gap-2 text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+              <span className="icon" style={{ fontSize: 16, color: 'var(--accent-500)' }}>check_circle</span>
+              {status.pageName || status.pageId}
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-xs" style={{ color: 'var(--text-tertiary)' }}>
+              <div>
+                <span className="font-medium">Page ID:</span> {status.pageId}
+              </div>
+              {status.connectedAt && (
+                <div>
+                  <span className="font-medium">Kết nối lúc:</span>{' '}
+                  {new Date(status.connectedAt).toLocaleString('vi-VN')}
+                </div>
+              )}
+              {status.lastSyncAt && (
+                <div>
+                  <span className="font-medium">Sync lần cuối:</span>{' '}
+                  {new Date(status.lastSyncAt).toLocaleString('vi-VN')}
+                </div>
+              )}
+            </div>
+            {status.lastError && (
+              <div className="text-xs px-2 py-1.5 rounded-lg"
+                   style={{ background: 'rgba(239,68,68,0.08)', color: '#EF4444' }}>
+                {status.lastError}
+              </div>
+            )}
+          </div>
+
+          {/* Scrape result */}
+          {scrapeResult && (
+            <div className="rounded-xl px-4 py-3 text-xs space-y-1"
+                 style={{
+                   background: scrapeResult.success !== false ? 'rgba(16,185,129,0.08)' : 'rgba(239,68,68,0.08)',
+                   border:     `1px solid ${scrapeResult.success !== false ? 'rgba(16,185,129,0.25)' : 'rgba(239,68,68,0.25)'}`,
+                   color:      scrapeResult.success !== false ? 'var(--accent-500)' : '#EF4444',
+                 }}>
+              {scrapeResult.success !== false ? (
+                <>
+                  <div className="font-semibold">Scrape hoàn tất</div>
+                  <div style={{ color: 'var(--text-secondary)' }}>
+                    {scrapeResult.total_scraped} bài đăng · {scrapeResult.inserted} mới · {scrapeResult.skipped} bỏ qua
+                  </div>
+                </>
+              ) : (
+                <div>{scrapeResult.error}</div>
+              )}
+            </div>
+          )}
+
+          <div className="flex gap-2">
+            <button
+              onClick={handleScrape}
+              disabled={scraping}
+              className="lbtn lbtn-primary flex-1 justify-center disabled:opacity-50"
+              style={{ height: 38 }}
+            >
+              {scraping ? (
+                <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full"
+                      style={{ animation: 'spin 0.7s linear infinite' }} />
+              ) : (
+                <span className="icon text-base">sync</span>
+              )}
+              {scraping ? 'Đang scrape...' : 'Scrape ngay'}
+            </button>
+            <button
+              onClick={handleDisconnect}
+              className="lbtn flex-shrink-0 px-4"
+              style={{ height: 38, border: '1px solid rgba(239,68,68,0.30)', color: '#EF4444', background: 'rgba(239,68,68,0.06)' }}
+            >
+              <span className="icon text-base">link_off</span>
+              Ngắt kết nối
+            </button>
+          </div>
+        </div>
+      ) : (
+        /* Chưa kết nối → form nhập */
+        <div className="space-y-4">
+          {/* Hướng dẫn */}
+          <div className="rounded-xl px-4 py-3 text-xs space-y-1"
+               style={{ background: 'rgba(59,130,246,0.07)', border: '1px solid rgba(59,130,246,0.20)', color: '#3B82F6' }}>
+            <div className="font-semibold flex items-center gap-1.5 mb-1">
+              <span className="icon" style={{ fontSize: 14 }}>info</span>
+              Cách lấy Page Access Token
+            </div>
+            <ol className="space-y-0.5 list-decimal list-inside" style={{ color: 'var(--text-secondary)', lineHeight: 1.7 }}>
+              <li>Vào <strong>developers.facebook.com</strong> → Tạo App → Add Product → Facebook Login</li>
+              <li>Vào <strong>Graph API Explorer</strong> → chọn Page của bạn</li>
+              <li>Thêm quyền: <code style={{ background: 'var(--bg-elevated)', padding: '0 3px', borderRadius: 3 }}>pages_read_engagement</code>, <code style={{ background: 'var(--bg-elevated)', padding: '0 3px', borderRadius: 3 }}>pages_show_list</code></li>
+              <li>Nhấn <strong>Generate Access Token</strong> → copy token</li>
+              <li>Page ID lấy tại: Trang → Giới thiệu → Page ID</li>
+            </ol>
+          </div>
+
+          <div className="space-y-3">
+            <div>
+              <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>
+                Page ID <span style={{ color: '#EF4444' }}>*</span>
+              </label>
+              <input
+                value={pageId}
+                onChange={e => setPageId(e.target.value)}
+                placeholder="Ví dụ: 123456789012345"
+                className="lbtn w-full !h-9 !px-3 text-sm border"
+                style={{ background: 'var(--bg-elevated)', borderColor: 'var(--border-default)' }}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>
+                Page Access Token <span style={{ color: '#EF4444' }}>*</span>
+              </label>
+              <input
+                type="password"
+                value={token}
+                onChange={e => setToken(e.target.value)}
+                placeholder="EAABsbCS4IHUBO..."
+                className="lbtn w-full !h-9 !px-3 text-sm border font-mono"
+                style={{ background: 'var(--bg-elevated)', borderColor: 'var(--border-default)' }}
+              />
+              <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
+                Token được mã hóa AES-256-GCM trước khi lưu, không bao giờ hiển thị lại.
+              </p>
+            </div>
+          </div>
+
+          {error && (
+            <div className="text-xs px-3 py-2 rounded-lg"
+                 style={{ background: 'rgba(239,68,68,0.08)', color: '#EF4444', border: '1px solid rgba(239,68,68,0.25)' }}>
+              {error}
+            </div>
+          )}
+
+          <button
+            onClick={handleConnect}
+            disabled={connecting || !pageId.trim() || !token.trim()}
+            className="lbtn lbtn-primary w-full justify-center disabled:opacity-50"
+            style={{ height: 42 }}
+          >
+            {connecting ? (
+              <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full"
+                    style={{ animation: 'spin 0.7s linear infinite' }} />
+            ) : (
+              <span className="icon text-base">link</span>
+            )}
+            {connecting ? 'Đang kết nối...' : 'Kết nối Facebook Page'}
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Channel Connect Tab ───────────────────────────────────────────────────────
+function ChannelConnectTab() {
+  return (
+    <div className="space-y-4">
+      <div className="lcard px-5 py-3">
+        <p className="text-xs" style={{ color: 'var(--text-tertiary)', lineHeight: 1.7 }}>
+          Kết nối các kênh bán hàng để hệ thống tự động thu thập dữ liệu.
+          Thông tin xác thực được mã hóa AES-256-GCM và lưu theo từng tenant.
+        </p>
+      </div>
+      <FacebookConnectCard />
+      {/* Có thể thêm ShopeeConnectCard, LazadaConnectCard... ở đây sau */}
+    </div>
+  )
+}
+
 export default function DataSyncPage() {
   const { t } = useTranslation()
+  const canToggle = useHasRole(['Owner', 'Manager'])
   const [activeTab, setActiveTab] = useState('sync')
   const [data,    setData]    = useState(null)
   const [loading, setLoading] = useState(true)
@@ -695,8 +1079,13 @@ export default function DataSyncPage() {
     }
   }
 
-  const handleSyncAll = async () => {
-    if (data?.sources) await Promise.all(data.sources.map(s => handleSync(s.sourceKey)))
+  const handleToggle = async integrationId => {
+    try {
+      await toggleIntegration(integrationId)
+      await fetchStatus()
+    } catch (err) {
+      showToast(err.response?.data?.message || 'Lỗi khi thay đổi trạng thái', 'error')
+    }
   }
 
   const sources = data?.sources ?? []
@@ -705,9 +1094,10 @@ export default function DataSyncPage() {
   const syncingCount = sources.filter(s => s.status === 'syncing').length
 
   const TABS = [
-    { key: 'sync',   label: t('dataSync.title'),  icon: 'sync' },
-    { key: 'import', label: t('nav.import'),       icon: 'upload_file' },
-    { key: 'scraper',label: 'Từ khóa Scraper',     icon: 'search' },
+    { key: 'sync',    label: t('dataSync.title'),  icon: 'sync' },
+    { key: 'connect', label: 'Kết nối kênh',        icon: 'link' },
+    { key: 'import',  label: t('nav.import'),       icon: 'upload_file' },
+    { key: 'scraper', label: 'Từ khóa Scraper',     icon: 'search' },
   ]
 
   return (
@@ -720,17 +1110,6 @@ export default function DataSyncPage() {
           <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>{t('dataSync.title')}</h1>
           <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>{t('dataSync.subtitle')}</p>
         </div>
-        {activeTab === 'sync' && (
-          <div className="flex items-center gap-2">
-            <button onClick={fetchStatus} className="lbtn lbtn-secondary !h-9" disabled={loading}>
-              <span className="icon text-base" style={{ ...(loading && { animation: 'spin 1s linear infinite' }) }}>refresh</span>
-            </button>
-            <button onClick={handleSyncAll} className="lbtn lbtn-primary !h-9">
-              <span className="icon text-base">sync_alt</span>
-              {t('dataSync.syncAll')}
-            </button>
-          </div>
-        )}
       </div>
 
       {/* Tabs */}
@@ -789,6 +1168,8 @@ export default function DataSyncPage() {
                     src={src}
                     syncing={syncing[src.sourceKey]}
                     onSync={() => handleSync(src.sourceKey)}
+                    onToggle={handleToggle}
+                    canToggle={canToggle}
                     t={t}
                   />
                 ))}
@@ -797,6 +1178,9 @@ export default function DataSyncPage() {
           )}
         </>
       )}
+
+      {/* Tab: Kết nối kênh */}
+      {activeTab === 'connect' && <ChannelConnectTab />}
 
       {/* Tab: Import thủ công */}
       {activeTab === 'import' && <ImportTab />}

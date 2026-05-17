@@ -86,7 +86,8 @@ try
             policy
                 .WithOrigins(
                     "http://localhost:3000",
-                    "http://localhost:5173"
+                    "http://localhost:5173",
+                    "http://localhost:5174"
                 )
                 .AllowAnyHeader()
                 .AllowAnyMethod()
@@ -124,6 +125,9 @@ try
     });
 
     // ── 6. HTTP Client cho AI Service + Email Service + Expo Push ────────────
+    // IHttpClientFactory chung – dùng cho GeminiService và các call HTTP tùy ý
+    builder.Services.AddHttpClient();
+
     builder.Services.AddHttpClient<AiProxyService>(client =>
     {
         var aiBaseUrl = builder.Configuration["AiService:BaseUrl"] ?? "http://localhost:8001";
@@ -131,11 +135,19 @@ try
         client.Timeout     = TimeSpan.FromSeconds(30);
     });
 
-    // Email (Resend) – dùng HttpClient thuần
+    // Email – Resend Transactional Email
     builder.Services.AddHttpClient<IEmailService, ResendEmailService>();
 
     // Expo Push Notifications
     builder.Services.AddHttpClient<IExpoPushService, ExpoPushService>();
+
+    // Named client cho IntegrationsController gọi AI Service scrape endpoint
+    builder.Services.AddHttpClient("AiService", client =>
+    {
+        var aiBaseUrl = builder.Configuration["AiService:BaseUrl"] ?? "http://localhost:8001";
+        client.BaseAddress = new Uri(aiBaseUrl);
+        client.Timeout     = TimeSpan.FromSeconds(60);
+    });
 
     // ── 7. Application Services ───────────────────────────────────────────────
     builder.Services.AddScoped<JwtService>();
@@ -143,6 +155,10 @@ try
     builder.Services.AddScoped<DashboardService>();
     builder.Services.AddScoped<ReportService>();
     builder.Services.AddScoped<IAuditLogService, AuditLogService>();
+    builder.Services.AddScoped<CryptoService>();
+
+    // Gemini AI Chatbot service
+    builder.Services.AddScoped<GeminiService>();
 
     // OTP + Notification services (thêm [2026-05-08])
     builder.Services.AddScoped<IOtpService, OtpService>();
@@ -155,7 +171,8 @@ try
 
     // Background jobs
     builder.Services.AddHostedService<SubscriptionExpiryJob>();
-    builder.Services.AddHostedService<SmartAlertJob>();
+    builder.Services.AddSingleton<SmartAlertJob>();
+    builder.Services.AddHostedService(sp => sp.GetRequiredService<SmartAlertJob>());
 
     // ── 8. Repository Pattern (DI) ────────────────────────────────────────────
     builder.Services.AddScoped<IProductRepository,   ProductRepository>();
