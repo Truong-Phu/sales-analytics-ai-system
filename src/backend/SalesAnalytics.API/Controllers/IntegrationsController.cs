@@ -39,10 +39,19 @@ public class IntegrationsController(
 
         var companyId = tenant.CompanyId;
 
-        // 1. Validate token qua Graph API: GET /{pageId}?fields=name,id&access_token={token}
-        var (valid, pageName, errMsg) = await ValidateFacebookToken(req.PageId, req.PageAccessToken);
+        // 1. Validate token + lấy đúng page ID từ Graph API /me
+        var (valid, pageName, actualPageId, errMsg) = await ValidateFacebookToken(req.PageId, req.PageAccessToken);
         if (!valid)
             return BadRequest(new { message = $"Token không hợp lệ hoặc Page ID sai: {errMsg}" });
+
+        // Dùng page ID thực từ /me — tránh lỗi khi user nhập sai page ID trong form
+        var resolvedPageId = actualPageId ?? req.PageId;
+        if (actualPageId != null && actualPageId != req.PageId)
+        {
+            logger.LogInformation(
+                "Page ID tự động sửa: form={FormId} → actual={ActualId} (từ /me)",
+                req.PageId, actualPageId);
+        }
 
         // 2. Mã hóa token
         var encryptedToken = crypto.Encrypt(req.PageAccessToken);
@@ -80,8 +89,8 @@ public class IntegrationsController(
             }
 
             AddParam("cid",      companyId.ToString());
-            AddParam("pageId",   req.PageId.Trim());
-            AddParam("pageName", pageName ?? req.PageId);
+            AddParam("pageId",   resolvedPageId);
+            AddParam("pageName", pageName ?? resolvedPageId);
             AddParam("token",    encryptedToken);
 
             await cmd.ExecuteNonQueryAsync();
@@ -102,9 +111,9 @@ public class IntegrationsController(
             userAgent:  HttpContext.Request.Headers["User-Agent"].ToString());
 
         logger.LogInformation("Facebook kết nối thành công: company={CompanyId} page={PageId} ({PageName})",
-            companyId, req.PageId, pageName);
+            companyId, resolvedPageId, pageName);
 
-        return Ok(new { success = true, message = "Kết nối thành công!", pageName });
+        return Ok(new { success = true, message = "Kết nối thành công!", pageName, pageId = resolvedPageId });
     }
 
     /// <summary>
@@ -208,7 +217,7 @@ public class IntegrationsController(
         var plainToken = crypto.Decrypt(encryptedToken);
 
         // 3. Validate qua Graph API
-        var (isValid, pageName, errMsg) = await ValidateFacebookToken(pageId ?? "", plainToken);
+        var (isValid, pageName, actualPageId, errMsg) = await ValidateFacebookToken(pageId ?? "", plainToken);
         if (!isValid)
         {
             return Ok(new
@@ -222,10 +231,10 @@ public class IntegrationsController(
 
         return Ok(new
         {
-            valid    = true,
-            pageId,
+            valid       = true,
+            pageId      = actualPageId ?? pageId,
             pageName,
-            message  = $"Token hợp lệ — Page: {pageName}",
+            message     = $"Token hợp lệ — Page: {pageName}",
         });
     }
 
@@ -326,59 +335,52 @@ public class IntegrationsController(
     ///
     /// Trả về (isValid, pageName, errorMessage).
     /// </summary>
-    private async Task<(bool Valid, string? PageName, string? Error)> ValidateFacebookToken(
+    private async Task<(bool Valid, string? PageName, string? ActualPageId, string? Error)> ValidateFacebookToken(
         string pageId, string accessToken)
     {
         try
         {
             var client = httpClientFactory.CreateClient();
 
-            // Bước 1: GET /me — với Page Access Token, /me trả về thông tin Page
-            var meUrl  = $"{GraphApiBase}/me?fields=id,name&access_token={Uri.EscapeDataString(accessToken)}";
-            var resp   = await client.GetAsync(meUrl);
-            var body   = await resp.Content.ReadAsStringAsync();
-            var json   = JsonSerializer.Deserialize<JsonElement>(body);
+            // Bước 1: GET /me — với Page Access Token, /me trả về thông tin Page (id, name)
+            var meUrl = $"{GraphApiBase}/me?fields=id,name&access_token={Uri.EscapeDataString(accessToken)}";
+            var resp  = await client.GetAsync(meUrl);
+            var body  = await resp.Content.ReadAsStringAsync();
+            var json  = JsonSerializer.Deserialize<JsonElement>(body);
 
             if (!json.TryGetProperty("error", out _))
             {
-                // /me thành công — lấy name
                 var name       = json.TryGetProperty("name", out var n) ? n.GetString() : pageId;
                 var returnedId = json.TryGetProperty("id",   out var i) ? i.GetString() : null;
 
-                // Nếu ID trả về là user ID (không phải page ID) → token là User Token, không phải Page Token
                 if (returnedId != null && returnedId != pageId)
-                {
-                    logger.LogWarning(
-                        "ValidateFacebookToken: /me trả về id={ReturnedId} khác pageId={PageId}. " +
-                        "Có thể đây là User Access Token thay vì Page Access Token.",
+                    logger.LogInformation(
+                        "Facebook /me trả về pageId={Actual} (user nhập={Entered}) — dùng ID thực",
                         returnedId, pageId);
-                    // Vẫn cho phép kết nối — Graph API /me cho user token cũng có thể truy cập page
-                    // nếu user là admin của page. Bước 1 coi là hợp lệ.
-                }
 
-                return (true, name, null);
+                return (true, name, returnedId, null);
             }
 
             // Bước 2: fallback → GET /{pageId}?fields=name,id
-            logger.LogDebug("ValidateFacebookToken: /me lỗi, thử GET /{PageId}", pageId);
-            var pageUrl  = $"{GraphApiBase}/{pageId}?fields=name,id&access_token={Uri.EscapeDataString(accessToken)}";
-            var resp2    = await client.GetAsync(pageUrl);
-            var body2    = await resp2.Content.ReadAsStringAsync();
-            var json2    = JsonSerializer.Deserialize<JsonElement>(body2);
+            logger.LogDebug("ValidateFacebookToken: /me lỗi, fallback GET /{PageId}", pageId);
+            var pageUrl = $"{GraphApiBase}/{pageId}?fields=name,id&access_token={Uri.EscapeDataString(accessToken)}";
+            var resp2   = await client.GetAsync(pageUrl);
+            var body2   = await resp2.Content.ReadAsStringAsync();
+            var json2   = JsonSerializer.Deserialize<JsonElement>(body2);
 
             if (json2.TryGetProperty("error", out var err2))
             {
                 var errMsg = err2.TryGetProperty("message", out var m) ? m.GetString() : body2;
-                return (false, null, errMsg);
+                return (false, null, null, errMsg);
             }
 
             var name2 = json2.TryGetProperty("name", out var n2) ? n2.GetString() : pageId;
-            return (true, name2, null);
+            return (true, name2, pageId, null);
         }
         catch (Exception ex)
         {
             logger.LogWarning("ValidateFacebookToken lỗi: {Msg}", ex.Message);
-            return (false, null, ex.Message);
+            return (false, null, null, ex.Message);
         }
     }
 
