@@ -31,7 +31,7 @@ export default function SaSyncMonitorPage() {
     if (phaseFilter) params.set('phase', phaseFilter)
     axios.get(`/api/admin/sa/sync-logs?${params}`)
       .then(r => { setLogs(r.data.data ?? []); setTotal(r.data.total ?? 0) })
-      .catch(() => setError('Không thể tải sync logs'))
+      .catch(() => setError('Không thể tải nhật ký đồng bộ'))
       .finally(() => setLoading(false))
   }, [page, levelFilter, phaseFilter])
 
@@ -43,7 +43,7 @@ export default function SaSyncMonitorPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Sync Monitor</h1>
+          <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Giám sát đồng bộ</h1>
           <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
             ETL & Sync logs – {total} bản ghi
           </p>
@@ -52,18 +52,18 @@ export default function SaSyncMonitorPage() {
           <select value={levelFilter} onChange={e => { setLevelFilter(e.target.value); setPage(1) }}
             className="text-sm px-3 py-2 rounded-lg"
             style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}>
-            {LEVELS.map(l => <option key={l} value={l}>{l || 'Tất cả level'}</option>)}
+            {LEVELS.map(l => <option key={l} value={l}>{l || 'Tất cả cấp độ'}</option>)}
           </select>
           <select value={phaseFilter} onChange={e => { setPhaseFilter(e.target.value); setPage(1) }}
             className="text-sm px-3 py-2 rounded-lg"
             style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}>
-            {PHASES.map(p => <option key={p} value={p}>{p || 'Tất cả phase'}</option>)}
+            {PHASES.map(p => <option key={p} value={p}>{p || 'Tất cả giai đoạn'}</option>)}
           </select>
           <button onClick={load}
             className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium"
             style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}>
             <span className={`icon text-base ${loading ? 'animate-spin' : ''}`}>refresh</span>
-            Refresh
+            Làm mới
           </button>
         </div>
       </div>
@@ -84,7 +84,7 @@ export default function SaSyncMonitorPage() {
           <table className="w-full text-sm">
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-elevated)' }}>
-                {['Log ID', 'Job ID', 'Phase', 'Level', 'Message', 'Records', 'Thời gian'].map(h => (
+                {['Mã log', 'Mã job', 'Giai đoạn', 'Cấp độ', 'Nội dung', 'Bản ghi', 'Thời gian'].map(h => (
                   <th key={h} className="text-left px-4 py-3 font-medium"
                     style={{ color: 'var(--text-tertiary)', whiteSpace: 'nowrap' }}>{h}</th>
                 ))}

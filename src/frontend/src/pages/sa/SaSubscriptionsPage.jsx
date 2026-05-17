@@ -57,7 +57,7 @@ function EditModal({ sub, onClose, onSaved }) {
         <div className="flex items-center justify-between px-5 py-4"
           style={{ borderBottom: '1px solid var(--border)' }}>
           <h3 className="font-semibold" style={{ color: 'var(--text-primary)' }}>
-            Chỉnh sửa Subscription
+            Chỉnh sửa Gói đăng ký
           </h3>
           <button onClick={onClose}><span className="icon" style={{ color: 'var(--text-tertiary)' }}>close</span></button>
         </div>
@@ -66,14 +66,14 @@ function EditModal({ sub, onClose, onSaved }) {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-tertiary)' }}>Plan</label>
+              <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-tertiary)' }}>Gói</label>
               <select className={inp} style={inpStyle}
                 value={form.plan} onChange={e => setForm(f => ({ ...f, plan: e.target.value }))}>
                 {['free', 'pro', 'enterprise'].map(p => <option key={p} value={p}>{p}</option>)}
               </select>
             </div>
             <div>
-              <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-tertiary)' }}>Status</label>
+              <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-tertiary)' }}>Trạng thái</label>
               <select className={inp} style={inpStyle}
                 value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}>
                 {['active', 'trial', 'expired', 'cancelled'].map(s => <option key={s} value={s}>{s}</option>)}
@@ -90,13 +90,13 @@ function EditModal({ sub, onClose, onSaved }) {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-tertiary)' }}>Max Channels (-1=∞)</label>
+              <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-tertiary)' }}>Tối đa Kênh (-1=∞)</label>
               <input type="number" className={inp} style={inpStyle}
                 value={form.maxChannels}
                 onChange={e => setForm(f => ({ ...f, maxChannels: e.target.value }))} />
             </div>
             <div>
-              <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-tertiary)' }}>Max Users (-1=∞)</label>
+              <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-tertiary)' }}>Tối đa Người dùng (-1=∞)</label>
               <input type="number" className={inp} style={inpStyle}
                 value={form.maxUsers}
                 onChange={e => setForm(f => ({ ...f, maxUsers: e.target.value }))} />
@@ -135,7 +135,7 @@ export default function SaSubscriptionsPage() {
     if (statusFilter) params.set('status', statusFilter)
     axios.get(`/api/admin/sa/subscriptions?${params}`)
       .then(r => { setSubs(r.data.data ?? []); setTotal(r.data.total ?? 0) })
-      .catch(() => setError('Không thể tải subscriptions'))
+      .catch(() => setError('Không thể tải danh sách gói đăng ký'))
       .finally(() => setLoading(false))
   }, [page, planFilter, statusFilter])
 
@@ -147,7 +147,7 @@ export default function SaSubscriptionsPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Subscriptions</h1>
+          <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Gói đăng ký</h1>
           <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
             Quản lý gói dịch vụ – {total} tổng
           </p>
@@ -156,13 +156,13 @@ export default function SaSubscriptionsPage() {
           <select value={planFilter} onChange={e => { setPlanFilter(e.target.value); setPage(1) }}
             className="text-sm px-3 py-2 rounded-lg"
             style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}>
-            <option value="">Tất cả plan</option>
+            <option value="">Tất cả gói</option>
             {['free', 'pro', 'enterprise'].map(p => <option key={p} value={p}>{p}</option>)}
           </select>
           <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1) }}
             className="text-sm px-3 py-2 rounded-lg"
             style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}>
-            <option value="">Tất cả status</option>
+            <option value="">Tất cả trạng thái</option>
             {['active', 'trial', 'expired', 'cancelled'].map(s => <option key={s} value={s}>{s}</option>)}
           </select>
         </div>
@@ -188,7 +188,7 @@ export default function SaSubscriptionsPage() {
           <table className="w-full text-sm">
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-elevated)' }}>
-                {['Company', 'Plan', 'Status', 'Kênh', 'Users', 'Hết hạn', ''].map(h => (
+                {['Công ty', 'Gói', 'Trạng thái', 'Kênh', 'Người dùng', 'Hết hạn', ''].map(h => (
                   <th key={h} className="text-left px-4 py-3 font-medium"
                     style={{ color: 'var(--text-tertiary)', whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
@@ -234,7 +234,7 @@ export default function SaSubscriptionsPage() {
               })}
               {subs.length === 0 && (
                 <tr><td colSpan={7} className="px-4 py-10 text-center text-sm"
-                  style={{ color: 'var(--text-tertiary)' }}>Không có subscription nào</td></tr>
+                  style={{ color: 'var(--text-tertiary)' }}>Không có gói đăng ký nào</td></tr>
               )}
             </tbody>
           </table>
@@ -265,7 +265,7 @@ export default function SaSubscriptionsPage() {
           onClose={() => setEditing(null)}
           onSaved={() => {
             setEditing(null)
-            setFlash('Đã cập nhật subscription')
+            setFlash('Đã cập nhật gói đăng ký')
             setTimeout(() => setFlash(''), 3000)
             load()
           }}

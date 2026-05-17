@@ -30,7 +30,8 @@ api.interceptors.response.use(
   res => res,
   async err => {
     const original = err.config
-    if (err.response?.status === 401 && !original._retry) {
+    if (err.response?.status === 401 && !original._retry &&
+        !original.url?.includes('/api/auth/')) {
       original._retry = true
 
       if (isRefreshing) {
@@ -48,11 +49,12 @@ api.interceptors.response.use(
         const refreshToken = localStorage.getItem('refresh_token')
         if (!refreshToken) throw new Error('No refresh token')
 
-        const { data } = await api.post('/api/auth/refresh', { refreshToken })
-        const newToken = data.accessToken
+        // Backend trả về { success, data: { accessToken, refreshToken } }
+        const { data: res } = await api.post('/api/auth/refresh', { refreshToken })
+        const newToken = res.data.accessToken
 
         sessionStorage.setItem('access_token', newToken)
-        localStorage.setItem('refresh_token', data.refreshToken)
+        localStorage.setItem('refresh_token', res.data.refreshToken)
 
         refreshQueue.forEach(p => p.resolve(newToken))
         refreshQueue = []
@@ -73,7 +75,8 @@ api.interceptors.response.use(
 
     // Xử lý lỗi HTTP toàn cục
     const status = err.response?.status
-    if (status === 403) {
+    // Bỏ qua 403 trên auth endpoints — LoginPage tự xử lý và hiển thị đúng message
+    if (status === 403 && !original.url?.includes('/api/auth/')) {
       showToast('Không có quyền truy cập trang này', 'error')
     } else if (status >= 500) {
       showToast('Lỗi hệ thống, vui lòng thử lại sau', 'error')

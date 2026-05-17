@@ -48,29 +48,34 @@ export default function ForecastPage() {
   const { t }             = useTranslation()
   const [horizon, setHorizon] = useState(30)
   const [channel, setChannel] = useState('all')
-  const [result,  setResult]  = useState(null)
-  const [trend,   setTrend]   = useState(null)
-  const [metrics, setMetrics] = useState(null)
-  const [loading, setLoading] = useState(false)
-  const [isMock,  setIsMock]  = useState(false)
+  const [result,       setResult]       = useState(null)
+  const [trend,        setTrend]        = useState(null)
+  const [metrics,      setMetrics]      = useState(null)
+  const [loading,      setLoading]      = useState(false)
+  const [isMock,       setIsMock]       = useState(false)
+  const [metricsIsMock, setMetricsIsMock] = useState(false)
 
   const handleRun = async () => {
     setLoading(true)
     setIsMock(false)
+    setMetricsIsMock(false)
     try {
+      let metricsFallback = false
       const [fc, tr, mt] = await Promise.all([
         getForecast(horizon, channel),
         getTrend(30, channel),
-        getForecastMetrics().catch(() => MOCK_METRICS),
+        getForecastMetrics().catch(() => { metricsFallback = true; return MOCK_METRICS }),
       ])
       setResult(fc)
       setTrend(tr)
       setMetrics(mt)
+      setMetricsIsMock(metricsFallback)
     } catch {
       setResult(getMockForecast(horizon))
       setTrend(MOCK_TREND)
       setMetrics(MOCK_METRICS)
       setIsMock(true)
+      setMetricsIsMock(true)
     } finally {
       setLoading(false)
     }
@@ -298,6 +303,12 @@ export default function ForecastPage() {
             <h2 className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
               Đánh giá độ chính xác mô hình Prophet
             </h2>
+            {metricsIsMock && (
+              <span className="lbadge text-xs ml-1"
+                style={{ background: 'rgba(234,179,8,0.12)', color: '#92400e', border: '1px solid rgba(234,179,8,0.3)' }}>
+                Dữ liệu mẫu
+              </span>
+            )}
             <span className="lbadge lbadge-neutral text-xs ml-auto">{metrics.eval_method}</span>
           </div>
 

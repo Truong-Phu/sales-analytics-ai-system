@@ -23,7 +23,7 @@ export function AuthProvider({ children }) {
     if (token) {
       const payload = parseJwt(token)
       if (payload && payload.exp * 1000 > Date.now()) {
-        setUser({
+        const baseUser = {
           id:                  payload.sub,
           name:                payload['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name'] ?? payload.name,
           email:               payload['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress'] ?? payload.email,
@@ -34,7 +34,21 @@ export function AuthProvider({ children }) {
           companyId:           payload['company_id'] ?? undefined,
           companySlug:         payload['company_slug'] ?? undefined,
           onboardingCompleted: true,
-        })
+        }
+        setUser(baseUser)
+        // Fetch profile đầy đủ (avatarUrl, fullName) — không block việc render
+        api.get('/api/users/me')
+          .then(r => {
+            const d = r.data
+            setUser(prev => prev ? {
+              ...prev,
+              fullName: d.fullName ?? d.full_name ?? prev.name,
+              avatarUrl: d.avatarUrl ?? d.avatar_url ?? prev.avatarUrl,
+              phone:    d.phone     ?? prev.phone,
+              timezone: d.timezone  ?? prev.timezone,
+            } : prev)
+          })
+          .catch(() => {})
       } else {
         // Token hết hạn → xóa
         sessionStorage.removeItem('access_token')
@@ -96,12 +110,11 @@ export function AuthProvider({ children }) {
     return u
   }, [])
 
-  // Đăng xuất
+  // Đăng xuất – xóa token và state; navigation do component gọi xử lý
   const logout = useCallback(() => {
     sessionStorage.removeItem('access_token')
     localStorage.removeItem('refresh_token')
     setUser(null)
-    window.location.href = '/login'
   }, [])
 
   // Đổi ngôn ngữ ưa thích

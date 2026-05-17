@@ -12,7 +12,7 @@ export default function SuperAdminRoute({ children }) {
 
   if (loading) return <PageSpinner />
   if (!user)              return <Navigate to="/login"        replace />
-  if (!user.isSuperAdmin) return <Navigate to="/unauthorized" replace />
+  if (!user.isSuperAdmin) return <Navigate to="/dashboard"    replace />
 
   return children
 }

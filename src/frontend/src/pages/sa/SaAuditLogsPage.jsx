@@ -35,7 +35,7 @@ export default function SaAuditLogsPage() {
     if (dateTo)       params.set('to',     new Date(dateTo + 'T23:59:59').toISOString())
     axios.get(`/api/admin/sa/audit-logs?${params}`)
       .then(r => { setLogs(r.data.data ?? []); setTotal(r.data.total ?? 0) })
-      .catch(() => setError('Không thể tải audit logs'))
+      .catch(() => setError('Không thể tải nhật ký kiểm toán'))
       .finally(() => setLoading(false))
   }, [page, actionFilter, dateFrom, dateTo])
 
@@ -46,7 +46,7 @@ export default function SaAuditLogsPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Audit Logs</h1>
+        <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Nhật ký kiểm toán</h1>
         <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
           Nhật ký hành động toàn hệ thống – {total} bản ghi
         </p>
@@ -55,11 +55,11 @@ export default function SaAuditLogsPage() {
       {/* Filters */}
       <div className="flex flex-wrap gap-3 items-end">
         <div>
-          <label className="text-xs font-medium block mb-1" style={{ color: 'var(--text-tertiary)' }}>Action</label>
+          <label className="text-xs font-medium block mb-1" style={{ color: 'var(--text-tertiary)' }}>Hành động</label>
           <select value={actionFilter} onChange={e => { setActionFilter(e.target.value); setPage(1) }}
             className="text-sm px-3 py-2 rounded-lg"
             style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}>
-            {ACTIONS.map(a => <option key={a} value={a}>{a || 'Tất cả actions'}</option>)}
+            {ACTIONS.map(a => <option key={a} value={a}>{a || 'Tất cả hành động'}</option>)}
           </select>
         </div>
         <div>
@@ -101,7 +101,7 @@ export default function SaAuditLogsPage() {
           <table className="w-full text-sm">
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-elevated)' }}>
-                {['Thời gian', 'User', 'Action', 'Entity', 'Status', 'IP', 'Chi tiết'].map(h => (
+                {['Thời gian', 'Người dùng', 'Hành động', 'Đối tượng', 'Trạng thái', 'IP', 'Chi tiết'].map(h => (
                   <th key={h} className="text-left px-4 py-3 font-medium"
                     style={{ color: 'var(--text-tertiary)', whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
@@ -153,7 +153,7 @@ export default function SaAuditLogsPage() {
               })}
               {logs.length === 0 && (
                 <tr><td colSpan={7} className="px-4 py-10 text-center text-sm"
-                  style={{ color: 'var(--text-tertiary)' }}>Chưa có audit logs</td></tr>
+                  style={{ color: 'var(--text-tertiary)' }}>Chưa có nhật ký kiểm toán</td></tr>
               )}
             </tbody>
           </table>

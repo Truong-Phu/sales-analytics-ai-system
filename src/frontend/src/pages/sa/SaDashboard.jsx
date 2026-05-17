@@ -53,10 +53,10 @@ export default function SaDashboard() {
   if (!data)  return null
 
   const kpis = [
-    { icon: 'business',         label: 'Tổng companies',    value: data.totalCompanies,      color: '#6366F1' },
+    { icon: 'business',         label: 'Tổng công ty',      value: data.totalCompanies,      color: '#6366F1' },
     { icon: 'check_circle',     label: 'Đang hoạt động',    value: data.activeCompanies,     color: '#10B981' },
-    { icon: 'group',            label: 'Tổng users',        value: data.totalUsers,          color: '#3B82F6' },
-    { icon: 'person_check',     label: 'Users active',      value: data.activeUsers,         color: '#0EA5E9' },
+    { icon: 'group',            label: 'Tổng người dùng',   value: data.totalUsers,          color: '#3B82F6' },
+    { icon: 'person_check',     label: 'Người dùng active', value: data.activeUsers,         color: '#0EA5E9' },
     { icon: 'workspace_premium',label: 'Gói Pro active',    value: data.proSubscriptions,    color: '#F59E0B' },
     { icon: 'payments',         label: 'Doanh thu tháng',   value: fmtVnd(data.monthlyRevenue), color: '#EF4444' },
   ]
@@ -64,7 +64,7 @@ export default function SaDashboard() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>System Dashboard</h1>
+        <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Bảng điều khiển hệ thống</h1>
         <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>Tổng quan toàn hệ thống</p>
       </div>
 
@@ -78,7 +78,7 @@ export default function SaDashboard() {
         <div className="rounded-xl p-5"
           style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
           <h2 className="text-sm font-semibold mb-4" style={{ color: 'var(--text-primary)' }}>
-            Companies đăng ký theo tháng
+            Công ty đăng ký theo tháng
           </h2>
           {data.registrationsByMonth.length === 0 ? (
             <p className="text-sm text-center py-8" style={{ color: 'var(--text-tertiary)' }}>Chưa có dữ liệu</p>
@@ -110,7 +110,7 @@ export default function SaDashboard() {
         <div className="rounded-xl p-5"
           style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
           <h2 className="text-sm font-semibold mb-4" style={{ color: 'var(--text-primary)' }}>
-            Companies mới nhất
+            Công ty mới nhất
           </h2>
           <div className="space-y-3">
             {data.topCompanies.map(c => {
@@ -126,7 +126,7 @@ export default function SaDashboard() {
                       {c.name}
                     </div>
                     <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                      {c.userCount} users
+                      {c.userCount} người dùng
                     </div>
                   </div>
                   <span className="text-xs px-2 py-0.5 rounded-full font-medium"
@@ -137,7 +137,7 @@ export default function SaDashboard() {
               )
             })}
             {data.topCompanies.length === 0 && (
-              <p className="text-sm text-center py-6" style={{ color: 'var(--text-tertiary)' }}>Chưa có companies</p>
+              <p className="text-sm text-center py-6" style={{ color: 'var(--text-tertiary)' }}>Chưa có công ty nào</p>
             )}
           </div>
         </div>

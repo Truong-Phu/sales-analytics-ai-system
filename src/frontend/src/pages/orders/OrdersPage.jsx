@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, Fragment } from 'react'
 import { useTranslation } from 'react-i18next'
 import MockToast from '../../components/ui/MockToast'
 import FilterPill from '../../components/ui/FilterPill'
@@ -351,9 +351,8 @@ export default function OrdersPage() {
               </thead>
               <tbody>
                 {filtered.map(order => (
-                  <>
+                  <Fragment key={order.orderId}>
                     <tr
-                      key={order.orderId}
                       className="transition-colors cursor-pointer"
                       style={{ borderBottom: '1px solid var(--border)' }}
                       onClick={() => setExpanded(expanded === order.orderId ? null : order.orderId)}
@@ -434,7 +433,7 @@ export default function OrdersPage() {
                         </td>
                       </tr>
                     )}
-                  </>
+                  </Fragment>
                 ))}
               </tbody>
             </table>

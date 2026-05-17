@@ -14,49 +14,136 @@ const STATUS_CFG = {
   expired:  { bg: '#FEF9C3', color: '#854D0E' },
 }
 
+// Modal xác nhận khóa / mở khóa công ty
+function LockModal({ company, onClose, onConfirm }) {
+  const [reason, setReason] = useState('')
+  const [loading, setLoading] = useState(false)
+  const isLocking = company.isActive
+
+  const handleConfirm = async () => {
+    setLoading(true)
+    await onConfirm(company.id, !company.isActive, reason)
+    setLoading(false)
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: 'rgba(0,0,0,0.5)' }}>
+      <div className="w-full max-w-md rounded-2xl p-6"
+        style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
+        <h3 className="text-lg font-bold mb-1" style={{ color: 'var(--text-primary)' }}>
+          {isLocking ? 'Khóa công ty' : 'Mở khóa công ty'}
+        </h3>
+        <p className="text-sm mb-4" style={{ color: 'var(--text-secondary)' }}>
+          {isLocking
+            ? `Công ty "${company.name}" sẽ bị khóa. Toàn bộ người dùng sẽ bị đăng xuất và không thể đăng nhập.`
+            : `Công ty "${company.name}" sẽ được mở khóa và hoạt động bình thường trở lại.`}
+        </p>
+
+        {isLocking && (
+          <div className="mb-4">
+            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>
+              Lý do khóa <span style={{ color: 'var(--color-error)' }}>*</span>
+            </label>
+            <textarea
+              className="w-full p-3 rounded-xl text-sm resize-none"
+              rows={3}
+              placeholder="Nhập lý do khóa công ty..."
+              value={reason}
+              onChange={e => setReason(e.target.value)}
+              style={{
+                background: 'var(--bg-base)',
+                border: '1px solid var(--border)',
+                color: 'var(--text-primary)',
+                outline: 'none',
+              }}
+            />
+          </div>
+        )}
+
+        {!isLocking && company.lockReason && (
+          <div className="mb-4 p-3 rounded-xl text-sm"
+            style={{ background: 'rgba(239,68,68,0.07)', border: '1px solid rgba(239,68,68,0.2)' }}>
+            <span className="font-medium" style={{ color: 'var(--color-error)' }}>Lý do đã khóa: </span>
+            <span style={{ color: 'var(--text-secondary)' }}>{company.lockReason}</span>
+          </div>
+        )}
+
+        <div className="flex gap-2 justify-end">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 rounded-xl text-sm font-medium transition-colors"
+            style={{ background: 'var(--bg-elevated)', color: 'var(--text-secondary)' }}>
+            Hủy
+          </button>
+          <button
+            onClick={handleConfirm}
+            disabled={loading || (isLocking && !reason.trim())}
+            className="px-4 py-2 rounded-xl text-sm font-medium transition-colors disabled:opacity-50"
+            style={{
+              background: isLocking ? '#DC2626' : '#059669',
+              color: 'white',
+            }}>
+            {loading ? '...' : isLocking ? 'Xác nhận khóa' : 'Xác nhận mở khóa'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function SaCompaniesPage() {
   const [companies, setCompanies] = useState([])
   const [loading,   setLoading]   = useState(true)
   const [error,     setError]     = useState('')
-  const [toggling,  setToggling]  = useState(null)
   const [flash,     setFlash]     = useState('')
+  const [modal,     setModal]     = useState(null) // company object
 
   const load = useCallback(() => {
     setLoading(true)
     axios.get('/api/admin/sa/companies')
       .then(r => setCompanies(r.data))
-      .catch(() => setError('Không thể tải danh sách companies'))
+      .catch(() => setError('Không thể tải danh sách công ty'))
       .finally(() => setLoading(false))
   }, [])
 
   useEffect(() => { load() }, [load])
 
-  const toggleCompany = async (id, isActive) => {
-    setToggling(id)
+  const handleToggle = async (id, newIsActive, reason) => {
     try {
-      const res = await axios.patch(`/api/admin/sa/companies/${id}/toggle`, { isActive: !isActive })
+      const res = await axios.patch(`/api/admin/sa/companies/${id}/toggle`, {
+        isActive: newIsActive,
+        reason: reason || null,
+      })
       setFlash(res.data.message)
       setTimeout(() => setFlash(''), 3000)
+      setModal(null)
       load()
     } catch {
       setError('Không thể cập nhật trạng thái')
-    } finally {
-      setToggling(null)
     }
   }
 
   return (
     <div className="space-y-4">
+      {modal && (
+        <LockModal
+          company={modal}
+          onClose={() => setModal(null)}
+          onConfirm={handleToggle}
+        />
+      )}
+
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Companies</h1>
+          <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Quản lý Công ty</h1>
           <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
             Quản lý tất cả công ty trong hệ thống
           </p>
         </div>
         <span className="text-sm px-3 py-1 rounded-full font-medium"
           style={{ background: 'var(--bg-elevated)', color: 'var(--text-secondary)' }}>
-          {companies.length} companies
+          {companies.length} công ty
         </span>
       </div>
 
@@ -81,7 +168,7 @@ export default function SaCompaniesPage() {
           <table className="w-full text-sm">
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-elevated)' }}>
-                {['Công ty', 'Email', 'Gói', 'Subscription', 'Users', 'Ngày đăng ký', 'Trạng thái', ''].map(h => (
+                {['Công ty', 'Email', 'Gói', 'Gói đăng ký', 'Thành viên', 'Ngày đăng ký', 'Trạng thái', ''].map(h => (
                   <th key={h} className="text-left px-4 py-3 font-medium"
                     style={{ color: 'var(--text-tertiary)', whiteSpace: 'nowrap' }}>
                     {h}
@@ -91,7 +178,7 @@ export default function SaCompaniesPage() {
             </thead>
             <tbody>
               {companies.map(c => {
-                const planCfg = PLAN_CFG[c.subscription?.plan ?? 'free'] ?? PLAN_CFG.free
+                const planCfg      = PLAN_CFG[c.subscription?.plan ?? 'free'] ?? PLAN_CFG.free
                 const subStatusCfg = STATUS_CFG[c.subscription?.status ?? 'active'] ?? STATUS_CFG.active
                 const companyCfg   = c.isActive ? STATUS_CFG.active : STATUS_CFG.inactive
                 return (
@@ -131,21 +218,29 @@ export default function SaCompaniesPage() {
                       {fmtDate(c.createdAt)}
                     </td>
                     <td className="px-4 py-3">
-                      <span className="text-xs px-2 py-0.5 rounded-full font-medium"
-                        style={{ background: companyCfg.bg, color: companyCfg.color }}>
-                        {c.isActive ? 'Active' : 'Locked'}
-                      </span>
+                      <div>
+                        <span className="text-xs px-2 py-0.5 rounded-full font-medium"
+                          style={{ background: companyCfg.bg, color: companyCfg.color }}>
+                          {c.isActive ? 'Đang hoạt động' : 'Đã khóa'}
+                        </span>
+                        {!c.isActive && c.lockReason && (
+                          <div className="text-xs mt-1 max-w-[140px] truncate"
+                            style={{ color: 'var(--text-tertiary)' }}
+                            title={c.lockReason}>
+                            {c.lockReason}
+                          </div>
+                        )}
+                      </div>
                     </td>
                     <td className="px-4 py-3">
                       <button
-                        disabled={toggling === c.id}
-                        onClick={() => toggleCompany(c.id, c.isActive)}
+                        onClick={() => setModal(c)}
                         className="text-xs px-3 py-1.5 rounded-lg font-medium transition-all"
                         style={{
                           background: c.isActive ? '#FEE2E2' : '#D1FAE5',
                           color:      c.isActive ? '#991B1B' : '#065F46',
                         }}>
-                        {toggling === c.id ? '...' : c.isActive ? 'Khóa' : 'Mở khóa'}
+                        {c.isActive ? 'Khóa' : 'Mở khóa'}
                       </button>
                     </td>
                   </tr>
@@ -153,7 +248,7 @@ export default function SaCompaniesPage() {
               })}
               {companies.length === 0 && (
                 <tr><td colSpan={8} className="px-4 py-10 text-center text-sm"
-                  style={{ color: 'var(--text-tertiary)' }}>Chưa có company nào</td></tr>
+                  style={{ color: 'var(--text-tertiary)' }}>Chưa có công ty nào</td></tr>
               )}
             </tbody>
           </table>

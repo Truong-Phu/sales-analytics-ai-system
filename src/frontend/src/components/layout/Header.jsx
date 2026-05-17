@@ -62,10 +62,13 @@ export default function Header({ onMenuClick }) {
         </button>
 
         {/* Avatar */}
-        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-primary-container to-primary
+        <div className="w-9 h-9 rounded-full overflow-hidden bg-gradient-to-br from-primary-container to-primary
                         flex items-center justify-center text-surface text-sm font-bold cursor-pointer
                         shrink-0">
-          {user?.fullName?.[0] ?? 'U'}
+          {user?.avatarUrl
+            ? <img src={user.avatarUrl} alt="avatar" className="w-full h-full object-cover" />
+            : (user?.fullName?.[0] ?? user?.name?.[0] ?? 'U')
+          }
         </div>
       </div>
     </header>

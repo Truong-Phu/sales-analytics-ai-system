@@ -25,7 +25,7 @@ export default function ProtectedRoute({ children, roles = [], skipOnboarding = 
   }
 
   if (roles.length > 0 && !roles.includes(user.role)) {
-    return <Navigate to="/unauthorized" replace />
+    return <Navigate to="/dashboard" replace />
   }
 
   return children

@@ -10,6 +10,7 @@ import {
 import { SkeletonCard } from '../../components/ui/Skeleton'
 import MockToast from '../../components/ui/MockToast'
 import { getDashboard, getTodayVsYesterday } from '../../api/dashboardApi'
+import { getInsights } from '../../api/aiApi'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function relDate(offsetDays) {
@@ -448,6 +449,64 @@ function DrillDownModal({ title, subtitle, columns, data, onClose, onExport }) {
   )
 }
 
+// ── AI Insights Card — tổng hợp insights từ forecast + anomaly + RFM ─────────
+function AiInsightsCard() {
+  const [insights, setInsights] = useState(null)
+  const [loading,  setLoading]  = useState(true)
+
+  useEffect(() => {
+    getInsights()
+      .then(d => setInsights(d))
+      .catch(() => setInsights(null))
+      .finally(() => setLoading(false))
+  }, [])
+
+  const ICONS = ['trending_up', 'warning', 'group', 'analytics', 'lightbulb']
+  const COLORS = ['#6366F1', '#F59E0B', '#10B981', '#3B82F6', '#8B5CF6']
+
+  return (
+    <div className="lcard p-5" style={{ borderLeft: '3px solid var(--primary-500)' }}>
+      <div className="flex items-center gap-2 mb-3">
+        <span className="icon" style={{ color: 'var(--primary-500)', fontSize: 20 }}>auto_awesome</span>
+        <span className="text-subtitle font-semibold" style={{ color: 'var(--text-primary)' }}>
+          AI Insights
+        </span>
+        <span className="text-caption px-2 py-0.5 rounded-full ml-1"
+          style={{ background: 'var(--primary-100)', color: 'var(--primary-600)', fontSize: 10 }}>
+          Tự động
+        </span>
+        {insights?.generated_at && (
+          <span className="text-caption ml-auto" style={{ color: 'var(--text-tertiary)' }}>
+            Cập nhật: {new Date(insights.generated_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+          </span>
+        )}
+      </div>
+
+      {loading ? (
+        <div className="flex items-center gap-2 text-caption" style={{ color: 'var(--text-tertiary)' }}>
+          <span className="icon animate-spin" style={{ fontSize: 16 }}>refresh</span>
+          Đang tải insights từ AI...
+        </div>
+      ) : !insights ? (
+        <div className="text-caption" style={{ color: 'var(--text-tertiary)' }}>
+          AI Service chưa khởi động — chạy start_all.bat để bật đầy đủ tính năng AI.
+        </div>
+      ) : (
+        <ul className="space-y-2">
+          {(insights.insights || []).map((text, i) => (
+            <li key={i} className="flex items-start gap-2.5 text-body">
+              <span className="icon shrink-0 mt-0.5" style={{ fontSize: 16, color: COLORS[i % COLORS.length] }}>
+                {ICONS[i % ICONS.length]}
+              </span>
+              <span style={{ color: 'var(--text-secondary)' }}>{text}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 // ── Tab: 1 — Overview ─────────────────────────────────────────────────────────
 function TabOverview({ data, compareMode, prevData }) {
   const { t }  = useTranslation()
@@ -537,6 +596,9 @@ function TabOverview({ data, compareMode, prevData }) {
           color="#EC4899"
         />
       </div>
+
+      {/* AI Insights */}
+      <AiInsightsCard />
 
       {/* Hero 2/3 + Donut 1/3 */}
       <div className="grid grid-cols-12 gap-4">
@@ -1098,6 +1160,155 @@ function TabCustomer({ data }) {
           />
         )
       })()}
+
+      {/* Phản hồi mạng xã hội (Facebook) */}
+      <SocialFeedbackSection />
+    </div>
+  )
+}
+
+// ── Social Feedback Section ───────────────────────────────────────────────────
+const SENTIMENT_COLORS = { positive: '#10B981', negative: '#EF4444', neutral: '#64748B' }
+const SENTIMENT_BG     = { positive: 'rgba(16,185,129,0.10)', negative: 'rgba(239,68,68,0.10)', neutral: 'rgba(100,116,139,0.10)' }
+
+function SocialFeedbackSection() {
+  const [data,    setData]    = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    import('../../api/axios').then(m => {
+      m.default.get('/api/ai/feedback-summary')
+        .then(r => setData(r.data))
+        .catch(() => setData(null))
+        .finally(() => setLoading(false))
+    })
+  }, [])
+
+  if (loading) return (
+    <div className="lcard p-5 flex justify-center py-10">
+      <span className="w-5 h-5 border-2 rounded-full"
+            style={{ borderColor: 'var(--border-strong)', borderTopColor: '#1877F2', animation: 'spin 0.8s linear infinite' }} />
+    </div>
+  )
+
+  if (!data || data.total_comments === 0) return (
+    <div className="lcard p-5">
+      <div className="flex items-center gap-2 mb-2">
+        <span className="icon" style={{ fontSize: 20, color: '#1877F2' }}>thumb_up</span>
+        <span className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>Phản hồi mạng xã hội</span>
+      </div>
+      <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+        Chưa có dữ liệu phản hồi. Kết nối Facebook Page và chạy scrape để xem phân tích.
+      </p>
+    </div>
+  )
+
+  const pieData = [
+    { name: 'Tích cực', value: data.positive, color: SENTIMENT_COLORS.positive },
+    { name: 'Tiêu cực', value: data.negative, color: SENTIMENT_COLORS.negative },
+    { name: 'Trung tính', value: data.neutral, color: SENTIMENT_COLORS.neutral },
+  ].filter(d => d.value > 0)
+
+  return (
+    <div className="lcard p-5 space-y-4">
+      <div className="flex items-center gap-2">
+        <span className="icon" style={{ fontSize: 20, color: '#1877F2' }}>thumb_up</span>
+        <span className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>Phản hồi mạng xã hội</span>
+        <span className="text-xs px-2 py-0.5 rounded-full ml-1"
+              style={{ background: 'rgba(24,119,242,0.10)', color: '#1877F2' }}>
+          {data.total_comments} bình luận
+        </span>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+        {/* Pie chart sentiment */}
+        <div>
+          <p className="text-xs font-semibold mb-2" style={{ color: 'var(--text-secondary)' }}>Phân tích cảm xúc</p>
+          <div className="flex items-center gap-4">
+            <ResponsiveContainer width={120} height={120}>
+              <PieChart>
+                <Pie data={pieData} cx="50%" cy="50%" innerRadius={32} outerRadius={52}
+                     dataKey="value" stroke="none">
+                  {pieData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
+                </Pie>
+                <Tooltip formatter={(v, n) => [`${v} (${((v/data.total_comments)*100).toFixed(1)}%)`, n]} />
+              </PieChart>
+            </ResponsiveContainer>
+            <div className="space-y-2">
+              {pieData.map(d => (
+                <div key={d.name} className="flex items-center gap-2 text-xs">
+                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: d.color }} />
+                  <span style={{ color: 'var(--text-secondary)' }}>{d.name}:</span>
+                  <span className="font-semibold" style={{ color: d.color }}>
+                    {d.value} ({((d.value/data.total_comments)*100).toFixed(1)}%)
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Top issues & praises */}
+        <div className="space-y-3">
+          {data.top_issues?.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold mb-1.5" style={{ color: '#EF4444' }}>
+                Top phàn nàn nhiều nhất
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {data.top_issues.map((issue, i) => (
+                  <span key={i} className="text-xs px-2 py-0.5 rounded-full"
+                        style={{ background: 'rgba(239,68,68,0.10)', color: '#EF4444', border: '1px solid rgba(239,68,68,0.20)' }}>
+                    {issue}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          {data.top_praises?.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold mb-1.5" style={{ color: '#10B981' }}>
+                Top điều khách hay khen
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {data.top_praises.map((praise, i) => (
+                  <span key={i} className="text-xs px-2 py-0.5 rounded-full"
+                        style={{ background: 'rgba(16,185,129,0.10)', color: '#10B981', border: '1px solid rgba(16,185,129,0.20)' }}>
+                    {praise}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 5 comment gần nhất */}
+      {data.recent_comments?.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold mb-2" style={{ color: 'var(--text-secondary)' }}>Bình luận gần nhất</p>
+          <div className="space-y-2">
+            {data.recent_comments.map((c, i) => (
+              <div key={i} className="flex items-start gap-2.5 px-3 py-2 rounded-lg text-xs"
+                   style={{ background: 'var(--bg-elevated)' }}>
+                <span className="icon shrink-0 mt-0.5" style={{ fontSize: 14, color: SENTIMENT_COLORS[c.sentiment] }}>
+                  {c.sentiment === 'positive' ? 'sentiment_satisfied' : c.sentiment === 'negative' ? 'sentiment_dissatisfied' : 'sentiment_neutral'}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <span className="font-medium truncate" style={{ color: 'var(--text-primary)' }}>{c.author_name}</span>
+                    <span className="px-1.5 py-0.5 rounded text-xs font-medium"
+                          style={{ background: SENTIMENT_BG[c.sentiment], color: SENTIMENT_COLORS[c.sentiment] }}>
+                      {c.sentiment === 'positive' ? 'Tích cực' : c.sentiment === 'negative' ? 'Tiêu cực' : 'Trung tính'}
+                    </span>
+                  </div>
+                  <p className="line-clamp-2" style={{ color: 'var(--text-secondary)' }}>{c.message}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -1594,14 +1805,27 @@ export default function DashboardPage() {
       // Truyền from, to, channel vào API call để filter đúng
       const ch  = channel === 'all' ? null : channel
       const res = await getDashboard(from, to, ch)
-      const hasFullData =
-        res?.kpi?.totalRevenue > 0 &&
-        typeof res?.kpi?.conversionRate === 'number' &&
-        Array.isArray(res?.monthlyByChannel) &&
-        Array.isArray(res?.customerSegments) &&
-        Array.isArray(res?.funnel)
-      if (!hasFullData) throw new Error('incomplete_data')
-      setData(res)
+      if (res?.kpi == null) throw new Error('no_data')
+      // Merge real DW data với mock-generated fields cho các tabs chưa có endpoint riêng
+      const mock = generateMockData(from, to)
+      const merged = {
+        ...mock,                    // base mock (fallback cho tabs Sales/Customer/Marketing)
+        kpi: {
+          ...mock.kpi,              // giữ conversionRate, retentionRate, roi mock
+          totalRevenue:     Number(res.kpi.totalRevenue   ?? mock.kpi.totalRevenue),
+          totalProfit:      Number(res.kpi.totalProfit    ?? mock.kpi.totalProfit),
+          totalOrders:      Number(res.kpi.totalOrders    ?? mock.kpi.totalOrders),
+          avgOrderValue:    Number(res.kpi.avgOrderValue  ?? mock.kpi.avgOrderValue),
+          newCustomers:     Number(res.kpi.newCustomers   ?? mock.kpi.newCustomers),
+          revenueGrowthPct: Number(res.kpi.revenueGrowthPct ?? mock.kpi.revenueGrowthPct),
+          ordersGrowthPct:  Number(res.kpi.ordersGrowthPct  ?? mock.kpi.ordersGrowthPct),
+          profitMarginPct:  Number(res.kpi.profitMarginPct  ?? mock.kpi.profitMarginPct),
+        },
+        revenueByDay:     res.revenueByDay?.length     ? res.revenueByDay     : mock.revenueByDay,
+        revenueByChannel: res.revenueByChannel?.length ? res.revenueByChannel : mock.revenueByChannel,
+        topProducts:      res.topProducts?.length      ? res.topProducts      : mock.topProducts,
+      }
+      setData(merged)
       setIsMock(false)
     } catch {
       // Fallback mock data với params filter đã được áp dụng vào generateMockData

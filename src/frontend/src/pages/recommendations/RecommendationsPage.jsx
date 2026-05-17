@@ -1,8 +1,9 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import MockToast from '../../components/ui/MockToast'
-import { getRecommendations, askRecommendation } from '../../api/aiApi'
+import { getRecommendations } from '../../api/aiApi'
 import { MOCK_RECOMMENDATIONS } from '../../mockData/recommendations'
+import api from '../../api/axios'
 
 // ── Cấu hình 3 tab nguồn dữ liệu ─────────────────────────────────────────────
 const TABS = [
@@ -97,12 +98,22 @@ function LoadingSkeleton() {
 }
 
 // Khung chat 1 tab
-function ChatTab({ tab, chatbotOpen, setChatbotOpen }) {
-  const [question, setQuestion]   = useState('')
-  const [loading,  setLoading]    = useState(false)
-  const [history,  setHistory]    = useState([])    // [{question, answer}]
-  const [error,    setError]      = useState('')
+function ChatTab({ tab }) {
+  const [question,        setQuestion]        = useState('')
+  const [loading,         setLoading]         = useState(false)
+  const [history,         setHistory]         = useState([])    // [{question, answer}]
+  const [error,           setError]           = useState('')
+  const [smartSuggestions, setSmartSuggestions] = useState(tab.samples)
   const bottomRef = useRef(null)
+
+  // Load gợi ý câu hỏi từ backend theo tab
+  useEffect(() => {
+    api.get(`/api/chatbot/suggestions?tab=${tab.id}`)
+      .then(res => {
+        if (res.data?.data?.length > 0) setSmartSuggestions(res.data.data)
+      })
+      .catch(() => {}) // Fallback: giữ nguyên tab.samples nếu lỗi
+  }, [tab.id])
 
   const clearHistory = () => setHistory([])
 
@@ -112,23 +123,39 @@ function ChatTab({ tab, chatbotOpen, setChatbotOpen }) {
     setLoading(true)
     setError('')
     try {
-      const res = await askRecommendation({
-        question: q,
-        language: 'vi',
-        context:  tab.context,
-        sources:  tab.sources,
+      // Gọi backend ASP.NET → Gemini API
+      const res = await api.post('/api/chatbot/chat', {
+        message: q,
+        tab:     tab.id,
+        history: history.flatMap(item => ([
+          { role: 'user',  content: item.question },
+          { role: 'model', content: item.answer?.text ?? item.answer?.recommendation ?? '' },
+        ])),
       })
+      const aiText = res.data.message ?? 'Xin lỗi, không có phản hồi.'
       setHistory(prev => [
         ...prev,
-        { question: q, answer: res },
+        {
+          question: q,
+          answer: {
+            text:           aiText,
+            recommendation: aiText,
+            confidence:     'high',
+            sources_used:   tab.sources,
+            context_type:   tab.context,
+            question:       q,
+            timestamp:      new Date().toISOString(),
+          },
+        },
       ])
       setQuestion('')
       setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
     } catch {
       try {
-        // Fallback mock khi API lỗi
+        // Fallback mock khi backend lỗi
         const mockAnswer = {
           recommendation: `[Dữ liệu mẫu] Dựa trên phân tích ${tab.label.toLowerCase()}: đây là gợi ý mẫu khi AI Service chưa khả dụng.`,
+          text:           `[Dữ liệu mẫu] Dựa trên phân tích ${tab.label.toLowerCase()}: đây là gợi ý mẫu khi AI Service chưa khả dụng.`,
           confidence:     'low',
           sources_used:   tab.sources,
           context_type:   tab.context,
@@ -142,7 +169,7 @@ function ChatTab({ tab, chatbotOpen, setChatbotOpen }) {
     } finally {
       setLoading(false)
     }
-  }, [question, loading, tab])
+  }, [question, loading, tab, history])
 
   return (
     <div className="space-y-4">
@@ -186,7 +213,7 @@ function ChatTab({ tab, chatbotOpen, setChatbotOpen }) {
                 <div className="px-3 py-2 rounded-2xl rounded-tl-sm text-sm"
                      style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}>
                   <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed">
-                    {item.answer.recommendation}
+                    {item.answer.text ?? item.answer.recommendation}
                   </pre>
                 </div>
                 {/* Badges nguồn */}
@@ -237,7 +264,7 @@ function ChatTab({ tab, chatbotOpen, setChatbotOpen }) {
       <div>
         <p className="text-xs mb-2" style={{ color: 'var(--text-tertiary)' }}>Câu hỏi gợi ý:</p>
         <div className="flex flex-col gap-1.5">
-          {tab.samples.map((s, i) => (
+          {smartSuggestions.map((s, i) => (
             <button
               key={i}
               onClick={() => setQuestion(s)}
@@ -324,11 +351,6 @@ export default function RecommendationsPage() {
   // Scroll to top
   const [showScrollTop, setShowScrollTop] = useState(false)
 
-  // Floating chatbot panel
-  const [chatbotOpen, setChatbotOpen] = useState(false)
-  const [quickQ,      setQuickQ]      = useState('')
-  const [quickLoading, setQuickLoading] = useState(false)
-  const [quickAnswer,  setQuickAnswer]  = useState(null)
 
   // Scroll tracking
   useEffect(() => {
@@ -354,26 +376,8 @@ export default function RecommendationsPage() {
   }
   useEffect(() => { fetchAutoRecs() }, [])
 
-  // Quick ask (floating chatbot)
-  const handleQuickAsk = async () => {
-    const q = quickQ.trim()
-    if (!q || quickLoading) return
-    setQuickLoading(true)
-    setQuickAnswer(null)
-    try {
-      const res = await askRecommendation({ question: q, language: 'vi' })
-      setQuickAnswer(res)
-    } catch {
-      setQuickAnswer({
-        recommendation: '[Dữ liệu mẫu] AI Service chưa khả dụng. Vui lòng thử lại sau.',
-        confidence: 'low',
-      })
-    } finally {
-      setQuickLoading(false)
-    }
-  }
-
   const filtered = autoData?.recommendations?.filter(r => filter === 'all' || r.type === filter) ?? []
+  const chatbotOpen = false  // chatbot đã được xóa
   const currentTab = TABS.find(t => t.id === activeTab)
 
   return (
@@ -418,8 +422,6 @@ export default function RecommendationsPage() {
             <ChatTab
               key={activeTab}
               tab={currentTab}
-              chatbotOpen={chatbotOpen}
-              setChatbotOpen={setChatbotOpen}
             />
           )}
         </div>
@@ -513,9 +515,8 @@ export default function RecommendationsPage() {
       {showScrollTop && (
         <button
           onClick={scrollToTop}
-          className="fixed right-6 flex items-center justify-center w-10 h-10 rounded-full shadow-lg transition-all"
+          className="fixed right-6 bottom-6 flex items-center justify-center w-10 h-10 rounded-full shadow-lg transition-all"
           style={{
-            bottom:     chatbotOpen ? '280px' : '76px',
             background: 'var(--bg-card)',
             border:     '1px solid var(--border)',
             color:      'var(--text-secondary)',
@@ -528,96 +529,6 @@ export default function RecommendationsPage() {
           <span className="icon" style={{ fontSize: 20 }}>keyboard_arrow_up</span>
         </button>
       )}
-
-      {/* ── FLOATING CHATBOT ── */}
-
-      {/* Panel chat nổi */}
-      {chatbotOpen && (
-        <div
-          className="fixed right-6 bottom-20 w-80 rounded-2xl shadow-2xl overflow-hidden"
-          style={{
-            background: 'var(--bg-card)',
-            border:     '1px solid var(--border)',
-            zIndex:     50,
-          }}
-        >
-          {/* Panel header */}
-          <div className="flex items-center justify-between px-4 py-3"
-               style={{ background: 'var(--primary-500)', color: 'white' }}>
-            <div className="flex items-center gap-2">
-              <span className="icon" style={{ fontSize: 18 }}>smart_toy</span>
-              <span className="text-sm font-semibold">AI Trợ lý</span>
-            </div>
-            <button onClick={() => setChatbotOpen(false)}
-                    className="w-6 h-6 rounded-full flex items-center justify-center transition-colors"
-                    style={{ background: 'rgba(255,255,255,0.2)' }}>
-              <span className="icon" style={{ fontSize: 14 }}>close</span>
-            </button>
-          </div>
-
-          {/* Nội dung panel */}
-          <div className="p-4 space-y-3">
-            {quickAnswer && (
-              <div className="px-3 py-2.5 rounded-xl text-xs"
-                   style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}>
-                <pre className="whitespace-pre-wrap font-sans leading-relaxed">
-                  {quickAnswer.recommendation}
-                </pre>
-                <div className="mt-2">
-                  <ConfidenceBadge level={quickAnswer.confidence} />
-                </div>
-              </div>
-            )}
-
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={quickQ}
-                onChange={e => setQuickQ(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') handleQuickAsk() }}
-                placeholder="Hỏi nhanh AI..."
-                className="flex-1 rounded-lg border px-3 py-2 text-xs"
-                style={{
-                  background: 'var(--bg-base)',
-                  borderColor: 'var(--border)',
-                  color: 'var(--text-primary)',
-                  outline: 'none',
-                }}
-              />
-              <button
-                onClick={handleQuickAsk}
-                disabled={!quickQ.trim() || quickLoading}
-                className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
-                style={{ background: 'var(--primary-500)', color: 'white' }}
-              >
-                {quickLoading
-                  ? <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full"
-                          style={{ animation: 'spin 0.7s linear infinite' }} />
-                  : <span className="icon" style={{ fontSize: 14 }}>send</span>
-                }
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Nút mở/đóng chatbot */}
-      <button
-        onClick={() => setChatbotOpen(v => !v)}
-        className="fixed right-6 bottom-6 w-12 h-12 rounded-full shadow-lg flex items-center justify-center transition-all"
-        style={{
-          background: chatbotOpen ? 'var(--primary-600, #4F46E5)' : 'var(--primary-500)',
-          color:      'white',
-          zIndex:     50,
-          transform:  chatbotOpen ? 'rotate(90deg)' : 'rotate(0deg)',
-          transition: 'transform 0.2s, background 0.2s',
-        }}
-        title={chatbotOpen ? 'Đóng AI Trợ lý' : 'Mở AI Trợ lý'}
-      >
-        <span className="icon" style={{ fontSize: 22 }}>
-          {chatbotOpen ? 'close' : 'smart_toy'}
-        </span>
-      </button>
     </div>
   )
 }

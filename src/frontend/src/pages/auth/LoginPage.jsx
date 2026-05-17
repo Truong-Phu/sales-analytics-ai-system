@@ -5,7 +5,6 @@ import { useAuth } from '../../hooks/useAuth'
 import { useTheme } from '../../hooks/useTheme'
 import i18n from '../../i18n'
 
-// ── Logo SVG ──────────────────────────────────────────────────────────────────
 function LuminaLogoSm({ size = 28, white = false }) {
   const stroke = white ? 'white' : 'url(#lgSmGrad)'
   const fill   = white ? 'rgba(255,255,255,0.15)' : 'url(#lgSmGrad)'
@@ -24,7 +23,6 @@ function LuminaLogoSm({ size = 28, white = false }) {
   )
 }
 
-// ── Mesh gradient background blob ─────────────────────────────────────────────
 function MeshBg() {
   return (
     <div className="absolute inset-0 overflow-hidden pointer-events-none">
@@ -66,31 +64,43 @@ export default function LoginPage() {
     localStorage.setItem('lang', next)
   }
 
-  const [form,    setForm]    = useState({ email: '', username: '', password: '' })
-  const [showPwd, setShowPwd] = useState(false)
-  const [error,   setError]   = useState('')
-  const [loading, setLoading] = useState(false)
+  // Single combined identifier field (accepts email OR username)
+  const [identifier, setIdentifier] = useState('')
+  const [password,   setPassword]   = useState('')
+  const [showPwd,    setShowPwd]     = useState(false)
+  const [error,      setError]       = useState('')
+  const [loading,    setLoading]     = useState(false)
 
   const from = location.state?.from?.pathname ?? '/dashboard'
 
   const handleSubmit = async e => {
     e.preventDefault()
-    if (!form.email && !form.username) {
-      setError('Vui lòng nhập Email hoặc Tên đăng nhập')
+    if (!identifier.trim()) {
+      setError(t('auth.identifierRequired', 'Vui lòng nhập Email hoặc Tên đăng nhập'))
       return
     }
     setError('')
     setLoading(true)
     try {
-      await login(form.email || null, form.username || null, form.password)
-      navigate(from, { replace: true })
-    } catch (err) {
-      const msg = err.response?.data?.message
-      setError(
-        msg === 'PENDING_APPROVAL'
-          ? t('auth.pendingApproval')
-          : t('auth.loginFailed')
+      // Phân biệt email hay username dựa vào có @ không
+      const isEmail = identifier.includes('@')
+      const u = await login(
+        isEmail ? identifier.trim() : null,
+        isEmail ? null : identifier.trim(),
+        password
       )
+      navigate(u.isSuperAdmin ? '/sa' : from, { replace: true })
+    } catch (err) {
+      const status = err.response?.status
+      const msg    = err.response?.data?.message
+      if (status === 403) {
+        // Công ty bị khóa — backend trả về message cụ thể
+        setError(msg || t('auth.companyLocked', 'Công ty đã bị tạm khóa. Liên hệ support để được hỗ trợ.'))
+      } else if (msg === 'PENDING_APPROVAL') {
+        setError(t('auth.pendingApproval'))
+      } else {
+        setError(t('auth.loginFailed'))
+      }
     } finally {
       setLoading(false)
     }
@@ -111,14 +121,10 @@ export default function LoginPage() {
         }}
       >
         <MeshBg />
-
         <div className="relative z-10 text-center px-12 max-w-md">
           <LuminaLogoSm size={64} white />
           <h1 className="text-white text-3xl font-bold mt-4">MSAS Analytics</h1>
-          <p className="text-white/75 text-base mt-2">
-            {t('auth.tagline')}
-          </p>
-
+          <p className="text-white/75 text-base mt-2">{t('auth.tagline')}</p>
           <div className="mt-8 flex flex-col gap-3">
             {[t('auth.feature1'), t('auth.feature2'), t('auth.feature3')].map(f => (
               <div key={f} className="flex items-center gap-2.5 text-white/85 text-sm">
@@ -140,14 +146,13 @@ export default function LoginPage() {
         className="flex-1 flex items-center justify-center p-8 relative"
         style={{ background: 'var(--bg-base)' }}
       >
-        {/* Top-right controls: language + theme */}
+        {/* Top-right controls */}
         <div className="absolute top-4 right-4 flex items-center gap-2">
           <button
             onClick={toggleLang}
             className="h-9 px-3 flex items-center gap-1.5 rounded-xl border
                        transition-colors hover:bg-[--bg-elevated] text-sm font-medium"
             style={{ borderColor: 'var(--border)', background: 'var(--bg-surface)', color: 'var(--text-secondary)' }}
-            title={currentLang === 'vi' ? 'Switch to English' : 'Chuyển sang tiếng Việt'}
           >
             <span className="icon text-base">language</span>
             {currentLang === 'vi' ? 'VI' : 'EN'}
@@ -180,7 +185,6 @@ export default function LoginPage() {
             {t('auth.welcomeBack')}
           </p>
 
-          {/* Error */}
           {error && (
             <div
               className="flex items-center gap-2 mb-5 px-4 py-3 rounded-xl text-sm fade-in"
@@ -196,61 +200,45 @@ export default function LoginPage() {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Chú thích đăng nhập */}
-            <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-              {t('auth.loginHint', 'Nhập Email hoặc Tên đăng nhập (chỉ cần điền một trong hai)')}
-            </p>
-
-            {/* Email */}
+            {/* Single identifier input */}
             <div>
               <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>
-                Email
-              </label>
-              <input
-                type="email"
-                className="linput"
-                placeholder="admin@demo.vn"
-                value={form.email}
-                onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
-                autoComplete="email"
-              />
-            </div>
-
-            {/* Separator */}
-            <div className="flex items-center gap-3">
-              <div className="flex-1 h-px" style={{ background: 'var(--border)' }} />
-              <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>hoặc</span>
-              <div className="flex-1 h-px" style={{ background: 'var(--border)' }} />
-            </div>
-
-            {/* Username */}
-            <div>
-              <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>
-                {t('auth.username')}
+                {t('auth.emailOrUsername', 'Email hoặc Tên đăng nhập')}
               </label>
               <input
                 type="text"
                 className="linput"
-                placeholder="admin"
-                value={form.username}
-                onChange={e => setForm(f => ({ ...f, username: e.target.value }))}
+                placeholder={t('auth.emailOrUsernamePlaceholder', 'Nhập email hoặc tên đăng nhập')}
+                value={identifier}
+                onChange={e => setIdentifier(e.target.value)}
                 autoComplete="username"
+                autoFocus
               />
             </div>
 
             {/* Password */}
             <div>
-              <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>
-                {t('auth.password')}
-              </label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>
+                  {t('auth.password')}
+                </label>
+                <Link
+                  to="/forgot-password"
+                  className="text-xs hover:underline"
+                  style={{ color: 'var(--primary-500)' }}
+                >
+                  {t('auth.forgotPassword', 'Quên mật khẩu?')}
+                </Link>
+              </div>
               <div className="relative">
                 <input
                   type={showPwd ? 'text' : 'password'}
                   required
                   className="linput !pr-10"
                   placeholder="••••••••"
-                  value={form.password}
-                  onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  autoComplete="current-password"
                 />
                 <button
                   type="button"
@@ -263,7 +251,6 @@ export default function LoginPage() {
               </div>
             </div>
 
-            {/* Submit */}
             <button
               type="submit"
               disabled={loading}
