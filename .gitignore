@@ -43,6 +43,10 @@ src/.venv/
 
 # Word temp files
 ~WRL*.tmp
+~$*
+
+# pip install syntax accidents (e.g. pip install pkg=version creates =version file)
+=*
 
 # OS
 .DS_Store
