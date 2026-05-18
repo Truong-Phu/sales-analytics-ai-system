@@ -85,6 +85,7 @@ const normalizeCustomer = (c) => ({
   total_revenue:  Number(c.totalRevenue  ?? c.total_revenue  ?? 0),
   avg_order_value:Number(c.avgOrderValue ?? c.avg_order_value ?? 0),
   last_order_date: c.lastOrderDate ?? c.last_order_date,
+  loyalty_points: c.loyaltyPoints != null ? Number(c.loyaltyPoints) : (c.loyalty_points != null ? Number(c.loyalty_points) : null),
 })
 
 export const getCustomers = async (params = {}) => {

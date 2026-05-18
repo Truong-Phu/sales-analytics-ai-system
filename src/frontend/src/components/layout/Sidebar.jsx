@@ -52,6 +52,10 @@ const NAV_ITEMS = [
     ],
   },
 
+  // ── Bán hàng ─────────────────────────────────────────────────────────────
+  { divider: 'nav.sectionSales' },
+  { to: '/pos', icon: 'point_of_sale', labelKey: 'nav.pos', roles: ['Owner','Manager','Staff'] },
+
   // ── Quản lý dữ liệu ──────────────────────────────────────────────────────
   { divider: 'nav.sectionData' },
   { to: '/orders',        icon: 'receipt_long', labelKey: 'nav.orders',      roles: ['Owner','Manager','Staff','DataIT','Viewer'] },

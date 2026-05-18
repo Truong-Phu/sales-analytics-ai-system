@@ -16,11 +16,24 @@ from generate_sample_data import PRODUCTS, TIKTOK_SKUS
 
 BASE = os.path.join(os.path.dirname(__file__), "..", "..", "docs", "sample-data", "tiktok")
 ORDER_FILES = [
-    os.path.join(BASE, "tiktok_orders_2023_2024h1.json"),   # Historical baseline
+    os.path.join(BASE, "tiktok_orders_2024_q3.json"),
     os.path.join(BASE, "tiktok_orders_2024_q4.json"),
-    os.path.join(BASE, "tiktok_orders_2025_q1.json"),
-    os.path.join(BASE, "tiktok_orders_2025_2026.json"),
+    os.path.join(BASE, "tiktok_orders_2025_h1.json"),
+    os.path.join(BASE, "tiktok_orders_2025_h2_to_now.json"),
 ]
+
+# Map string status mới (TikTok Open Platform chuẩn)
+_TT_STATUS_MAP = {
+    "COMPLETED":          ("DELIVERED", "PAID",     "DELIVERED"),
+    "DELIVERED":          ("DELIVERED", "PAID",     "DELIVERED"),
+    "IN_TRANSIT":         ("SHIPPING",  "UNPAID",   "IN_TRANSIT"),
+    "AWAITING_COLLECTION":("CONFIRMED", "UNPAID",   "NOT_SHIPPED"),
+    "AWAITING_SHIPMENT":  ("CONFIRMED", "UNPAID",   "NOT_SHIPPED"),
+    "ON_HOLD":            ("PENDING",   "UNPAID",   "NOT_SHIPPED"),
+    "UNPAID":             ("PENDING",   "UNPAID",   "NOT_SHIPPED"),
+    "CANCELLED":          ("CANCELLED", "UNPAID",   "NOT_SHIPPED"),
+    "RETURNED":           ("RETURNED",  "REFUNDED", "DELIVERED"),
+}
 
 
 def main():
@@ -51,32 +64,52 @@ def main():
         with open(fpath, encoding="utf-8") as f:
             data = json.load(f)
 
+        # Hỗ trợ cả format cũ (orders[]) và mới (data.orders[])
+        raw = data.get("data", data)
+        orders_list = raw.get("orders", []) if isinstance(raw, dict) else []
+
         ok = skip = err = 0
-        for i, o in enumerate(data["orders"]):
+        for i, o in enumerate(orders_list):
             try:
                 addr = o.get("recipient_address", {})
                 full_name = addr.get("name", "Khach hang")
                 phone     = addr.get("phone_number", "")
+
+                # district_info: hỗ trợ cả array (mới) và dict (cũ)
                 di = addr.get("district_info", {})
-                province  = di.get("address_level1", "")
-                district  = di.get("address_level2", "")
-                address   = addr.get("address_detail", "")
+                if isinstance(di, list):
+                    province = next((x["address_name"] for x in di if x.get("address_level") == "L1"), "")
+                    district = next((x["address_name"] for x in di if x.get("address_level") == "L2"), "")
+                else:
+                    province = di.get("address_level1", "")
+                    district = di.get("address_level2", "")
+                address = addr.get("full_address", addr.get("address_detail", ""))
 
                 cid = upsert_customer(cur, full_name, phone, province,
                                       district, address, company_id)
 
-                status_code = o.get("order_status", 100)
-                status, pay_st, ship_st = map_tiktok_status(status_code)
-                pi = o.get("payment_info", {})
-                payment = norm_payment(pi.get("payment_method_name", "COD"))
+                # Status: hỗ trợ cả string mới và int cũ
+                raw_status = o.get("status", o.get("order_status", 100))
+                if isinstance(raw_status, int):
+                    status, pay_st, ship_st = map_tiktok_status(raw_status)
+                else:
+                    status, pay_st, ship_st = _TT_STATUS_MAP.get(
+                        str(raw_status).upper(), ("PENDING", "UNPAID", "NOT_SHIPPED")
+                    )
+
+                # payment: hỗ trợ cả payment (mới) và payment_info (cũ)
+                pi = o.get("payment", o.get("payment_info", {}))
+                payment = norm_payment(pi.get("payment_method_name", o.get("payment_method_name", "COD")))
                 order_date = parse_ts(o.get("create_time", 0))
 
                 total    = float(pi.get("total_amount", 0))
-                shipping = float(pi.get("actual_shipping_fee", 0))
+                shipping = float(pi.get("shipping_fee", pi.get("actual_shipping_fee", 0)))
                 discount = float(pi.get("seller_discount", 0)) + float(pi.get("platform_discount", 0))
 
-                ext_id     = f"TIKTOK_{o['order_id']}"
-                order_code = f"TK-{o['order_id'][-10:]}"
+                # order ID: mới dùng "id", cũ dùng "order_id"
+                order_id_raw = o.get("id", o.get("order_id", ""))
+                ext_id     = f"TIKTOK_{order_id_raw}"
+                order_code = f"TK-{str(order_id_raw)[-10:]}"
 
                 oid = insert_order(
                     cur, order_code, ext_id, cid, channel_id, company_id,

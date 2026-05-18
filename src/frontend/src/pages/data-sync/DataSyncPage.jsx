@@ -526,6 +526,149 @@ const FILE_TYPE_CONFIG = {
   },
 }
 
+// ── Tải template mẫu Open Platform ──────────────────────────────────────────
+const TEMPLATE_PLATFORMS = [
+  { key: 'shopee', label: 'Shopee',      color: '#EE4D2D', icon: 'storefront' },
+  { key: 'tiktok', label: 'TikTok Shop', color: '#010101', icon: 'play_circle' },
+  { key: 'lazada', label: 'Lazada',      color: '#0F146D', icon: 'store' },
+  { key: 'ghn',    label: 'GHN',         color: '#F26E22', icon: 'local_shipping' },
+]
+
+function TemplateDownloadSection() {
+  const [tplPlatform,    setTplPlatform]    = useState('shopee')
+  const [tplType,        setTplType]        = useState('orders')
+  const [includeSample,  setIncludeSample]  = useState(true)
+  const [downloading,    setDownloading]    = useState(false)
+
+  const selectedPlat = TEMPLATE_PLATFORMS.find(p => p.key === tplPlatform) ?? TEMPLATE_PLATFORMS[0]
+
+  const handleDownload = async () => {
+    setDownloading(true)
+    try {
+      const params = new URLSearchParams({ platform: tplPlatform, type: tplType, includeSample })
+      const res  = await api.get(`/api/templates/download?${params}`, { responseType: 'blob' })
+      const cd   = res.headers['content-disposition'] ?? ''
+      const match = cd.match(/filename="?([^";]+)"?/)
+      const fname = match?.[1] ?? `template_${tplPlatform}_${tplType}.csv`
+      const url  = URL.createObjectURL(new Blob([res.data], { type: 'text/csv;charset=utf-8' }))
+      const link = document.createElement('a')
+      link.href = url; link.download = fname
+      document.body.appendChild(link); link.click(); link.remove()
+      URL.revokeObjectURL(url)
+      showToast(`Đã tải template ${selectedPlat.label} ${tplType}`, 'success')
+    } catch {
+      showToast('Không tải được template', 'error')
+    } finally {
+      setDownloading(false)
+    }
+  }
+
+  return (
+    <div className="lcard p-5 space-y-4">
+      <div className="flex items-center gap-2">
+        <span className="icon text-xl" style={{ color: 'var(--accent-500)' }}>download</span>
+        <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+          Tải template dữ liệu mẫu
+        </p>
+      </div>
+
+      {/* Chọn nền tảng */}
+      <div>
+        <p className="text-xs mb-2" style={{ color: 'var(--text-tertiary)' }}>Chọn nền tảng:</p>
+        <div className="flex flex-wrap gap-2">
+          {TEMPLATE_PLATFORMS.map(p => (
+            <button
+              key={p.key}
+              onClick={() => setTplPlatform(p.key)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all"
+              style={{
+                borderColor: tplPlatform === p.key ? p.color : 'var(--border)',
+                background:  tplPlatform === p.key ? `${p.color}15` : 'var(--bg-elevated)',
+                color:       tplPlatform === p.key ? p.color : 'var(--text-secondary)',
+              }}
+            >
+              <span className="icon" style={{ fontSize: 14 }}>{p.icon}</span>
+              {p.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Chọn loại dữ liệu */}
+      {tplPlatform !== 'ghn' && (
+        <div>
+          <p className="text-xs mb-2" style={{ color: 'var(--text-tertiary)' }}>Chọn loại dữ liệu:</p>
+          <div className="flex gap-2">
+            {[
+              { key: 'orders',   label: 'Đơn hàng', icon: 'package_2' },
+              { key: 'products', label: 'Sản phẩm', icon: 'inventory_2' },
+            ].map(t => (
+              <button
+                key={t.key}
+                onClick={() => setTplType(t.key)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all"
+                style={{
+                  borderColor: tplType === t.key ? selectedPlat.color : 'var(--border)',
+                  background:  tplType === t.key ? `${selectedPlat.color}15` : 'var(--bg-elevated)',
+                  color:       tplType === t.key ? selectedPlat.color : 'var(--text-secondary)',
+                }}
+              >
+                <span className="icon" style={{ fontSize: 14 }}>{t.icon}</span>
+                {t.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Toggle dữ liệu mẫu */}
+      <label className="flex items-center gap-3 cursor-pointer">
+        <div
+          onClick={() => setIncludeSample(!includeSample)}
+          className="relative w-10 h-5 rounded-full transition-colors"
+          style={{ background: includeSample ? 'var(--accent-500)' : 'var(--border)' }}
+        >
+          <span
+            className="absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all"
+            style={{ left: includeSample ? '1.25rem' : '0.125rem' }}
+          />
+        </div>
+        <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+          Bao gồm dữ liệu mẫu thực tế (5 dòng trong 30 ngày gần nhất)
+        </span>
+      </label>
+
+      {/* Nút tải */}
+      <button
+        onClick={handleDownload}
+        disabled={downloading}
+        className="lbtn w-full justify-center gap-2"
+        style={{
+          border:     `1px dashed ${selectedPlat.color}`,
+          color:      selectedPlat.color,
+          background: `${selectedPlat.color}08`,
+          height:     40,
+          opacity:    downloading ? 0.6 : 1,
+        }}
+      >
+        {downloading ? (
+          <>
+            <span className="w-4 h-4 border-2 rounded-full border-current border-t-transparent"
+                  style={{ animation: 'spin 0.7s linear infinite' }} />
+            Đang tạo file...
+          </>
+        ) : (
+          <>
+            <span className="icon text-base">download</span>
+            Tải Template — {selectedPlat.label}
+            {tplPlatform !== 'ghn' ? ` (${tplType === 'orders' ? 'Đơn hàng' : 'Sản phẩm'})` : ' (Vận chuyển)'}
+          </>
+        )}
+      </button>
+    </div>
+  )
+}
+
 function ImportTab() {
   const [source,    setSource]    = useState('shopee')
   const [fileType,  setFileType]  = useState(null)   // 'orders' | 'products' | null
@@ -615,6 +758,9 @@ function ImportTab() {
 
   return (
     <div className="space-y-5">
+      {/* Section tải template mẫu */}
+      <TemplateDownloadSection />
+
       {/* BƯỚC 1: Chọn nguồn sàn */}
       <div className="lcard p-5">
         <p className="text-xs font-semibold mb-3" style={{ color: 'var(--text-secondary)' }}>

@@ -239,7 +239,10 @@
     "sentiment": "Review Sentiment",
     "sentimentDesc": "Customer feedback analysis",
     "nlq": "Ask AI",
-    "nlqDesc": "Natural language data queries"
+    "nlqDesc": "Natural language data queries",
+    "pos": "Point of Sale",
+    "posDesc": "POS – checkout, loyalty points, vouchers",
+    "sectionSales": "Sales"
   },
   "dashboard": {
     "title": "Business Overview",

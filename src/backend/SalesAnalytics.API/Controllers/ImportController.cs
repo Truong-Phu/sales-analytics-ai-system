@@ -234,14 +234,17 @@ public class ImportController(IConfiguration cfg, ITenantContext tenant, IAuditL
     private static string? DetectPlatform(string[] headers)
     {
         var h = headers.Select(x => x.Trim().ToLower()).ToHashSet();
-        // Shopee: có "mã đơn hàng" + "tên người dùng (tên đăng nhập)"
-        if (h.Contains("mã đơn hàng") && h.Any(x => x.Contains("tên người dùng")))
+        // Shopee: tiếng Việt — "mã đơn hàng" + ("tên người mua" hoặc "tên người dùng")
+        if (h.Contains("mã đơn hàng") && (h.Contains("tên người mua") || h.Any(x => x.Contains("tên người dùng"))))
             return "shopee";
-        // TikTok: có "order id" + "buyer username" + "sku id"
+        // TikTok: "order id" + "buyer username"
         if (h.Contains("order id") && h.Contains("buyer username"))
             return "tiktok";
-        // Lazada: có "order id" + "order number" + "customer email"
-        if (h.Contains("order id") && h.Contains("order number") && h.Contains("customer email"))
+        // Lazada (Prompt 2): "order id" + "customer first name"
+        if (h.Contains("order id") && h.Contains("customer first name"))
+            return "lazada";
+        // Lazada (cũ): "order id" + "order number" + "customer email"
+        if (h.Contains("order id") && h.Contains("order number"))
             return "lazada";
         return null;
     }
@@ -277,36 +280,42 @@ public class ImportController(IConfiguration cfg, ITenantContext tenant, IAuditL
 
         var orderDate = DateTime.TryParse(
             ColVal(row, HeaderIndex(headers, "Ngày đặt hàng")), out var od) ? od : DateTime.UtcNow;
-        var totalStr  = ColVal(row, HeaderIndex(headers, "Tổng thanh toán"));
+        // Prompt 2: "Tổng thanh toán (VND)" / cũ: "Tổng thanh toán"
+        var totalStr  = ColVal(row, HeaderIndex(headers, "Tổng thanh toán (VND)", "Tổng thanh toán"));
         decimal.TryParse(totalStr.Replace(",",""), NumberStyles.Any, CultureInfo.InvariantCulture, out var total);
-        var priceStr  = ColVal(row, HeaderIndex(headers, "Giá niêm yết (VND)"));
+        // Prompt 2: "Giá bán (VND)" / cũ: "Giá niêm yết (VND)"
+        var priceStr  = ColVal(row, HeaderIndex(headers, "Giá bán (VND)", "Giá niêm yết (VND)"));
         decimal.TryParse(priceStr.Replace(",",""), NumberStyles.Any, CultureInfo.InvariantCulture, out var salePrice);
         var origStr   = ColVal(row, HeaderIndex(headers, "Giá gốc (VND)"));
         decimal.TryParse(origStr.Replace(",",""), NumberStyles.Any, CultureInfo.InvariantCulture, out var origPrice);
         var qtyStr    = ColVal(row, HeaderIndex(headers, "Số lượng"));
         int.TryParse(qtyStr, out var qty); if (qty <= 0) qty = 1;
+        // Prompt 2: "Phí vận chuyển (VND)" / cũ: "Phí vận chuyển (VND)"
         var feeStr    = ColVal(row, HeaderIndex(headers, "Phí vận chuyển (VND)"));
         decimal.TryParse(feeStr.Replace(",",""), NumberStyles.Any, CultureInfo.InvariantCulture, out var shippingFee);
 
         return new MappedOrder(
-            OrderCode:       code,
-            CustomerUsername: ColVal(row, HeaderIndex(headers, "Tên người dùng (Tên đăng nhập)")),
-            RecipientName:   ColVal(row, HeaderIndex(headers, "Tên người nhận")),
-            Phone:           ColVal(row, HeaderIndex(headers, "Số điện thoại")),
-            Province:        ColVal(row, HeaderIndex(headers, "Tỉnh")),
-            District:        ColVal(row, HeaderIndex(headers, "Thành phố")),
-            ProductName:     ColVal(row, HeaderIndex(headers, "Tên sản phẩm")),
-            Sku:             ColVal(row, HeaderIndex(headers, "SKU sản phẩm")),
-            UnitPrice:       origPrice > 0 ? origPrice : salePrice,
-            SalePrice:       salePrice,
-            Quantity:        qty,
-            TotalAmount:     total,
-            ShippingFee:     shippingFee,
-            PaymentMethod:   ColVal(row, HeaderIndex(headers, "Phương thức thanh toán")),
-            TrackingNumber:  ColVal(row, HeaderIndex(headers, "Mã vận đơn")),
-            Status:          ColVal(row, HeaderIndex(headers, "Trạng thái đơn hàng")),
-            OrderDate:       orderDate,
-            Channel:         "shopee"
+            OrderCode:        code,
+            // Prompt 2: "Tên người mua" / cũ: "Tên người dùng (Tên đăng nhập)"
+            CustomerUsername: ColVal(row, HeaderIndex(headers, "Tên người mua", "Tên người dùng (Tên đăng nhập)")),
+            RecipientName:    ColVal(row, HeaderIndex(headers, "Tên người nhận")),
+            Phone:            ColVal(row, HeaderIndex(headers, "Số điện thoại")),
+            // Prompt 2: "Tỉnh/Thành" / cũ: "Tỉnh"
+            Province:         ColVal(row, HeaderIndex(headers, "Tỉnh/Thành", "Tỉnh")),
+            // Prompt 2: "Quận/Huyện" / cũ: "Thành phố"
+            District:         ColVal(row, HeaderIndex(headers, "Quận/Huyện", "Thành phố")),
+            ProductName:      ColVal(row, HeaderIndex(headers, "Tên sản phẩm")),
+            Sku:              ColVal(row, HeaderIndex(headers, "SKU sản phẩm")),
+            UnitPrice:        origPrice > 0 ? origPrice : salePrice,
+            SalePrice:        salePrice,
+            Quantity:         qty,
+            TotalAmount:      total,
+            ShippingFee:      shippingFee,
+            PaymentMethod:    ColVal(row, HeaderIndex(headers, "Phương thức thanh toán")),
+            TrackingNumber:   ColVal(row, HeaderIndex(headers, "Mã vận đơn")),
+            Status:           ColVal(row, HeaderIndex(headers, "Trạng thái đơn hàng")),
+            OrderDate:        orderDate,
+            Channel:          "shopee"
         );
     }
 
@@ -315,38 +324,49 @@ public class ImportController(IConfiguration cfg, ITenantContext tenant, IAuditL
         var code = ColVal(row, HeaderIndex(headers, "Order ID"));
         if (string.IsNullOrEmpty(code)) return null;
 
-        var createTimeStr = ColVal(row, HeaderIndex(headers, "Order Creation Time"));
+        // Prompt 2: "Create Time" / cũ: "Order Creation Time"
+        var createTimeStr = ColVal(row, HeaderIndex(headers, "Create Time", "Order Creation Time"));
         var orderDate = DateTime.TryParse(createTimeStr, out var od) ? od : DateTime.UtcNow;
-        var totalStr  = ColVal(row, HeaderIndex(headers, "Order Amount"));
+        // Prompt 2: "Total Amount (VND)" / cũ: "Order Amount"
+        var totalStr = ColVal(row, HeaderIndex(headers, "Total Amount (VND)", "Order Amount"));
         decimal.TryParse(totalStr.Replace(",",""), NumberStyles.Any, CultureInfo.InvariantCulture, out var total);
-        var afterDiscStr = ColVal(row, HeaderIndex(headers, "After-discount Price"));
-        decimal.TryParse(afterDiscStr.Replace(",",""), NumberStyles.Any, CultureInfo.InvariantCulture, out var salePrice);
-        var origStr = ColVal(row, HeaderIndex(headers, "Original Price"));
+        // Prompt 2: "Sale Price (VND)" / cũ: "After-discount Price"
+        var salePriceStr = ColVal(row, HeaderIndex(headers, "Sale Price (VND)", "After-discount Price"));
+        decimal.TryParse(salePriceStr.Replace(",",""), NumberStyles.Any, CultureInfo.InvariantCulture, out var salePrice);
+        // Prompt 2: "Original Price (VND)" / cũ: "Original Price"
+        var origStr = ColVal(row, HeaderIndex(headers, "Original Price (VND)", "Original Price"));
         decimal.TryParse(origStr.Replace(",",""), NumberStyles.Any, CultureInfo.InvariantCulture, out var origPrice);
-        var subStr = ColVal(row, HeaderIndex(headers, "Subtotal"));
+        // Prompt 2: "Sub Total (VND)" / cũ: "Subtotal"
+        var subStr = ColVal(row, HeaderIndex(headers, "Sub Total (VND)", "Subtotal"));
         decimal.TryParse(subStr.Replace(",",""), NumberStyles.Any, CultureInfo.InvariantCulture, out var subtotal);
+        var feeStr = ColVal(row, HeaderIndex(headers, "Shipping Fee (VND)"));
+        decimal.TryParse(feeStr.Replace(",",""), NumberStyles.Any, CultureInfo.InvariantCulture, out var shippingFee);
         var qtyStr = ColVal(row, HeaderIndex(headers, "Quantity"));
         int.TryParse(qtyStr, out var qty); if (qty <= 0) qty = 1;
 
         return new MappedOrder(
-            OrderCode:       code,
+            OrderCode:        code,
             CustomerUsername: ColVal(row, HeaderIndex(headers, "Buyer Username")),
-            RecipientName:   ColVal(row, HeaderIndex(headers, "Recipient")),
-            Phone:           ColVal(row, HeaderIndex(headers, "Phone #")),
-            Province:        ColVal(row, HeaderIndex(headers, "Province")),
-            District:        ColVal(row, HeaderIndex(headers, "City")),
-            ProductName:     ColVal(row, HeaderIndex(headers, "Product Name")),
-            Sku:             ColVal(row, HeaderIndex(headers, "Seller SKU")),
-            UnitPrice:       origPrice > 0 ? origPrice : salePrice,
-            SalePrice:       salePrice,
-            Quantity:        qty,
-            TotalAmount:     total > 0 ? total : subtotal,
-            ShippingFee:     0,
-            PaymentMethod:   ColVal(row, HeaderIndex(headers, "Payment Method")),
-            TrackingNumber:  ColVal(row, HeaderIndex(headers, "Tracking ID")),
-            Status:          ColVal(row, HeaderIndex(headers, "Order Status")),
-            OrderDate:       orderDate,
-            Channel:         "tiktok"
+            // Prompt 2: "Recipient Name" / cũ: "Recipient"
+            RecipientName:    ColVal(row, HeaderIndex(headers, "Recipient Name", "Recipient")),
+            // Prompt 2: "Phone" / cũ: "Phone #"
+            Phone:            ColVal(row, HeaderIndex(headers, "Phone", "Phone #")),
+            Province:         ColVal(row, HeaderIndex(headers, "Province")),
+            // Prompt 2: "District" / cũ: "City"
+            District:         ColVal(row, HeaderIndex(headers, "District", "City")),
+            ProductName:      ColVal(row, HeaderIndex(headers, "Product Name")),
+            Sku:              ColVal(row, HeaderIndex(headers, "Seller SKU")),
+            UnitPrice:        origPrice > 0 ? origPrice : salePrice,
+            SalePrice:        salePrice,
+            Quantity:         qty,
+            TotalAmount:      total > 0 ? total : subtotal,
+            ShippingFee:      shippingFee,
+            PaymentMethod:    ColVal(row, HeaderIndex(headers, "Payment Method")),
+            // Prompt 2: "Tracking Number" / cũ: "Tracking ID"
+            TrackingNumber:   ColVal(row, HeaderIndex(headers, "Tracking Number", "Tracking ID")),
+            Status:           ColVal(row, HeaderIndex(headers, "Order Status")),
+            OrderDate:        orderDate,
+            Channel:          "tiktok"
         );
     }
 
@@ -357,36 +377,50 @@ public class ImportController(IConfiguration cfg, ITenantContext tenant, IAuditL
 
         var createdStr = ColVal(row, HeaderIndex(headers, "Created At"));
         var orderDate = DateTime.TryParse(createdStr, out var od) ? od : DateTime.UtcNow;
-        var totalStr  = ColVal(row, HeaderIndex(headers, "Order Value"));
+        // Prompt 2: "Order Value (VND)" / cũ: "Order Value"
+        var totalStr  = ColVal(row, HeaderIndex(headers, "Order Value (VND)", "Order Value"));
         decimal.TryParse(totalStr.Replace(",",""), NumberStyles.Any, CultureInfo.InvariantCulture, out var total);
-        var paidStr   = ColVal(row, HeaderIndex(headers, "Paid Price"));
+        // Prompt 2: "Paid Price (VND)" / cũ: "Paid Price"
+        var paidStr   = ColVal(row, HeaderIndex(headers, "Paid Price (VND)", "Paid Price"));
         decimal.TryParse(paidStr.Replace(",",""), NumberStyles.Any, CultureInfo.InvariantCulture, out var salePrice);
-        var unitStr   = ColVal(row, HeaderIndex(headers, "Unit Price"));
+        // Prompt 2: "Unit Price (VND)" / cũ: "Unit Price"
+        var unitStr   = ColVal(row, HeaderIndex(headers, "Unit Price (VND)", "Unit Price"));
         decimal.TryParse(unitStr.Replace(",",""), NumberStyles.Any, CultureInfo.InvariantCulture, out var origPrice);
-        var feeStr    = ColVal(row, HeaderIndex(headers, "Shipping Fee"));
+        // Prompt 2: "Shipping Fee (VND)" / cũ: "Shipping Fee"
+        var feeStr    = ColVal(row, HeaderIndex(headers, "Shipping Fee (VND)", "Shipping Fee"));
         decimal.TryParse(feeStr.Replace(",",""), NumberStyles.Any, CultureInfo.InvariantCulture, out var shippingFee);
         var qtyStr    = ColVal(row, HeaderIndex(headers, "Quantity"));
         int.TryParse(qtyStr, out var qty); if (qty <= 0) qty = 1;
 
+        // Prompt 2: "Customer First Name" + "Customer Last Name" / cũ: "Customer Name"
+        var firstName  = ColVal(row, HeaderIndex(headers, "Customer First Name"));
+        var lastName   = ColVal(row, HeaderIndex(headers, "Customer Last Name"));
+        var recipientName = (firstName + " " + lastName).Trim();
+        if (string.IsNullOrWhiteSpace(recipientName))
+            recipientName = ColVal(row, HeaderIndex(headers, "Shipping Name", "Customer Name"));
+
         return new MappedOrder(
-            OrderCode:       code,
-            CustomerUsername: ColVal(row, HeaderIndex(headers, "Customer Email")),
-            RecipientName:   ColVal(row, HeaderIndex(headers, "Shipping Name", "Customer Name")),
-            Phone:           ColVal(row, HeaderIndex(headers, "Shipping Phone")),
-            Province:        ColVal(row, HeaderIndex(headers, "Shipping Region", "Shipping City")),
-            District:        ColVal(row, HeaderIndex(headers, "Shipping City")),
-            ProductName:     ColVal(row, HeaderIndex(headers, "Item Name")),
-            Sku:             ColVal(row, HeaderIndex(headers, "Seller SKU", "SKU")),
-            UnitPrice:       origPrice > 0 ? origPrice : salePrice,
-            SalePrice:       salePrice,
-            Quantity:        qty,
-            TotalAmount:     total,
-            ShippingFee:     shippingFee,
-            PaymentMethod:   ColVal(row, HeaderIndex(headers, "Payment Method")),
-            TrackingNumber:  ColVal(row, HeaderIndex(headers, "Tracking Code")),
-            Status:          ColVal(row, HeaderIndex(headers, "Status")),
-            OrderDate:       orderDate,
-            Channel:         "lazada"
+            OrderCode:        code,
+            CustomerUsername: ColVal(row, HeaderIndex(headers, "Customer Email", "Customer First Name")),
+            RecipientName:    recipientName,
+            // Prompt 2: "Phone" / cũ: "Shipping Phone"
+            Phone:            ColVal(row, HeaderIndex(headers, "Phone", "Shipping Phone")),
+            // Prompt 2: "Province" / cũ: "Shipping Region", "Shipping City"
+            Province:         ColVal(row, HeaderIndex(headers, "Province", "Shipping Region", "Shipping City")),
+            // Prompt 2: "District" / cũ: "City"
+            District:         ColVal(row, HeaderIndex(headers, "District", "City", "Shipping City")),
+            ProductName:      ColVal(row, HeaderIndex(headers, "Item Name")),
+            Sku:              ColVal(row, HeaderIndex(headers, "Seller SKU", "SKU")),
+            UnitPrice:        origPrice > 0 ? origPrice : salePrice,
+            SalePrice:        salePrice,
+            Quantity:         qty,
+            TotalAmount:      total,
+            ShippingFee:      shippingFee,
+            PaymentMethod:    ColVal(row, HeaderIndex(headers, "Payment Method")),
+            TrackingNumber:   ColVal(row, HeaderIndex(headers, "Tracking Code")),
+            Status:           ColVal(row, HeaderIndex(headers, "Status")),
+            OrderDate:        orderDate,
+            Channel:          "lazada"
         );
     }
 
@@ -1058,6 +1092,149 @@ public class ImportController(IConfiguration cfg, ITenantContext tenant, IAuditL
         cmd.Parameters.AddWithValue("cid",    tenant.CompanyId!.Value.ToString());
         var affected = await cmd.ExecuteNonQueryAsync();
         return (affected, categoryNew);
+    }
+
+    // ── GET /api/templates/download ─────────────────────────────────────────────
+    // Tạo file CSV template chuẩn Open Platform với dữ liệu mẫu thực tế.
+    // platform=shopee|tiktok|lazada|ghn  type=orders|products  includeSample=true|false
+    [HttpGet("/api/templates/download")]
+    [AllowAnonymous]  // cho phép tải template không cần login (chỉ tải mẫu)
+    public IActionResult DownloadTemplate(
+        [FromQuery] string platform    = "shopee",
+        [FromQuery] string type        = "orders",
+        [FromQuery] bool   includeSample = true)
+    {
+        var plt = platform.ToLower();
+        var typ = type.ToLower();
+
+        if (plt is not ("shopee" or "tiktok" or "lazada" or "ghn"))
+            return BadRequest(new { message = "platform phải là: shopee, tiktok, lazada, ghn" });
+        if (typ is not ("orders" or "products"))
+            return BadRequest(new { message = "type phải là: orders, products" });
+
+        var now  = DateTime.Now;
+        var sb   = new StringBuilder();
+
+        // GHN chỉ có orders
+        if (plt == "ghn") typ = "orders";
+
+        // ── Headers ──────────────────────────────────────────────────────────
+        string header = (plt, typ) switch
+        {
+            ("shopee", "orders")   =>
+                "Mã đơn hàng,Trạng thái đơn hàng,Lý do hủy,Ngày đặt hàng,Ngày cập nhật," +
+                "Tên người mua,Tên người nhận,Số điện thoại,Địa chỉ giao hàng,Phường/Xã,Quận/Huyện,Tỉnh/Thành," +
+                "Tên sản phẩm,Phân loại hàng,SKU sản phẩm,Giá gốc (VND),Giá bán (VND),Số lượng," +
+                "Tổng tiền hàng (VND),Phí vận chuyển (VND),Tổng thanh toán (VND)," +
+                "Phương thức thanh toán,Đơn vị vận chuyển,Mã vận đơn,Ghi chú",
+
+            ("shopee", "products") =>
+                "Mã sản phẩm Shopee,Tên sản phẩm,SKU,Danh mục,Thương hiệu," +
+                "Giá gốc (VND),Giá bán (VND),Tồn kho,Trạng thái,Cân nặng (kg),Mô tả,Ảnh sản phẩm",
+
+            ("tiktok", "orders")   =>
+                "Order ID,Order Status,Create Time,Update Time,Paid Time," +
+                "Buyer Username,Recipient Name,Phone,Full Address,Province,District,Ward,Postal Code," +
+                "Product Name,SKU ID,Seller SKU,SKU Name,Original Price (VND),Sale Price (VND),Quantity," +
+                "Sub Total (VND),Shipping Fee (VND),Platform Discount (VND),Total Amount (VND)," +
+                "Payment Method,Shipping Provider,Tracking Number,Package ID,Package Status",
+
+            ("tiktok", "products") =>
+                "Product ID,Title,Status,Category,Brand," +
+                "SKU ID,Seller SKU,SKU Name,Sale Price (VND),Inventory,Create Time,Update Time",
+
+            ("lazada", "orders")   =>
+                "Order ID,Order Number,Created At,Updated At,Status," +
+                "Customer First Name,Customer Last Name,Phone,Address,City,District,Province," +
+                "Item Name,SKU,Seller SKU,Variation,Unit Price (VND),Paid Price (VND),Quantity," +
+                "Shipping Provider,Tracking Code,Payment Method,Voucher Platform,Voucher Seller," +
+                "Shipping Fee (VND),Order Value (VND)",
+
+            ("lazada", "products") =>
+                "Item ID,Name,Status,Category,Brand,Seller SKU," +
+                "Price (VND),Special Price (VND),Quantity,Weight (kg),Description",
+
+            ("ghn", "orders")      =>
+                "order_code,client_order_code,status,created_date,updated_date," +
+                "to_name,to_phone,to_address,to_district_id,cod_amount,insurance_value," +
+                "content,weight,service_type_id,payment_type_id",
+
+            _ => ""
+        };
+
+        sb.AppendLine(header);
+
+        // ── Sample rows ──────────────────────────────────────────────────────
+        if (includeSample)
+        {
+            var samples = (plt, typ) switch
+            {
+                ("shopee", "orders") => new[]
+                {
+                    $"2605{now:MMdd}001,COMPLETED,,{now.AddDays(-25):dd/MM/yyyy HH:mm},{now.AddDays(-23):dd/MM/yyyy HH:mm},nguyenvanan,Nguyễn Văn An,0901234567,\"123 Nguyễn Trãi P.3 Q.5\",Phường 3,Quận 5,TP. Hồ Chí Minh,\"Áo thun nam basic cotton\",\"Trắng - L\",AT-NAM-001-TRANG-L,250000,220000,2,440000,25000,465000,COD,Giao Hàng Nhanh,SPX{now:yyyyMMdd}001,",
+                    $"2605{now:MMdd}002,COMPLETED,,{now.AddDays(-20):dd/MM/yyyy HH:mm},{now.AddDays(-18):dd/MM/yyyy HH:mm},tranthib,Trần Thị Bình,0912345678,\"45 Hoàng Hoa Thám P.7 Q.Bình Thạnh\",Phường 7,Quận Bình Thạnh,TP. Hồ Chí Minh,\"Đầm maxi nữ đi biển\",\"Xanh - M\",DAM-NU-003-XANH-M,450000,399000,1,399000,30000,429000,MOMO,Giao Hàng Nhanh,SPX{now:yyyyMMdd}002,",
+                    $"2605{now:MMdd}003,SHIPPED,,{now.AddDays(-10):dd/MM/yyyy HH:mm},{now.AddDays(-8):dd/MM/yyyy HH:mm},leminhduc,Lê Minh Đức,0923456789,\"78 Lê Lợi P.Bến Nghé Q.1\",Phường Bến Nghé,Quận 1,TP. Hồ Chí Minh,\"Quần jean nam slim fit\",\"Xanh đậm - 32\",QJ-NAM-002-XANH-32,580000,520000,1,520000,25000,545000,VNPAY,Giao Hàng Nhanh,SPX{now:yyyyMMdd}003,",
+                    $"2605{now:MMdd}004,CANCELLED,Không muốn mua nữa,{now.AddDays(-5):dd/MM/yyyy HH:mm},{now.AddDays(-4):dd/MM/yyyy HH:mm},phamthuh,Phạm Thu Hà,0934567890,\"12 Trần Phú P.Hải Châu 1 Q.Hải Châu\",Phường Hải Châu 1,Quận Hải Châu,Đà Nẵng,\"Áo sơ mi nam công sở\",\"Trắng - M\",ASM-NAM-004-TRANG-M,320000,280000,1,280000,30000,310000,COD,Giao Hàng Nhanh,,",
+                    $"2605{now:MMdd}005,COMPLETED,,{now.AddDays(-3):dd/MM/yyyy HH:mm},{now.AddDays(-1):dd/MM/yyyy HH:mm},hoangqk,Hoàng Quốc Khải,0945678901,\"56 Đinh Tiên Hoàng P.ĐaKao Q.1\",Phường ĐaKao,Quận 1,TP. Hồ Chí Minh,\"Túi xách nữ da PU\",\"Đen - One Size\",TX-NU-005-DEN-OS,680000,599000,1,599000,35000,634000,ZALOPAY,Giao Hàng Nhanh,SPX{now:yyyyMMdd}005,",
+                },
+                ("shopee", "products") => new[]
+                {
+                    $"100001,Áo thun nam basic cotton thoáng mát,AT-NAM-001,Áo nam,PhuThinh Fashion,250000,220000,150,NORMAL,0.3,\"Chất cotton 100% thoáng mát\",https://cf.shopee.vn/file/at_nam_001.jpg",
+                    $"100002,Áo sơ mi nam công sở dài tay,ASM-NAM-004,Áo nam,PhuThinh Fashion,320000,280000,120,NORMAL,0.35,\"Vải lụa cotton mềm mại\",https://cf.shopee.vn/file/asm_nam_004.jpg",
+                    $"100003,Quần jean nam slim fit,QJ-NAM-002,Quần nam,PhuThinh Fashion,580000,520000,80,NORMAL,0.6,\"Denim cao cấp co giãn 4 chiều\",https://cf.shopee.vn/file/qj_nam_002.jpg",
+                    $"100004,Đầm maxi nữ đi biển,DAM-NU-003,Đầm & Váy,PhuThinh Fashion,450000,399000,60,NORMAL,0.4,\"Chất vải musselin nhẹ nhàng\",https://cf.shopee.vn/file/dam_nu_003.jpg",
+                    $"100005,Túi xách nữ da PU,TX-NU-005,Túi xách & Ba lô,PhuThinh Fashion,750000,650000,45,NORMAL,0.5,\"Da PU cao cấp chống nước\",https://cf.shopee.vn/file/tx_nu_005.jpg",
+                },
+                ("tiktok", "orders") => new[]
+                {
+                    $"576{now:yyyyMMddHH}0001,COMPLETED,{now.AddDays(-25):yyyy-MM-dd HH:mm:ss},{now.AddDays(-23):yyyy-MM-dd HH:mm:ss},{now.AddDays(-25):yyyy-MM-dd HH:mm:ss},user_12345,Nguyễn Văn An,0901234567,\"123 Nguyễn Trãi P.3 Q.5 TP.HCM\",TP. Hồ Chí Minh,Quận 5,Phường 3,,\"Áo thun nam basic cotton\",172001,AT-NAM-001-TRANG-L,\"Trắng - L\",250000,220000,2,440000,25000,0,465000,COD,GHN,TTKGHN{now:yyyyMMdd}01,115001,COMPLETED",
+                    $"576{now:yyyyMMddHH}0002,COMPLETED,{now.AddDays(-18):yyyy-MM-dd HH:mm:ss},{now.AddDays(-16):yyyy-MM-dd HH:mm:ss},{now.AddDays(-18):yyyy-MM-dd HH:mm:ss},user_23456,Trần Thị Bình,0912345678,\"45 Hoàng Hoa Thám Q.Bình Thạnh TP.HCM\",TP. Hồ Chí Minh,Quận Bình Thạnh,Phường 7,,\"Đầm maxi nữ đi biển\",172002,DAM-NU-003-XANH-M,\"Xanh - M\",450000,399000,1,399000,30000,0,429000,Momo,GHN,TTKGHN{now:yyyyMMdd}02,115002,COMPLETED",
+                    $"576{now:yyyyMMddHH}0003,IN_TRANSIT,{now.AddDays(-8):yyyy-MM-dd HH:mm:ss},{now.AddDays(-6):yyyy-MM-dd HH:mm:ss},{now.AddDays(-8):yyyy-MM-dd HH:mm:ss},user_34567,Lê Minh Đức,0923456789,\"78 Lê Lợi Q.1 TP.HCM\",TP. Hồ Chí Minh,Quận 1,Phường Bến Nghé,,\"Quần jean nam slim fit\",172003,QJ-NAM-002-XANH-32,\"Xanh đậm - 32\",580000,520000,1,520000,25000,0,545000,VNPay,GHN,TTKGHN{now:yyyyMMdd}03,115003,IN_TRANSIT",
+                    $"576{now:yyyyMMddHH}0004,CANCELLED,{now.AddDays(-5):yyyy-MM-dd HH:mm:ss},{now.AddDays(-4):yyyy-MM-dd HH:mm:ss},{now.AddDays(-5):yyyy-MM-dd HH:mm:ss},user_45678,Phạm Thu Hà,0934567890,\"12 Trần Phú Q.Hải Châu Đà Nẵng\",Đà Nẵng,Quận Hải Châu,Phường Hải Châu 1,,\"Áo sơ mi nam công sở\",172004,ASM-NAM-004-TRANG-M,\"Trắng - M\",320000,280000,1,280000,30000,0,310000,COD,GHN,,115004,CANCELLED",
+                    $"576{now:yyyyMMddHH}0005,COMPLETED,{now.AddDays(-2):yyyy-MM-dd HH:mm:ss},{now.AddDays(-1):yyyy-MM-dd HH:mm:ss},{now.AddDays(-2):yyyy-MM-dd HH:mm:ss},user_56789,Hoàng Quốc Khải,0945678901,\"56 Đinh Tiên Hoàng Q.1 TP.HCM\",TP. Hồ Chí Minh,Quận 1,Phường ĐaKao,,\"Túi xách nữ da PU\",172005,TX-NU-005-DEN-OS,\"Đen - One Size\",750000,650000,1,650000,35000,0,685000,ZaloPay,GHN,TTKGHN{now:yyyyMMdd}05,115005,COMPLETED",
+                },
+                ("tiktok", "products") => new[]
+                {
+                    $"1729{now:yyyyMMdd}001,Áo thun nam basic cotton thoáng mát,ACTIVATE,Thời trang nam,PhuThinh Fashion,2729001,AT-NAM-001-TRANG-L,\"Trắng - L\",220000,150,{now.AddDays(-90):yyyy-MM-dd},{now.AddDays(-10):yyyy-MM-dd}",
+                    $"1729{now:yyyyMMdd}002,Đầm maxi nữ đi biển,ACTIVATE,Thời trang nữ,PhuThinh Fashion,2729002,DAM-NU-003-XANH-M,\"Xanh - M\",399000,60,{now.AddDays(-80):yyyy-MM-dd},{now.AddDays(-5):yyyy-MM-dd}",
+                    $"1729{now:yyyyMMdd}003,Quần jean nam slim fit,ACTIVATE,Thời trang nam,PhuThinh Fashion,2729003,QJ-NAM-002-XANH-32,\"Xanh đậm - 32\",520000,80,{now.AddDays(-75):yyyy-MM-dd},{now.AddDays(-3):yyyy-MM-dd}",
+                    $"1729{now:yyyyMMdd}004,Áo sơ mi nam công sở dài tay,ACTIVATE,Thời trang nam,PhuThinh Fashion,2729004,ASM-NAM-004-TRANG-M,\"Trắng - M\",280000,120,{now.AddDays(-70):yyyy-MM-dd},{now.AddDays(-2):yyyy-MM-dd}",
+                    $"1729{now:yyyyMMdd}005,Túi xách nữ da PU,ACTIVATE,Túi & Ví,PhuThinh Fashion,2729005,TX-NU-005-DEN-OS,\"Đen - One Size\",650000,45,{now.AddDays(-60):yyyy-MM-dd},{now.AddDays(-1):yyyy-MM-dd}",
+                },
+                ("lazada", "orders") => new[]
+                {
+                    $"7010{now:MMddHH}01,150{now:MMddHH}001,{now.AddDays(-25):yyyy-MM-ddTHH:mm:ss}+07:00,{now.AddDays(-23):yyyy-MM-ddTHH:mm:ss}+07:00,delivered,Văn An,Nguyễn,0901234567,\"123 Nguyễn Trãi P.3 Q.5\",Quận 5,Quận 5,TP. Hồ Chí Minh,Áo thun nam basic cotton,AT-NAM-001-TRANG-L,AT-NAM-001-TRANG-L,\"Trắng;L\",250000,220000,2,Lazada Logistics,LZD-VN-{now:yyyyMMdd}01,COD,0,0,25000,465000",
+                    $"7010{now:MMddHH}02,150{now:MMddHH}002,{now.AddDays(-20):yyyy-MM-ddTHH:mm:ss}+07:00,{now.AddDays(-18):yyyy-MM-ddTHH:mm:ss}+07:00,delivered,Thị Bình,Trần,0912345678,\"45 Hoàng Hoa Thám P.7 Q.Bình Thạnh\",Quận Bình Thạnh,Quận Bình Thạnh,TP. Hồ Chí Minh,Đầm maxi nữ đi biển,DAM-NU-003-XANH-M,DAM-NU-003-XANH-M,\"Xanh;M\",450000,399000,1,Lazada Logistics,LZD-VN-{now:yyyyMMdd}02,Momo,0,0,30000,429000",
+                    $"7010{now:MMddHH}03,150{now:MMddHH}003,{now.AddDays(-12):yyyy-MM-ddTHH:mm:ss}+07:00,{now.AddDays(-10):yyyy-MM-ddTHH:mm:ss}+07:00,shipped,Minh Đức,Lê,0923456789,\"78 Lê Lợi P.Bến Nghé Q.1\",Quận 1,Quận 1,TP. Hồ Chí Minh,Quần jean nam slim fit,QJ-NAM-002-XANH-32,QJ-NAM-002-XANH-32,\"Xanh đậm;32\",580000,520000,1,Lazada Logistics,LZD-VN-{now:yyyyMMdd}03,COD,0,0,25000,545000",
+                    $"7010{now:MMddHH}04,150{now:MMddHH}004,{now.AddDays(-5):yyyy-MM-ddTHH:mm:ss}+07:00,{now.AddDays(-4):yyyy-MM-ddTHH:mm:ss}+07:00,cancelled,Thu Hà,Phạm,0934567890,\"12 Trần Phú P.Hải Châu 1 Q.Hải Châu\",Quận Hải Châu,Quận Hải Châu,Đà Nẵng,Áo sơ mi nam công sở dài tay,ASM-NAM-004-TRANG-M,ASM-NAM-004-TRANG-M,\"Trắng;M\",320000,280000,1,Lazada Logistics,,COD,0,0,30000,310000",
+                    $"7010{now:MMddHH}05,150{now:MMddHH}005,{now.AddDays(-2):yyyy-MM-ddTHH:mm:ss}+07:00,{now.AddDays(-1):yyyy-MM-ddTHH:mm:ss}+07:00,delivered,Quốc Khải,Hoàng,0945678901,\"56 Đinh Tiên Hoàng P.ĐaKao Q.1\",Quận 1,Quận 1,TP. Hồ Chí Minh,Túi xách nữ da PU,TX-NU-005-DEN-OS,TX-NU-005-DEN-OS,\"Đen;One Size\",750000,650000,1,Lazada Logistics,LZD-VN-{now:yyyyMMdd}05,VNPay,0,0,35000,685000",
+                },
+                ("lazada", "products") => new[]
+                {
+                    $"100001,Áo thun nam basic cotton thoáng mát,Active,Thời trang nam,PhuThinh Fashion,AT-NAM-001,250000,220000,150,0.30,\"Chất cotton 100% thoáng mát\"",
+                    $"100002,Áo sơ mi nam công sở dài tay,Active,Thời trang nam,PhuThinh Fashion,ASM-NAM-004,320000,280000,120,0.35,\"Vải lụa cotton mềm mại\"",
+                    $"100003,Quần jean nam slim fit,Active,Thời trang nam,PhuThinh Fashion,QJ-NAM-002,580000,520000,80,0.60,\"Denim cao cấp co giãn 4 chiều\"",
+                    $"100004,Đầm maxi nữ đi biển,Active,Thời trang nữ,PhuThinh Fashion,DAM-NU-003,450000,399000,60,0.40,\"Chất vải musselin nhẹ nhàng\"",
+                    $"100005,Túi xách nữ da PU,Active,Túi xách & Ba lô,PhuThinh Fashion,TX-NU-005,750000,650000,45,0.50,\"Da PU cao cấp chống nước\"",
+                },
+                ("ghn", "orders") => new[]
+                {
+                    $"SPXVN{now:yyyyMMdd}01,2605{now:MMdd}001,delivered,{now.AddDays(-23):yyyy-MM-dd HH:mm:ss},{now.AddDays(-22):yyyy-MM-dd HH:mm:ss},Nguyễn Văn An,0901234567,\"123 Nguyễn Trãi P.3 Q.5 TP.HCM\",1442,465000,465000,\"Áo thun nam\",300,2,1",
+                    $"SPXVN{now:yyyyMMdd}02,2605{now:MMdd}002,delivered,{now.AddDays(-18):yyyy-MM-dd HH:mm:ss},{now.AddDays(-17):yyyy-MM-dd HH:mm:ss},Trần Thị Bình,0912345678,\"45 Hoàng Hoa Thám Q.Bình Thạnh TP.HCM\",1444,0,429000,\"Đầm maxi nữ\",400,2,2",
+                    $"SPXVN{now:yyyyMMdd}03,2605{now:MMdd}003,transporting,{now.AddDays(-6):yyyy-MM-dd HH:mm:ss},{now.AddDays(-5):yyyy-MM-dd HH:mm:ss},Lê Minh Đức,0923456789,\"78 Lê Lợi Q.1 TP.HCM\",1452,545000,545000,\"Quần jean nam\",600,2,1",
+                    $"SPXVN{now:yyyyMMdd}04,2605{now:MMdd}004,cancel,{now.AddDays(-4):yyyy-MM-dd HH:mm:ss},{now.AddDays(-3):yyyy-MM-dd HH:mm:ss},Phạm Thu Hà,0934567890,\"12 Trần Phú Q.Hải Châu Đà Nẵng\",1553,310000,310000,\"Áo sơ mi nam\",350,2,1",
+                    $"SPXVN{now:yyyyMMdd}05,2605{now:MMdd}005,delivered,{now.AddDays(-1):yyyy-MM-dd HH:mm:ss},{now:yyyy-MM-dd HH:mm:ss},Hoàng Quốc Khải,0945678901,\"56 Đinh Tiên Hoàng Q.1 TP.HCM\",1456,0,685000,\"Túi xách nữ\",500,2,2",
+                },
+                _ => Array.Empty<string>(),
+            };
+
+            foreach (var row in samples)
+                sb.AppendLine(row);
+        }
+
+        var fileName = $"template_{plt}_{typ}_{now:yyyyMMdd_HHmmss}.csv";
+        var bytes    = Encoding.UTF8.GetBytes(sb.ToString());
+        return File(bytes, "text/csv", fileName);
     }
 
     // ── POST /api/import/sales-data ───────────────────────────────────────────

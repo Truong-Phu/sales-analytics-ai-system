@@ -15,6 +15,7 @@ Chạy: python generate_sample_data.py
 import json
 import os
 import random
+import uuid
 from datetime import datetime, timedelta, timezone
 
 random.seed(42)
@@ -24,8 +25,9 @@ BASE_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "docs", "sample-d
 SHOPEE_DIR = os.path.join(BASE_DIR, "shopee")
 TIKTOK_DIR = os.path.join(BASE_DIR, "tiktok")
 LAZADA_DIR = os.path.join(BASE_DIR, "lazada")
+GHN_DIR    = os.path.join(BASE_DIR, "ghn")
 
-for d in [SHOPEE_DIR, TIKTOK_DIR, LAZADA_DIR]:
+for d in [SHOPEE_DIR, TIKTOK_DIR, LAZADA_DIR, GHN_DIR]:
     os.makedirs(d, exist_ok=True)
 
 
@@ -363,57 +365,68 @@ PROVINCES = {
                        "Quận 11","Quận 12","Bình Thạnh","Tân Bình",
                        "Gò Vấp","Phú Nhuận","Thủ Đức"],
         "zip": "700000",
+        "ghn_district_id": 1442,
     },
     "Hà Nội": {
         "weight": 0.25,
         "districts": ["Hoàn Kiếm","Đống Đa","Cầu Giấy","Long Biên",
                        "Nam Từ Liêm","Hoàng Mai","Thanh Xuân","Ba Đình"],
         "zip": "100000",
+        "ghn_district_id": 1804,
     },
     "Đà Nẵng": {
         "weight": 0.08,
         "districts": ["Hải Châu","Thanh Khê","Sơn Trà","Ngũ Hành Sơn"],
         "zip": "550000",
+        "ghn_district_id": 1811,
     },
     "Cần Thơ": {
         "weight": 0.05,
         "districts": ["Ninh Kiều","Bình Thủy","Cái Răng"],
         "zip": "900000",
+        "ghn_district_id": 1752,
     },
     "Hải Phòng": {
         "weight": 0.05,
         "districts": ["Lê Chân","Hồng Bàng","Ngô Quyền"],
         "zip": "180000",
+        "ghn_district_id": 1572,
     },
     "Bình Dương": {
         "weight": 0.05,
         "districts": ["Thuận An","Dĩ An","Thủ Dầu Một"],
         "zip": "820000",
+        "ghn_district_id": 1717,
     },
     "Đồng Nai": {
         "weight": 0.04,
         "districts": ["Biên Hòa","Long Khánh"],
         "zip": "810000",
+        "ghn_district_id": 1714,
     },
     "Khánh Hòa": {
         "weight": 0.03,
         "districts": ["Nha Trang","Cam Ranh"],
         "zip": "650000",
+        "ghn_district_id": 1672,
     },
     "Thừa Thiên Huế": {
         "weight": 0.03,
         "districts": ["TP. Huế","Phú Vang"],
         "zip": "530000",
+        "ghn_district_id": 1628,
     },
     "Bình Định": {
         "weight": 0.02,
         "districts": ["Quy Nhơn","An Nhơn"],
         "zip": "590000",
+        "ghn_district_id": 1656,
     },
     "Long An": {
         "weight": 0.02,
         "districts": ["Tân An","Bến Lức"],
         "zip": "850000",
+        "ghn_district_id": 1737,
     },
 }
 
@@ -473,6 +486,38 @@ CUSTOMERS = [_make_customer(i) for i in range(1, 221)]
 def _ts(dt: datetime) -> int:
     """datetime → Unix timestamp (giây)."""
     return int(dt.replace(tzinfo=timezone.utc).timestamp())
+
+
+# ── API Response Wrappers (chuẩn Open Platform) ───────────────────────────────
+
+def _shopee_wrap(orders: list) -> dict:
+    return {
+        "error": "",
+        "message": "",
+        "request_id": str(uuid.uuid4()),
+        "response": {"order_list": orders}
+    }
+
+
+def _tiktok_wrap(orders: list) -> dict:
+    return {
+        "code": 0,
+        "message": "Success",
+        "request_id": str(uuid.uuid4()),
+        "data": {"total_count": len(orders), "orders": orders}
+    }
+
+
+def _lazada_wrap(orders: list) -> dict:
+    return {
+        "code": "0",
+        "request_id": str(uuid.uuid4()),
+        "data": {
+            "count": str(len(orders)),
+            "countTotal": str(len(orders)),
+            "orders": orders,
+        }
+    }
 
 
 def _date_range(start: datetime, end: datetime):
@@ -711,7 +756,7 @@ def generate_shopee_orders(skus, start, end, count,
         cust = _pick_customer(retention, CUSTOMERS)
         status = _order_status("shopee", dt, sku)
         orders.append(_shopee_order(i + 1, dt, cust, sku, status))
-    return {"orders": orders}
+    return _shopee_wrap(orders)
 
 
 def _shopee_product(p):
@@ -757,7 +802,7 @@ def _shopee_product(p):
 # 5. TẠO DỮ LIỆU TIKTOK SHOP
 # ══════════════════════════════════════════════════════════════════════════════
 
-def _tiktok_order(order_num, dt, customer, sku, status):
+def _tiktok_order(order_num, dt, customer, sku, status_code):
     prod = SKU_MAP[sku]
     variant = random.choice(prod["variants"])
     color, size = variant
@@ -770,81 +815,92 @@ def _tiktok_order(order_num, dt, customer, sku, status):
     shipping_orig = 30000
     shipping_platform_disc = random.choice([0, 30000])
     actual_shipping = max(0, shipping_orig - shipping_platform_disc)
-    sub_total = sale_price_unit * qty - seller_discount - platform_discount
+    sub_total = max(0, sale_price_unit * qty - seller_discount - platform_discount)
     total = sub_total + actual_shipping
     payment = _payment_method("tiktok")
     carrier = random.choice(["GHN", "GHTK", "J&T Express"])
-    order_id = str(random.randint(500000000000000000, 599999999999999999))
-    tracking = f"TTK{carrier.replace(' ','')[:3].upper()}{random.randint(100000000,999999999)}"
+    order_id = str(random.randint(576000000000000000, 576999999999999999))
 
-    status_desc = {105:"COMPLETED",121:"IN_TRANSIT",106:"CANCELLED",122:"RETURNED",
-                   111:"AWAITING_SHIPMENT",100:"UNPAID"}.get(status, "COMPLETED")
+    # String status (chuẩn TikTok Open Platform)
+    STATUS_STR = {
+        105: "COMPLETED", 121: "IN_TRANSIT", 106: "CANCELLED",
+        122: "DELIVERED",  111: "AWAITING_SHIPMENT", 100: "UNPAID",
+        112: "AWAITING_COLLECTION",
+    }
+    status_str = STATUS_STR.get(status_code, "COMPLETED")
 
+    tracking = f"TTKGHN{random.randint(1000000000, 9999999999)}" if status_code not in [106, 100] else ""
+    paid_time = _ts(dt + timedelta(hours=1)) if status_code != 100 else 0
     update_dt = dt + timedelta(hours=random.randint(24, 120))
+    pkg_id = f"115{random.randint(100000000000000, 999999999999999)}"
+
     return {
-        "order_id": order_id,
-        "order_status": status,
-        "order_status_desc": status_desc,
+        "id": order_id,                      # Chuẩn TikTok Open Platform
+        "status": status_str,                 # String thay vì numeric code
         "create_time": _ts(dt),
         "update_time": _ts(update_dt),
-        "buyer_info": {
-            "buyer_uid": str(random.randint(7000000000000000000, 7999999999999999999)),
-            "buyer_nickname": customer["username"],
+        "paid_time": paid_time,
+        "tracking_number": tracking,
+        "payment_method_name": payment,
+        "is_cod": ("COD" in payment),
+        "shipping_type": "TIKTOK",
+        "fulfillment_type": "FULFILLMENT_BY_SELLER",
+        "shipping_provider": carrier,
+        "shipping_provider_id": "6002",
+        "payment": {                           # Đổi từ payment_info → payment
+            "currency": "VND",
+            "sub_total": str(sub_total),
+            "shipping_fee": str(actual_shipping),
+            "seller_discount": str(seller_discount),
+            "platform_discount": str(platform_discount),
+            "total_amount": str(total),
+            "original_total_product_price": str(orig_price * qty),
+            "original_shipping_fee": str(shipping_orig),
+            "shipping_fee_seller_discount": "0",
+            "shipping_fee_platform_discount": str(shipping_platform_disc),
+            "tax": "0",
         },
         "recipient_address": {
             "name": customer["full_name"],
             "phone_number": customer["phone"],
+            "full_address": customer["address"],
             "address_detail": customer["address"].split(",")[0],
-            "district_info": {
-                "address_level1": customer["province"],
-                "address_level2": customer["district"],
-                "address_level3": f"Phường {random.randint(1,12)}",
-            },
-            "postal_code": customer["zip"],
+            "postal_code": "",
+            "region_code": "VN",
+            "district_info": [               # Array thay vì dict
+                {"address_level_name": "Province", "address_name": customer["province"], "address_level": "L1"},
+                {"address_level_name": "District", "address_name": customer["district"],  "address_level": "L2"},
+                {"address_level_name": "Ward",     "address_name": f"Phường {random.randint(1,12)}", "address_level": "L3"},
+            ],
         },
-        "payment_info": {
-            "currency": "VND",
-            "original_total_product_price": str(orig_price * qty),
-            "seller_discount": str(seller_discount),
-            "platform_discount": str(platform_discount),
-            "shipping_fee_original": str(shipping_orig),
-            "shipping_fee_seller_discount": "0",
-            "shipping_fee_platform_discount": str(shipping_platform_disc),
-            "actual_shipping_fee": str(actual_shipping),
-            "sub_total": str(sub_total),
-            "total_amount": str(total),
-            "payment_method_name": payment,
-        },
+        "buyer_message": "",
+        "user_id": str(random.randint(7000000000000000000, 7999999999999999999)),
+        "buyer_email": f"{random.randint(100000,999999)}@chat.seller.tiktok.com",
+        "packages": [{"id": pkg_id}],
         "line_items": [
             {
-                "item_id": str(random.randint(1700000000000000000, 1799999999999999999)),
+                "id": f"577{random.randint(1000000000000000, 9999999999999999)}",
+                "sku_id": f"172{random.randint(1000000000000000, 9999999999999999)}",
+                "product_id": f"172{random.randint(1000000000000000, 9999999999999999)}",
                 "product_name": prod["name"],
-                "sku_id": str(random.randint(1700000000000000001, 1799999999999999999)),
                 "seller_sku": seller_sku,
-                "quantity": qty,
-                "sale_price": str(sale_price_unit),
-                "original_price": str(orig_price),
-                "sku_image": f"https://example.com/tiktok/{sku.lower()}.jpg",
-                "product_id": str(random.randint(1700000000000000000, 1799999999999999999)),
                 "sku_name": f"{color} - {size}",
-                "fulfillment_type": 1,
+                "sku_image": f"https://p16-oec-va.ibyteimg.com/{sku.lower()}.jpg",
+                "original_price": str(orig_price),
+                "sale_price": str(sale_price_unit),
+                "platform_discount": str(platform_discount),
+                "seller_discount": str(seller_discount),
+                "currency": "VND",
+                "display_status": status_str,
+                "package_status": status_str,
                 "shipping_provider_name": carrier,
-                "tracking_number": tracking if status not in [106,100] else "",
-                "package_id": f"TTP{random.randint(100000000,999999999)}",
-                "rtc_type": 0,
-                "cancel_reason": "Buyer request" if status == 106 else "",
-                "cancel_user": "buyer" if status == 106 else "",
+                "shipping_provider_id": "6002",
+                "tracking_number": tracking,
+                "package_id": pkg_id,
+                "is_gift": False,
+                "is_dangerous_good": False,
             }
         ],
-        "shipping_info": {
-            "shipping_type": 2,
-            "shipping_provider_name": carrier,
-            "tracking_number": tracking if status not in [106,100] else "",
-            "shipping_provider_id": "6002",
-            "estimated_shipping_fee": str(shipping_orig),
-            "actual_shipping_fee": str(actual_shipping),
-            "return_tracking_number": "",
-        },
     }
 
 
@@ -859,7 +915,7 @@ def generate_tiktok_orders(skus, start, end, count,
         cust = _pick_customer(retention, CUSTOMERS)
         status = _order_status("tiktok", dt, sku)
         orders.append(_tiktok_order(i + 1, dt, cust, sku, status))
-    return {"orders": orders}
+    return _tiktok_wrap(orders)
 
 
 def _tiktok_product(p):
@@ -917,100 +973,80 @@ def _lazada_order(order_num, dt, customer, sku, status):
     total = paid_price + shipping_fee
     payment = _payment_method("lazada")
     carrier = "Lazada Logistics"
-    order_id = random.randint(1000000000, 9999999999)
-    tracking = f"LZD-VN-TRACK-{random.randint(100000,999999)}"
+    order_id = str(random.randint(1000000000, 9999999999))
+    order_number = str(int(order_id) * 10 + random.randint(0, 9))
+    tracking = f"LZD-VN-{random.randint(1000000000, 9999999999)}" if status not in ["cancelled", "pending"] else ""
 
-    created_str = dt.strftime("%Y-%m-%d %H:%M:%S +0700")
+    # ISO format chuẩn Lazada Open Platform
+    created_str = dt.strftime("%Y-%m-%dT%H:%M:%S+07:00")
     updated_dt = dt + timedelta(hours=random.randint(24, 96))
-    updated_str = updated_dt.strftime("%Y-%m-%d %H:%M:%S +0700")
-    promise_str = (dt + timedelta(days=2)).strftime("%Y-%m-%d 23:59:59 +0700")
+    updated_str = updated_dt.strftime("%Y-%m-%dT%H:%M:%S+07:00")
 
     reason = ""
     if status == "cancelled":
-        reason = random.choice(["Buyer cancelled","Out of stock","Logistics issue"])
+        reason = random.choice(["Buyer cancelled", "Out of stock", "Logistics issue"])
 
     first_name = customer["full_name"].split()[0]
     last_name = " ".join(customer["full_name"].split()[1:])
 
     return {
         "order_id": order_id,
-        "order_number": f"LZD-{order_id}",
+        "order_number": order_number,
         "created_at": created_str,
         "updated_at": updated_str,
         "status": status,
-        "address_updated_at": created_str,
-        "address": {
-            "address1": customer["address"].split(",")[0],
-            "address2": customer["district"],
-            "address3": "",
-            "address4": "",
-            "address5": "",
-            "city": customer["province"],
-            "ward": f"Phường {random.randint(1,15)}",
-            "region": customer["province"],
-            "zip": customer["zip"],
-            "country": "Vietnam",
-            "phone": customer["phone"],
-            "phone2": "",
+        "payment_method": payment,
+        "price": str(total),
+        "shipping_fee": str(shipping_fee),
+        "shipping_fee_original": str(shipping_fee + 5000),
+        "shipping_fee_discount_platform": "5000",
+        "shipping_fee_discount_seller": "0",
+        "voucher": "0.00",
+        "voucher_platform": "0.00",
+        "voucher_seller": "0.00",
+        "customer_first_name": first_name,    # Thêm field chuẩn Lazada
+        "customer_last_name": last_name,       # Thêm field chuẩn Lazada
+        "address_shipping": {                  # Đổi từ address → address_shipping
             "first_name": first_name,
             "last_name": last_name,
-            "customer_email": f"{customer['username']}@gmail.com",
+            "phone": customer["phone"],
+            "address1": customer["address"].split(",")[0],
+            "city": customer["district"],      # Lazada: city = Quận/Huyện
+            "address3": customer["province"],  # Lazada: address3 = Tỉnh/Thành
+            "address4": f"Phường {random.randint(1,15)}",
+            "country": "Vietnam",
+            "post_code": customer["zip"],
         },
-        "national_registration_number": "",
-        "payment_method": payment,
-        "remarks": "",
-        "delivery_info": "",
-        "price": str(total),
-        "gift_option": False,
+        "items_count": "1",
+        "gift_option": "false",
         "gift_message": "",
-        "voucher_platform": 0,
-        "voucher": "0",
-        "voucher_seller": "0",
-        "shipping_fee": str(shipping_fee),
-        "warehouse_code": "dropshipping",
-        "order_flag": "DEFAULT",
-        "global_order": False,
+        "remarks": reason,
+        "extra_attributes": "null",
         "items": [
             {
                 "order_item_id": random.randint(9000000000, 9999999999),
                 "order_id": order_id,
-                "package_id": f"MP-PKGVN{random.randint(100000,999999)}",
+                "name": f"{prod['name']} - {color} - {size}",
                 "sku": item_sku,
                 "shop_sku": f"{item_sku}_VN",
-                "shippment_provider": carrier,
-                "is_fbl": False,
-                "name": f"{prod['name']} - {color} - {size}",
                 "variation": f"{color};{size}",
-                "shop_id": 1234,
-                "order_type": "Normal",
-                "reason": reason,
-                "reason_detail": reason,
-                "purchase_order_id": "",
-                "purchase_order_number": "",
-                "package_number": f"MP-PKGVN{random.randint(100000,999999)}",
-                "promise_shipping_time": promise_str,
-                "shipping_provider_type": "standard",
+                "item_price": str(orig_price),
+                "paid_price": str(paid_price),
+                "shipping_amount": str(shipping_fee),
+                "voucher_platform": "0.00",
+                "voucher_seller": "0.00",
+                "status": status,
+                "shipment_provider": carrier,
+                "tracking_code": tracking,
                 "created_at": created_str,
                 "updated_at": updated_str,
-                "paid_price": str(paid_price),
-                "unit_price": str(orig_price),
-                "seller_discount_total": str(seller_discount),
-                "shipping_amount": str(shipping_fee),
-                "tax_amount": "0",
-                "coupon_amount": "0",
-                "digital_delivery_info": "",
-                "extra_attributes": "",
-                "status": status,
-                "product_main_image": f"https://example.com/lazada/{sku.lower()}.jpg",
-                "voucher_amount": 0,
-                "buyer_failed_delivery_return_initiator": "",
-                "buyer_failed_delivery_reason": "",
-                "voucher_code": "",
-                "voucher_platform_amount": 0,
-                "return_status": "returned" if status == "returned" else "",
-                "invoice_number": "",
-                "tracking_code": tracking if status not in ["cancelled","pending"] else "",
-                "tracking_code_pre": "",
+                "currency": "VND",
+                "product_main_image": f"https://my-live.slatic.net/{sku.lower()}.jpg",
+                "product_id": str(random.randint(100000, 999999)),
+                "shop_id": "1234",
+                "warehouse_code": "dropshipping",
+                "is_fbl": "0",
+                "is_digital": "0",
             }
         ],
     }
@@ -1025,7 +1061,7 @@ def generate_lazada_orders(skus, start, end, count):
         cust = _pick_customer(retention, CUSTOMERS)
         status = _order_status("lazada", dt, sku)
         orders.append(_lazada_order(i + 1, dt, cust, sku, status))
-    return {"orders": orders}
+    return _lazada_wrap(orders)
 
 
 def _lazada_product(p, idx):
@@ -1087,78 +1123,125 @@ def save_json(data, path):
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
     size_kb = os.path.getsize(path) // 1024
-    print(f"  ✓ {os.path.basename(path)} ({size_kb} KB, {len(data.get('orders', data.get('items', data.get('products',[]))))} records)")
+    # Đếm records — hỗ trợ cả format cũ lẫn mới
+    d = data.get("data")
+    if isinstance(d, list):
+        records = d
+    elif isinstance(d, dict):
+        records = d.get("orders") or d.get("products") or d.get("order_list") or []
+    else:
+        resp = data.get("response", {})
+        records = (resp.get("order_list") or resp.get("item_list") or
+                   data.get("orders") or data.get("items") or data.get("products") or [])
+    print(f"  ✓ {os.path.basename(path)} ({size_kb} KB, {len(records)} records)")
 
 
 def main():
-    print("═" * 55)
-    print("MSAS — Tạo dữ liệu mẫu (volume cao để train Prophet tốt hơn)")
-    print("═" * 55)
+    """Tạo dữ liệu mẫu chuẩn Open Platform, phạm vi 01/07/2024 → 18/05/2026."""
+    print("═" * 60)
+    print("MSAS — Tạo dữ liệu mẫu chuẩn Open Platform")
+    print("Phạm vi: 01/07/2024 → 18/05/2026 | 3 sàn + GHN")
+    print("═" * 60)
 
-    # Khoảng thời gian
-    q3_2024_start = datetime(2024, 7, 1)
-    q3_2024_end   = datetime(2024, 9, 30, 23, 59, 59)
-    q4_2024_start = datetime(2024, 10, 1)
-    q4_2024_end   = datetime(2024, 12, 31, 23, 59, 59)
-    q1_2025_start = datetime(2025, 1, 1)
-    q1_2025_end   = datetime(2025, 3, 31, 23, 59, 59)
+    q3_start = datetime(2024, 7, 1)
+    q3_end   = datetime(2024, 9, 30, 23, 59, 59)
+    q4_start = datetime(2024, 10, 1)
+    q4_end   = datetime(2024, 12, 31, 23, 59, 59)
+    h1_start = datetime(2025, 1, 1)
+    h1_end   = datetime(2025, 6, 30, 23, 59, 59)
+    h2_start = datetime(2025, 7, 1)
+    h2_end   = datetime(2026, 5, 18, 23, 59, 59)
 
-    # Ngày bất thường
-    flash_sale_day   = datetime(2024, 11, 11)   # 11/11 Double Eleven
-    tiktok_drop_week = datetime(2025, 1, 13)    # TikTok doanh thu giảm 40%
+    flash_1111_2024 = datetime(2024, 11, 11)
+    flash_1111_2025 = datetime(2025, 11, 11)
+    tiktok_drop_q1  = datetime(2025, 1, 13)   # giảm 40% tuần trước Tết
 
-    # ── SHOPEE ─── (tăng 3× số đơn để Prophet có đủ data points) ──
+    # ── SHOPEE (~550 đơn) ─────────────────────────────────────
     print("\n[Shopee]")
-    data = generate_shopee_orders(SHOPEE_SKUS, q3_2024_start, q3_2024_end, 200)
+    data = generate_shopee_orders(SHOPEE_SKUS, q3_start, q3_end, 80)
     save_json(data, os.path.join(SHOPEE_DIR, "shopee_orders_2024_q3.json"))
 
-    data = generate_shopee_orders(SHOPEE_SKUS, q4_2024_start, q4_2024_end, 320,
-                                  flash_sale_date=flash_sale_day)
+    data = generate_shopee_orders(SHOPEE_SKUS, q4_start, q4_end, 120,
+                                  flash_sale_date=flash_1111_2024)
     save_json(data, os.path.join(SHOPEE_DIR, "shopee_orders_2024_q4.json"))
 
-    data = generate_shopee_orders(SHOPEE_SKUS, q1_2025_start, q1_2025_end, 340)
-    save_json(data, os.path.join(SHOPEE_DIR, "shopee_orders_2025_q1.json"))
+    data = generate_shopee_orders(SHOPEE_SKUS, h1_start, h1_end, 150,
+                                  tiktok_drop=tiktok_drop_q1)
+    save_json(data, os.path.join(SHOPEE_DIR, "shopee_orders_2025_h1.json"))
 
-    products_shopee = {"items": [_shopee_product(p) for p in PRODUCTS if p["sku"] in SHOPEE_SKUS]}
+    data = generate_shopee_orders(SHOPEE_SKUS, h2_start, h2_end, 200,
+                                  flash_sale_date=flash_1111_2025)
+    save_json(data, os.path.join(SHOPEE_DIR, "shopee_orders_2025_h2_to_now.json"))
+
+    products_shopee = _shopee_wrap([])
+    products_shopee["response"]["item_list"] = [
+        _shopee_product(p) for p in PRODUCTS if p["sku"] in SHOPEE_SKUS
+    ]
+    del products_shopee["response"]["order_list"]
     save_json(products_shopee, os.path.join(SHOPEE_DIR, "shopee_products.json"))
 
-    # ── TIKTOK SHOP ───────────────────────────────────────────
+    # ── TIKTOK SHOP (~330 đơn, 60% so Shopee) ────────────────
     print("\n[TikTok Shop]")
-    tiktok_prods = [p for p in PRODUCTS if p["sku"] in TIKTOK_SKUS]
+    data = generate_tiktok_orders(TIKTOK_SKUS, q3_start, q3_end, 48)
+    save_json(data, os.path.join(TIKTOK_DIR, "tiktok_orders_2024_q3.json"))
 
-    data = generate_tiktok_orders(TIKTOK_SKUS, q4_2024_start, q4_2024_end, 250)
+    data = generate_tiktok_orders(TIKTOK_SKUS, q4_start, q4_end, 72)
     save_json(data, os.path.join(TIKTOK_DIR, "tiktok_orders_2024_q4.json"))
 
-    data = generate_tiktok_orders(TIKTOK_SKUS, q1_2025_start, q1_2025_end, 240,
-                                  tiktok_drop_start=tiktok_drop_week)
-    save_json(data, os.path.join(TIKTOK_DIR, "tiktok_orders_2025_q1.json"))
+    data = generate_tiktok_orders(TIKTOK_SKUS, h1_start, h1_end, 90,
+                                  tiktok_drop_start=tiktok_drop_q1)
+    save_json(data, os.path.join(TIKTOK_DIR, "tiktok_orders_2025_h1.json"))
 
-    products_tiktok = {"products": [_tiktok_product(p) for p in tiktok_prods]}
+    data = generate_tiktok_orders(TIKTOK_SKUS, h2_start, h2_end, 120)
+    save_json(data, os.path.join(TIKTOK_DIR, "tiktok_orders_2025_h2_to_now.json"))
+
+    tiktok_prods = [p for p in PRODUCTS if p["sku"] in TIKTOK_SKUS]
+    products_tiktok = {
+        "code": 0,
+        "data": {
+            "total_count": len(tiktok_prods),
+            "products": [_tiktok_product(p) for p in tiktok_prods],
+        }
+    }
     save_json(products_tiktok, os.path.join(TIKTOK_DIR, "tiktok_products.json"))
 
-    # ── LAZADA ────────────────────────────────────────────────
+    # ── LAZADA (~270 đơn) ─────────────────────────────────────
     print("\n[Lazada]")
-    lazada_prods = [p for p in PRODUCTS if p["sku"] in LAZADA_SKUS]
+    data = generate_lazada_orders(LAZADA_SKUS, q3_start, q3_end, 45)
+    save_json(data, os.path.join(LAZADA_DIR, "lazada_orders_2024_q3.json"))
 
-    data = generate_lazada_orders(LAZADA_SKUS, q4_2024_start, q4_2024_end, 210)
+    data = generate_lazada_orders(LAZADA_SKUS, q4_start, q4_end, 68)
     save_json(data, os.path.join(LAZADA_DIR, "lazada_orders_2024_q4.json"))
 
-    data = generate_lazada_orders(LAZADA_SKUS, q1_2025_start, q1_2025_end, 210)
-    save_json(data, os.path.join(LAZADA_DIR, "lazada_orders_2025_q1.json"))
+    data = generate_lazada_orders(LAZADA_SKUS, h1_start, h1_end, 80)
+    save_json(data, os.path.join(LAZADA_DIR, "lazada_orders_2025_h1.json"))
 
-    products_lazada = {"products": [_lazada_product(p, i) for i, p in enumerate(lazada_prods)]}
+    data = generate_lazada_orders(LAZADA_SKUS, h2_start, h2_end, 77)
+    save_json(data, os.path.join(LAZADA_DIR, "lazada_orders_2025_h2_to_now.json"))
+
+    lazada_prods = [p for p in PRODUCTS if p["sku"] in LAZADA_SKUS]
+    products_lazada = {
+        "code": "0",
+        "data": {
+            "total_products": str(len(lazada_prods)),
+            "products": [_lazada_product(p, i) for i, p in enumerate(lazada_prods)],
+        }
+    }
     save_json(products_lazada, os.path.join(LAZADA_DIR, "lazada_products.json"))
 
-    # ── TỔNG KẾT ──────────────────────────────────────────────
-    print("\n" + "═" * 55)
-    print("Hoàn tất! Các files đã lưu vào docs/sample-data/")
+    # ── GHN ──────────────────────────────────────────────────
+    print("\n[GHN Tracking]")
+    generate_ghn_data()
+
+    print("\n" + "═" * 60)
+    print("Hoàn tất! Dữ liệu chuẩn Open Platform → docs/sample-data/")
     print("Bước tiếp theo:")
-    print("  1. psql -d sales_analytics_ai_db -f docs/sql/reset_all_data.sql")
-    print("  2. psql -d sales_analytics_ai_db -f docs/sql/05_seed_phuthinh.sql")
-    print("  3. python src/etl/import_sample_shopee.py")
-    print("  4. python src/etl/import_sample_tiktok.py")
-    print("  5. python src/etl/import_sample_lazada.py")
-    print("═" * 55)
+    print("  1. psql -d sales_analytics_ai_db -f docs/sql/migrations/007_cleanup_data.sql")
+    print("  2. python src/etl/import_sample_shopee.py")
+    print("  3. python src/etl/import_sample_tiktok.py")
+    print("  4. python src/etl/import_sample_lazada.py")
+    print("  5. python src/etl/import_sample_ghn.py")
+    print("═" * 60)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1413,7 +1496,193 @@ def generate_historical_2023() -> None:
     print("  python src/etl/import_sample_lazada.py --file docs/sample-data/lazada/lazada_orders_2023_2024h1.json")
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# 10. TẠO DỮ LIỆU GHN (Giao Hàng Nhanh)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _ghn_log(create_dt: datetime, final_status: str) -> list:
+    """Tạo lịch sử trạng thái GHN từ lúc tạo đến final_status."""
+    all_steps = ["picking", "picked", "storing", "transporting", "delivering", "delivered"]
+    cancel_steps = ["picking", "cancel"]
+    return_steps = ["picking", "picked", "storing", "transporting", "delivering", "return"]
+
+    if final_status == "cancel":
+        steps = cancel_steps
+    elif final_status == "return":
+        steps = return_steps
+    else:
+        idx = all_steps.index(final_status) if final_status in all_steps else len(all_steps) - 1
+        steps = all_steps[:idx + 1]
+
+    log = []
+    t = create_dt
+    for step in steps:
+        t += timedelta(hours=random.randint(4, 18))
+        log.append({
+            "status": step,
+            "updated_date": t.strftime("%Y-%m-%dT%H:%M:%S+07:00"),
+        })
+    return log
+
+
+def _ghn_status_from_order(order_status: str) -> str:
+    """Map trạng thái đơn hàng → GHN status."""
+    m = {
+        "COMPLETED": "delivered",  "DELIVERED": "delivered",
+        "SHIPPED":   "delivering", "SHIPPING":  "transporting",
+        "PROCESSING": "storing",   "CONFIRMED": "picked",
+        "PENDING":    "picking",
+        "CANCELLED":  "cancel",    "RETURNED":  "return",
+        "RETURN_REFUND": "return",
+        # TikTok
+        "IN_TRANSIT":          "transporting",
+        "AWAITING_SHIPMENT":   "picked",
+        "AWAITING_COLLECTION": "storing",
+        "UNPAID":              "cancel",
+        # Lazada
+        "delivered":  "delivered",  "shipped":       "delivering",
+        "ready_to_ship": "storing", "pending":       "cancel",
+        "cancelled":  "cancel",     "returned":      "return",
+    }
+    return m.get(order_status, "delivered")
+
+
+def generate_ghn_data() -> None:
+    """Tạo GHN tracking records liên kết với tất cả đơn không bị hủy."""
+    # Load all order files
+    all_orders = []  # list of (platform_order_code, total, is_cod, status, create_ts, customer)
+
+    # Shopee
+    for fname in ["shopee_orders_2024_q3.json", "shopee_orders_2024_q4.json",
+                  "shopee_orders_2025_h1.json", "shopee_orders_2025_h2_to_now.json"]:
+        fpath = os.path.join(SHOPEE_DIR, fname)
+        if not os.path.exists(fpath):
+            continue
+        with open(fpath, encoding="utf-8") as f:
+            data = json.load(f)
+        for o in data.get("response", {}).get("order_list", []):
+            if o.get("order_status", "") not in ("CANCELLED", "IN_CANCEL", "UNPAID"):
+                all_orders.append({
+                    "code": o["order_sn"],
+                    "total": float(o.get("total_amount", 0)),
+                    "is_cod": o.get("payment_method", "") == "COD",
+                    "status": o.get("order_status", "COMPLETED"),
+                    "create_ts": o.get("create_time", 0),
+                    "to_name": o.get("recipient_address", {}).get("name", ""),
+                    "to_phone": o.get("recipient_address", {}).get("phone", ""),
+                    "to_address": o.get("recipient_address", {}).get("full_address", ""),
+                    "to_district_id": 1442,
+                })
+
+    # TikTok
+    for fname in ["tiktok_orders_2024_q3.json", "tiktok_orders_2024_q4.json",
+                  "tiktok_orders_2025_h1.json", "tiktok_orders_2025_h2_to_now.json"]:
+        fpath = os.path.join(TIKTOK_DIR, fname)
+        if not os.path.exists(fpath):
+            continue
+        with open(fpath, encoding="utf-8") as f:
+            data = json.load(f)
+        for o in data.get("data", {}).get("orders", []):
+            if o.get("status", "") not in ("CANCELLED", "UNPAID"):
+                addr = o.get("recipient_address", {})
+                di = addr.get("district_info", [])
+                province = next((x["address_name"] for x in di if x.get("address_level") == "L1"), "")
+                all_orders.append({
+                    "code": o["id"],
+                    "total": float(o.get("payment", {}).get("total_amount", 0)),
+                    "is_cod": o.get("is_cod", False),
+                    "status": o.get("status", "COMPLETED"),
+                    "create_ts": o.get("create_time", 0),
+                    "to_name": addr.get("name", ""),
+                    "to_phone": addr.get("phone_number", ""),
+                    "to_address": addr.get("full_address", ""),
+                    "to_district_id": PROVINCES.get(province, {}).get("ghn_district_id", 1442),
+                })
+
+    # Lazada
+    for fname in ["lazada_orders_2024_q3.json", "lazada_orders_2024_q4.json",
+                  "lazada_orders_2025_h1.json", "lazada_orders_2025_h2_to_now.json"]:
+        fpath = os.path.join(LAZADA_DIR, fname)
+        if not os.path.exists(fpath):
+            continue
+        with open(fpath, encoding="utf-8") as f:
+            data = json.load(f)
+        for o in data.get("data", {}).get("orders", []):
+            if o.get("status", "") not in ("cancelled", "pending"):
+                addr = o.get("address_shipping", {})
+                province = addr.get("address3", "")
+                all_orders.append({
+                    "code": o.get("order_number", o.get("order_id", "")),
+                    "total": float(o.get("price", 0)),
+                    "is_cod": "cash" in o.get("payment_method", "").lower(),
+                    "status": o.get("status", "delivered"),
+                    "create_ts": 0,
+                    "create_str": o.get("created_at", "2024-07-01T00:00:00+07:00"),
+                    "to_name": f"{addr.get('first_name','')} {addr.get('last_name','')}".strip(),
+                    "to_phone": addr.get("phone", ""),
+                    "to_address": addr.get("address1", ""),
+                    "to_district_id": PROVINCES.get(province, {}).get("ghn_district_id", 1442),
+                })
+
+    # Sinh GHN record cho mỗi đơn
+    ghn_records = []
+    for o in all_orders:
+        if o.get("create_ts"):
+            create_dt = datetime.fromtimestamp(o["create_ts"], tz=timezone.utc).replace(tzinfo=None)
+        else:
+            raw = o.get("create_str", "2024-07-01T00:00:00+07:00")
+            try:
+                create_dt = datetime.strptime(raw[:19], "%Y-%m-%dT%H:%M:%S")
+            except Exception:
+                create_dt = datetime(2024, 7, 1)
+
+        ghn_status = _ghn_status_from_order(o["status"])
+        ghn_code = f"SPXVN{random.randint(10000000000, 99999999999)}"
+        leadtime = int((create_dt + timedelta(days=3)).timestamp())
+
+        ghn_records.append({
+            "shop_id": 885,
+            "client_id": 500379,
+            "order_code": ghn_code,
+            "client_order_code": str(o["code"]),
+            "from_name": "Phú Thịnh Fashion",
+            "from_phone": "0901234567",
+            "from_address": "123 Nguyễn Trãi, P.3, Q.5, TP.HCM",
+            "from_ward_code": "20305",
+            "from_district_id": 1442,
+            "to_name": o["to_name"],
+            "to_phone": o["to_phone"],
+            "to_address": o["to_address"],
+            "to_ward_code": "20301",
+            "to_district_id": o["to_district_id"],
+            "weight": 300,
+            "length": 30,
+            "width": 25,
+            "height": 5,
+            "service_type_id": 2,
+            "service_id": 53320,
+            "payment_type_id": 1 if o["is_cod"] else 2,
+            "cod_amount": int(o["total"]) if o["is_cod"] else 0,
+            "insurance_value": int(o["total"]),
+            "required_note": "CHOXEMHANGKHONGTHU",
+            "content": "Thời trang Phú Thịnh",
+            "note": "",
+            "status": ghn_status,
+            "leadtime": leadtime,
+            "order_date": int(create_dt.timestamp()),
+            "created_date": create_dt.strftime("%Y-%m-%dT%H:%M:%S+07:00"),
+            "updated_date": (create_dt + timedelta(days=2)).strftime("%Y-%m-%dT%H:%M:%S+07:00"),
+            "log": _ghn_log(create_dt, ghn_status),
+        })
+
+    output = {
+        "code": 200,
+        "message": "Success",
+        "data": ghn_records,
+    }
+    save_json(output, os.path.join(GHN_DIR, "ghn_orders.json"))
+    print(f"  GHN: {len(ghn_records)} tracking records từ 3 sàn")
+
+
 if __name__ == "__main__":
     main()
-    generate_historical_2023()  # Dữ liệu lịch sử 2023-2024H1 (18 tháng baseline)
-    generate_extended_data()    # Dữ liệu mở rộng 2025-04-02 → 2026-05-16

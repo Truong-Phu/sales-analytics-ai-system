@@ -65,10 +65,19 @@ public class CustomersController(
                     COUNT(DISTINCT fs.external_order_id)  AS total_orders,
                     COALESCE(SUM(fs.net_revenue),      0) AS total_revenue,
                     COALESCE(AVG(fs.net_revenue),      0) AS avg_order_value,
-                    MAX(dd.full_date)                      AS last_order_date
+                    MAX(dd.full_date)                      AS last_order_date,
+                    COALESCE(lp.loyalty_balance, 0)        AS loyalty_points
                 FROM dw.dim_customer dc
                 LEFT JOIN dw.fact_sales fs ON fs.customer_key = dc.customer_key
                 LEFT JOIN dw.dim_date   dd ON fs.date_key     = dd.date_key
+                LEFT JOIN (
+                    SELECT customer_id,
+                           SUM(CASE WHEN point_type IN ('EARNED','BONUS')             THEN points ELSE 0 END)
+                         - SUM(CASE WHEN point_type IN ('REDEEMED','EXPIRED')         THEN points ELSE 0 END)
+                           AS loyalty_balance
+                    FROM public.loyalty_points
+                    GROUP BY customer_id
+                ) lp ON lp.customer_id = dc.customer_id
                 WHERE dc.is_current = TRUE
                   AND (@search    IS NULL OR dc.full_name     ILIKE '%' || @search  || '%'
                                           OR dc.customer_code ILIKE '%' || @search  || '%')
@@ -77,7 +86,8 @@ public class CustomersController(
                   AND (@to        IS NULL OR dd.full_date <= @to::date   OR dd.full_date IS NULL)
                   AND (@companyId IS NULL OR fs.company_id = @companyId::uuid OR fs.company_id IS NULL)
                 GROUP BY dc.customer_key, dc.customer_id, dc.customer_code, dc.full_name,
-                         dc.email, dc.province, dc.region, dc.segment_label, dc.effective_from
+                         dc.email, dc.province, dc.region, dc.segment_label, dc.effective_from,
+                         lp.loyalty_balance
                 ORDER BY total_revenue DESC
                 LIMIT @limit OFFSET @offset
                 """;
@@ -132,6 +142,7 @@ public class CustomersController(
                     TotalRevenue   = reader.GetDecimal(9),
                     AvgOrderValue  = reader.GetDecimal(10),
                     LastOrderDate  = reader.IsDBNull(11) ? (DateTime?)null : reader.GetDateTime(11),
+                    LoyaltyPoints  = reader.IsDBNull(12) ? 0 : reader.GetDecimal(12),
                 });
             }
 

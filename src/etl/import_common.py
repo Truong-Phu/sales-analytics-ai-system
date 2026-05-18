@@ -126,12 +126,11 @@ def upsert_products(cur, products_list: list, company_id: str, cat_map: dict) ->
                 (sku, product_name, description, base_price, cost_price,
                  stock_quantity, category_id, image_url, is_active, company_id)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, TRUE, %s)
-            ON CONFLICT (sku) DO UPDATE SET
+            ON CONFLICT (sku, company_id) DO UPDATE SET
                 product_name   = EXCLUDED.product_name,
                 base_price     = EXCLUDED.base_price,
                 cost_price     = EXCLUDED.cost_price,
                 stock_quantity = EXCLUDED.stock_quantity,
-                company_id     = EXCLUDED.company_id,
                 updated_at     = NOW()
             RETURNING product_id
         """, (

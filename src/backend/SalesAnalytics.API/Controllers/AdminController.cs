@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using SalesAnalytics.API.Attributes;
 using SalesAnalytics.API.Services;
 using SalesAnalytics.Core.Entities;
@@ -21,8 +22,10 @@ namespace SalesAnalytics.API.Controllers;
 public class AdminController(
     AppDbContext db,
     IAuditLogService audit,
-    ITenantContext tenant) : ControllerBase
+    ITenantContext tenant,
+    IConfiguration cfg) : ControllerBase
 {
+    private readonly string _connStr = cfg.GetConnectionString("Default")!;
     // ══════════════════════════════════════════════════════════════════════════
     // PHẦN 1 – Tenant Admin: quản lý user và audit log trong công ty mình
     // ══════════════════════════════════════════════════════════════════════════
@@ -609,6 +612,180 @@ public class AdminController(
         int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? id : null;
     private string GetCurrentUsername() =>
         User.FindFirstValue(ClaimTypes.Name) ?? "unknown";
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // PHẦN 4 – KPI Nhân viên
+    // ══════════════════════════════════════════════════════════════════════════
+
+    /// <summary>GET /api/admin/staff/kpi?period=2026-05 — KPI tổng hợp tất cả staff</summary>
+    [HttpGet("staff/kpi")]
+    [Authorize(Roles = "Owner,Manager")]
+    public async Task<IActionResult> GetStaffKpi([FromQuery] string? period)
+    {
+        // period = "2026-05" (YYYY-MM). Nếu không có → tháng hiện tại
+        DateTime start, end;
+        if (!string.IsNullOrEmpty(period) && DateTime.TryParse(period + "-01", out var pd))
+        {
+            start = pd;
+            end   = pd.AddMonths(1).AddSeconds(-1);
+        }
+        else
+        {
+            var now = DateTime.UtcNow;
+            start   = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+            end     = start.AddMonths(1).AddSeconds(-1);
+        }
+
+        await using var conn = new NpgsqlConnection(_connStr);
+        await conn.OpenAsync();
+
+        var sql = """
+            SELECT u.user_id, u.full_name, u.role,
+                   COUNT(DISTINCT o.order_id)   AS order_count,
+                   COALESCE(SUM(o.total_amount), 0) AS revenue,
+                   COUNT(DISTINCT CASE
+                       WHEN c.created_at BETWEEN @start AND @end THEN c.customer_id
+                   END) AS new_customers,
+                   t.revenue_target,
+                   t.order_count_target,
+                   t.new_customer_target
+            FROM public.users u
+            LEFT JOIN public.orders o
+                ON o.created_by_user_id = u.user_id
+               AND o.order_date BETWEEN @start AND @end
+               AND o.company_id = @cid::uuid
+            LEFT JOIN public.customers c
+                ON c.company_id = @cid::uuid
+            LEFT JOIN public.staff_kpi_targets t
+                ON t.user_id     = u.user_id
+               AND t.period_type = 'MONTHLY'
+               AND t.period_start = DATE_TRUNC('month', @start)
+            WHERE u.company_id = @cid::uuid
+              AND u.is_active   = TRUE
+              AND u.role NOT IN ('SuperAdmin')
+            GROUP BY u.user_id, u.full_name, u.role,
+                     t.revenue_target, t.order_count_target, t.new_customer_target
+            ORDER BY revenue DESC
+            """;
+
+        await using var cmd = new NpgsqlCommand(sql, conn);
+        cmd.Parameters.AddWithValue("cid",   tenant.CompanyId!.Value.ToString());
+        cmd.Parameters.AddWithValue("start", start);
+        cmd.Parameters.AddWithValue("end",   end);
+
+        await using var r = await cmd.ExecuteReaderAsync();
+        var list = new List<object>();
+        while (await r.ReadAsync())
+        {
+            var orderCount   = (long)r.GetInt64(3);
+            var revenue      = r.GetDecimal(4);
+            var newCustomers = (long)r.GetInt64(5);
+            var revTarget    = r.IsDBNull(6) ? (decimal?)null : r.GetDecimal(6);
+            var ordTarget    = r.IsDBNull(7) ? (int?)null    : r.GetInt32(7);
+            var custTarget   = r.IsDBNull(8) ? (int?)null    : r.GetInt32(8);
+
+            double? kpiPct = null;
+            if (revTarget.HasValue && revTarget > 0)
+                kpiPct = (double)(revenue / revTarget.Value * 100);
+
+            list.Add(new
+            {
+                userId         = r.GetInt32(0),
+                fullName       = r.GetString(1),
+                role           = r.GetString(2),
+                orderCount,
+                revenue,
+                newCustomers,
+                revTarget,
+                ordTarget,
+                custTarget,
+                kpiPercent     = kpiPct.HasValue ? Math.Round(kpiPct.Value, 1) : (double?)null,
+            });
+        }
+
+        return Ok(new { period = start.ToString("yyyy-MM"), staff = list });
+    }
+
+    /// <summary>POST /api/admin/staff/kpi/targets — Đặt KPI target cho nhân viên</summary>
+    [HttpPost("staff/kpi/targets")]
+    [Authorize(Roles = "Owner,Manager")]
+    public async Task<IActionResult> SetKpiTarget([FromBody] SetKpiTargetDto dto)
+    {
+        await using var conn = new NpgsqlConnection(_connStr);
+        await conn.OpenAsync();
+
+        var start = new DateTime(dto.Year, dto.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+        var end   = start.AddMonths(1).AddSeconds(-1);
+
+        await using var cmd = new NpgsqlCommand("""
+            INSERT INTO public.staff_kpi_targets
+                (company_id, user_id, period_type, period_start, period_end,
+                 revenue_target, order_count_target, new_customer_target, created_at, updated_at)
+            VALUES
+                (@cid::uuid, @uid, 'MONTHLY', @start, @end,
+                 @rev, @ord, @cust, NOW(), NOW())
+            ON CONFLICT (user_id, period_start, period_type) DO UPDATE SET
+                revenue_target      = EXCLUDED.revenue_target,
+                order_count_target  = EXCLUDED.order_count_target,
+                new_customer_target = EXCLUDED.new_customer_target,
+                updated_at          = NOW()
+            """, conn);
+        cmd.Parameters.AddWithValue("cid",   tenant.CompanyId!.Value.ToString());
+        cmd.Parameters.AddWithValue("uid",   dto.UserId);
+        cmd.Parameters.AddWithValue("start", start);
+        cmd.Parameters.AddWithValue("end",   end);
+        cmd.Parameters.AddWithValue("rev",   (object?)dto.RevenueTarget    ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("ord",   (object?)dto.OrderCountTarget  ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("cust",  (object?)dto.NewCustomerTarget ?? DBNull.Value);
+
+        await cmd.ExecuteNonQueryAsync();
+        return Ok(new { message = "Đã lưu KPI target." });
+    }
+
+    // ── GET /api/admin/customers/{id}/history ──────────────────────────────────
+    /// <summary>Lịch sử mua hàng KH (online + offline)</summary>
+    [HttpGet("customers/{id}/history")]
+    [Authorize(Roles = "Owner,Manager,Staff")]
+    public async Task<IActionResult> GetCustomerHistory(int id, [FromQuery] int page = 1)
+    {
+        await using var conn = new NpgsqlConnection(_connStr);
+        await conn.OpenAsync();
+
+        var sql = """
+            SELECT o.order_id, o.order_code, o.order_date, o.status,
+                   o.total_amount, o.payment_method, o.shipping_status,
+                   sc.channel_name, sc.channel_type
+            FROM public.orders o
+            JOIN public.sales_channels sc ON sc.channel_id = o.channel_id
+            WHERE o.customer_id  = @cid
+              AND o.company_id   = @companyId::uuid
+            ORDER BY o.order_date DESC
+            LIMIT 20 OFFSET @offset
+            """;
+        await using var cmd = new NpgsqlCommand(sql, conn);
+        cmd.Parameters.AddWithValue("cid",       id);
+        cmd.Parameters.AddWithValue("companyId", tenant.CompanyId!.Value.ToString());
+        cmd.Parameters.AddWithValue("offset",    (page - 1) * 20);
+
+        await using var r = await cmd.ExecuteReaderAsync();
+        var orders = new List<object>();
+        while (await r.ReadAsync())
+        {
+            orders.Add(new
+            {
+                orderId       = r.GetInt32(0),
+                orderCode     = r.GetString(1),
+                orderDate     = r.GetDateTime(2),
+                status        = r.GetString(3),
+                totalAmount   = r.GetDecimal(4),
+                paymentMethod = r.IsDBNull(5) ? null : r.GetString(5),
+                shippingStatus= r.GetString(6),
+                channelName   = r.IsDBNull(7) ? null : r.GetString(7),
+                channelType   = r.IsDBNull(8) ? null : r.GetString(8),
+            });
+        }
+        return Ok(new { customerId = id, page, orders });
+    }
 }
 
 public record CreateUserRequest(
@@ -634,4 +811,13 @@ public record UpdateSubscriptionRequest(
     DateTime? ExpiresAt,
     int?      MaxChannels,
     int?      MaxUsers
+);
+
+public record SetKpiTargetDto(
+    int       UserId,
+    int       Year,
+    int       Month,
+    decimal?  RevenueTarget,
+    int?      OrderCountTarget,
+    int?      NewCustomerTarget
 );

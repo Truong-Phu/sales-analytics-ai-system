@@ -21,11 +21,10 @@ from generate_sample_data import PRODUCTS, SHOPEE_SKUS
 BASE = os.path.join(os.path.dirname(__file__), "..", "..", "docs", "sample-data", "shopee")
 
 ORDER_FILES = [
-    os.path.join(BASE, "shopee_orders_2023_2024h1.json"),   # Historical baseline
     os.path.join(BASE, "shopee_orders_2024_q3.json"),
     os.path.join(BASE, "shopee_orders_2024_q4.json"),
-    os.path.join(BASE, "shopee_orders_2025_q1.json"),
-    os.path.join(BASE, "shopee_orders_2025_2026.json"),
+    os.path.join(BASE, "shopee_orders_2025_h1.json"),
+    os.path.join(BASE, "shopee_orders_2025_h2_to_now.json"),
 ]
 
 
@@ -61,7 +60,9 @@ def main():
         fname = os.path.basename(fpath)
         ok = skip = err = 0
 
-        for i, o in enumerate(data["orders"]):
+        # Hỗ trợ cả format cũ (orders[]) và mới (response.order_list[])
+        orders_list = data.get("response", {}).get("order_list", data.get("orders", []))
+        for i, o in enumerate(orders_list):
             try:
                 # Khach hang
                 addr = o.get("recipient_address", {})

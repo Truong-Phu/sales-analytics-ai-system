@@ -285,7 +285,7 @@ export default function CustomersPage() {
                 <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-elevated)' }}>
                   {[t('customers.fullName'), t('customers.email'), t('customers.province'),
                     t('customers.totalOrders'), t('customers.totalRevenue'),
-                    t('customers.lastOrder'), t('customers.segment'), ''].map(h => (
+                    'Điểm tích lũy', t('customers.lastOrder'), t('customers.segment'), ''].map(h => (
                     <th key={h} className="text-left px-4 py-3 text-xs font-semibold tracking-wide"
                         style={{ color: 'var(--text-tertiary)', whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
@@ -312,6 +312,9 @@ export default function CustomersPage() {
                     </td>
                     <td className="px-4 py-3 text-right font-mono tabular-nums font-medium" style={{ color: 'var(--text-primary)' }}>
                       {fmt(c.total_revenue)}₫
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono tabular-nums" style={{ color: c.loyalty_points > 0 ? 'var(--primary-500)' : 'var(--text-tertiary)' }}>
+                      {c.loyalty_points != null ? fmt(c.loyalty_points) : '—'}
                     </td>
                     <td className="px-4 py-3 text-xs tabular-nums" style={{ color: 'var(--text-tertiary)' }}>
                       {c.last_order_date ? new Date(c.last_order_date).toLocaleDateString('vi-VN') : '—'}
@@ -380,6 +383,7 @@ export default function CustomersPage() {
                 [t('customers.avgOrder'),    `${fmt(selected.avg_order_value)}₫`],
                 [t('customers.lastOrder'),   selected.last_order_date
                   ? new Date(selected.last_order_date).toLocaleDateString('vi-VN') : '—'],
+                ['Điểm tích lũy', selected.loyalty_points != null ? `${fmt(selected.loyalty_points)} điểm` : '—'],
               ].map(([label, value]) => (
                 <div key={label} className="flex justify-between gap-4 py-2"
                      style={{ borderBottom: '1px solid var(--border)' }}>

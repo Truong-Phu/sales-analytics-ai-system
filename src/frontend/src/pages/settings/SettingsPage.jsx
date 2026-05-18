@@ -112,6 +112,10 @@ export default function SettingsPage() {
     ...(user?.role === 'Owner'
       ? [{ key: 'subscription', icon: 'workspace_premium', label: t('subscription.title', 'Gói dịch vụ') }]
       : []),
+    // Owner/Manager thấy tab Loyalty & Voucher
+    ...(['Owner','Manager'].includes(user?.role)
+      ? [{ key: 'loyalty', icon: 'loyalty', label: 'Loyalty & Voucher' }]
+      : []),
     { key: 'guide',         icon: 'menu_book',        label: 'Hướng dẫn sử dụng' },
     { key: 'policy',        icon: 'gavel',            label: 'Điều khoản & Chính sách' },
   ]
@@ -534,12 +538,183 @@ export default function SettingsPage() {
             </div>
           )}
 
+          {/* ── LOYALTY & VOUCHER ── */}
+          {section === 'loyalty' && <LoyaltySection />}
+
           {/* ── HƯỚNG DẪN SỬ DỤNG ── */}
           {section === 'guide' && <GuideSection />}
 
           {/* ── ĐIỀU KHOẢN & CHÍNH SÁCH ── */}
           {section === 'policy' && <PolicySection />}
         </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Loyalty & Voucher settings ──────────────────────────────────────────────
+function LoyaltySection() {
+  const [config, setConfig] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [saving,  setSaving]  = useState(false)
+  const [msg,     setMsg]     = useState('')
+  const [err,     setErr]     = useState('')
+
+  // Voucher list
+  const [vouchers, setVouchers]   = useState([])
+  const [vLoad,    setVLoad]      = useState(false)
+  const [showNew,  setShowNew]    = useState(false)
+  const [newV, setNewV] = useState({ code:'', type:'PERCENT', value:'', minOrder:'', maxDiscount:'', usageLimit:'', validFrom:'', validTo:'' })
+
+  useEffect(() => {
+    axios.get('/api/pos/loyalty/config')
+      .then(r => setConfig(r.data))
+      .catch(() => setConfig({ pointsPerVnd: 1000, vndPerPoint: 1000, minRedeemPoints: 100, pointExpiryDays: 365, isActive: true }))
+      .finally(() => setLoading(false))
+    loadVouchers()
+  }, [])
+
+  const loadVouchers = () => {
+    setVLoad(true)
+    axios.get('/api/pos/vouchers').then(r => setVouchers(r.data ?? [])).catch(() => setVouchers([])).finally(() => setVLoad(false))
+  }
+
+  const saveConfig = async () => {
+    setSaving(true); setMsg(''); setErr('')
+    try {
+      await axios.put('/api/pos/loyalty/config', config)
+      setMsg('Đã lưu cấu hình tích điểm')
+    } catch { setErr('Lỗi lưu cấu hình') }
+    finally { setSaving(false) }
+  }
+
+  const createVoucher = async () => {
+    try {
+      await axios.post('/api/pos/vouchers', { ...newV, value: Number(newV.value), minOrderValue: Number(newV.minOrder || 0), maxDiscount: newV.maxDiscount ? Number(newV.maxDiscount) : null, usageLimit: newV.usageLimit ? Number(newV.usageLimit) : null })
+      setShowNew(false)
+      setNewV({ code:'', type:'PERCENT', value:'', minOrder:'', maxDiscount:'', usageLimit:'', validFrom:'', validTo:'' })
+      loadVouchers()
+    } catch (e) { setErr(e?.response?.data?.message ?? 'Lỗi tạo voucher') }
+  }
+
+  if (loading) return <div className="lcard p-10 flex justify-center"><span className="icon animate-spin text-2xl" style={{ color: 'var(--primary-500)' }}>refresh</span></div>
+
+  const field = (label, key, type = 'number') => (
+    <div className="flex flex-col gap-1">
+      <label className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>{label}</label>
+      <input type={type} value={config[key] ?? ''} onChange={e => setConfig(c => ({ ...c, [key]: type === 'number' ? Number(e.target.value) : e.target.value }))}
+             className="linput !h-9 text-sm" />
+    </div>
+  )
+
+  return (
+    <div className="space-y-5">
+      {/* Loyalty config */}
+      <div className="lcard p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="font-semibold" style={{ color: 'var(--text-primary)' }}>Cấu hình tích điểm</h3>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>Kích hoạt</span>
+            <input type="checkbox" checked={config.isActive} onChange={e => setConfig(c => ({ ...c, isActive: e.target.checked }))} />
+          </label>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          {field('VND để tích 1 điểm', 'pointsPerVnd')}
+          {field('1 điểm = bao nhiêu VND (quy đổi)', 'vndPerPoint')}
+          {field('Điểm tối thiểu để đổi', 'minRedeemPoints')}
+          {field('Điểm hết hạn sau (ngày)', 'pointExpiryDays')}
+        </div>
+        {msg && <p className="text-xs" style={{ color: 'var(--accent-500)' }}>{msg}</p>}
+        {err && <p className="text-xs" style={{ color: '#EF4444' }}>{err}</p>}
+        <button onClick={saveConfig} disabled={saving} className="lbtn lbtn-primary !h-9">
+          {saving ? 'Đang lưu...' : 'Lưu cấu hình'}
+        </button>
+      </div>
+
+      {/* Vouchers */}
+      <div className="lcard p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="font-semibold" style={{ color: 'var(--text-primary)' }}>Danh sách Voucher</h3>
+          <button onClick={() => setShowNew(v => !v)} className="lbtn lbtn-primary !h-8 !px-4 text-xs gap-1">
+            <span className="icon" style={{ fontSize: 14 }}>add</span> Tạo voucher
+          </button>
+        </div>
+
+        {showNew && (
+          <div className="lcard p-4 space-y-3" style={{ background: 'var(--bg-elevated)' }}>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Mã voucher</label>
+                <input value={newV.code} onChange={e => setNewV(v => ({...v, code: e.target.value.toUpperCase()}))} className="linput !h-8 text-sm" placeholder="VD: SALE10" />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Loại</label>
+                <select value={newV.type} onChange={e => setNewV(v => ({...v, type: e.target.value}))} className="linput !h-8 text-xs">
+                  <option value="PERCENT">Giảm %</option>
+                  <option value="FIXED">Giảm số tiền cố định</option>
+                  <option value="FREESHIP">Miễn phí vận chuyển</option>
+                </select>
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Giá trị</label>
+                <input type="number" value={newV.value} onChange={e => setNewV(v => ({...v, value: e.target.value}))} className="linput !h-8 text-sm" placeholder={newV.type === 'PERCENT' ? '10 = 10%' : 'VND'} />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Đơn hàng tối thiểu (VND)</label>
+                <input type="number" value={newV.minOrder} onChange={e => setNewV(v => ({...v, minOrder: e.target.value}))} className="linput !h-8 text-sm" placeholder="0 = không giới hạn" />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Hiệu lực từ</label>
+                <input type="datetime-local" value={newV.validFrom} onChange={e => setNewV(v => ({...v, validFrom: e.target.value}))} className="linput !h-8 text-xs" />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Hiệu lực đến</label>
+                <input type="datetime-local" value={newV.validTo} onChange={e => setNewV(v => ({...v, validTo: e.target.value}))} className="linput !h-8 text-xs" />
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => setShowNew(false)} className="lbtn lbtn-secondary flex-1 !h-8 text-xs">Hủy</button>
+              <button onClick={createVoucher} className="lbtn lbtn-primary flex-1 !h-8 text-xs">Tạo voucher</button>
+            </div>
+          </div>
+        )}
+
+        {vLoad ? (
+          <div className="py-6 flex justify-center"><span className="icon animate-spin" style={{ color: 'var(--primary-500)' }}>refresh</span></div>
+        ) : vouchers.length === 0 ? (
+          <p className="text-sm text-center py-6" style={{ color: 'var(--text-tertiary)' }}>Chưa có voucher nào</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                  {['Mã', 'Loại', 'Giá trị', 'Đơn tối thiểu', 'Số lần dùng', 'Hiệu lực', 'Trạng thái'].map(h => (
+                    <th key={h} className="text-left px-3 py-2 font-semibold" style={{ color: 'var(--text-tertiary)' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {vouchers.map(v => (
+                  <tr key={v.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                    <td className="px-3 py-2 font-mono font-bold" style={{ color: 'var(--primary-500)' }}>{v.code}</td>
+                    <td className="px-3 py-2">{v.type === 'PERCENT' ? `Giảm ${v.value}%` : v.type === 'FIXED' ? `Giảm ${new Intl.NumberFormat('vi-VN').format(v.value)}đ` : 'Freeship'}</td>
+                    <td className="px-3 py-2 font-mono">{new Intl.NumberFormat('vi-VN').format(v.value)}</td>
+                    <td className="px-3 py-2 font-mono">{new Intl.NumberFormat('vi-VN').format(v.minOrderValue ?? 0)}</td>
+                    <td className="px-3 py-2 text-center">{v.usedCount ?? 0}{v.usageLimit ? ` / ${v.usageLimit}` : ''}</td>
+                    <td className="px-3 py-2 whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>
+                      {new Date(v.validFrom).toLocaleDateString('vi-VN')} → {new Date(v.validTo).toLocaleDateString('vi-VN')}
+                    </td>
+                    <td className="px-3 py-2">
+                      <span className="px-2 py-0.5 rounded-full text-xs" style={{ background: v.isActive ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.08)', color: v.isActive ? '#10B981' : '#EF4444' }}>
+                        {v.isActive ? 'Đang dùng' : 'Đã tắt'}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   )

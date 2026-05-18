@@ -239,7 +239,10 @@
     "sentiment": "Cảm xúc Đánh giá",
     "sentimentDesc": "Phân tích phản hồi khách hàng",
     "nlq": "Hỏi AI",
-    "nlqDesc": "Truy vấn dữ liệu bằng ngôn ngữ tự nhiên"
+    "nlqDesc": "Truy vấn dữ liệu bằng ngôn ngữ tự nhiên",
+    "pos": "Bán hàng tại quầy",
+    "posDesc": "POS – thanh toán, tích điểm, voucher",
+    "sectionSales": "Bán hàng"
   },
   "dashboard": {
     "title": "Tổng quan kinh doanh",

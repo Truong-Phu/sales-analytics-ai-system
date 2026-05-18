@@ -16,10 +16,10 @@ from generate_sample_data import PRODUCTS, LAZADA_SKUS
 
 BASE = os.path.join(os.path.dirname(__file__), "..", "..", "docs", "sample-data", "lazada")
 ORDER_FILES = [
-    os.path.join(BASE, "lazada_orders_2023_2024h1.json"),   # Historical baseline
+    os.path.join(BASE, "lazada_orders_2024_q3.json"),
     os.path.join(BASE, "lazada_orders_2024_q4.json"),
-    os.path.join(BASE, "lazada_orders_2025_q1.json"),
-    os.path.join(BASE, "lazada_orders_2025_2026.json"),
+    os.path.join(BASE, "lazada_orders_2025_h1.json"),
+    os.path.join(BASE, "lazada_orders_2025_h2_to_now.json"),
 ]
 
 
@@ -51,16 +51,23 @@ def main():
         with open(fpath, encoding="utf-8") as f:
             data = json.load(f)
 
+        # Hỗ trợ cả format cũ (orders[]) và mới (data.orders[])
+        raw = data.get("data", data)
+        orders_list = raw.get("orders", []) if isinstance(raw, dict) else []
+
         ok = skip = err = 0
-        for i, o in enumerate(data["orders"]):
+        for i, o in enumerate(orders_list):
             try:
-                addr = o.get("address", {})
-                first = addr.get("first_name", "")
-                last  = addr.get("last_name", "")
+                # address_shipping (mới) hoặc address (cũ)
+                addr = o.get("address_shipping", o.get("address", {}))
+                # customer_first/last_name ở order level (mới) hoặc trong addr (cũ)
+                first = o.get("customer_first_name", addr.get("first_name", ""))
+                last  = o.get("customer_last_name",  addr.get("last_name", ""))
                 full_name = f"{first} {last}".strip() or "Khach hang"
                 phone     = addr.get("phone", "")
-                province  = addr.get("city", "")
-                district  = addr.get("ward", addr.get("region", ""))
+                # Lazada mới: city = Quận/Huyện, address3 = Tỉnh/Thành
+                province  = addr.get("address3", addr.get("city", ""))
+                district  = addr.get("city", addr.get("address2", ""))
                 address   = addr.get("address1", "")
                 email     = addr.get("customer_email", None)
 

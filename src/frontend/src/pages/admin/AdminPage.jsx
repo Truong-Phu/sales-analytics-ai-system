@@ -7,6 +7,7 @@ import {
 } from '../../api/adminApi'
 import { MOCK_USERS } from '../../mockData/admin'
 import { useAuth } from '../../hooks/useAuth'
+import api from '../../api/axios'
 
 const ROLE_CREATEABLE = ['Manager', 'Staff', 'Viewer']
 const ROLE_LABEL = { Manager: 'Quản lý', Staff: 'Nhân viên', Viewer: 'Xem', Owner: 'Chủ doanh nghiệp', DataIT: 'Data/IT' }
@@ -259,6 +260,199 @@ function EditUserModal({ user: u, onClose, onSaved }) {
   )
 }
 
+// ─── KPI Progress bar ────────────────────────────────────────────────────────
+function KpiBar({ actual, target, color = 'var(--primary-500)' }) {
+  if (!target) return <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Chưa đặt mục tiêu</span>
+  const pct = Math.min(100, Math.round((actual / target) * 100))
+  const barColor = pct >= 100 ? '#10B981' : pct >= 70 ? 'var(--primary-500)' : '#F59E0B'
+  return (
+    <div className="flex items-center gap-2 min-w-[120px]">
+      <div className="flex-1 h-1.5 rounded-full" style={{ background: 'var(--bg-elevated)' }}>
+        <div className="h-1.5 rounded-full transition-all" style={{ width: `${pct}%`, background: barColor }} />
+      </div>
+      <span className="text-xs font-mono w-10 text-right" style={{ color: barColor }}>{pct}%</span>
+    </div>
+  )
+}
+
+// ─── Set KPI Target Modal ────────────────────────────────────────────────────
+function SetTargetModal({ staff, period, onClose, onSaved }) {
+  const [year, month] = period.split('-').map(Number)
+  const [rev,  setRev]  = useState(String(staff.revTarget ?? ''))
+  const [ord,  setOrd]  = useState(String(staff.ordTarget ?? ''))
+  const [cust, setCust] = useState(String(staff.custTarget ?? ''))
+  const [saving, setSaving] = useState(false)
+  const [err,    setErr]    = useState('')
+
+  const handleSave = async () => {
+    setSaving(true); setErr('')
+    try {
+      await api.post('/api/admin/staff/kpi/targets', {
+        userId:           staff.userId,
+        year, month,
+        revenueTarget:    rev  ? Number(rev)  : null,
+        orderCountTarget: ord  ? Number(ord)  : null,
+        newCustomerTarget:cust ? Number(cust) : null,
+      })
+      onSaved()
+    } catch (e) {
+      setErr(e?.response?.data?.message ?? 'Lỗi lưu KPI target')
+    } finally { setSaving(false) }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="lcard w-full max-w-sm p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="font-semibold" style={{ color: 'var(--text-primary)' }}>
+            Đặt KPI — {staff.fullName}
+          </h3>
+          <button onClick={onClose} className="icon text-xl" style={{ color: 'var(--text-tertiary)' }}>close</button>
+        </div>
+        <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Tháng {month}/{year}</p>
+
+        {[
+          { label: 'Mục tiêu doanh thu (VND)', val: rev,  set: setRev,  placeholder: 'VD: 50000000' },
+          { label: 'Mục tiêu số đơn',          val: ord,  set: setOrd,  placeholder: 'VD: 100' },
+          { label: 'Mục tiêu KH mới',           val: cust, set: setCust, placeholder: 'VD: 20' },
+        ].map(f => (
+          <div key={f.label} className="flex flex-col gap-1">
+            <label className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>{f.label}</label>
+            <input type="number" value={f.val} onChange={e => f.set(e.target.value)}
+                   placeholder={f.placeholder} className="linput !h-9 text-sm" />
+          </div>
+        ))}
+
+        {err && <p className="text-xs" style={{ color: '#EF4444' }}>{err}</p>}
+        <div className="flex gap-2 pt-2">
+          <button onClick={onClose} className="lbtn lbtn-secondary flex-1">Hủy</button>
+          <button onClick={handleSave} disabled={saving} className="lbtn lbtn-primary flex-1">
+            {saving ? 'Đang lưu...' : 'Lưu KPI'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── KPI Tab ─────────────────────────────────────────────────────────────────
+function KpiTab() {
+  const today    = new Date()
+  const [period, setPeriod] = useState(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2,'0')}`)
+  const [data,   setData]   = useState([])
+  const [loading,setLoading]= useState(false)
+  const [error,  setError]  = useState(false)
+  const [target, setTarget] = useState(null) // staff row being edited
+
+  const fetch = useCallback(async () => {
+    setLoading(true); setError(false)
+    try {
+      const res = await api.get(`/api/admin/staff/kpi?period=${period}`)
+      setData(res.data.staff ?? [])
+    } catch {
+      setError(true); setData([])
+    } finally { setLoading(false) }
+  }, [period])
+
+  useEffect(() => { fetch() }, [fetch])
+
+  const fmt = v => v == null ? '—' : new Intl.NumberFormat('vi-VN').format(v)
+
+  return (
+    <div className="space-y-3">
+      {target && (
+        <SetTargetModal staff={target} period={period} onClose={() => setTarget(null)}
+                        onSaved={() => { setTarget(null); fetch() }} />
+      )}
+
+      {/* Controls */}
+      <div className="lcard p-3 flex flex-wrap gap-3 items-center">
+        <div className="flex flex-col gap-1">
+          <label className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Kỳ (tháng/năm)</label>
+          <input type="month" value={period} onChange={e => setPeriod(e.target.value)}
+                 className="linput !h-8 text-xs" />
+        </div>
+        <button onClick={fetch} className="lbtn lbtn-secondary !h-8 !px-4 text-xs" disabled={loading}>
+          <span className="icon" style={{ fontSize: 14, ...(loading && { animation: 'spin 1s linear infinite' }) }}>refresh</span>
+          Tải lại
+        </button>
+        <p className="text-xs ml-auto" style={{ color: 'var(--text-tertiary)' }}>
+          Kỳ {period} — {data.length} nhân viên
+        </p>
+      </div>
+
+      {/* Table */}
+      <div className="lcard overflow-hidden">
+        {loading ? (
+          <div className="p-16 flex items-center justify-center">
+            <span className="w-7 h-7 border-2 rounded-full block"
+                  style={{ borderColor: 'var(--border-strong)', borderTopColor: 'var(--primary-500)', animation: 'spin 0.8s linear infinite' }} />
+          </div>
+        ) : error ? (
+          <div className="p-10 text-center">
+            <span className="icon text-3xl mb-2 block" style={{ color: '#EF4444' }}>error_outline</span>
+            <p className="text-sm" style={{ color: '#EF4444' }}>Không thể tải dữ liệu KPI</p>
+            <button onClick={fetch} className="lbtn lbtn-secondary !h-8 !px-4 text-xs mt-3">Thử lại</button>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-elevated)' }}>
+                  {['Nhân viên', 'Vai trò', 'Doanh thu thực tế', 'Mục tiêu DT', 'Tiến độ DT',
+                    'Số đơn', 'Mục tiêu đơn', 'KH mới', ''].map(h => (
+                    <th key={h} className="text-left px-4 py-3 text-xs font-semibold tracking-wide"
+                        style={{ color: 'var(--text-tertiary)' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {data.length === 0 ? (
+                  <tr><td colSpan={9} className="py-12 text-center text-sm" style={{ color: 'var(--text-tertiary)' }}>
+                    Chưa có dữ liệu nhân viên cho kỳ này
+                  </td></tr>
+                ) : data.map(s => (
+                  <tr key={s.userId} style={{ borderBottom: '1px solid var(--border)' }}
+                      onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
+                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                    <td className="px-4 py-2.5 font-medium" style={{ color: 'var(--text-primary)' }}>{s.fullName}</td>
+                    <td className="px-4 py-2.5"><RoleBadge role={s.role} /></td>
+                    <td className="px-4 py-2.5 font-mono text-xs" style={{ color: 'var(--text-primary)' }}>
+                      {fmt(s.revenue)} ₫
+                    </td>
+                    <td className="px-4 py-2.5 font-mono text-xs" style={{ color: 'var(--text-secondary)' }}>
+                      {s.revTarget ? `${fmt(s.revTarget)} ₫` : '—'}
+                    </td>
+                    <td className="px-4 py-2.5">
+                      <KpiBar actual={Number(s.revenue)} target={s.revTarget ? Number(s.revTarget) : null} />
+                    </td>
+                    <td className="px-4 py-2.5 font-mono text-xs text-center" style={{ color: 'var(--text-primary)' }}>
+                      {fmt(s.orderCount)}
+                    </td>
+                    <td className="px-4 py-2.5 font-mono text-xs text-center" style={{ color: 'var(--text-secondary)' }}>
+                      {s.ordTarget ?? '—'}
+                    </td>
+                    <td className="px-4 py-2.5 font-mono text-xs text-center" style={{ color: 'var(--text-primary)' }}>
+                      {fmt(s.newCustomers)}
+                    </td>
+                    <td className="px-4 py-2.5">
+                      <button onClick={() => setTarget(s)}
+                              className="lbtn lbtn-secondary !h-7 !px-3 text-xs gap-1">
+                        <span className="icon" style={{ fontSize: 14 }}>edit</span>
+                        Đặt KPI
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 export default function AdminPage() {
   const { t } = useTranslation()
@@ -347,14 +541,15 @@ export default function AdminPage() {
       <div className="flex items-center justify-between gap-4">
         <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>{t('admin.title')}</h1>
         <div className="flex items-center gap-2">
-          {tab !== 'audit' && (
+          {tab === 'all' && (
             <button onClick={() => setShowCreate(true)} className="lbtn lbtn-primary !h-9 gap-1.5">
               <span className="icon text-base">person_add</span>
               <span className="hidden sm:inline">Thêm người dùng</span>
             </button>
           )}
           <button onClick={tab === 'audit' ? () => fetchAuditLogs(1) : fetchUsers}
-                  className="lbtn lbtn-secondary !h-9" disabled={loading || auditLoading}>
+                  className={`lbtn lbtn-secondary !h-9 ${tab === 'kpi' ? 'hidden' : ''}`}
+                  disabled={loading || auditLoading}>
             <span className="icon text-base"
                   style={{ ...((loading || auditLoading) && { animation: 'spin 1s linear infinite' }) }}>
               refresh
@@ -383,6 +578,7 @@ export default function AdminPage() {
       <div className="flex" style={{ borderBottom: '1px solid var(--border)' }}>
         {[
           { key: 'all',   label: t('admin.allUsers'),  suffix: '' },
+          { key: 'kpi',   label: 'KPI Nhân viên',      suffix: '' },
           { key: 'audit', label: 'Lịch sử hoạt động', suffix: auditTotal > 0 ? ` (${auditTotal})` : '' },
         ].map(tb => (
           <button key={tb.key} onClick={() => setTab(tb.key)}
@@ -488,6 +684,9 @@ export default function AdminPage() {
           )}
         </div>
       )}
+
+      {/* ── KPI tab ── */}
+      {tab === 'kpi' && <KpiTab />}
 
       {/* ── Audit log tab ── */}
       {tab === 'audit' && (
