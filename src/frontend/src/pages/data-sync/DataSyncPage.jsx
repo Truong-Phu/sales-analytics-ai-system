@@ -483,56 +483,76 @@ function EtlPipelineCard({ t }) {
 }
 
 // ── Import thủ công CSV từ sàn TMĐT ──────────────────────────────────────────
-const IMPORT_SOURCES = [
-  {
-    key: 'shopee',   label: 'Shopee',       icon: 'storefront',     color: '#EE4D2D',
-    desc: 'File xuất từ Shopee Seller Center (Orders → Export)',
-    importUrl: '/api/import/platform-orders?source=shopee',
-  },
-  {
-    key: 'tiktok',   label: 'TikTok Shop',  icon: 'play_circle',    color: '#010101',
-    desc: 'File Order Report từ TikTok Shop Partner Center',
-    importUrl: '/api/import/platform-orders?source=tiktok',
-  },
-  {
-    key: 'lazada',   label: 'Lazada',        icon: 'store',          color: '#0F146D',
-    desc: 'File Order Report từ Lazada Seller Center',
-    importUrl: '/api/import/platform-orders?source=lazada',
-  },
-  {
-    key: 'facebook', label: 'Facebook',      icon: 'thumb_up',       color: '#1877F2',
-    desc: 'File CSV export từ Facebook Business Suite (Orders)',
-    importUrl: '/api/import/platform-orders?source=facebook',
-  },
-  {
-    key: 'ghn',      label: 'GHN',           icon: 'local_shipping', color: '#F59E0B',
-    desc: 'File báo cáo vận chuyển từ GHN Seller Portal',
-    importUrl: '/api/import/platform-orders?source=ghn',
-  },
-  {
-    key: 'vnpay',    label: 'VNPay',         icon: 'payments',       color: '#005BAA',
-    desc: 'File lịch sử giao dịch từ VNPay Merchant Portal',
-    importUrl: '/api/import/platform-orders?source=vnpay',
-  },
+
+const PLATFORM_SOURCES = [
+  { key: 'shopee',  label: 'Shopee',      icon: 'storefront',  color: '#EE4D2D' },
+  { key: 'tiktok',  label: 'TikTok Shop', icon: 'play_circle', color: '#010101' },
+  { key: 'lazada',  label: 'Lazada',      icon: 'store',       color: '#0F146D' },
+  { key: 'generic', label: 'Tổng hợp',   icon: 'upload_file', color: '#6366F1' },
 ]
 
+const FILE_TYPE_CONFIG = {
+  orders: {
+    label: 'File Đơn hàng',
+    emoji: '📦',
+    descriptions: {
+      shopee:  'Shopee Seller Center → Quản lý đơn hàng → Xuất dữ liệu → chọn khoảng thời gian → Tải về',
+      tiktok:  'TikTok Shop Partner Center → Orders → Order Export → Export → Download',
+      lazada:  'Lazada Seller Center → My Orders → Export Orders → Download',
+      generic: 'File CSV tổng hợp — hệ thống tự nhận diện định dạng',
+    },
+    guideLinks: {
+      shopee:  'https://seller.shopee.vn/portal/order/list',
+      tiktok:  'https://seller-vn.tiktok.com/order/list',
+      lazada:  'https://sellercenter.lazada.vn/apps/order/list',
+      generic: null,
+    },
+  },
+  products: {
+    label: 'File Sản phẩm',
+    emoji: '🛍️',
+    descriptions: {
+      shopee:  'Shopee Seller Center → Quản lý sản phẩm → Tất cả sản phẩm → Xuất dữ liệu',
+      tiktok:  'TikTok Shop Partner Center → Products → Product Management → Export',
+      lazada:  'Lazada Seller Center → Products → Manage Products → Export',
+      generic: 'File CSV sản phẩm tổng hợp tự do',
+    },
+    guideLinks: {
+      shopee:  'https://seller.shopee.vn/portal/product/list',
+      tiktok:  'https://seller-vn.tiktok.com/product/list',
+      lazada:  'https://sellercenter.lazada.vn/apps/products',
+      generic: null,
+    },
+  },
+}
+
 function ImportTab() {
-  const [source,     setSource]     = useState('shopee')
-  const [file,       setFile]       = useState(null)
-  const [preview,    setPreview]    = useState(null) // { headers, rows, total }
-  const [importing,  setImporting]  = useState(false)
-  const [result,     setResult]     = useState(null) // { success, skipped, errors }
-  const [dragOver,   setDragOver]   = useState(false)
+  const [source,    setSource]    = useState('shopee')
+  const [fileType,  setFileType]  = useState(null)   // 'orders' | 'products' | null
+  const [file,      setFile]      = useState(null)
+  const [preview,   setPreview]   = useState(null)   // { headers, rows, total }
+  const [importing, setImporting] = useState(false)
+  const [result,    setResult]    = useState(null)
+  const [dragOver,  setDragOver]  = useState(false)
   const fileRef = useRef(null)
 
-  const selectedSource = IMPORT_SOURCES.find(s => s.key === source) ?? IMPORT_SOURCES[0]
+  const selectedPlatform = PLATFORM_SOURCES.find(s => s.key === source) ?? PLATFORM_SOURCES[0]
+  const typeConf         = fileType ? FILE_TYPE_CONFIG[fileType] : null
 
-  // Parse CSV preview (chỉ đọc 5 dòng đầu)
+  const importUrl = fileType === 'orders'
+    ? `/api/import/platform-orders?source=${source === 'generic' ? 'auto' : source}`
+    : `/api/import/platform-products?source=${source === 'generic' ? 'auto' : source}`
+
+  const templateUrl = source !== 'generic' && fileType
+    ? `/api/import/template/platform/${source}/${fileType}`
+    : null
+
+  // Parse CSV preview (5 dòng đầu)
   const parsePreview = (csvFile) => {
     const reader = new FileReader()
     reader.onload = (e) => {
-      const text   = e.target.result
-      const lines  = text.split(/\r?\n/).filter(l => l.trim())
+      const text    = e.target.result
+      const lines   = text.split(/\r?\n/).filter(l => l.trim())
       const headers = lines[0]?.split(',').map(h => h.trim().replace(/^"|"$/g, '')) ?? []
       const rows    = lines.slice(1, 6).map(l =>
         l.split(',').map(c => c.trim().replace(/^"|"$/g, ''))
@@ -553,32 +573,34 @@ function ImportTab() {
     e.preventDefault()
     setDragOver(false)
     const f = e.dataTransfer.files[0]
-    if (f?.name.endsWith('.csv')) handleFileSelect(f)
+    if (f?.name.match(/\.(csv|xlsx?)$/i)) handleFileSelect(f)
   }
 
   const handleDownloadTemplate = async () => {
+    if (!templateUrl) return
     try {
-      const res = await api.get(selectedSource.templateUrl, { responseType: 'blob' })
+      const res  = await api.get(templateUrl, { responseType: 'blob' })
       const url  = URL.createObjectURL(new Blob([res.data], { type: 'text/csv' }))
       const link = document.createElement('a')
       link.href  = url
-      link.download = `template_${source}.csv`
+      link.download = `template_${source}_${fileType}.csv`
       document.body.appendChild(link)
       link.click()
       link.remove()
       URL.revokeObjectURL(url)
-    } catch { /* ignore */ }
+    } catch { showToast('Không tải được template', 'error') }
   }
 
   const handleImport = async () => {
-    if (!file) return
+    if (!file || !fileType) return
     setImporting(true)
     setResult(null)
     try {
       const fd = new FormData()
       fd.append('file', file)
-      const res = await api.post(selectedSource.importUrl, fd, {
+      const res = await api.post(importUrl, fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 60_000,
       })
       setResult(res.data)
     } catch (err) {
@@ -588,109 +610,167 @@ function ImportTab() {
     }
   }
 
-  const reset = () => { setFile(null); setPreview(null); setResult(null) }
-
-  // Platform sources không cần validate cột (backend tự detect)
-  const missingCols = []
+  const resetFile = () => { setFile(null); setPreview(null); setResult(null) }
+  const resetAll  = () => { resetFile(); setFileType(null) }
 
   return (
     <div className="space-y-5">
-      {/* Section 1: chọn nguồn sàn */}
+      {/* BƯỚC 1: Chọn nguồn sàn */}
       <div className="lcard p-5">
         <p className="text-xs font-semibold mb-3" style={{ color: 'var(--text-secondary)' }}>
-          CHỌN NGUỒN DỮ LIỆU
+          BƯỚC 1 — CHỌN NGUỒN DỮ LIỆU
         </p>
-        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
-          {IMPORT_SOURCES.map(it => (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {PLATFORM_SOURCES.map(it => (
             <button
               key={it.key}
-              onClick={() => { setSource(it.key); reset() }}
-              className="flex flex-col items-center gap-2 p-3 rounded-xl border-2 transition-all"
+              onClick={() => { setSource(it.key); resetAll() }}
+              className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all"
               style={{
                 borderColor: source === it.key ? it.color : 'var(--border)',
-                background:  source === it.key ? `${it.color}0f` : 'var(--bg-elevated)',
+                background:  source === it.key ? `${it.color}12` : 'var(--bg-elevated)',
               }}
             >
-              <span className="icon" style={{ fontSize: 22, color: source === it.key ? it.color : 'var(--text-tertiary)' }}>
+              <span className="icon" style={{ fontSize: 24, color: source === it.key ? it.color : 'var(--text-tertiary)' }}>
                 {it.icon}
               </span>
-              <span className="text-xs font-medium" style={{ color: source === it.key ? it.color : 'var(--text-secondary)' }}>
+              <span className="text-sm font-semibold" style={{ color: source === it.key ? it.color : 'var(--text-secondary)' }}>
                 {it.label}
-              </span>
-              <span className="text-xs text-center leading-tight" style={{ color: 'var(--text-tertiary)' }}>
-                {it.desc}
               </span>
             </button>
           ))}
         </div>
       </div>
 
-      {/* Section 2: upload file */}
-      <div className="lcard p-5 space-y-4">
-        <div className="flex items-center justify-between">
-          <p className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>TẢI VÀ IMPORT FILE</p>
+      {/* BƯỚC 2: Chọn loại file */}
+      <div className="lcard p-5">
+        <p className="text-xs font-semibold mb-3" style={{ color: 'var(--text-secondary)' }}>
+          BƯỚC 2 — CHỌN LOẠI FILE
+        </p>
+        <div className="grid grid-cols-2 gap-3">
+          {Object.entries(FILE_TYPE_CONFIG).map(([key, cfg]) => (
+            <button
+              key={key}
+              onClick={() => { setFileType(key); resetFile() }}
+              className="flex items-center gap-3 p-4 rounded-xl border-2 text-left transition-all"
+              style={{
+                borderColor: fileType === key ? selectedPlatform.color : 'var(--border)',
+                background:  fileType === key ? `${selectedPlatform.color}10` : 'var(--bg-elevated)',
+              }}
+            >
+              <span style={{ fontSize: 28 }}>{cfg.emoji}</span>
+              <div>
+                <p className="text-sm font-semibold" style={{ color: fileType === key ? selectedPlatform.color : 'var(--text-primary)' }}>
+                  {cfg.label}
+                </p>
+                <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
+                  {cfg.descriptions[source]}
+                </p>
+              </div>
+            </button>
+          ))}
         </div>
-
-        {/* Dropzone */}
-        <div
-          onDragOver={e => { e.preventDefault(); setDragOver(true) }}
-          onDragLeave={() => setDragOver(false)}
-          onDrop={handleDrop}
-          onClick={() => fileRef.current?.click()}
-          className="border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all"
-          style={{
-            borderColor: dragOver ? 'var(--primary-500)' : 'var(--border)',
-            background:  dragOver ? 'rgba(99,102,241,0.04)' : 'transparent',
-          }}
-        >
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".csv"
-            className="hidden"
-            onChange={e => handleFileSelect(e.target.files[0])}
-          />
-          <span className="icon text-4xl mb-2 block" style={{ color: 'var(--text-tertiary)' }}>upload_file</span>
-          {file ? (
-            <div>
-              <p className="text-sm font-medium" style={{ color: 'var(--primary-500)' }}>{file.name}</p>
-              <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
-                {(file.size / 1024).toFixed(1)} KB
-              </p>
-            </div>
-          ) : (
-            <div>
-              <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                Kéo thả file CSV vào đây hoặc <span style={{ color: 'var(--primary-500)' }}>chọn file</span>
-              </p>
-              <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>Chỉ chấp nhận .csv</p>
-            </div>
-          )}
-        </div>
-
-        {file && (
-          <button onClick={reset} className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-            ✕ Xóa file
-          </button>
-        )}
       </div>
 
-      {/* Section 3: preview */}
+      {/* BƯỚC 3: Hướng dẫn + tải template + kéo thả file */}
+      {fileType && (
+        <div className="lcard p-5 space-y-4">
+          <p className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>
+            BƯỚC 3 — TẢI FILE VÀ IMPORT
+          </p>
+
+          {/* Hướng dẫn */}
+          <div className="px-4 py-3 rounded-lg text-xs space-y-1.5"
+               style={{ background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.18)' }}>
+            <p className="font-semibold" style={{ color: 'var(--primary-500)' }}>
+              Cách xuất file từ {selectedPlatform.label}:
+            </p>
+            <p style={{ color: 'var(--text-secondary)' }}>{typeConf.descriptions[source]}</p>
+            {typeConf.guideLinks[source] && (
+              <a
+                href={typeConf.guideLinks[source]}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 font-medium underline"
+                style={{ color: 'var(--primary-500)' }}
+              >
+                <span className="icon" style={{ fontSize: 13 }}>open_in_new</span>
+                Mở trang Seller Center
+              </a>
+            )}
+          </div>
+
+          {/* Tải template */}
+          {templateUrl && (
+            <button
+              onClick={handleDownloadTemplate}
+              className="lbtn w-full justify-center gap-2"
+              style={{
+                border: `1px dashed ${selectedPlatform.color}`,
+                color:  selectedPlatform.color,
+                background: `${selectedPlatform.color}08`,
+              }}
+            >
+              <span className="icon text-base">download</span>
+              Tải template mẫu — {selectedPlatform.label} {typeConf.label}
+            </button>
+          )}
+
+          {/* Dropzone */}
+          <div
+            onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={handleDrop}
+            onClick={() => fileRef.current?.click()}
+            className="border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all"
+            style={{
+              borderColor: dragOver ? selectedPlatform.color : 'var(--border)',
+              background:  dragOver ? `${selectedPlatform.color}06` : 'transparent',
+            }}
+          >
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".csv,.xlsx,.xls"
+              className="hidden"
+              onChange={e => handleFileSelect(e.target.files[0])}
+            />
+            <span className="icon text-4xl mb-2 block" style={{ color: 'var(--text-tertiary)' }}>upload_file</span>
+            {file ? (
+              <div>
+                <p className="text-sm font-semibold" style={{ color: selectedPlatform.color }}>{file.name}</p>
+                <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
+                  {(file.size / 1024).toFixed(1)} KB
+                </p>
+              </div>
+            ) : (
+              <div>
+                <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                  Kéo thả file CSV vào đây hoặc{' '}
+                  <span style={{ color: selectedPlatform.color }}>chọn file</span>
+                </p>
+                <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>Chấp nhận .csv, .xlsx</p>
+              </div>
+            )}
+          </div>
+
+          {file && (
+            <button onClick={resetFile} className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+              ✕ Xóa file
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Preview 5 dòng đầu */}
       {preview && (
         <div className="lcard p-5 space-y-3">
           <div className="flex items-center justify-between flex-wrap gap-2">
             <p className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>XEM TRƯỚC</p>
-            <div className="flex items-center gap-3 text-xs" style={{ color: 'var(--text-tertiary)' }}>
-              <span>{preview.total} dòng dữ liệu · {preview.headers.length} cột</span>
-            </div>
+            <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+              {preview.total} dòng · {preview.headers.length} cột
+            </span>
           </div>
-
-          {missingCols.length > 0 && (
-            <div className="px-3 py-2 rounded-lg text-xs"
-                 style={{ background: 'rgba(239,68,68,0.08)', color: '#EF4444', border: '1px solid rgba(239,68,68,0.25)' }}>
-              ⚠ Thiếu cột bắt buộc: <strong>{missingCols.join(', ')}</strong>
-            </div>
-          )}
 
           <div className="overflow-x-auto rounded-lg border" style={{ borderColor: 'var(--border)' }}>
             <table className="w-full text-xs">
@@ -716,14 +796,14 @@ function ImportTab() {
           </div>
           {preview.total > 5 && (
             <p className="text-xs text-center" style={{ color: 'var(--text-tertiary)' }}>
-              Hiển thị 5/{preview.total} dòng
+              Hiển thị 5/{preview.total} dòng đầu
             </p>
           )}
         </div>
       )}
 
-      {/* Section 4: xác nhận import */}
-      {preview && missingCols.length === 0 && (
+      {/* Xác nhận import */}
+      {preview && fileType && (
         <div className="lcard p-5 space-y-4">
           <p className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>XÁC NHẬN VÀ IMPORT</p>
 
@@ -742,7 +822,7 @@ function ImportTab() {
             ) : (
               <>
                 <span className="icon text-base">upload</span>
-                Import {preview.total} bản ghi
+                Import {preview.total} bản ghi ({typeConf?.label})
               </>
             )}
           </button>
@@ -755,11 +835,17 @@ function ImportTab() {
                  }}>
               <p className="text-sm font-semibold"
                  style={{ color: result.errors?.length > 0 ? '#F59E0B' : 'var(--accent-500)' }}>
-                {result.message ?? `Đã import ${result.success} đơn hàng — Đang đồng bộ lên Data Warehouse...`}
+                {result.message ?? `Đã import ${result.success} bản ghi`}
               </p>
               <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
                 {result.success} thành công · {result.skipped} bỏ qua
+                {result.newCategories > 0 ? ` · ${result.newCategories} danh mục mới` : ''}
               </p>
+              {result.errors?.length > 0 && (
+                <p className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
+                  ETL pipeline đang đồng bộ lên Data Warehouse...
+                </p>
+              )}
               {result.errors?.slice(0, 5).map((e, i) => (
                 <p key={i} className="text-xs" style={{ color: '#EF4444' }}>
                   Dòng {e.row}: {e.message}

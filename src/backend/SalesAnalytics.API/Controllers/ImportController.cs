@@ -86,44 +86,55 @@ public class ImportController(IConfiguration cfg, ITenantContext tenant, IAuditL
     }
 
     // ── GET /api/import/template/platform/{source} ────────────────────────────
-    // Trả về template CSV chuẩn format của từng sàn TMĐT.
+    // Trả về template CSV chuẩn format của từng sàn TMĐT (backward compat — mặc định orders).
     [HttpGet("template/platform/{source}")]
-    public IActionResult GetPlatformTemplate(string source)
+    public IActionResult GetPlatformTemplate(string source) =>
+        GetPlatformTemplateByType(source, "orders");
+
+    // ── GET /api/import/template/platform/{source}/{fileType} ────────────────
+    // Trả về template đúng theo sàn + loại file (orders / products).
+    [HttpGet("template/platform/{source}/{fileType}")]
+    public IActionResult GetPlatformTemplateTyped(string source, string fileType) =>
+        GetPlatformTemplateByType(source, fileType);
+
+    private IActionResult GetPlatformTemplateByType(string source, string fileType)
     {
-        // Đường dẫn tuyệt đối tới thư mục templates trong docs/
+        var src  = source.ToLower();
+        var type = fileType.ToLower();
+
+        if (src is not ("shopee" or "tiktok" or "lazada"))
+            return NotFound(new { message = "Nguồn không hợp lệ. Chọn: shopee, tiktok, lazada." });
+        if (type is not ("orders" or "products"))
+            return NotFound(new { message = "Loại file không hợp lệ. Chọn: orders, products." });
+
         var basePath = Path.Combine(
-            Directory.GetCurrentDirectory(),           // thư mục chạy app
-            "..", "..", "..", "..",                    // lên về D:\graduation_thesis\
+            Directory.GetCurrentDirectory(),
+            "..", "..", "..", "..",
             "docs", "sample-data", "templates"
         );
 
-        var (fileName, displayName) = source.ToLower() switch
-        {
-            "shopee" => ("template_shopee.csv", "template_shopee.csv"),
-            "tiktok" => ("template_tiktok.csv", "template_tiktok.csv"),
-            "lazada" => ("template_lazada.csv", "template_lazada.csv"),
-            _        => (null, null),
-        };
+        var fileName    = $"template_{src}_{type}.csv";
+        var displayName = fileName;
+        var fullPath    = Path.GetFullPath(Path.Combine(basePath, fileName));
 
-        if (fileName is null)
-            return NotFound(new { message = "Nguồn không hợp lệ. Chọn: shopee, tiktok, lazada." });
-
-        var fullPath = Path.GetFullPath(Path.Combine(basePath, fileName));
-        if (!System.IO.File.Exists(fullPath))
+        if (System.IO.File.Exists(fullPath))
         {
-            // Fallback: trả về header-only nếu file template chưa có
-            var fallbackHeader = source.ToLower() switch
-            {
-                "shopee" => "Mã đơn hàng,Trạng thái đơn hàng,Ngày đặt hàng,Tên người dùng (Tên đăng nhập),Tên người nhận,Số điện thoại,Tỉnh,Tên sản phẩm,SKU sản phẩm,Giá niêm yết (VND),Số lượng,Tổng giá sản phẩm (VND),Tổng thanh toán,Phương thức thanh toán,Mã vận đơn",
-                "tiktok" => "Order ID,Order Status,Buyer Username,Recipient,Phone #,Province,City,Product Name,Seller SKU,Original Price,After-discount Price,Quantity,Subtotal,Tracking ID,Shipping Provider,Order Creation Time,Order Amount,Payment Method",
-                "lazada" => "Order ID,Order Number,Created At,Updated At,Status,Customer Name,Customer Email,Shipping Name,Shipping Phone,Shipping Address,Shipping City,Payment Method,Item Name,SKU,Seller SKU,Unit Price,Paid Price,Quantity,Shipping Provider,Tracking Code,Shipping Fee,Order Value",
-                _        => "",
-            };
-            return File(Encoding.UTF8.GetBytes(fallbackHeader + "\r\n"), "text/csv", displayName);
+            var csvBytes = System.IO.File.ReadAllBytes(fullPath);
+            return File(csvBytes, "text/csv", displayName);
         }
 
-        var csvBytes = System.IO.File.ReadAllBytes(fullPath);
-        return File(csvBytes, "text/csv", displayName);
+        // Fallback header-only nếu file chưa tồn tại
+        var fallback = (src, type) switch
+        {
+            ("shopee", "orders")   => "Mã đơn hàng,Trạng thái đơn hàng,Ngày đặt hàng,Tên người dùng (Tên đăng nhập),Tên người nhận,Số điện thoại,Tỉnh,Tên sản phẩm,SKU sản phẩm,Giá niêm yết (VND),Số lượng,Tổng thanh toán,Phương thức thanh toán,Mã vận đơn",
+            ("shopee", "products") => "Shopee ID,Tên sản phẩm,SKU,Danh mục,Giá bán,Giá gốc,Kho hàng,Trạng thái,Thương hiệu",
+            ("tiktok", "orders")   => "Order ID,Order Status,Buyer Username,Recipient,Phone #,Province,City,Product Name,Seller SKU,Original Price,After-discount Price,Quantity,Subtotal,Tracking ID,Shipping Provider,Order Creation Time,Order Amount,Payment Method",
+            ("tiktok", "products") => "Product ID,Product Name,Seller SKU,Category,Original Price,Sales Price,Warehouse Stock,Status,Brand",
+            ("lazada", "orders")   => "Order ID,Order Number,Created At,Updated At,Status,Customer Name,Customer Email,Shipping Name,Shipping Phone,Shipping Address,Shipping City,Payment Method,Item Name,SKU,Seller SKU,Unit Price,Paid Price,Quantity,Shipping Provider,Tracking Code,Shipping Fee,Order Value",
+            ("lazada", "products") => "Item ID,Name,SellerSKU,Category,Price,Special Price,Stock,Active Status,Brand",
+            _                      => "",
+        };
+        return File(Encoding.UTF8.GetBytes(fallback + "\r\n"), "text/csv", displayName);
     }
 
     // ── POST /api/import/platform-orders ─────────────────────────────────────
@@ -379,7 +390,7 @@ public class ImportController(IConfiguration cfg, ITenantContext tenant, IAuditL
         );
     }
 
-    // ── Normalize status → MSAS internal ────────────────────────────────────
+    // ── Normalize status → MSAS internal (UPPERCASE theo DB constraint) ────────
 
     private static string NormalizeStatus(string raw, string platform)
     {
@@ -388,34 +399,34 @@ public class ImportController(IConfiguration cfg, ITenantContext tenant, IAuditL
         {
             "shopee" => s switch
             {
-                "COMPLETED" => "completed",
-                "SHIPPED"   => "shipping",
-                "PROCESSED" => "processing",
-                "UNPAID"    => "pending",
-                "CANCELLED" => "cancelled",
-                "RETURN_REFUND" => "returned",
-                _ => "pending",
+                "HOÀN THÀNH" or "COMPLETED"     => "DELIVERED",
+                "ĐANG VẬN CHUYỂN" or "SHIPPED"  => "SHIPPING",
+                "PROCESSED" or "ĐÃ XỬ LÝ"       => "CONFIRMED",
+                "UNPAID" or "CHƯA THANH TOÁN"   => "PENDING",
+                "ĐÃ HỦY" or "CANCELLED"          => "CANCELLED",
+                "RETURN_REFUND" or "HOÀN HÀNG"  => "RETURNED",
+                _ => "PENDING",
             },
             "tiktok" => s switch
             {
-                "COMPLETED" or "105" => "completed",
-                "IN_TRANSIT" or "121" => "shipping",
-                "AWAITING_SHIPMENT" or "111" => "processing",
-                "UNPAID" or "100" => "pending",
-                "CANCELLED" or "106" => "cancelled",
-                "RETURNED" or "122" => "returned",
-                _ => "pending",
+                "COMPLETED" or "105"             => "DELIVERED",
+                "IN_TRANSIT" or "121"            => "SHIPPING",
+                "AWAITING_SHIPMENT" or "111"     => "CONFIRMED",
+                "UNPAID" or "100"                => "PENDING",
+                "CANCELLED" or "106"             => "CANCELLED",
+                "RETURNED" or "122"              => "RETURNED",
+                _ => "PENDING",
             },
             "lazada" => s switch
             {
-                "DELIVERED" => "completed",
-                "SHIPPED" or "READY_TO_SHIP" => "shipping",
-                "PENDING" => "pending",
-                "CANCELLED" => "cancelled",
-                "RETURNED" => "returned",
-                _ => "pending",
+                "DELIVERED"                      => "DELIVERED",
+                "SHIPPED" or "READY_TO_SHIP"     => "SHIPPING",
+                "PENDING" or "CONFIRMED"         => "PENDING",
+                "CANCELLED"                      => "CANCELLED",
+                "RETURNED"                       => "RETURNED",
+                _ => "PENDING",
             },
-            _ => "pending",
+            _ => "PENDING",
         };
     }
 
@@ -811,6 +822,242 @@ public class ImportController(IConfiguration cfg, ITenantContext tenant, IAuditL
         }
 
         return Ok(new { success, skipped, errors });
+    }
+
+    // ── POST /api/import/platform-products ──────────────────────────────────────
+    // Import file Sản phẩm từ Shopee/TikTok/Lazada Seller Center.
+    // source=shopee|tiktok|lazada|auto
+    [HttpPost("platform-products")]
+    public async Task<IActionResult> ImportPlatformProducts(IFormFile file, [FromQuery] string source = "auto")
+    {
+        if (file is null || file.Length == 0)
+            return BadRequest(new { message = "File không hợp lệ." });
+
+        List<string[]> rows;
+        try { rows = ParseCsv(file.OpenReadStream()); }
+        catch { return BadRequest(new { message = "Không thể đọc file. Kiểm tra định dạng CSV." }); }
+
+        if (rows.Count < 2) return BadRequest(new { message = "File trống hoặc chỉ có header." });
+
+        var headers = rows[0];
+        var platform = source.ToLower() switch
+        {
+            "shopee" => "shopee",
+            "tiktok" => "tiktok",
+            "lazada" => "lazada",
+            _        => DetectPlatformProducts(headers),
+        };
+
+        if (platform is null)
+            return BadRequest(new
+            {
+                message = "Không nhận diện được format sàn. Chọn nguồn (shopee/tiktok/lazada) hoặc kiểm tra header CSV.",
+                detectedHeaders = headers.Take(5),
+            });
+
+        NpgsqlConnection conn;
+        try { conn = new NpgsqlConnection(_connStr); await conn.OpenAsync(); }
+        catch { return StatusCode(503, new { message = "Không thể kết nối cơ sở dữ liệu." }); }
+        await using var _ = conn;
+
+        int successProd = 0, successCat = 0, skipped = 0;
+        var errors = new List<object>();
+
+        for (int r = 1; r < rows.Count; r++)
+        {
+            try
+            {
+                var mapped = platform switch
+                {
+                    "shopee" => MapShopeeProductRow(rows[r], headers),
+                    "tiktok" => MapTikTokProductRow(rows[r], headers),
+                    "lazada" => MapLazadaProductRow(rows[r], headers),
+                    _        => null,
+                };
+
+                if (mapped is null || string.IsNullOrEmpty(mapped.Sku)) { skipped++; continue; }
+
+                var (affected, catNew) = await UpsertProductFull(conn, mapped);
+                if (affected > 0) { successProd++; successCat += catNew ? 1 : 0; }
+                else skipped++;
+            }
+            catch (Exception ex)
+            {
+                errors.Add(new { row = r + 1, message = ex.Message });
+                skipped++;
+            }
+        }
+
+        if (successProd > 0)
+        {
+            var userId   = int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var uid) ? (int?)uid : null;
+            var username = User.FindFirstValue(ClaimTypes.Name) ?? "";
+            await audit.LogAsync(
+                userId:     userId,
+                username:   username,
+                action:     "IMPORT_CSV",
+                entityType: "Product",
+                entityId:   platform,
+                newValue:   $"imported={successProd} cats={successCat} skipped={skipped} file={file.FileName}",
+                status:     "SUCCESS");
+        }
+
+        return Ok(new
+        {
+            success  = successProd,
+            newCategories = successCat,
+            skipped,
+            errors,
+            platform,
+            message  = $"Đã import {successProd} sản phẩm, {successCat} danh mục mới từ {platform}.",
+        });
+    }
+
+    // ── Product record ────────────────────────────────────────────────────────
+
+    private record MappedProduct(
+        string PlatformProductId, string ProductName, string Sku,
+        string CategoryName, decimal SalePrice, decimal OriginalPrice,
+        int StockQuantity, bool IsActive);
+
+    // ── Product platform detection ────────────────────────────────────────────
+
+    private static string? DetectPlatformProducts(string[] headers)
+    {
+        var h = headers.Select(x => x.Trim().ToLower()).ToHashSet();
+        if (h.Contains("shopee id") || (h.Contains("tên sản phẩm") && h.Contains("kho hàng")))
+            return "shopee";
+        if (h.Contains("product id") && h.Contains("seller sku") && h.Contains("sales price"))
+            return "tiktok";
+        if ((h.Contains("item id") || h.Contains("sellersku")) && h.Contains("special price"))
+            return "lazada";
+        return null;
+    }
+
+    // ── Shopee Product mapper ────────────────────────────────────────────────
+    // Headers: Shopee ID, Tên sản phẩm, SKU, Danh mục, Giá bán, Giá gốc, Kho hàng, Trạng thái, Thương hiệu
+
+    private static MappedProduct? MapShopeeProductRow(string[] row, string[] headers)
+    {
+        var sku = ColVal(row, HeaderIndex(headers, "SKU"));
+        if (string.IsNullOrEmpty(sku)) return null;
+
+        var statusStr  = ColVal(row, HeaderIndex(headers, "Trạng thái")).ToUpper();
+        var isActive   = statusStr == "NORMAL" || statusStr == "ACTIVE" || statusStr == "ĐANG HOẠT ĐỘNG";
+        decimal.TryParse(ColVal(row, HeaderIndex(headers, "Giá bán")).Replace(",", ""),
+            NumberStyles.Any, CultureInfo.InvariantCulture, out var salePrice);
+        decimal.TryParse(ColVal(row, HeaderIndex(headers, "Giá gốc")).Replace(",", ""),
+            NumberStyles.Any, CultureInfo.InvariantCulture, out var origPrice);
+        int.TryParse(ColVal(row, HeaderIndex(headers, "Kho hàng")), out var stock);
+
+        return new MappedProduct(
+            PlatformProductId: ColVal(row, HeaderIndex(headers, "Shopee ID")),
+            ProductName:       ColVal(row, HeaderIndex(headers, "Tên sản phẩm")),
+            Sku:               sku,
+            CategoryName:      ColVal(row, HeaderIndex(headers, "Danh mục")),
+            SalePrice:         salePrice,
+            OriginalPrice:     origPrice > 0 ? origPrice : salePrice,
+            StockQuantity:     stock,
+            IsActive:          isActive
+        );
+    }
+
+    // ── TikTok Shop Product mapper ────────────────────────────────────────────
+    // Headers: Product ID, Product Name, Seller SKU, Category, Original Price, Sales Price, Warehouse Stock, Status, Brand
+
+    private static MappedProduct? MapTikTokProductRow(string[] row, string[] headers)
+    {
+        var sku = ColVal(row, HeaderIndex(headers, "Seller SKU", "Seller Sku"));
+        if (string.IsNullOrEmpty(sku)) return null;
+
+        var statusStr  = ColVal(row, HeaderIndex(headers, "Status")).ToUpper();
+        var isActive   = statusStr is "ACTIVE" or "ACTIVATED" or "4";
+        decimal.TryParse(ColVal(row, HeaderIndex(headers, "Original Price")).Replace(",", ""),
+            NumberStyles.Any, CultureInfo.InvariantCulture, out var origPrice);
+        decimal.TryParse(ColVal(row, HeaderIndex(headers, "Sales Price", "Sale Price")).Replace(",", ""),
+            NumberStyles.Any, CultureInfo.InvariantCulture, out var salePrice);
+        int.TryParse(ColVal(row, HeaderIndex(headers, "Warehouse Stock", "Stock")), out var stock);
+
+        return new MappedProduct(
+            PlatformProductId: ColVal(row, HeaderIndex(headers, "Product ID")),
+            ProductName:       ColVal(row, HeaderIndex(headers, "Product Name")),
+            Sku:               sku,
+            CategoryName:      ColVal(row, HeaderIndex(headers, "Category")),
+            SalePrice:         salePrice > 0 ? salePrice : origPrice,
+            OriginalPrice:     origPrice > 0 ? origPrice : salePrice,
+            StockQuantity:     stock,
+            IsActive:          isActive
+        );
+    }
+
+    // ── Lazada Product mapper ─────────────────────────────────────────────────
+    // Headers: Item ID, Name, SellerSKU, Category, Price, Special Price, Stock, Active Status, Brand
+
+    private static MappedProduct? MapLazadaProductRow(string[] row, string[] headers)
+    {
+        var sku = ColVal(row, HeaderIndex(headers, "SellerSKU", "Seller SKU", "SKU"));
+        if (string.IsNullOrEmpty(sku)) return null;
+
+        var statusStr  = ColVal(row, HeaderIndex(headers, "Active Status", "Status")).ToLower();
+        var isActive   = statusStr is "active" or "1" or "true";
+        decimal.TryParse(ColVal(row, HeaderIndex(headers, "Price")).Replace(",", ""),
+            NumberStyles.Any, CultureInfo.InvariantCulture, out var origPrice);
+        decimal.TryParse(ColVal(row, HeaderIndex(headers, "Special Price", "Paid Price")).Replace(",", ""),
+            NumberStyles.Any, CultureInfo.InvariantCulture, out var salePrice);
+        int.TryParse(ColVal(row, HeaderIndex(headers, "Stock", "Quantity")), out var stock);
+
+        return new MappedProduct(
+            PlatformProductId: ColVal(row, HeaderIndex(headers, "Item ID")),
+            ProductName:       ColVal(row, HeaderIndex(headers, "Name", "Product Name")),
+            Sku:               sku,
+            CategoryName:      ColVal(row, HeaderIndex(headers, "Category")),
+            SalePrice:         salePrice > 0 ? salePrice : origPrice,
+            OriginalPrice:     origPrice > 0 ? origPrice : salePrice,
+            StockQuantity:     stock,
+            IsActive:          isActive
+        );
+    }
+
+    // ── Upsert product đầy đủ (category + product) ──────────────────────────
+
+    private async Task<(int affected, bool categoryNew)> UpsertProductFull(NpgsqlConnection conn, MappedProduct p)
+    {
+        // Kiểm tra category trước để xác định xem có mới không
+        var checkCatSql = "SELECT category_id FROM public.categories WHERE category_name=@n AND company_id=@cid LIMIT 1";
+        await using var checkCmd = new NpgsqlCommand(checkCatSql, conn);
+        checkCmd.Parameters.AddWithValue("n",   string.IsNullOrWhiteSpace(p.CategoryName) ? "Chưa phân loại" : p.CategoryName.Trim());
+        checkCmd.Parameters.AddWithValue("cid", tenant.CompanyId!.Value);
+        var existingCat = await checkCmd.ExecuteScalarAsync();
+        bool categoryNew = existingCat is null or DBNull;
+
+        int catId = await GetOrCreateCategoryAsync(conn, p.CategoryName, tenant.CompanyId!.Value);
+
+        // Upsert product: nếu SKU đã có → cập nhật tên/giá/tồn kho/category
+        var sql = """
+            INSERT INTO public.products
+                (sku, product_name, base_price, cost_price, stock_quantity,
+                 category_id, is_active, company_id, created_at, updated_at)
+            VALUES
+                (@sku, @name, @price, 0, @stock, @catId, @active, @cid::uuid, NOW(), NOW())
+            ON CONFLICT (sku, company_id) DO UPDATE SET
+                product_name   = EXCLUDED.product_name,
+                base_price     = EXCLUDED.base_price,
+                stock_quantity = EXCLUDED.stock_quantity,
+                category_id    = EXCLUDED.category_id,
+                is_active      = EXCLUDED.is_active,
+                updated_at     = NOW()
+            """;
+
+        await using var cmd = new NpgsqlCommand(sql, conn);
+        cmd.Parameters.AddWithValue("sku",    p.Sku.Length > 0 ? p.Sku : $"IMPORT-{Guid.NewGuid():N}"[..20]);
+        cmd.Parameters.AddWithValue("name",   p.ProductName.Length > 0 ? p.ProductName : p.Sku);
+        cmd.Parameters.AddWithValue("price",  p.OriginalPrice > 0 ? p.OriginalPrice : p.SalePrice);
+        cmd.Parameters.AddWithValue("stock",  p.StockQuantity);
+        cmd.Parameters.AddWithValue("catId",  catId);
+        cmd.Parameters.AddWithValue("active", p.IsActive);
+        cmd.Parameters.AddWithValue("cid",    tenant.CompanyId!.Value.ToString());
+        var affected = await cmd.ExecuteNonQueryAsync();
+        return (affected, categoryNew);
     }
 
     // ── POST /api/import/sales-data ───────────────────────────────────────────
