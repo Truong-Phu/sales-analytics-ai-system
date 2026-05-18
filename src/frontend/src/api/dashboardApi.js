@@ -14,9 +14,12 @@ export const getDashboard = (from, to, channel = null) => {
 
 const normalizeOrder = (o) => ({
   orderId:        o.orderId      ?? o.salesKey ?? 0,
+  orderCode:      o.orderCode    ?? o.externalOrderId ?? '—',
   externalOrderId:o.externalOrderId ?? o.orderCode ?? '—',
   customerName:   o.customerName ?? '—',
-  channel:        o.channelName  ?? o.channel  ?? '—',
+  customerPhone:  o.customerPhone ?? null,
+  channel:        (o.channelName ?? o.channel ?? '—').toLowerCase(),
+  channelLabel:   o.channelName  ?? o.channel  ?? '—',
   totalAmount:    Number(o.totalAmount ?? o.netRevenue ?? 0),
   paymentMethod:  o.paymentMethod ?? '—',
   paymentStatus:  o.paymentStatus  ?? 'UNPAID',
@@ -26,6 +29,16 @@ const normalizeOrder = (o) => ({
   commissionFee:  o.commissionFee ?? null,
   status:         (o.status ?? 'pending').toLowerCase(),
   createdAt:      o.orderDate    ?? o.createdAt ?? o.saleDate,
+  details:        (o.details ?? []).map(d => ({
+    productName: d.productName ?? d.ProductName ?? '—',
+    sku:         d.sku ?? d.Sku ?? '',
+    variation:   d.variation ?? '',
+    imageUrl:    d.imageUrl ?? null,
+    quantity:    d.quantity ?? d.Quantity ?? 1,
+    unitPrice:   Number(d.unitPrice ?? d.UnitPrice ?? 0),
+    discount:    Number(d.discount ?? d.Discount ?? 0),
+    subtotal:    Number(d.subtotal ?? d.Subtotal ?? 0),
+  })),
 })
 
 export const getOrders = async (params = {}) => {

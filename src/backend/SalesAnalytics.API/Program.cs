@@ -191,6 +191,12 @@ try
         opt.Filters.Add<TenantAuthorizationFilter>();
         // SubscriptionAuthorizationFilter: kiểm tra gói [RequirePlan]
         opt.Filters.Add<SubscriptionAuthorizationFilter>();
+    })
+    .AddJsonOptions(opt =>
+    {
+        // Đảm bảo tất cả API response đều trả camelCase cho React frontend
+        opt.JsonSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
+        opt.JsonSerializerOptions.DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull;
     });
     builder.Services.AddEndpointsApiExplorer();
     builder.Services.AddSwaggerGen(opt =>

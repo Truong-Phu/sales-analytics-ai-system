@@ -21,6 +21,11 @@ public class OrderResponseDto
     public DateTime OrderDate       { get; set; }
     public DateTime? DeliveredAt    { get; set; }
     public string? ExternalOrderId  { get; set; }
+    public string? TrackingNumber   { get; set; }
+    public string? CustomerPhone    { get; set; }
+    public string? ShippingAddress  { get; set; }
+    public string? Province         { get; set; }
+    public string? PosNote          { get; set; }
     public DateTime CreatedAt       { get; set; }
     public List<OrderDetailDto> Details { get; set; } = [];
 }
@@ -32,6 +37,8 @@ public class OrderDetailDto
     public int     ProductId   { get; set; }
     public string? ProductName { get; set; }
     public string? Sku         { get; set; }
+    public string? Variation   { get; set; }
+    public string? ImageUrl    { get; set; }
     public int     Quantity    { get; set; }
     public decimal UnitPrice   { get; set; }
     public decimal Discount    { get; set; }

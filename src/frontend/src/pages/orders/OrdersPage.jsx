@@ -3,20 +3,42 @@ import { useTranslation } from 'react-i18next'
 import MockToast from '../../components/ui/MockToast'
 import FilterPill from '../../components/ui/FilterPill'
 import { getOrders, updateOrderStatus, cancelOrder, getOrderNotes, addOrderNote, deleteOrderNote } from '../../api/dashboardApi'
+import api from '../../api/axios'
 import { useAuth } from '../../hooks/useAuth'
 import { MOCK_ORDERS } from '../../mockData/orders'
 
 const STATUS_COLOR = {
-  pending:   { bg: 'rgba(245,158,11,0.10)',  border: 'rgba(245,158,11,0.30)',  text: '#F59E0B',              dot: '#F59E0B'  },
-  confirmed: { bg: 'rgba(99,102,241,0.10)',  border: 'rgba(99,102,241,0.25)',  text: 'var(--primary-500)',  dot: 'var(--primary-500)' },
-  shipping:  { bg: 'rgba(59,130,246,0.10)',  border: 'rgba(59,130,246,0.25)',  text: '#3B82F6',              dot: '#3B82F6'  },
-  delivered: { bg: 'rgba(16,185,129,0.10)',  border: 'rgba(16,185,129,0.30)',  text: 'var(--accent-500)',   dot: 'var(--accent-500)'  },
-  cancelled: { bg: 'rgba(239,68,68,0.10)',   border: 'rgba(239,68,68,0.30)',   text: '#EF4444',              dot: '#EF4444'  },
-  returned:  { bg: 'rgba(239,68,68,0.08)',   border: 'rgba(239,68,68,0.25)',   text: '#EF4444',              dot: '#EF4444'  },
+  pending:    { bg: 'rgba(100,116,139,0.10)', border: 'rgba(100,116,139,0.25)', text: '#64748B',              dot: '#64748B'  },
+  confirmed:  { bg: 'rgba(99,102,241,0.10)',  border: 'rgba(99,102,241,0.25)',  text: 'var(--primary-500)',  dot: 'var(--primary-500)' },
+  processing: { bg: 'rgba(245,158,11,0.10)',  border: 'rgba(245,158,11,0.30)',  text: '#F59E0B',              dot: '#F59E0B'  },
+  shipping:   { bg: 'rgba(59,130,246,0.10)',  border: 'rgba(59,130,246,0.25)',  text: '#3B82F6',              dot: '#3B82F6'  },
+  delivered:  { bg: 'rgba(16,185,129,0.10)',  border: 'rgba(16,185,129,0.30)',  text: 'var(--accent-500)',   dot: 'var(--accent-500)'  },
+  cancelled:  { bg: 'rgba(239,68,68,0.10)',   border: 'rgba(239,68,68,0.30)',   text: '#EF4444',              dot: '#EF4444'  },
+  returned:   { bg: 'rgba(249,115,22,0.10)',  border: 'rgba(249,115,22,0.30)',  text: '#F97316',              dot: '#F97316'  },
 }
 
-const STATUSES = ['pending', 'confirmed', 'shipping', 'delivered', 'cancelled', 'returned']
-const CHANNELS = ['shopee', 'lazada', 'tiktok', 'facebook', 'website']
+const CHANNEL_CFG = {
+  shopee:  { bg: 'rgba(238,77,45,0.12)',   text: '#EE4D2D', label: 'Shopee'   },
+  tiktok:  { bg: 'rgba(0,0,0,0.10)',       text: '#111111', label: 'TikTok'   },
+  lazada:  { bg: 'rgba(9,97,202,0.12)',    text: '#0961CA', label: 'Lazada'   },
+  offline: { bg: 'rgba(139,92,246,0.12)',  text: '#7C3AED', label: 'Offline'  },
+  facebook:{ bg: 'rgba(24,119,242,0.12)',  text: '#1877F2', label: 'Facebook' },
+  website: { bg: 'rgba(16,185,129,0.12)',  text: '#059669', label: 'Website'  },
+}
+
+function ChannelBadge({ name }) {
+  const key = (name ?? '').toLowerCase().replace(' shop', '').replace(' ', '')
+  const cfg = CHANNEL_CFG[key] ?? { bg: 'rgba(100,116,139,0.1)', text: '#64748B', label: name ?? '—' }
+  return (
+    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap"
+          style={{ background: cfg.bg, color: cfg.text }}>
+      {cfg.label}
+    </span>
+  )
+}
+
+const STATUSES = ['pending', 'processing', 'shipping', 'delivered', 'cancelled', 'returned']
+const CHANNELS = ['shopee', 'tiktok', 'lazada', 'offline', 'facebook', 'website']
 
 function StatusBadge({ status, label }) {
   const c = STATUS_COLOR[status] ?? STATUS_COLOR.confirmed
@@ -215,6 +237,73 @@ function OrderNotes({ orderId, canDelete }) {
   )
 }
 
+// ─── Order detail panel (fetches details on mount) ───────────────────────────
+function OrderDetailPanel({ order }) {
+  const [detail, setDetail] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    api.get(`/api/orders/oltp/${order.orderId}`)
+      .then(r => setDetail(r.data))
+      .catch(() => setDetail(null))
+      .finally(() => setLoading(false))
+  }, [order.orderId])
+
+  const items = detail?.details ?? order.details ?? []
+
+  return (
+    <div className="space-y-4 mb-3">
+      {/* Info grid */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+        {[
+          { label: 'Mã đơn ngoài',  value: order.externalOrderId ?? '—' },
+          { label: 'Phí vận chuyển',value: fmtVND(order.shippingFee) },
+          { label: 'Giảm giá',      value: fmtVND(order.discount) },
+          { label: 'Thanh toán',    value: order.paymentMethod ?? '—' },
+          { label: 'TT vận chuyển', value: order.shippingStatus?.replace(/_/g,' ') ?? '—' },
+          { label: 'TT thanh toán', value: order.paymentStatus ?? '—' },
+        ].map(item => (
+          <div key={item.label} className="p-2 rounded-lg" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
+            <div className="mb-0.5" style={{ color: 'var(--text-tertiary)' }}>{item.label}</div>
+            <div className="font-mono font-medium text-xs" style={{ color: 'var(--text-primary)' }}>{item.value}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Items table */}
+      {loading ? (
+        <div className="text-xs py-2" style={{ color: 'var(--text-tertiary)' }}>Đang tải sản phẩm...</div>
+      ) : items.length > 0 ? (
+        <div className="rounded-lg overflow-hidden" style={{ border: '1px solid var(--border)' }}>
+          <table className="w-full text-xs">
+            <thead>
+              <tr style={{ background: 'var(--bg-surface)', borderBottom: '1px solid var(--border)' }}>
+                {['Sản phẩm', 'SKU', 'Đơn giá', 'SL', 'Thành tiền'].map(h => (
+                  <th key={h} className="text-left px-3 py-2 font-semibold" style={{ color: 'var(--text-tertiary)' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((item, idx) => (
+                <tr key={idx} style={{ borderBottom: '1px solid var(--border)' }}>
+                  <td className="px-3 py-2 font-medium" style={{ color: 'var(--text-primary)' }}>
+                    {item.productName}
+                    {item.variation && <span className="ml-1" style={{ color: 'var(--text-tertiary)' }}>({item.variation})</span>}
+                  </td>
+                  <td className="px-3 py-2 font-mono" style={{ color: 'var(--text-secondary)' }}>{item.sku || '—'}</td>
+                  <td className="px-3 py-2 font-mono" style={{ color: 'var(--text-secondary)' }}>{fmtVND(item.unitPrice)}</td>
+                  <td className="px-3 py-2 text-center font-mono" style={{ color: 'var(--text-primary)' }}>{item.quantity}</td>
+                  <td className="px-3 py-2 font-mono font-semibold" style={{ color: 'var(--text-primary)' }}>{fmtVND(item.subtotal || item.unitPrice * item.quantity)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 export default function OrdersPage() {
   const { t } = useTranslation()
   const { role } = useAuth()
@@ -340,8 +429,8 @@ export default function OrdersPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-elevated)' }}>
-                  {[t('orders.orderId'), t('orders.customer'), t('orders.channel'),
-                    t('orders.amount'), t('orders.paymentMethod'), t('common.status'), t('orders.date'), ''].map(h => (
+                  {[t('orders.orderId'), 'Kênh', t('orders.customer'),
+                    t('orders.amount'), 'Vận chuyển', t('common.status'), t('orders.date'), ''].map(h => (
                     <th key={h} className="text-left px-4 py-3 text-xs font-semibold tracking-wide"
                         style={{ color: 'var(--text-tertiary)', whiteSpace: 'nowrap' }}>
                       {h}
@@ -360,25 +449,28 @@ export default function OrdersPage() {
                       onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                     >
                       <td className="px-4 py-3 font-mono text-xs" style={{ color: 'var(--primary-500)' }}>
-                        {order.externalOrderId ?? order.orderId}
-                      </td>
-                      <td className="px-4 py-3 font-medium" style={{ color: 'var(--text-primary)' }}>
-                        {order.customerName}
+                        {order.externalOrderId ?? order.orderCode ?? order.orderId}
                       </td>
                       <td className="px-4 py-3">
-                        <span className="lbadge lbadge-neutral text-xs capitalize">{order.channel}</span>
+                        <ChannelBadge name={order.channelLabel} />
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="font-medium text-sm" style={{ color: 'var(--text-primary)' }}>{order.customerName}</div>
+                        {order.customerPhone && (
+                          <div className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>{order.customerPhone}</div>
+                        )}
                       </td>
                       <td className="px-4 py-3 font-mono font-semibold" style={{ color: 'var(--text-primary)' }}>
                         {fmtVND(order.totalAmount)}
                       </td>
-                      <td className="px-4 py-3 text-xs" style={{ color: 'var(--text-secondary)' }}>
-                        {order.paymentMethod}
+                      <td className="px-4 py-3 text-xs">
+                        <div style={{ color: 'var(--text-secondary)' }}>{order.shippingStatus?.replace(/_/g,' ')}</div>
                       </td>
                       <td className="px-4 py-3">
-                        <StatusBadge status={order.status} label={t(`orders.status.${order.status}`)} />
+                        <StatusBadge status={order.status} label={t(`orders.status.${order.status}`, order.status)} />
                       </td>
                       <td className="px-4 py-3 text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                        {new Date(order.createdAt).toLocaleDateString('vi-VN')}
+                        {order.createdAt ? new Date(order.createdAt).toLocaleDateString('vi-VN') : '—'}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
@@ -416,19 +508,7 @@ export default function OrdersPage() {
                     {expanded === order.orderId && (
                       <tr key={`${order.orderId}-detail`}>
                         <td colSpan={8} className="px-4 py-4" style={{ background: 'var(--bg-elevated)', borderBottom: '1px solid var(--border)' }}>
-                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
-                            {[
-                              { label: 'Mã đơn ngoài',  value: order.externalOrderId ?? '–' },
-                              { label: 'Phí vận chuyển', value: fmtVND(order.shippingFee) },
-                              { label: 'Giảm giá',       value: fmtVND(order.discount) },
-                              { label: 'Hoa hồng',       value: order.commissionFee != null ? fmtVND(order.commissionFee) : '–' },
-                            ].map(item => (
-                              <div key={item.label}>
-                                <div className="mb-1" style={{ color: 'var(--text-tertiary)' }}>{item.label}</div>
-                                <div className="font-mono font-medium" style={{ color: 'var(--text-primary)' }}>{item.value}</div>
-                              </div>
-                            ))}
-                          </div>
+                          <OrderDetailPanel order={order} />
                           <OrderNotes orderId={order.orderId} canDelete={canDelete} />
                         </td>
                       </tr>
