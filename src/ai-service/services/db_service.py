@@ -58,7 +58,7 @@ SQL_OLTP_ORDER_COUNTS = """
         COUNT(o.order_id)    AS order_count
     FROM public.orders o
     JOIN public.order_items oi ON o.order_id = oi.order_id
-    JOIN public.channels c     ON o.channel_id = c.id
+    JOIN public.sales_channels c ON o.channel_id = c.channel_id
     WHERE o.status NOT IN ('CANCELLED', 'RETURNED')
       {company_filter}
     GROUP BY DATE(o.order_date), c.channel_name

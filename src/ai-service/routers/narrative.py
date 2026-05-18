@@ -55,7 +55,7 @@ def _get_period_kpi(days: int, company_id: str = None) -> dict:
                             AND o.order_date < NOW() - INTERVAL '{int(days)} days'
                            THEN o.order_id END)                            AS prev_orders
         FROM public.orders o
-        JOIN public.order_items oi ON o.order_id = o.order_id
+        JOIN public.order_items oi ON oi.order_id = o.order_id
         WHERE o.status NOT IN ('CANCELLED', 'RETURNED')
           {cmp_filter}
     """
@@ -89,8 +89,8 @@ def _get_top_channel(days: int, company_id: str = None) -> tuple[str, float]:
     sql = f"""
         SELECT ch.channel_name, SUM(oi.subtotal) AS rev
         FROM public.orders o
-        JOIN public.order_items oi ON o.order_id   = o.order_id
-        JOIN public.channels ch    ON o.channel_id = ch.id
+        JOIN public.order_items oi ON oi.order_id  = o.order_id
+        JOIN public.sales_channels ch ON o.channel_id = ch.channel_id
         WHERE o.status NOT IN ('CANCELLED', 'RETURNED')
           AND o.order_date >= NOW() - INTERVAL '{int(days)} days'
           {cmp_filter}

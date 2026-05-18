@@ -97,8 +97,8 @@ def _channel_breakdown(date_str: str, expected: float, company_id: str = None) -
     day_sql = f"""
         SELECT ch.channel_name AS channel, SUM(oi.subtotal) AS revenue
         FROM public.orders o
-        JOIN public.order_items oi ON o.order_id = o.order_id
-        JOIN public.channels ch ON o.channel_id = ch.id
+        JOIN public.order_items oi ON oi.order_id = o.order_id
+        JOIN public.sales_channels ch ON o.channel_id = ch.channel_id
         WHERE DATE(o.order_date) = %(date)s
           AND o.status NOT IN ('CANCELLED','RETURNED')
           {cmp_filter}
@@ -110,8 +110,8 @@ def _channel_breakdown(date_str: str, expected: float, company_id: str = None) -
         FROM (
             SELECT DATE(o.order_date) AS d, ch.channel_name, SUM(oi.subtotal) AS daily_rev
             FROM public.orders o
-            JOIN public.order_items oi ON o.order_id = o.order_id
-            JOIN public.channels ch ON o.channel_id = ch.id
+            JOIN public.order_items oi ON oi.order_id = o.order_id
+            JOIN public.sales_channels ch ON o.channel_id = ch.channel_id
             WHERE o.order_date BETWEEN (%(date)s::date - INTERVAL '30 days') AND (%(date)s::date - INTERVAL '1 day')
               AND o.status NOT IN ('CANCELLED','RETURNED')
               {cmp_filter}

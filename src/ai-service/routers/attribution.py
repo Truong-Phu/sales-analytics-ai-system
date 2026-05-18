@@ -128,8 +128,8 @@ def get_channel_attribution(
             SUM(oi.subtotal)                 AS revenue,
             COUNT(DISTINCT o.order_id)       AS orders
         FROM public.orders o
-        JOIN public.order_items oi ON o.order_id   = o.order_id
-        JOIN public.channels c     ON o.channel_id = c.id
+        JOIN public.order_items oi ON oi.order_id  = o.order_id
+        JOIN public.sales_channels c ON o.channel_id = c.channel_id
         WHERE o.status NOT IN ('CANCELLED', 'RETURNED')
           AND o.order_date >= NOW() - INTERVAL '{int(days)} days'
           {cmp_filter}

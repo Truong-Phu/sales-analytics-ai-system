@@ -88,7 +88,7 @@ public class IntegrationsController(
                 cmd.Parameters.Add(p);
             }
 
-            AddParam("cid",      companyId.ToString());
+            AddParam("cid",      companyId!.Value.ToString());
             AddParam("pageId",   resolvedPageId);
             AddParam("pageName", pageName ?? resolvedPageId);
             AddParam("token",    encryptedToken);
@@ -141,7 +141,7 @@ public class IntegrationsController(
                 ORDER BY connected_at DESC NULLS LAST
                 LIMIT 1
                 """;
-            var p = cmd.CreateParameter(); p.ParameterName = "cid"; p.Value = companyId.ToString(); cmd.Parameters.Add(p);
+            var p = cmd.CreateParameter(); p.ParameterName = "cid"; p.Value = companyId!.Value.ToString(); cmd.Parameters.Add(p);
 
             await using var reader = await cmd.ExecuteReaderAsync();
             if (!await reader.ReadAsync())
@@ -195,7 +195,7 @@ public class IntegrationsController(
                 ORDER BY connected_at DESC NULLS LAST
                 LIMIT 1
                 """;
-            var p = cmd.CreateParameter(); p.ParameterName = "cid"; p.Value = companyId.ToString(); cmd.Parameters.Add(p);
+            var p = cmd.CreateParameter(); p.ParameterName = "cid"; p.Value = companyId!.Value.ToString(); cmd.Parameters.Add(p);
 
             await using var reader = await cmd.ExecuteReaderAsync();
             if (!await reader.ReadAsync())
@@ -258,7 +258,7 @@ public class IntegrationsController(
                 WHERE  company_id = @cid::uuid
                   AND  platform   = 'facebook'
                 """;
-            var p = cmd.CreateParameter(); p.ParameterName = "cid"; p.Value = companyId.ToString(); cmd.Parameters.Add(p);
+            var p = cmd.CreateParameter(); p.ParameterName = "cid"; p.Value = companyId!.Value.ToString(); cmd.Parameters.Add(p);
             var rows = await cmd.ExecuteNonQueryAsync();
 
             if (rows == 0)
@@ -310,7 +310,7 @@ public class IntegrationsController(
                 WHERE company_id = @cid::uuid AND platform = 'facebook'
                   AND is_active = TRUE AND status = 'connected'
                 ORDER BY connected_at DESC NULLS LAST LIMIT 1";
-            cmd0.Parameters.AddWithValue("@cid", companyId.ToString());
+            cmd0.Parameters.AddWithValue("@cid", companyId!.Value.ToString());
             var val = await cmd0.ExecuteScalarAsync();
             pageId = val as string;
         }
@@ -559,7 +559,7 @@ public class IntegrationsController(
             accessToken = req.AccessToken,
         }));
 
-        await UpsertIntegration(companyId.ToString(), "shopee", req.ShopId, shopName ?? req.ShopId, payload);
+        await UpsertIntegration(companyId!.Value.ToString(), "shopee", req.ShopId, shopName ?? req.ShopId, payload);
         await audit.LogAsync(null, User.FindFirstValue(ClaimTypes.Name) ?? "", "CONNECT_SHOPEE",
             "Integration", req.ShopId, JsonSerializer.Serialize(new { shopId = req.ShopId, shopName }),
             HttpContext.Connection.RemoteIpAddress?.ToString(), HttpContext.Request.Headers["User-Agent"].ToString());
@@ -569,11 +569,11 @@ public class IntegrationsController(
 
     [HttpGet("shopee/status")]
     public async Task<IActionResult> GetShopeeStatus()
-        => await GetIntegrationStatus(tenant.CompanyId.ToString(), "shopee");
+        => await GetIntegrationStatus(tenant.CompanyId!.Value.ToString(), "shopee");
 
     [HttpDelete("shopee")]
     public async Task<IActionResult> DisconnectShopee()
-        => await DeleteIntegration(tenant.CompanyId.ToString(), "shopee", "DISCONNECT_SHOPEE");
+        => await DeleteIntegration(tenant.CompanyId!.Value.ToString(), "shopee", "DISCONNECT_SHOPEE");
 
     private async Task<(bool Valid, string? ShopName, string? Error)> ValidateShopeeToken(
         string partnerId, string partnerKey, string shopId, string accessToken)
@@ -630,7 +630,7 @@ public class IntegrationsController(
             accessToken = req.AccessToken,
         }));
 
-        await UpsertIntegration(companyId.ToString(), "lazada", req.AppKey, sellerName ?? req.AppKey, payload);
+        await UpsertIntegration(companyId!.Value.ToString(), "lazada", req.AppKey, sellerName ?? req.AppKey, payload);
         await audit.LogAsync(null, User.FindFirstValue(ClaimTypes.Name) ?? "", "CONNECT_LAZADA",
             "Integration", req.AppKey, null,
             HttpContext.Connection.RemoteIpAddress?.ToString(), HttpContext.Request.Headers["User-Agent"].ToString());
@@ -640,11 +640,11 @@ public class IntegrationsController(
 
     [HttpGet("lazada/status")]
     public async Task<IActionResult> GetLazadaStatus()
-        => await GetIntegrationStatus(tenant.CompanyId.ToString(), "lazada");
+        => await GetIntegrationStatus(tenant.CompanyId!.Value.ToString(), "lazada");
 
     [HttpDelete("lazada")]
     public async Task<IActionResult> DisconnectLazada()
-        => await DeleteIntegration(tenant.CompanyId.ToString(), "lazada", "DISCONNECT_LAZADA");
+        => await DeleteIntegration(tenant.CompanyId!.Value.ToString(), "lazada", "DISCONNECT_LAZADA");
 
     private async Task<(bool Valid, string? SellerName, string? Error)> ValidateLazadaToken(
         string appKey, string appSecret, string accessToken)
@@ -708,7 +708,7 @@ public class IntegrationsController(
             shopId      = req.ShopId,
         }));
 
-        await UpsertIntegration(companyId.ToString(), "tiktok", req.ShopId, shopName ?? req.ShopId, payload);
+        await UpsertIntegration(companyId!.Value.ToString(), "tiktok", req.ShopId, shopName ?? req.ShopId, payload);
         await audit.LogAsync(null, User.FindFirstValue(ClaimTypes.Name) ?? "", "CONNECT_TIKTOK",
             "Integration", req.ShopId, null,
             HttpContext.Connection.RemoteIpAddress?.ToString(), HttpContext.Request.Headers["User-Agent"].ToString());
@@ -718,11 +718,11 @@ public class IntegrationsController(
 
     [HttpGet("tiktok/status")]
     public async Task<IActionResult> GetTikTokStatus()
-        => await GetIntegrationStatus(tenant.CompanyId.ToString(), "tiktok");
+        => await GetIntegrationStatus(tenant.CompanyId!.Value.ToString(), "tiktok");
 
     [HttpDelete("tiktok")]
     public async Task<IActionResult> DisconnectTikTok()
-        => await DeleteIntegration(tenant.CompanyId.ToString(), "tiktok", "DISCONNECT_TIKTOK");
+        => await DeleteIntegration(tenant.CompanyId!.Value.ToString(), "tiktok", "DISCONNECT_TIKTOK");
 
     private async Task<(bool Valid, string? ShopName, string? Error)> ValidateTikTokToken(
         string appKey, string appSecret, string accessToken, string shopId)
@@ -794,7 +794,7 @@ public class IntegrationsController(
             shopId = req.ShopId,
         }));
 
-        await UpsertIntegration(companyId.ToString(), "ghn", req.ShopId, shopName ?? $"GHN Shop {req.ShopId}", payload);
+        await UpsertIntegration(companyId!.Value.ToString(), "ghn", req.ShopId, shopName ?? $"GHN Shop {req.ShopId}", payload);
         await audit.LogAsync(null, User.FindFirstValue(ClaimTypes.Name) ?? "", "CONNECT_GHN",
             "Integration", req.ShopId, null,
             HttpContext.Connection.RemoteIpAddress?.ToString(), HttpContext.Request.Headers["User-Agent"].ToString());
@@ -804,11 +804,11 @@ public class IntegrationsController(
 
     [HttpGet("ghn/status")]
     public async Task<IActionResult> GetGhnStatus()
-        => await GetIntegrationStatus(tenant.CompanyId.ToString(), "ghn");
+        => await GetIntegrationStatus(tenant.CompanyId!.Value.ToString(), "ghn");
 
     [HttpDelete("ghn")]
     public async Task<IActionResult> DisconnectGhn()
-        => await DeleteIntegration(tenant.CompanyId.ToString(), "ghn", "DISCONNECT_GHN");
+        => await DeleteIntegration(tenant.CompanyId!.Value.ToString(), "ghn", "DISCONNECT_GHN");
 
     private async Task<(bool Valid, string? ShopName, string? Error)> ValidateGhnToken(string token, string shopId)
     {
@@ -873,7 +873,7 @@ public class IntegrationsController(
             environment = env,
         }));
 
-        await UpsertIntegration(companyId.ToString(), "vnpay", req.MerchantId, $"VNPay ({env}) – {req.MerchantId}", payload);
+        await UpsertIntegration(companyId!.Value.ToString(), "vnpay", req.MerchantId, $"VNPay ({env}) – {req.MerchantId}", payload);
         await audit.LogAsync(null, User.FindFirstValue(ClaimTypes.Name) ?? "", "CONNECT_VNPAY",
             "Integration", req.MerchantId, JsonSerializer.Serialize(new { merchantId = req.MerchantId, env }),
             HttpContext.Connection.RemoteIpAddress?.ToString(), HttpContext.Request.Headers["User-Agent"].ToString());
@@ -883,11 +883,11 @@ public class IntegrationsController(
 
     [HttpGet("vnpay/status")]
     public async Task<IActionResult> GetVnPayStatus()
-        => await GetIntegrationStatus(tenant.CompanyId.ToString(), "vnpay");
+        => await GetIntegrationStatus(tenant.CompanyId!.Value.ToString(), "vnpay");
 
     [HttpDelete("vnpay")]
     public async Task<IActionResult> DisconnectVnPay()
-        => await DeleteIntegration(tenant.CompanyId.ToString(), "vnpay", "DISCONNECT_VNPAY");
+        => await DeleteIntegration(tenant.CompanyId!.Value.ToString(), "vnpay", "DISCONNECT_VNPAY");
 
     // ── Helper dùng chung ─────────────────────────────────────────────────────
 

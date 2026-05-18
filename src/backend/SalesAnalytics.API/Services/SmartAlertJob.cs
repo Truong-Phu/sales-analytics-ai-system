@@ -216,13 +216,21 @@ public class SmartAlertJob : BackgroundService
     /// <summary>Kiểm tra đã có cảnh báo tương tự trong 24h qua chưa (tránh spam)</summary>
     private static async Task<bool> HasRecentAlertAsync(AppDbContext db, Guid companyId, string alertKey)
     {
-        var cutoff = DateTime.UtcNow.AddHours(-23); // 23h để tránh race condition
-        return await db.Notifications.AnyAsync(
-            n => n.CompanyId == companyId
-              && n.Category  == "anomaly"
-              && n.Data      != null
-              && EF.Functions.Like(n.Data, $"%{alertKey}%")
-              && n.CreatedAt > cutoff);
+        // JSONB không hỗ trợ LIKE trực tiếp → dùng raw SQL với ::text cast
+        var cutoff  = DateTime.UtcNow.AddHours(-23);
+        var pattern = $"%{alertKey}%";
+        return await db.Database
+            .SqlQuery<bool>($"""
+                SELECT EXISTS(
+                    SELECT 1 FROM public.notifications
+                    WHERE company_id = {companyId}::uuid
+                      AND category   = 'anomaly'
+                      AND data       IS NOT NULL
+                      AND data::text LIKE {pattern}
+                      AND created_at > {cutoff}
+                )
+                """)
+            .SingleAsync();
     }
 
     /// <summary>Tạo Notification record cho tất cả Owner và Manager trong công ty</summary>

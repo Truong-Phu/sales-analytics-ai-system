@@ -301,7 +301,7 @@ def send_daily_kpi_email() -> None:
                 COUNT(DISTINCT o.order_id) AS orders,
                 COUNT(DISTINCT o.customer_id) AS customers
             FROM public.orders o
-            JOIN public.order_items oi ON o.order_id = o.order_id
+            JOIN public.order_items oi ON oi.order_id = o.order_id
             WHERE DATE(o.order_date) = '{yesterday}'
               AND o.status NOT IN ('CANCELLED', 'RETURNED')
         """

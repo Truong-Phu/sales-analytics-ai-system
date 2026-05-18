@@ -42,7 +42,7 @@ def _build_rfm(company_id: str = None) -> pd.DataFrame:
             o.customer_id,
             c.full_name,
             c.email,
-            c.phone,
+            c.phone_number AS phone,
             MAX(o.order_date)           AS last_order_date,
             COUNT(DISTINCT o.order_id)  AS frequency,
             SUM(oi.subtotal)            AS monetary
@@ -51,7 +51,7 @@ def _build_rfm(company_id: str = None) -> pd.DataFrame:
         JOIN public.customers c    ON o.customer_id = c.customer_id
         WHERE o.status NOT IN ('CANCELLED', 'RETURNED')
           {cmp_filter}
-        GROUP BY o.customer_id, c.full_name, c.email, c.phone
+        GROUP BY o.customer_id, c.full_name, c.email, c.phone_number
         HAVING COUNT(DISTINCT o.order_id) >= 1
     """
     df = query_df(sql, params)
@@ -136,13 +136,15 @@ def predict_churn(
     df = _build_rfm(company_id)
     if df.empty:
         return {
-            "total_customers":   0,
-            "high_risk_count":   0,
-            "medium_risk_count": 0,
-            "low_risk_count":    0,
-            "churn_rate_pct":    0.0,
-            "customers":         [],
-            "note":              "Chưa có dữ liệu khách hàng",
+            "total_customers":    0,
+            "high_risk_count":    0,
+            "medium_risk_count":  0,
+            "low_risk_count":     0,
+            "churn_rate_pct":     0.0,
+            "churn_threshold_days": CHURN_DAYS,
+            "model":              "RandomForestClassifier",
+            "customers":          [],
+            "note":               "Chưa có dữ liệu khách hàng",
         }
 
     df = _label_churn(df)

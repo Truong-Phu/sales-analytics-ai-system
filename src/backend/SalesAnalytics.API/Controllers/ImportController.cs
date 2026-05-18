@@ -425,13 +425,13 @@ public class ImportController(IConfiguration cfg, ITenantContext tenant, IAuditL
     {
         // Tìm company channel_id theo tên kênh
         var channelSql = """
-            SELECT id FROM public.channels
-            WHERE LOWER(channel_name) = LOWER(@ch) AND company_id = @cid
+            SELECT channel_id FROM public.sales_channels
+            WHERE LOWER(channel_name) = LOWER(@ch) AND company_id = @cid::uuid
             LIMIT 1
             """;
         await using var chCmd = new NpgsqlCommand(channelSql, conn);
         chCmd.Parameters.AddWithValue("ch",  o.Channel);
-        chCmd.Parameters.AddWithValue("cid", tenant.CompanyId);
+        chCmd.Parameters.AddWithValue("cid", tenant.CompanyId!.Value.ToString());
         var channelIdObj = await chCmd.ExecuteScalarAsync();
         // Nếu không có channel thì không thể insert đúng FK — bỏ qua
         if (channelIdObj is null or DBNull) return 0;
@@ -456,7 +456,7 @@ public class ImportController(IConfiguration cfg, ITenantContext tenant, IAuditL
         cuCmd.Parameters.AddWithValue("phone",    (object?)o.Phone ?? DBNull.Value);
         cuCmd.Parameters.AddWithValue("province", (object?)o.Province ?? DBNull.Value);
         cuCmd.Parameters.AddWithValue("district", (object?)o.District ?? DBNull.Value);
-        cuCmd.Parameters.AddWithValue("cid",      tenant.CompanyId.ToString());
+        cuCmd.Parameters.AddWithValue("cid",      tenant.CompanyId!.Value.ToString());
         var cusIdObj = await cuCmd.ExecuteScalarAsync();
         int customerId;
         if (cusIdObj is null or DBNull)
@@ -472,27 +472,32 @@ public class ImportController(IConfiguration cfg, ITenantContext tenant, IAuditL
             customerId = Convert.ToInt32(cusIdObj);
         }
 
-        // Tìm hoặc tạo product theo SKU
+        // Lấy hoặc tạo category mặc định "Nhập khẩu" cho đơn hàng từ sàn
+        int defaultCatId = await GetOrCreateCategoryAsync(conn, "Nhập khẩu", tenant.CompanyId!.Value);
+
+        // Tìm hoặc tạo product theo SKU (scope theo company để tránh xung đột multi-tenant)
         var productSql = """
             INSERT INTO public.products
-                (sku, product_name, base_price, cost_price, is_active, company_id, created_at, updated_at)
+                (sku, product_name, base_price, cost_price, category_id, is_active, company_id, created_at, updated_at)
             VALUES
-                (@sku, @name, @price, 0, TRUE, @cid::uuid, NOW(), NOW())
-            ON CONFLICT (sku) DO NOTHING
+                (@sku, @name, @price, 0, @catId, TRUE, @cid::uuid, NOW(), NOW())
+            ON CONFLICT (sku, company_id) DO NOTHING
             RETURNING product_id
             """;
         await using var prCmd = new NpgsqlCommand(productSql, conn);
         prCmd.Parameters.AddWithValue("sku",   o.Sku.Length > 0 ? o.Sku : $"IMPORT-{Guid.NewGuid():N}"[..20]);
         prCmd.Parameters.AddWithValue("name",  o.ProductName.Length > 0 ? o.ProductName : o.Sku);
         prCmd.Parameters.AddWithValue("price", o.UnitPrice);
-        prCmd.Parameters.AddWithValue("cid",   tenant.CompanyId.ToString());
+        prCmd.Parameters.AddWithValue("catId", defaultCatId);
+        prCmd.Parameters.AddWithValue("cid",   tenant.CompanyId!.Value.ToString());
         var prodIdObj = await prCmd.ExecuteScalarAsync();
         int productId;
         if (prodIdObj is null or DBNull)
         {
             await using var getCmd = new NpgsqlCommand(
-                "SELECT product_id FROM public.products WHERE sku=@sku LIMIT 1", conn);
+                "SELECT product_id FROM public.products WHERE sku=@sku AND company_id=@cid::uuid LIMIT 1", conn);
             getCmd.Parameters.AddWithValue("sku", o.Sku.Length > 0 ? o.Sku : "");
+            getCmd.Parameters.AddWithValue("cid", tenant.CompanyId!.Value.ToString());
             productId = Convert.ToInt32(await getCmd.ExecuteScalarAsync() ?? 0);
         }
         else { productId = Convert.ToInt32(prodIdObj); }
@@ -521,7 +526,7 @@ public class ImportController(IConfiguration cfg, ITenantContext tenant, IAuditL
         orCmd.Parameters.AddWithValue("ship",   o.ShippingFee);
         orCmd.Parameters.AddWithValue("pay",    (object?)o.PaymentMethod ?? DBNull.Value);
         orCmd.Parameters.AddWithValue("track",  (object?)(o.TrackingNumber.Length > 0 ? o.TrackingNumber : null) ?? DBNull.Value);
-        orCmd.Parameters.AddWithValue("cid",    tenant.CompanyId.ToString());
+        orCmd.Parameters.AddWithValue("cid",    tenant.CompanyId!.Value.ToString());
         var orderAff = await orCmd.ExecuteNonQueryAsync();
 
         if (orderAff > 0)
@@ -552,6 +557,31 @@ public class ImportController(IConfiguration cfg, ITenantContext tenant, IAuditL
         }
 
         return orderAff;
+    }
+
+    // ── Helper: Tìm hoặc tạo category theo tên + company ─────────────────────
+    private static async Task<int> GetOrCreateCategoryAsync(
+        NpgsqlConnection conn, string? categoryName, Guid companyId)
+    {
+        var name = string.IsNullOrWhiteSpace(categoryName) ? "Chưa phân loại" : categoryName.Trim();
+
+        // Tìm category đã tồn tại theo tên + company
+        await using var selCmd = new NpgsqlCommand(
+            "SELECT category_id FROM public.categories WHERE category_name=@n AND company_id=@cid LIMIT 1",
+            conn);
+        selCmd.Parameters.AddWithValue("n",   name);
+        selCmd.Parameters.AddWithValue("cid", companyId);
+        var existing = await selCmd.ExecuteScalarAsync();
+        if (existing is not null and not DBNull) return Convert.ToInt32(existing);
+
+        // Tạo mới
+        await using var insCmd = new NpgsqlCommand(
+            "INSERT INTO public.categories (category_name, level, is_active, company_id, created_at) VALUES (@n, 1, TRUE, @cid, NOW()) RETURNING category_id",
+            conn);
+        insCmd.Parameters.AddWithValue("n",   name);
+        insCmd.Parameters.AddWithValue("cid", companyId);
+        var result = await insCmd.ExecuteScalarAsync();
+        return Convert.ToInt32(result ?? 1);
     }
 
     // ── POST /api/import/orders ───────────────────────────────────────────────
@@ -676,11 +706,14 @@ public class ImportController(IConfiguration cfg, ITenantContext tenant, IAuditL
                 var costPrice   = decimal.TryParse(Cell(row, 5), NumberStyles.Any, CultureInfo.InvariantCulture, out var cp) ? cp : 0m;
                 var stock       = int.TryParse(Cell(row, 6), out var s) ? s : 0;
 
+                // Upsert category (nếu không có → dùng "Chưa phân loại")
+                int catId = await GetOrCreateCategoryAsync(conn, category, tenant.CompanyId!.Value);
+
                 var sql = """
                     INSERT INTO public.products (sku, product_name, description, base_price, cost_price,
-                        stock_quantity, is_active, company_id, created_at, updated_at)
-                    VALUES (@sku, @name, @desc, @price, @cost, @stock, TRUE, @companyId::uuid, NOW(), NOW())
-                    ON CONFLICT (sku) DO NOTHING
+                        stock_quantity, category_id, is_active, company_id, created_at, updated_at)
+                    VALUES (@sku, @name, @desc, @price, @cost, @stock, @catId, TRUE, @companyId::uuid, NOW(), NOW())
+                    ON CONFLICT (sku, company_id) DO NOTHING
                     """;
 
                 await using var cmd = new NpgsqlCommand(sql, conn);
@@ -690,7 +723,8 @@ public class ImportController(IConfiguration cfg, ITenantContext tenant, IAuditL
                 cmd.Parameters.AddWithValue("price",     price);
                 cmd.Parameters.AddWithValue("cost",      costPrice);
                 cmd.Parameters.AddWithValue("stock",     stock);
-                cmd.Parameters.AddWithValue("companyId", (object?)tenant.CompanyId?.ToString() ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("catId",     catId);
+                cmd.Parameters.AddWithValue("companyId", tenant.CompanyId!.Value.ToString());
 
                 var affected = await cmd.ExecuteNonQueryAsync();
                 if (affected > 0) success++; else skipped++;

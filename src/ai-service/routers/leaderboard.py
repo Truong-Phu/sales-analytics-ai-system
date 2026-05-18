@@ -152,7 +152,7 @@ def get_leaderboard(
                 SUM(oi.subtotal)                        AS value,
                 COUNT(DISTINCT o.order_id)              AS orders
             FROM public.orders o
-            JOIN public.order_items oi ON o.order_id   = o.order_id
+            JOIN public.order_items oi ON oi.order_id   = o.order_id
             JOIN public.customers c    ON o.customer_id = c.customer_id
             WHERE o.status NOT IN ('CANCELLED', 'RETURNED')
               AND o.order_date >= NOW() - INTERVAL '{int(days)} days'
@@ -168,8 +168,8 @@ def get_leaderboard(
                 SUM(oi.subtotal)                        AS value,
                 COUNT(DISTINCT o.order_id)              AS orders
             FROM public.orders o
-            JOIN public.order_items oi ON o.order_id   = o.order_id
-            JOIN public.channels ch    ON o.channel_id = ch.id
+            JOIN public.order_items oi ON oi.order_id  = o.order_id
+            JOIN public.sales_channels ch ON o.channel_id = ch.channel_id
             WHERE o.status NOT IN ('CANCELLED', 'RETURNED')
               AND o.order_date >= NOW() - INTERVAL '{int(days)} days'
               {cmp_filter}

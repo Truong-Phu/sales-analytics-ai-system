@@ -164,7 +164,7 @@ def get_geo_distribution(
             SUM(oi.subtotal)                        AS revenue,
             COUNT(DISTINCT o.order_id)              AS orders
         FROM public.orders o
-        JOIN public.order_items oi ON o.order_id   = o.order_id
+        JOIN public.order_items oi ON oi.order_id  = o.order_id
         JOIN public.customers c    ON o.customer_id = c.customer_id
         WHERE o.status NOT IN ('CANCELLED', 'RETURNED')
           AND o.order_date >= NOW() - INTERVAL '{int(days)} days'
