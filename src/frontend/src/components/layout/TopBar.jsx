@@ -455,9 +455,12 @@ export default function TopBar() {
   const { t }              = useTranslation()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
-  const canSeeAI         = ['Owner', 'Manager', 'DataIT'].includes(user?.role)
-  const canSeeOperations = ['DataIT', 'Owner'].includes(user?.role)
-  const canSeeAdmin      = user?.role === 'Owner'
+  // Chuẩn hóa role để tránh lỗi casing (ví dụ "owner" vs "Owner")
+  const role             = user?.role ? user.role.trim().charAt(0).toUpperCase() + user.role.trim().slice(1) : ''
+  const canSeeAI         = ['Owner', 'Manager', 'DataIT'].includes(role)
+  const canSeeSales      = ['Owner', 'Manager', 'Staff'].includes(role)
+  const canSeeOperations = ['DataIT', 'Owner'].includes(role)
+  const canSeeAdmin      = role === 'Owner'
 
   // ── Nhóm Phân tích AI (16 chức năng) ──────────────────────────────────────
   const aiMenuItems = [
@@ -496,6 +499,7 @@ export default function TopBar() {
   // ── Build navTabs theo role ────────────────────────────────────────────────
   const navTabs = [
     { href: '/dashboard', icon: 'dashboard', label: t('nav.dashboard', 'Tổng quan') },
+    ...(canSeeSales ? [{ href: '/pos', icon: 'point_of_sale', label: t('nav.pos', 'Bán hàng') }] : []),
     ...(canSeeAI ? [{
       href: '/forecast',
       icon: 'auto_awesome',
@@ -519,7 +523,7 @@ export default function TopBar() {
       hasMega: true,
       menuItems: opsMenuItems,
     }] : []),
-    ...(canSeeAdmin ? [{ href: '/admin', icon: 'manage_accounts', label: t('nav.admin', 'Quản trị') }] : []),
+    ...(canSeeAdmin ? [{ href: '/admin', icon: 'manage_accounts', label: t('nav.admin', 'Quản trị hệ thống') }] : []),
   ]
 
   return (

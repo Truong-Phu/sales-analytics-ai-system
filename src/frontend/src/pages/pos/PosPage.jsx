@@ -223,6 +223,7 @@ export default function PosPage() {
     setVoucherErr(''); setVoucherInfo(null)
     try {
       const res = await validateVoucher(voucherCode.trim(), subtotal, customer?.id)
+      if (!res.valid) { setVoucherErr(res.message ?? 'Voucher không hợp lệ'); return }
       setVoucherInfo(res)
     } catch (e) {
       setVoucherErr(e?.response?.data?.message ?? 'Voucher không hợp lệ')
@@ -232,7 +233,8 @@ export default function PosPage() {
   // ── Tính toán ─────────────────────────────────────────────────────────────
   const subtotal      = cart.reduce((s, i) => s + i.price * i.qty, 0)
   const pointsDiscount = usePoints * (loyalty?.vndPerPoint ?? 0)
-  const voucherDiscount = voucherInfo?.discountAmount ?? 0
+  // Backend trả về field "discount" (không phải discountAmount)
+  const voucherDiscount = Number(voucherInfo?.discount) || 0
   const total         = Math.max(0, subtotal - pointsDiscount - voucherDiscount)
 
   // ── Đặt hàng ─────────────────────────────────────────────────────────────
@@ -246,8 +248,8 @@ export default function PosPage() {
         customerPhone: customer?.phone ?? null,
         items: cart.map(i => ({ productId: i.id, qty: i.qty, price: i.price })),
         paymentMethod: payMethod,
-        voucherCode:   voucherCode.trim() || null,
-        usePoints,
+        voucherCode:   voucherInfo ? voucherCode.trim() : null,
+        usePoints:     customer ? usePoints : 0,
         note,
       }
       const res = await createOrder(dto)
@@ -409,7 +411,7 @@ export default function PosPage() {
           {voucherInfo && (
             <div className="flex items-center gap-2 text-xs" style={{ color: '#059669' }}>
               <span className="icon text-base">check_circle</span>
-              {voucherInfo.description ?? `Giảm ${fmtVND(voucherInfo.discountAmount)}`}
+              {voucherInfo.message ?? `Giảm ${fmtVND(voucherDiscount)}`}
             </div>
           )}
         </div>

@@ -27,7 +27,7 @@ export function AuthProvider({ children }) {
           id:                  payload.sub,
           name:                payload['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name'] ?? payload.name,
           email:               payload['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress'] ?? payload.email,
-          role:                (payload['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'] ?? payload.role)?.trim(),
+          role:                (() => { const r = (payload['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'] ?? payload.role ?? '').trim(); return r ? r.charAt(0).toUpperCase() + r.slice(1) : r })(),
           lang:                localStorage.getItem('lang') ?? 'vi',
           // Các field cần thiết để route guard hoạt động đúng sau khi reload trang
           isSuperAdmin:        payload['is_super_admin'] === 'True' || payload['is_super_admin'] === true,
