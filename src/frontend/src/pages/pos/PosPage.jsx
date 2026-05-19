@@ -3,572 +3,472 @@ import api from '../../api/axios'
 import { showToast } from '../../utils/toast'
 
 // ── API helpers ───────────────────────────────────────────────────────────────
-const posProductSearch = (q, catId) => {
-  const p = new URLSearchParams()
-  if (q?.trim()) p.set('q', q.trim())
-  if (catId)     p.set('categoryId', catId)
-  return api.get(`/api/pos/products/search?${p}`).then(r => r.data.products ?? r.data ?? [])
-}
-const loadProductsFallback = (q, catId) => {
-  const p = new URLSearchParams({ pageSize: 30 })
-  if (q?.trim()) p.set('search', q.trim())
-  if (catId)     p.set('categoryId', catId)
-  return api.get(`/api/products?${p}`)
-    .then(r => (r.data?.items ?? r.data ?? []).map(x => ({
-      ...x,
-      salePrice: x.salePrice ?? x.price ?? 0,
-      stockQty:  x.stockQty  ?? x.stock  ?? 0,
-    })))
-}
-const loadCategories    = ()     => api.get('/api/categories').then(r => r.data ?? [])
-const searchCustomers   = q      => api.get(`/api/pos/customers/search?q=${encodeURIComponent(q)}`).then(r => r.data.customers)
-const getLoyalty        = id     => api.get(`/api/pos/customers/${id}/loyalty`).then(r => r.data)
-const validateVoucher   = (code, orderValue, customerId) =>
+const searchProducts   = q   => api.get(`/api/pos/products/search?q=${encodeURIComponent(q)}`).then(r => r.data.products ?? r.data ?? [])
+const searchCustomers  = q   => api.get(`/api/pos/customers/search?q=${encodeURIComponent(q)}`).then(r => r.data.customers ?? [])
+const getLoyalty       = id  => api.get(`/api/pos/customers/${id}/loyalty`).then(r => r.data)
+const validateVoucher  = (code, orderValue, customerId) =>
   api.post('/api/pos/vouchers/validate', { code, orderValue, customerId }).then(r => r.data)
 const createOrder = dto => api.post('/api/pos/orders', dto).then(r => r.data)
 
 const fmtVND = n => new Intl.NumberFormat('vi-VN').format(Math.round(n)) + 'đ'
 
-// ── Product Catalog (left panel) ──────────────────────────────────────────────
-function ProductCatalog({ onAdd }) {
-  const [searchQ,    setSearchQ]    = useState('')
-  const [catFilter,  setCatFilter]  = useState('')
-  const [products,   setProducts]   = useState([])
-  const [categories, setCategories] = useState([])
-  const [loading,    setLoading]    = useState(false)
-  const timer = useRef(null)
+// ── Tìm kiếm sản phẩm với dropdown ──────────────────────────────────────────
+function ProductSearch({ onAdd }) {
+  const [q,        setQ]       = useState('')
+  const [results,  setResults] = useState([])
+  const [loading,  setLoading] = useState(false)
+  const [open,     setOpen]    = useState(false)
+  const timer  = useRef(null)
+  const wrapRef = useRef(null)
 
-  useEffect(() => {
-    loadCategories().then(list => setCategories(list.filter(c => !c.parentId))).catch(() => {})
-  }, [])
-
-  const doLoad = useCallback(async (q, cat) => {
+  const doSearch = useCallback(async (val) => {
+    if (!val.trim()) { setResults([]); setOpen(false); return }
     setLoading(true)
     try {
-      const res = await posProductSearch(q, cat)
-      setProducts(res)
+      const res = await searchProducts(val)
+      setResults(res.slice(0, 8))
+      setOpen(true)
     } catch {
-      try { setProducts(await loadProductsFallback(q, cat)) }
-      catch { setProducts([]) }
+      // fallback: tìm qua /api/products
+      try {
+        const fb = await api.get(`/api/products?search=${encodeURIComponent(val)}&pageSize=8`)
+        const items = (fb.data?.items ?? fb.data ?? []).map(x => ({
+          ...x, salePrice: x.salePrice ?? x.price ?? 0, stockQty: x.stockQty ?? x.stock ?? 0,
+        }))
+        setResults(items)
+        setOpen(items.length > 0)
+      } catch { setResults([]) }
     } finally { setLoading(false) }
   }, [])
 
-  useEffect(() => { doLoad('', '') }, [doLoad])
-
-  const handleSearch = e => {
-    const v = e.target.value
-    setSearchQ(v)
-    clearTimeout(timer.current)
-    timer.current = setTimeout(() => doLoad(v, catFilter), 350)
-  }
-
-  const handleCat = cat => {
-    setCatFilter(cat)
-    doLoad(searchQ, cat)
-  }
-
-  const stockColor = qty => qty > 10 ? '#10B981' : qty > 0 ? '#F59E0B' : '#EF4444'
-
-  return (
-    <div className="lcard flex flex-col min-h-0" style={{ height: '100%' }}>
-      {/* Search + filter header */}
-      <div className="p-3 space-y-2 shrink-0" style={{ borderBottom: '1px solid var(--border)' }}>
-        <div className="flex items-center gap-2 px-3 py-2 rounded-xl border"
-             style={{ borderColor: 'var(--border)', background: 'var(--bg-elevated)' }}>
-          <span className="icon text-lg" style={{ color: 'var(--text-tertiary)' }}>search</span>
-          <input
-            value={searchQ}
-            onChange={handleSearch}
-            placeholder="Tìm theo tên hoặc SKU..."
-            className="flex-1 bg-transparent text-sm outline-none"
-            style={{ color: 'var(--text-primary)' }}
-          />
-          {loading && (
-            <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full shrink-0"
-                  style={{ color: 'var(--accent-500)', animation: 'spin 0.7s linear infinite' }} />
-          )}
-        </div>
-
-        {/* Category pills */}
-        <div className="flex gap-1.5 flex-wrap">
-          {[{ id: '', name: 'Tất cả' }, ...categories].map(c => (
-            <button
-              key={c.id}
-              onClick={() => handleCat(String(c.id))}
-              className="px-3 py-1 rounded-full text-xs font-medium transition-all"
-              style={{
-                background: catFilter === String(c.id) ? 'var(--primary-500)' : 'var(--bg-elevated)',
-                color:      catFilter === String(c.id) ? '#fff'                : 'var(--text-secondary)',
-                border:     catFilter === String(c.id) ? '1px solid var(--primary-500)' : '1px solid var(--border)',
-              }}
-            >{c.name}</button>
-          ))}
-        </div>
-      </div>
-
-      {/* Product grid */}
-      <div className="flex-1 overflow-y-auto p-3">
-        {loading && products.length === 0 ? (
-          <div className="flex items-center justify-center h-32">
-            <span className="w-6 h-6 border-2 border-current border-t-transparent rounded-full"
-                  style={{ color: 'var(--primary-500)', animation: 'spin 0.7s linear infinite' }} />
-          </div>
-        ) : products.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-32 gap-2">
-            <span className="icon text-3xl" style={{ color: 'var(--text-tertiary)' }}>inventory_2</span>
-            <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>Không tìm thấy sản phẩm</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
-            {products.map(p => {
-              const outOfStock = (p.stockQty ?? 0) <= 0
-              return (
-                <button
-                  key={p.id}
-                  onClick={() => !outOfStock && onAdd(p)}
-                  disabled={outOfStock}
-                  className="text-left rounded-xl border transition-all disabled:opacity-50"
-                  style={{
-                    borderColor: 'var(--border)',
-                    background:  'var(--bg-elevated)',
-                    cursor:      outOfStock ? 'not-allowed' : 'pointer',
-                  }}
-                  onMouseEnter={e => { if (!outOfStock) e.currentTarget.style.borderColor = 'var(--primary-500)' }}
-                  onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)' }}
-                >
-                  {/* Image */}
-                  <div className="w-full h-24 rounded-t-xl overflow-hidden flex items-center justify-center"
-                       style={{ background: 'var(--bg-surface)' }}>
-                    {p.imageUrl
-                      ? <img src={p.imageUrl} alt={p.name} className="w-full h-full object-cover" />
-                      : <span className="icon text-3xl" style={{ color: 'var(--text-tertiary)' }}>inventory_2</span>
-                    }
-                  </div>
-                  {/* Info */}
-                  <div className="p-2 space-y-0.5">
-                    <p className="text-xs font-semibold leading-tight line-clamp-2"
-                       style={{ color: 'var(--text-primary)' }}>{p.name}</p>
-                    {p.sku && (
-                      <p className="text-[10px] font-mono" style={{ color: 'var(--text-tertiary)' }}>{p.sku}</p>
-                    )}
-                    <div className="flex items-center justify-between pt-1">
-                      <span className="text-xs font-bold" style={{ color: 'var(--accent-500)' }}>
-                        {fmtVND(p.salePrice ?? 0)}
-                      </span>
-                      <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium"
-                            style={{
-                              background: `${stockColor(p.stockQty ?? 0)}18`,
-                              color:       stockColor(p.stockQty ?? 0),
-                            }}>
-                        {(p.stockQty ?? 0) <= 0 ? 'Hết hàng' : `Còn ${p.stockQty}`}
-                      </span>
-                    </div>
-                  </div>
-                </button>
-              )
-            })}
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
-// ── Customer Search ────────────────────────────────────────────────────────────
-function CustomerSearch({ selectedCustomer, onSelect, onClear }) {
-  const [q,       setQ]       = useState('')
-  const [results, setResults] = useState([])
-  const [loading, setLoading] = useState(false)
-  const timer = useRef(null)
-
   const handleChange = e => {
-    const v = e.target.value
-    setQ(v)
+    const val = e.target.value
+    setQ(val)
     clearTimeout(timer.current)
-    if (!v.trim()) { setResults([]); return }
-    timer.current = setTimeout(async () => {
-      setLoading(true)
-      try { setResults(await searchCustomers(v)) }
-      catch { setResults([]) }
-      finally { setLoading(false) }
-    }, 300)
+    timer.current = setTimeout(() => doSearch(val), 280)
   }
 
-  if (selectedCustomer) {
-    return (
-      <div className="flex items-center justify-between p-3 rounded-xl"
-           style={{ background: 'var(--bg-elevated)', border: '1px solid var(--accent-500)' }}>
-        <div>
-          <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
-            {selectedCustomer.name}
-          </p>
-          <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-            {selectedCustomer.phone} · {selectedCustomer.totalOrders} đơn
-          </p>
-        </div>
-        <button onClick={onClear} className="text-xs px-2 py-1 rounded"
-                style={{ color: 'var(--text-tertiary)', background: 'var(--border)' }}>
-          Đổi KH
-        </button>
-      </div>
-    )
+  const pick = (p) => {
+    onAdd(p)
+    setQ('')
+    setResults([])
+    setOpen(false)
   }
+
+  // Đóng dropdown khi click ngoài
+  useEffect(() => {
+    const handler = e => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
 
   return (
-    <div className="relative">
-      <div className="flex items-center gap-2 px-3 py-2 rounded-xl border"
+    <div ref={wrapRef} className="relative">
+      <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl border"
            style={{ borderColor: 'var(--border)', background: 'var(--bg-elevated)' }}>
-        <span className="icon text-lg" style={{ color: 'var(--text-tertiary)' }}>person_search</span>
+        <span className="icon text-lg shrink-0" style={{ color: 'var(--text-tertiary)' }}>search</span>
         <input
           value={q}
           onChange={handleChange}
-          placeholder="Tìm khách theo tên hoặc SĐT..."
+          onFocus={() => results.length > 0 && setOpen(true)}
+          placeholder="Tìm theo tên, SKU hoặc mã vạch..."
           className="flex-1 bg-transparent text-sm outline-none"
           style={{ color: 'var(--text-primary)' }}
         />
         {loading && (
-          <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full"
-                style={{ color: 'var(--accent-500)', animation: 'spin 0.7s linear infinite' }} />
+          <span className="w-4 h-4 border-2 rounded-full shrink-0 animate-spin"
+                style={{ borderColor: 'var(--border)', borderTopColor: 'var(--primary-500)' }} />
+        )}
+        {q && !loading && (
+          <button onClick={() => { setQ(''); setResults([]); setOpen(false) }}
+                  className="shrink-0 text-sm" style={{ color: 'var(--text-tertiary)' }}>×</button>
         )}
       </div>
-      {results.length > 0 && (
-        <div className="absolute left-0 right-0 top-full mt-1 rounded-xl border shadow-xl z-20 overflow-hidden"
-             style={{ background: 'var(--bg-surface)', borderColor: 'var(--border)' }}>
-          {results.map(c => (
-            <button key={c.id} onClick={() => { onSelect(c); setQ(''); setResults([]) }}
-                    className="w-full flex items-start gap-3 px-4 py-3 text-left transition-colors"
-                    style={{ borderBottom: '1px solid var(--border)' }}
-                    onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
-                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-              <span className="icon text-2xl mt-0.5" style={{ color: 'var(--text-tertiary)' }}>person</span>
-              <div className="flex-1">
-                <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{c.name}</p>
-                <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                  {c.phone} · {c.totalOrders} đơn · {fmtVND(c.totalSpent)}
-                </p>
-                {c.loyaltyPoints > 0 && (
-                  <p className="text-xs" style={{ color: '#F59E0B' }}>★ {c.loyaltyPoints} điểm</p>
-                )}
-              </div>
-            </button>
-          ))}
-          <button
-            onClick={() => { onSelect({ id: null, name: 'Khách lẻ', phone: '' }); setQ(''); setResults([]) }}
-            className="w-full px-4 py-3 text-sm text-left"
-            style={{ color: 'var(--accent-500)' }}
-          >
-            + Khách lẻ
-          </button>
+
+      {open && results.length > 0 && (
+        <div className="absolute z-30 w-full mt-1 rounded-xl shadow-lg overflow-hidden"
+             style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', maxHeight: 320, overflowY: 'auto' }}>
+          {results.map(p => {
+            const oos = (p.stockQty ?? 0) <= 0
+            return (
+              <button
+                key={p.id}
+                onClick={() => !oos && pick(p)}
+                disabled={oos}
+                className="w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors"
+                style={{ opacity: oos ? 0.5 : 1 }}
+                onMouseEnter={e => !oos && (e.currentTarget.style.background = 'var(--bg-elevated)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+              >
+                {p.imageUrl
+                  ? <img src={p.imageUrl} className="w-9 h-9 rounded object-cover shrink-0" alt="" />
+                  : <div className="w-9 h-9 rounded shrink-0 flex items-center justify-center"
+                         style={{ background: 'var(--bg-elevated)' }}>
+                      <span className="icon text-base" style={{ color: 'var(--text-tertiary)' }}>inventory_2</span>
+                    </div>
+                }
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{p.name}</div>
+                  <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                    {p.sku && <span className="mr-2">{p.sku}</span>}
+                    <span style={{ color: oos ? '#EF4444' : 'var(--text-tertiary)' }}>
+                      {oos ? 'Hết hàng' : `Còn ${p.stockQty}`}
+                    </span>
+                  </div>
+                </div>
+                <div className="shrink-0 text-sm font-bold" style={{ color: 'var(--primary-500)' }}>
+                  {fmtVND(p.salePrice ?? p.price ?? 0)}
+                </div>
+              </button>
+            )
+          })}
         </div>
       )}
     </div>
   )
 }
 
-// ── Main POS Page ─────────────────────────────────────────────────────────────
+// ── Giỏ hàng ─────────────────────────────────────────────────────────────────
+function CartItem({ item, onQty, onRemove }) {
+  return (
+    <div className="flex items-center gap-3 py-2.5"
+         style={{ borderBottom: '1px solid var(--border)' }}>
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{item.name}</div>
+        <div className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
+          {fmtVND(item.price)} × {item.qty}
+        </div>
+      </div>
+      <div className="flex items-center gap-1 shrink-0">
+        <button onClick={() => onQty(item.id, item.qty - 1)}
+                className="w-7 h-7 rounded-lg flex items-center justify-center text-sm font-bold"
+                style={{ background: 'var(--bg-elevated)', color: 'var(--text-secondary)' }}>−</button>
+        <span className="w-7 text-center text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{item.qty}</span>
+        <button onClick={() => onQty(item.id, item.qty + 1)}
+                className="w-7 h-7 rounded-lg flex items-center justify-center text-sm font-bold"
+                style={{ background: 'var(--bg-elevated)', color: 'var(--text-secondary)' }}>+</button>
+      </div>
+      <div className="w-20 text-right text-sm font-bold shrink-0" style={{ color: 'var(--text-primary)' }}>
+        {fmtVND(item.price * item.qty)}
+      </div>
+      <button onClick={() => onRemove(item.id)}
+              className="w-6 h-6 flex items-center justify-center rounded shrink-0"
+              style={{ color: '#EF4444' }}>
+        <span className="icon" style={{ fontSize: 16 }}>close</span>
+      </button>
+    </div>
+  )
+}
+
+// ── Main POS ─────────────────────────────────────────────────────────────────
 export default function PosPage() {
-  const [cart,          setCart]          = useState([])
-  const [customer,      setCustomer]      = useState(null)
-  const [loyalty,       setLoyalty]       = useState(null)
-  const [voucherCode,   setVoucherCode]   = useState('')
-  const [voucherResult, setVoucherResult] = useState(null)
-  const [usePoints,     setUsePoints]     = useState(0)
-  const [payMethod,     setPayMethod]     = useState('CASH')
-  const [note,          setNote]          = useState('')
-  const [submitting,    setSubmitting]    = useState(false)
-  const [receipt,       setReceipt]       = useState(null)
+  const [cart,        setCart]        = useState([])
+  const [customer,    setCustomer]    = useState(null)
+  const [cusSearch,   setCusSearch]   = useState('')
+  const [cusResults,  setCusResults]  = useState([])
+  const [loyalty,     setLoyalty]     = useState(null)
+  const [usePoints,   setUsePoints]   = useState(0)
+  const [voucherCode, setVoucherCode] = useState('')
+  const [voucherInfo, setVoucherInfo] = useState(null)
+  const [voucherErr,  setVoucherErr]  = useState('')
+  const [payMethod,   setPayMethod]   = useState('CASH')
+  const [note,        setNote]        = useState('')
+  const [submitting,  setSubmitting]  = useState(false)
+  const [lastOrder,   setLastOrder]   = useState(null)
+  const cusTimer = useRef(null)
 
-  const handleSelectCustomer = async c => {
-    setCustomer(c)
-    setLoyalty(null)
-    setUsePoints(0)
-    if (c.id) {
-      try { setLoyalty(await getLoyalty(c.id)) }
-      catch { /* ignore */ }
-    }
-  }
-
-  const addToCart = p => {
+  // ── Giỏ hàng ──────────────────────────────────────────────────────────────
+  const addToCart = (product) => {
     setCart(prev => {
-      const idx = prev.findIndex(i => i.product.id === p.id)
-      if (idx >= 0) {
-        const next = [...prev]
-        next[idx] = { ...next[idx], qty: next[idx].qty + 1 }
-        return next
-      }
-      return [...prev, { product: p, qty: 1 }]
+      const existing = prev.find(i => i.id === product.id)
+      if (existing) return prev.map(i => i.id === product.id ? { ...i, qty: i.qty + 1 } : i)
+      return [...prev, { id: product.id, name: product.name, price: product.salePrice ?? product.price ?? 0, qty: 1, imageUrl: product.imageUrl }]
     })
   }
 
-  const updateQty = (id, delta) => {
-    setCart(prev => prev
-      .map(i => i.product.id === id ? { ...i, qty: Math.max(0, i.qty + delta) } : i)
-      .filter(i => i.qty > 0)
-    )
+  const setQty = (id, qty) => {
+    if (qty <= 0) setCart(prev => prev.filter(i => i.id !== id))
+    else setCart(prev => prev.map(i => i.id === id ? { ...i, qty } : i))
   }
 
-  const subtotal        = cart.reduce((s, i) => s + i.product.salePrice * i.qty, 0)
-  const voucherDiscount = voucherResult?.valid ? voucherResult.discount : 0
-  const pointsDiscount  = loyalty && usePoints > 0 ? usePoints * (loyalty.vndPerPoint ?? 1000) : 0
-  const totalDiscount   = voucherDiscount + pointsDiscount
-  const total           = Math.max(0, subtotal - totalDiscount)
+  const removeFromCart = id => setCart(prev => prev.filter(i => i.id !== id))
 
-  const handleValidateVoucher = async () => {
+  const clearCart = () => {
+    setCart([]); setCustomer(null); setCusSearch(''); setLoyalty(null)
+    setUsePoints(0); setVoucherCode(''); setVoucherInfo(null); setVoucherErr('')
+    setNote(''); setPayMethod('CASH')
+  }
+
+  // ── Khách hàng ────────────────────────────────────────────────────────────
+  const handleCusSearch = e => {
+    const v = e.target.value
+    setCusSearch(v)
+    clearTimeout(cusTimer.current)
+    if (!v.trim()) { setCusResults([]); return }
+    cusTimer.current = setTimeout(async () => {
+      try { setCusResults(await searchCustomers(v)) } catch { setCusResults([]) }
+    }, 300)
+  }
+
+  const pickCustomer = async (c) => {
+    setCustomer(c)
+    setCusSearch(c.name ?? c.phone ?? '')
+    setCusResults([])
+    try { setLoyalty(await getLoyalty(c.id)) } catch { setLoyalty(null) }
+  }
+
+  // ── Voucher ───────────────────────────────────────────────────────────────
+  const applyVoucher = async () => {
     if (!voucherCode.trim()) return
+    setVoucherErr(''); setVoucherInfo(null)
     try {
-      const r = await validateVoucher(voucherCode, subtotal, customer?.id)
-      setVoucherResult(r)
-      if (!r.valid) showToast(r.message, 'error')
-      else          showToast(r.message, 'success')
-    } catch { showToast('Không kiểm tra được voucher', 'error') }
+      const res = await validateVoucher(voucherCode.trim(), subtotal, customer?.id)
+      setVoucherInfo(res)
+    } catch (e) {
+      setVoucherErr(e?.response?.data?.message ?? 'Voucher không hợp lệ')
+    }
   }
 
+  // ── Tính toán ─────────────────────────────────────────────────────────────
+  const subtotal      = cart.reduce((s, i) => s + i.price * i.qty, 0)
+  const pointsDiscount = usePoints * (loyalty?.vndPerPoint ?? 0)
+  const voucherDiscount = voucherInfo?.discountAmount ?? 0
+  const total         = Math.max(0, subtotal - pointsDiscount - voucherDiscount)
+
+  // ── Đặt hàng ─────────────────────────────────────────────────────────────
   const handleSubmit = async () => {
     if (cart.length === 0) { showToast('Giỏ hàng trống', 'error'); return }
     setSubmitting(true)
     try {
-      const result = await createOrder({
+      const dto = {
         customerId:    customer?.id ?? null,
-        customerName:  customer?.name,
-        customerPhone: customer?.phone,
-        items:        cart.map(i => ({ productId: i.product.id, qty: i.qty, price: i.product.salePrice })),
+        customerName:  customer?.name ?? null,
+        customerPhone: customer?.phone ?? null,
+        items: cart.map(i => ({ productId: i.id, qty: i.qty, price: i.price })),
         paymentMethod: payMethod,
-        voucherCode:   voucherResult?.valid ? voucherCode : null,
+        voucherCode:   voucherCode.trim() || null,
         usePoints,
         note,
-      })
-      setReceipt(result)
-      setCart([])
-      setCustomer(null)
-      setLoyalty(null)
-      setVoucherCode('')
-      setVoucherResult(null)
-      setUsePoints(0)
-      setNote('')
+      }
+      const res = await createOrder(dto)
+      setLastOrder(res)
+      showToast('Tạo đơn hàng thành công!', 'success')
+      clearCart()
     } catch (e) {
-      showToast(e.response?.data?.message ?? 'Lỗi tạo đơn hàng', 'error')
+      showToast(e?.response?.data?.message ?? 'Lỗi tạo đơn hàng', 'error')
     } finally { setSubmitting(false) }
   }
 
-  // ── Receipt screen ────────────────────────────────────────────────────────
-  if (receipt) {
-    return (
-      <div className="max-w-md mx-auto mt-10 lcard p-8 text-center space-y-4">
-        <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto"
-             style={{ background: 'rgba(16,185,129,0.15)' }}>
-          <span className="icon text-4xl" style={{ color: '#10B981' }}>check_circle</span>
-        </div>
-        <h2 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Đơn hàng thành công!</h2>
-        <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{receipt.orderCode}</p>
-        <div className="text-left space-y-2 text-sm">
-          <div className="flex justify-between">
-            <span style={{ color: 'var(--text-tertiary)' }}>Tạm tính</span>
-            <span>{fmtVND(receipt.subtotal)}</span>
-          </div>
-          {receipt.discount > 0 && (
-            <div className="flex justify-between" style={{ color: '#10B981' }}>
-              <span>Giảm giá</span><span>-{fmtVND(receipt.discount)}</span>
-            </div>
-          )}
-          <div className="flex justify-between font-bold text-base pt-2 border-t"
-               style={{ borderColor: 'var(--border)' }}>
-            <span style={{ color: 'var(--text-primary)' }}>Tổng cộng</span>
-            <span style={{ color: 'var(--accent-500)' }}>{fmtVND(receipt.total)}</span>
-          </div>
-        </div>
-        {receipt.pointsEarned > 0 && (
-          <p className="text-sm py-2 px-3 rounded-lg"
-             style={{ background: 'rgba(245,158,11,0.1)', color: '#F59E0B' }}>
-            ★ KH được tích {receipt.pointsEarned} điểm · Tổng: {receipt.remainingPoints} điểm
-          </p>
-        )}
-        <button onClick={() => setReceipt(null)} className="lbtn lbtn-primary w-full justify-center">
-          Tạo đơn mới
-        </button>
-      </div>
-    )
-  }
+  const PAYMENT_METHODS = [
+    { id: 'CASH',          icon: 'payments',         label: 'Tiền mặt'   },
+    { id: 'BANK_TRANSFER', icon: 'account_balance',  label: 'Chuyển khoản' },
+    { id: 'MOMO',          icon: 'phone_iphone',     label: 'MoMo'       },
+    { id: 'VNPAY',         icon: 'qr_code_2',        label: 'VNPay'      },
+  ]
 
   return (
-    <div className="flex gap-4 h-[calc(100vh-80px)]">
-      {/* ── Cột trái: Product Catalog + Cart ──────────────────────────────── */}
-      <div className="flex-1 min-w-0 flex flex-col gap-3 overflow-hidden">
-        {/* Product catalog */}
-        <div className="flex-1 min-h-0">
-          <ProductCatalog onAdd={addToCart} />
+    <div className="flex gap-4" style={{ height: 'calc(100vh - 80px)' }}>
+
+      {/* ── Cột trái: Tìm sản phẩm + Giỏ hàng ────────────────────────────── */}
+      <div className="flex-1 flex flex-col gap-3 min-w-0 overflow-hidden">
+
+        {/* Search sản phẩm */}
+        <div className="lcard p-4">
+          <div className="text-xs font-semibold mb-2" style={{ color: 'var(--text-tertiary)' }}>
+            THÊM SẢN PHẨM
+          </div>
+          <ProductSearch onAdd={addToCart} />
         </div>
 
-        {/* Cart */}
-        {cart.length > 0 && (
-          <div className="lcard shrink-0 max-h-52 flex flex-col">
-            <div className="px-4 py-2 shrink-0" style={{ borderBottom: '1px solid var(--border)' }}>
-              <p className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>
-                GIỎ HÀNG ({cart.reduce((s, i) => s + i.qty, 0)} SP) — {fmtVND(subtotal)}
+        {/* Giỏ hàng */}
+        <div className="lcard flex flex-col flex-1 min-h-0 overflow-hidden">
+          <div className="px-4 pt-4 pb-2 flex items-center justify-between shrink-0">
+            <div className="flex items-center gap-2">
+              <span className="icon text-base" style={{ color: 'var(--primary-500)' }}>shopping_cart</span>
+              <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+                Giỏ hàng
+              </span>
+              {cart.length > 0 && (
+                <span className="px-2 py-0.5 rounded-full text-xs font-bold"
+                      style={{ background: 'var(--primary-500)', color: '#fff' }}>
+                  {cart.reduce((s, i) => s + i.qty, 0)}
+                </span>
+              )}
+            </div>
+            {cart.length > 0 && (
+              <button onClick={clearCart} className="text-xs" style={{ color: '#EF4444' }}>Xóa tất cả</button>
+            )}
+          </div>
+
+          {cart.length === 0 ? (
+            <div className="flex-1 flex flex-col items-center justify-center gap-3 px-4 pb-4">
+              <span className="icon text-5xl" style={{ color: 'var(--text-tertiary)', opacity: 0.4 }}>shopping_cart</span>
+              <p className="text-sm text-center" style={{ color: 'var(--text-tertiary)' }}>
+                Tìm và thêm sản phẩm vào giỏ hàng
               </p>
             </div>
-            <div className="overflow-y-auto px-4">
-              {cart.map(({ product: p, qty }) => (
-                <div key={p.id} className="flex items-center gap-3 py-2"
-                     style={{ borderBottom: '1px solid var(--border)' }}>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{p.name}</p>
-                    <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{fmtVND(p.salePrice)} / cái</p>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <button onClick={() => updateQty(p.id, -1)}
-                            className="w-6 h-6 rounded-full flex items-center justify-center text-sm"
-                            style={{ background: 'var(--bg-elevated)', color: 'var(--text-secondary)' }}>−</button>
-                    <span className="text-sm font-semibold w-6 text-center" style={{ color: 'var(--text-primary)' }}>{qty}</span>
-                    <button onClick={() => updateQty(p.id, 1)}
-                            className="w-6 h-6 rounded-full flex items-center justify-center text-sm"
-                            style={{ background: 'var(--bg-elevated)', color: 'var(--text-secondary)' }}>+</button>
-                  </div>
-                  <p className="text-sm font-semibold w-20 text-right" style={{ color: 'var(--accent-500)' }}>
-                    {fmtVND(p.salePrice * qty)}
-                  </p>
-                  <button onClick={() => updateQty(p.id, -qty)} className="icon text-base"
-                          style={{ color: 'var(--text-tertiary)' }}>delete</button>
-                </div>
+          ) : (
+            <div className="flex-1 overflow-y-auto px-4 pb-4">
+              {cart.map(item => (
+                <CartItem key={item.id} item={item} onQty={setQty} onRemove={removeFromCart} />
               ))}
             </div>
+          )}
+        </div>
+
+        {/* Thông báo đơn cuối */}
+        {lastOrder && (
+          <div className="rounded-xl p-3 text-sm"
+               style={{ background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.25)', color: '#059669' }}>
+            ✓ Đơn <strong>#{lastOrder.orderCode ?? lastOrder.id}</strong> đã tạo thành công —{' '}
+            <span style={{ color: 'var(--text-tertiary)' }}>{fmtVND(lastOrder.totalAmount ?? 0)}</span>
           </div>
         )}
       </div>
 
-      {/* ── Cột phải: KH + Voucher + Thanh toán ───────────────────────────── */}
-      <div className="w-80 xl:w-96 shrink-0 overflow-y-auto flex flex-col gap-3">
+      {/* ── Cột phải: Khách hàng + Thanh toán ────────────────────────────── */}
+      <div className="w-80 xl:w-96 shrink-0 flex flex-col gap-3 overflow-y-auto">
+
         {/* Khách hàng */}
         <div className="lcard p-4 space-y-3">
-          <p className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>KHÁCH HÀNG</p>
-          <CustomerSearch
-            selectedCustomer={customer}
-            onSelect={handleSelectCustomer}
-            onClear={() => { setCustomer(null); setLoyalty(null); setUsePoints(0) }}
-          />
-          {loyalty && (
-            <div className="p-3 rounded-lg text-sm"
-                 style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)' }}>
-              <p style={{ color: '#F59E0B' }}>
-                ★ Điểm loyalty: <strong>{loyalty.balance}</strong> ({fmtVND(loyalty.balance * loyalty.vndPerPoint)})
-              </p>
-              {loyalty.canRedeem && (
-                <div className="flex items-center gap-2 mt-2">
-                  <label className="text-xs" style={{ color: 'var(--text-secondary)' }}>Dùng điểm:</label>
-                  <input
-                    type="number" min={0} max={loyalty.balance} step={loyalty.minRedeem}
-                    value={usePoints}
-                    onChange={e => setUsePoints(Math.min(Number(e.target.value), loyalty.balance))}
-                    className="w-24 px-2 py-1 rounded border text-xs"
-                    style={{ borderColor: 'var(--border)', background: 'var(--bg-elevated)', color: 'var(--text-primary)' }}
-                  />
-                  {usePoints > 0 && (
-                    <span className="text-xs" style={{ color: '#10B981' }}>−{fmtVND(usePoints * loyalty.vndPerPoint)}</span>
-                  )}
-                </div>
-              )}
+          <div className="text-xs font-semibold" style={{ color: 'var(--text-tertiary)' }}>KHÁCH HÀNG</div>
+          <div className="relative">
+            <input
+              value={cusSearch}
+              onChange={handleCusSearch}
+              placeholder="Tên hoặc số điện thoại..."
+              className="linput text-sm w-full"
+            />
+            {cusResults.length > 0 && (
+              <div className="absolute z-20 w-full mt-1 rounded-xl shadow-lg overflow-hidden"
+                   style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', maxHeight: 200, overflowY: 'auto' }}>
+                <button
+                  onClick={() => { setCustomer(null); setCusSearch(''); setCusResults([]); setLoyalty(null) }}
+                  className="w-full text-left px-4 py-2.5 text-sm"
+                  style={{ color: 'var(--text-tertiary)' }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                  Khách vãng lai
+                </button>
+                {cusResults.map(c => (
+                  <button key={c.id} onClick={() => pickCustomer(c)}
+                          className="w-full text-left px-4 py-2.5"
+                          onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
+                          onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                    <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{c.name}</div>
+                    <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{c.phone}</div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          {customer && (
+            <div className="flex items-center gap-2 px-3 py-2 rounded-lg"
+                 style={{ background: 'rgba(99,102,241,0.07)', border: '1px solid rgba(99,102,241,0.2)' }}>
+              <span className="icon text-base" style={{ color: 'var(--primary-500)' }}>person</span>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{customer.name}</div>
+                {customer.phone && <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{customer.phone}</div>}
+                {loyalty && (
+                  <div className="text-xs mt-0.5" style={{ color: '#F59E0B' }}>
+                    ⭐ {loyalty.currentPoints?.toLocaleString() ?? 0} điểm
+                  </div>
+                )}
+              </div>
+              <button onClick={() => { setCustomer(null); setCusSearch(''); setLoyalty(null); setUsePoints(0) }}
+                      className="text-lg leading-none shrink-0" style={{ color: 'var(--text-tertiary)' }}>×</button>
+            </div>
+          )}
+          {/* Dùng điểm */}
+          {loyalty && loyalty.currentPoints > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs flex-1" style={{ color: 'var(--text-secondary)' }}>
+                Đổi điểm (tối đa {loyalty.currentPoints})
+              </span>
+              <input type="number" min={0} max={loyalty.currentPoints}
+                     value={usePoints}
+                     onChange={e => setUsePoints(Math.min(loyalty.currentPoints, Math.max(0, Number(e.target.value))))}
+                     className="linput !h-8 w-28 text-sm text-right" />
             </div>
           )}
         </div>
 
         {/* Voucher */}
-        <div className="lcard p-4 space-y-3">
-          <p className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>VOUCHER</p>
+        <div className="lcard p-4 space-y-2">
+          <div className="text-xs font-semibold" style={{ color: 'var(--text-tertiary)' }}>VOUCHER</div>
           <div className="flex gap-2">
             <input
               value={voucherCode}
-              onChange={e => { setVoucherCode(e.target.value.toUpperCase()); setVoucherResult(null) }}
+              onChange={e => { setVoucherCode(e.target.value.toUpperCase()); setVoucherInfo(null); setVoucherErr('') }}
               placeholder="Nhập mã voucher..."
-              className="flex-1 px-3 py-2 rounded-lg border text-sm uppercase"
-              style={{ borderColor: 'var(--border)', background: 'var(--bg-elevated)', color: 'var(--text-primary)' }}
+              className="linput text-sm flex-1"
             />
-            <button onClick={handleValidateVoucher} disabled={!voucherCode.trim()}
-                    className="lbtn px-3 py-2 text-sm disabled:opacity-40"
-                    style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)' }}>
-              Áp dụng
-            </button>
+            <button onClick={applyVoucher} className="lbtn lbtn-secondary !h-9 !px-3 text-xs shrink-0">Áp dụng</button>
           </div>
-          {voucherResult && (
-            <p className="text-xs" style={{ color: voucherResult.valid ? '#10B981' : '#EF4444' }}>
-              {voucherResult.message}
-            </p>
+          {voucherErr  && <p className="text-xs" style={{ color: '#EF4444' }}>{voucherErr}</p>}
+          {voucherInfo && (
+            <div className="flex items-center gap-2 text-xs" style={{ color: '#059669' }}>
+              <span className="icon text-base">check_circle</span>
+              {voucherInfo.description ?? `Giảm ${fmtVND(voucherInfo.discountAmount)}`}
+            </div>
           )}
         </div>
 
-        {/* Tóm tắt */}
-        <div className="lcard p-4 space-y-2">
-          <p className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>TÓM TẮT</p>
-          <div className="flex justify-between text-sm">
-            <span style={{ color: 'var(--text-tertiary)' }}>Tạm tính</span>
-            <span style={{ color: 'var(--text-primary)' }}>{fmtVND(subtotal)}</span>
-          </div>
-          {voucherDiscount > 0 && (
-            <div className="flex justify-between text-sm" style={{ color: '#10B981' }}>
-              <span>Voucher</span><span>-{fmtVND(voucherDiscount)}</span>
+        {/* Tổng kết */}
+        <div className="lcard p-4 space-y-2.5">
+          <div className="text-xs font-semibold" style={{ color: 'var(--text-tertiary)' }}>TỔNG KẾT</div>
+          {[
+            { label: 'Tạm tính',       value: subtotal,        color: 'var(--text-primary)' },
+            ...(pointsDiscount > 0 ? [{ label: `Trừ điểm (${usePoints} điểm)`, value: -pointsDiscount, color: '#059669' }] : []),
+            ...(voucherDiscount > 0 ? [{ label: 'Giảm voucher',                value: -voucherDiscount, color: '#059669' }] : []),
+          ].map(r => (
+            <div key={r.label} className="flex justify-between text-sm">
+              <span style={{ color: 'var(--text-secondary)' }}>{r.label}</span>
+              <span style={{ color: r.color }}>{r.value < 0 ? '-' : ''}{fmtVND(Math.abs(r.value))}</span>
             </div>
-          )}
-          {pointsDiscount > 0 && (
-            <div className="flex justify-between text-sm" style={{ color: '#F59E0B' }}>
-              <span>Đổi điểm</span><span>-{fmtVND(pointsDiscount)}</span>
-            </div>
-          )}
-          {totalDiscount > 0 && (
-            <div className="flex justify-between text-sm" style={{ color: '#EF4444' }}>
-              <span>Tổng giảm</span><span>-{fmtVND(totalDiscount)}</span>
-            </div>
-          )}
-          <div className="flex justify-between font-bold text-base pt-2 border-t"
-               style={{ borderColor: 'var(--border)' }}>
-            <span style={{ color: 'var(--text-primary)' }}>Tổng cộng</span>
-            <span style={{ color: 'var(--accent-500)' }}>{fmtVND(total)}</span>
+          ))}
+          <div className="flex justify-between items-center pt-2"
+               style={{ borderTop: '2px solid var(--border)' }}>
+            <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Tổng cộng</span>
+            <span className="text-xl font-bold" style={{ color: 'var(--primary-500)' }}>{fmtVND(total)}</span>
           </div>
         </div>
 
         {/* Phương thức thanh toán */}
         <div className="lcard p-4 space-y-3">
-          <p className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>THANH TOÁN</p>
+          <div className="text-xs font-semibold" style={{ color: 'var(--text-tertiary)' }}>THANH TOÁN</div>
           <div className="grid grid-cols-2 gap-2">
-            {[
-              { key: 'CASH',          label: 'Tiền mặt',     icon: 'payments' },
-              { key: 'BANK_TRANSFER', label: 'Chuyển khoản', icon: 'account_balance' },
-              { key: 'MOMO',          label: 'Momo',          icon: 'smartphone' },
-              { key: 'VNPAY',         label: 'VNPay',         icon: 'credit_card' },
-            ].map(m => (
-              <button key={m.key} onClick={() => setPayMethod(m.key)}
-                      className="flex items-center gap-2 p-2 rounded-lg border text-sm font-medium transition-all"
+            {PAYMENT_METHODS.map(m => (
+              <button key={m.id} onClick={() => setPayMethod(m.id)}
+                      className="flex flex-col items-center gap-1 py-3 rounded-xl border text-xs font-medium transition-all"
                       style={{
-                        borderColor: payMethod === m.key ? 'var(--accent-500)' : 'var(--border)',
-                        background:  payMethod === m.key ? 'rgba(99,102,241,0.1)' : 'var(--bg-elevated)',
-                        color:       payMethod === m.key ? 'var(--accent-500)' : 'var(--text-secondary)',
+                        background:   payMethod === m.id ? 'rgba(99,102,241,0.1)' : 'var(--bg-elevated)',
+                        borderColor:  payMethod === m.id ? 'var(--primary-500)'   : 'var(--border)',
+                        color:        payMethod === m.id ? 'var(--primary-500)'   : 'var(--text-secondary)',
                       }}>
-                <span className="icon text-base">{m.icon}</span>{m.label}
+                <span className="icon text-xl">{m.icon}</span>
+                {m.label}
               </button>
             ))}
           </div>
-          <input
+
+          <textarea
             value={note}
             onChange={e => setNote(e.target.value)}
             placeholder="Ghi chú đơn hàng..."
-            className="w-full px-3 py-2 rounded-lg border text-sm"
-            style={{ borderColor: 'var(--border)', background: 'var(--bg-elevated)', color: 'var(--text-primary)' }}
+            rows={2}
+            className="linput text-sm w-full resize-none"
+            style={{ height: 'auto' }}
           />
+
           <button
             onClick={handleSubmit}
             disabled={submitting || cart.length === 0}
-            className="lbtn lbtn-primary w-full justify-center disabled:opacity-50"
-            style={{ height: 48 }}
+            className="lbtn lbtn-primary w-full !h-12 text-base font-bold gap-2"
+            style={{ opacity: cart.length === 0 ? 0.5 : 1 }}
           >
-            {submitting ? (
-              <>
-                <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full"
-                      style={{ animation: 'spin 0.7s linear infinite' }} />
-                Đang xử lý...
-              </>
-            ) : (
-              <>
-                <span className="icon text-xl">point_of_sale</span>
-                {cart.length === 0 ? 'Chọn sản phẩm' : `Hoàn tất — ${fmtVND(total)}`}
-              </>
-            )}
+            <span className="icon">receipt_long</span>
+            {submitting ? 'Đang xử lý...' : `Tạo đơn — ${fmtVND(total)}`}
           </button>
         </div>
       </div>

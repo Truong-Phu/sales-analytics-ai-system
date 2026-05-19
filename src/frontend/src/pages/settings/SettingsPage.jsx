@@ -563,6 +563,7 @@ function LoyaltySection() {
   // Voucher list
   const [vouchers, setVouchers]   = useState([])
   const [vLoad,    setVLoad]      = useState(false)
+  const [vErr,     setVErr]       = useState('')   // lỗi riêng cho voucher
   const [showNew,  setShowNew]    = useState(false)
   const [newV, setNewV] = useState({ code:'', type:'PERCENT', value:'', minOrder:'', maxDiscount:'', usageLimit:'', validFrom:'', validTo:'' })
   const [editV,    setEditV]      = useState(null)   // voucher đang sửa (null = không mở)
@@ -590,33 +591,37 @@ function LoyaltySection() {
   }
 
   const createVoucher = async () => {
+    setVErr('')
     try {
       await axios.post('/api/pos/vouchers', { ...newV, value: Number(newV.value), minOrderValue: Number(newV.minOrder || 0), maxDiscount: newV.maxDiscount ? Number(newV.maxDiscount) : null, usageLimit: newV.usageLimit ? Number(newV.usageLimit) : null })
       setShowNew(false)
       setNewV({ code:'', type:'PERCENT', value:'', minOrder:'', maxDiscount:'', usageLimit:'', validFrom:'', validTo:'' })
       loadVouchers()
-    } catch (e) { setErr(e?.response?.data?.message ?? 'Lỗi tạo voucher') }
+    } catch (e) { setVErr(e?.response?.data?.message ?? 'Lỗi tạo voucher') }
   }
 
   const openEdit = (v) => {
+    setVErr('')
     const toLocal = iso => iso ? iso.slice(0, 16) : ''
     setEditV({ id: v.id, code: v.code, type: v.type, value: String(v.value), minOrder: String(v.minOrderValue ?? 0), maxDiscount: v.maxDiscount ? String(v.maxDiscount) : '', usageLimit: v.usageLimit ? String(v.usageLimit) : '', validFrom: toLocal(v.validFrom), validTo: toLocal(v.validTo), isActive: v.isActive })
   }
 
   const saveEdit = async () => {
+    setVErr('')
     try {
       await axios.put(`/api/pos/vouchers/${editV.id}`, { ...editV, value: Number(editV.value), minOrderValue: Number(editV.minOrder || 0), maxDiscount: editV.maxDiscount ? Number(editV.maxDiscount) : null, usageLimit: editV.usageLimit ? Number(editV.usageLimit) : null })
       setEditV(null)
       loadVouchers()
-    } catch (e) { setErr(e?.response?.data?.message ?? 'Lỗi cập nhật voucher') }
+    } catch (e) { setVErr(e?.response?.data?.message ?? 'Lỗi cập nhật voucher') }
   }
 
   const deleteVoucher = async (id, code) => {
     if (!window.confirm(`Xóa voucher "${code}"? Hành động này không thể hoàn tác.`)) return
+    setVErr('')
     try {
       await axios.delete(`/api/pos/vouchers/${id}`)
       loadVouchers()
-    } catch (e) { setErr(e?.response?.data?.message ?? 'Lỗi xóa voucher') }
+    } catch (e) { setVErr(e?.response?.data?.message ?? 'Lỗi xóa voucher') }
   }
 
   if (loading) return <div className="lcard p-10 flex justify-center"><span className="icon animate-spin text-2xl" style={{ color: 'var(--primary-500)' }}>refresh</span></div>
@@ -655,9 +660,10 @@ function LoyaltySection() {
 
       {/* Vouchers */}
       <div className="lcard p-5 space-y-4">
+        {vErr && <p className="text-xs px-1" style={{ color: '#EF4444' }}>{vErr}</p>}
         <div className="flex items-center justify-between">
           <h3 className="font-semibold" style={{ color: 'var(--text-primary)' }}>Danh sách Voucher</h3>
-          <button onClick={() => setShowNew(v => !v)} className="lbtn lbtn-primary !h-8 !px-4 text-xs gap-1">
+          <button onClick={() => { setShowNew(v => !v); setVErr('') }} className="lbtn lbtn-primary !h-8 !px-4 text-xs gap-1">
             <span className="icon" style={{ fontSize: 14 }}>add</span> Tạo voucher
           </button>
         </div>
@@ -749,6 +755,7 @@ function LoyaltySection() {
                   <input type="datetime-local" value={editV.validTo} onChange={e => setEditV(v => ({...v, validTo: e.target.value}))} className="linput !h-8 text-xs" />
                 </div>
               </div>
+              {vErr && <p className="text-xs" style={{ color: '#EF4444' }}>{vErr}</p>}
               <div className="flex gap-2 pt-1">
                 <button onClick={() => setEditV(null)} className="lbtn lbtn-secondary flex-1 !h-8 text-xs">Hủy</button>
                 <button onClick={saveEdit} className="lbtn lbtn-primary flex-1 !h-8 text-xs">Lưu thay đổi</button>

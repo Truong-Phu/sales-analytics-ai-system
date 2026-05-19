@@ -644,6 +644,62 @@ public class PosController(IConfiguration cfg, ITenantContext tenant) : Controll
             return Conflict(new { message = $"Mã voucher '{dto.Code}' đã tồn tại." });
         }
     }
+
+    // ── PUT /api/pos/vouchers/{id} ────────────────────────────────────────────
+    [HttpPut("vouchers/{id:int}")]
+    [Authorize(Roles = "Owner,Manager")]
+    public async Task<IActionResult> UpdateVoucher(int id, [FromBody] UpdateVoucherDto dto)
+    {
+        if (dto.ValidTo <= dto.ValidFrom) return BadRequest(new { message = "Ngày hết hạn phải sau ngày hiệu lực." });
+
+        await using var conn = new NpgsqlConnection(_connStr);
+        await conn.OpenAsync();
+        await using var cmd = new NpgsqlCommand("""
+            UPDATE public.vouchers SET
+                code          = @code,
+                type          = @type,
+                value         = @val,
+                min_order_value = @minOrd,
+                max_discount  = @maxDisc,
+                usage_limit   = @limit,
+                valid_from    = @vf,
+                valid_to      = @vt,
+                is_active     = @active
+            WHERE id = @id AND company_id = @cid::uuid
+            """, conn);
+        cmd.Parameters.AddWithValue("id",     id);
+        cmd.Parameters.AddWithValue("cid",    tenant.CompanyId!.Value.ToString());
+        cmd.Parameters.AddWithValue("code",   dto.Code.Trim().ToUpper());
+        cmd.Parameters.AddWithValue("type",   dto.Type);
+        cmd.Parameters.AddWithValue("val",    dto.Value);
+        cmd.Parameters.AddWithValue("minOrd", dto.MinOrderValue ?? 0);
+        cmd.Parameters.AddWithValue("maxDisc",(object?)dto.MaxDiscount ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("limit",  (object?)dto.UsageLimit  ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("vf",     dto.ValidFrom.ToUniversalTime());
+        cmd.Parameters.AddWithValue("vt",     dto.ValidTo.ToUniversalTime());
+        cmd.Parameters.AddWithValue("active", dto.IsActive);
+        var rows = await cmd.ExecuteNonQueryAsync();
+        if (rows == 0) return NotFound(new { message = "Không tìm thấy voucher." });
+        return Ok(new { message = "Đã cập nhật voucher." });
+    }
+
+    // ── DELETE /api/pos/vouchers/{id} ─────────────────────────────────────────
+    [HttpDelete("vouchers/{id:int}")]
+    [Authorize(Roles = "Owner,Manager")]
+    public async Task<IActionResult> DeleteVoucher(int id)
+    {
+        await using var conn = new NpgsqlConnection(_connStr);
+        await conn.OpenAsync();
+        await using var cmd = new NpgsqlCommand("""
+            DELETE FROM public.vouchers
+            WHERE id = @id AND company_id = @cid::uuid AND used_count = 0
+            """, conn);
+        cmd.Parameters.AddWithValue("id",  id);
+        cmd.Parameters.AddWithValue("cid", tenant.CompanyId!.Value.ToString());
+        var rows = await cmd.ExecuteNonQueryAsync();
+        if (rows == 0) return BadRequest(new { message = "Không thể xóa: voucher đã được sử dụng hoặc không tồn tại." });
+        return Ok(new { message = "Đã xóa voucher." });
+    }
 }
 
 // ── DTOs ──────────────────────────────────────────────────────────────────────
@@ -675,4 +731,16 @@ public record CreateVoucherDto(
     int? UsageLimit,
     DateTime ValidFrom,
     DateTime ValidTo
+);
+
+public record UpdateVoucherDto(
+    string Code,
+    string Type,
+    decimal Value,
+    decimal? MinOrderValue,
+    decimal? MaxDiscount,
+    int? UsageLimit,
+    DateTime ValidFrom,
+    DateTime ValidTo,
+    bool IsActive
 );

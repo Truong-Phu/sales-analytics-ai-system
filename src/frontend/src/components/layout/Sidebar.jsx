@@ -103,11 +103,19 @@ export default function Sidebar({ isOpen, onClose }) {
 
   const handleLogout = () => { logout(); navigate('/login', { replace: true }) }
 
+  // Chuẩn hóa role: trim + capitalize đầu từ (tránh lỗi "owner" ≠ "Owner")
+  const normalizeRole = r => {
+    if (!r) return ''
+    const t = r.trim()
+    return t.charAt(0).toUpperCase() + t.slice(1)
+  }
+  const userRole = normalizeRole(user?.role)
+
   // Lọc item theo role, giữ subgroup nếu có ít nhất 1 child visible
   const visibleItems = NAV_ITEMS.filter(item => {
     if (item.divider)   return true
-    if (item.subgroup)  return item.children?.some(c => c.roles?.includes(user?.role)) ?? false
-    return item.roles?.includes(user?.role)
+    if (item.subgroup)  return item.children?.some(c => c.roles?.includes(userRole)) ?? false
+    return item.roles?.includes(userRole)
   })
 
   // Bỏ divider cuối / divider kề nhau
@@ -117,7 +125,7 @@ export default function Sidebar({ isOpen, onClose }) {
     return next && !next.divider
   })
 
-  const badge = ROLE_BADGE[user?.role] ?? ROLE_BADGE.Staff
+  const badge = ROLE_BADGE[userRole] ?? ROLE_BADGE.Staff
   const w     = collapsed ? 'w-[68px]' : 'w-[240px]'
 
   return (
@@ -171,7 +179,7 @@ export default function Sidebar({ isOpen, onClose }) {
 
             // ── Subgroup thu gọn ──
             if (item.subgroup) {
-              const visChildren = item.children?.filter(c => c.roles?.includes(user?.role)) ?? []
+              const visChildren = item.children?.filter(c => c.roles?.includes(userRole)) ?? []
 
               // Collapsed sidebar: hiện thẳng các icon con, không có header nhóm
               if (collapsed) {
@@ -285,7 +293,7 @@ export default function Sidebar({ isOpen, onClose }) {
               <div className="min-w-0">
                 <p className="text-sm font-semibold text-on-surface truncate">{user?.fullName}</p>
                 <span className={`badge text-[10px] ${badge.color}`}>
-                  {t(`admin.roles.${user?.role}`, user?.role)}
+                  {t(`admin.roles.${userRole}`, userRole)}
                 </span>
               </div>
             </div>
