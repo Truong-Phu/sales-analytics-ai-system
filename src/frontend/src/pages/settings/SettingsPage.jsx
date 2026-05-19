@@ -565,6 +565,7 @@ function LoyaltySection() {
   const [vLoad,    setVLoad]      = useState(false)
   const [showNew,  setShowNew]    = useState(false)
   const [newV, setNewV] = useState({ code:'', type:'PERCENT', value:'', minOrder:'', maxDiscount:'', usageLimit:'', validFrom:'', validTo:'' })
+  const [editV,    setEditV]      = useState(null)   // voucher đang sửa (null = không mở)
 
   useEffect(() => {
     axios.get('/api/pos/loyalty/config')
@@ -595,6 +596,27 @@ function LoyaltySection() {
       setNewV({ code:'', type:'PERCENT', value:'', minOrder:'', maxDiscount:'', usageLimit:'', validFrom:'', validTo:'' })
       loadVouchers()
     } catch (e) { setErr(e?.response?.data?.message ?? 'Lỗi tạo voucher') }
+  }
+
+  const openEdit = (v) => {
+    const toLocal = iso => iso ? iso.slice(0, 16) : ''
+    setEditV({ id: v.id, code: v.code, type: v.type, value: String(v.value), minOrder: String(v.minOrderValue ?? 0), maxDiscount: v.maxDiscount ? String(v.maxDiscount) : '', usageLimit: v.usageLimit ? String(v.usageLimit) : '', validFrom: toLocal(v.validFrom), validTo: toLocal(v.validTo), isActive: v.isActive })
+  }
+
+  const saveEdit = async () => {
+    try {
+      await axios.put(`/api/pos/vouchers/${editV.id}`, { ...editV, value: Number(editV.value), minOrderValue: Number(editV.minOrder || 0), maxDiscount: editV.maxDiscount ? Number(editV.maxDiscount) : null, usageLimit: editV.usageLimit ? Number(editV.usageLimit) : null })
+      setEditV(null)
+      loadVouchers()
+    } catch (e) { setErr(e?.response?.data?.message ?? 'Lỗi cập nhật voucher') }
+  }
+
+  const deleteVoucher = async (id, code) => {
+    if (!window.confirm(`Xóa voucher "${code}"? Hành động này không thể hoàn tác.`)) return
+    try {
+      await axios.delete(`/api/pos/vouchers/${id}`)
+      loadVouchers()
+    } catch (e) { setErr(e?.response?.data?.message ?? 'Lỗi xóa voucher') }
   }
 
   if (loading) return <div className="lcard p-10 flex justify-center"><span className="icon animate-spin text-2xl" style={{ color: 'var(--primary-500)' }}>refresh</span></div>
@@ -679,6 +701,62 @@ function LoyaltySection() {
           </div>
         )}
 
+        {/* Edit modal */}
+        {editV && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.4)' }} onClick={e => { if (e.target === e.currentTarget) setEditV(null) }}>
+            <div className="lcard p-5 w-full max-w-md space-y-3" style={{ maxHeight: '90vh', overflowY: 'auto' }}>
+              <div className="flex items-center justify-between">
+                <h3 className="font-semibold" style={{ color: 'var(--text-primary)' }}>Sửa voucher – {editV.code}</h3>
+                <button onClick={() => setEditV(null)} className="text-xl leading-none" style={{ color: 'var(--text-tertiary)' }}>×</button>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Mã voucher</label>
+                  <input value={editV.code} onChange={e => setEditV(v => ({...v, code: e.target.value.toUpperCase()}))} className="linput !h-8 text-sm" />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Loại</label>
+                  <select value={editV.type} onChange={e => setEditV(v => ({...v, type: e.target.value}))} className="linput !h-8 text-xs">
+                    <option value="PERCENT">Giảm %</option>
+                    <option value="FIXED">Giảm số tiền cố định</option>
+                    <option value="FREESHIP">Miễn phí vận chuyển</option>
+                  </select>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Giá trị</label>
+                  <input type="number" value={editV.value} onChange={e => setEditV(v => ({...v, value: e.target.value}))} className="linput !h-8 text-sm" placeholder={editV.type === 'PERCENT' ? '10 = 10%' : 'VND'} />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Đơn hàng tối thiểu (VND)</label>
+                  <input type="number" value={editV.minOrder} onChange={e => setEditV(v => ({...v, minOrder: e.target.value}))} className="linput !h-8 text-sm" />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Số lần dùng tối đa</label>
+                  <input type="number" value={editV.usageLimit} onChange={e => setEditV(v => ({...v, usageLimit: e.target.value}))} className="linput !h-8 text-sm" placeholder="Để trống = không giới hạn" />
+                </div>
+                <div className="flex flex-col gap-1 col-span-2">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={editV.isActive} onChange={e => setEditV(v => ({...v, isActive: e.target.checked}))} />
+                    <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Kích hoạt voucher</span>
+                  </label>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Hiệu lực từ</label>
+                  <input type="datetime-local" value={editV.validFrom} onChange={e => setEditV(v => ({...v, validFrom: e.target.value}))} className="linput !h-8 text-xs" />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Hiệu lực đến</label>
+                  <input type="datetime-local" value={editV.validTo} onChange={e => setEditV(v => ({...v, validTo: e.target.value}))} className="linput !h-8 text-xs" />
+                </div>
+              </div>
+              <div className="flex gap-2 pt-1">
+                <button onClick={() => setEditV(null)} className="lbtn lbtn-secondary flex-1 !h-8 text-xs">Hủy</button>
+                <button onClick={saveEdit} className="lbtn lbtn-primary flex-1 !h-8 text-xs">Lưu thay đổi</button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {vLoad ? (
           <div className="py-6 flex justify-center"><span className="icon animate-spin" style={{ color: 'var(--primary-500)' }}>refresh</span></div>
         ) : vouchers.length === 0 ? (
@@ -688,14 +766,16 @@ function LoyaltySection() {
             <table className="w-full text-xs">
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                  {['Mã', 'Loại', 'Giá trị', 'Đơn tối thiểu', 'Số lần dùng', 'Hiệu lực', 'Trạng thái'].map(h => (
+                  {['Mã', 'Loại', 'Giá trị', 'Đơn tối thiểu', 'Số lần dùng', 'Hiệu lực', 'Trạng thái', 'Thao tác'].map(h => (
                     <th key={h} className="text-left px-3 py-2 font-semibold" style={{ color: 'var(--text-tertiary)' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {vouchers.map(v => (
-                  <tr key={v.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                  <tr key={v.id} style={{ borderBottom: '1px solid var(--border)' }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                     <td className="px-3 py-2 font-mono font-bold" style={{ color: 'var(--primary-500)' }}>{v.code}</td>
                     <td className="px-3 py-2">{v.type === 'PERCENT' ? `Giảm ${v.value}%` : v.type === 'FIXED' ? `Giảm ${new Intl.NumberFormat('vi-VN').format(v.value)}đ` : 'Freeship'}</td>
                     <td className="px-3 py-2 font-mono">{new Intl.NumberFormat('vi-VN').format(v.value)}</td>
@@ -708,6 +788,24 @@ function LoyaltySection() {
                       <span className="px-2 py-0.5 rounded-full text-xs" style={{ background: v.isActive ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.08)', color: v.isActive ? '#10B981' : '#EF4444' }}>
                         {v.isActive ? 'Đang dùng' : 'Đã tắt'}
                       </span>
+                    </td>
+                    <td className="px-3 py-2">
+                      <div className="flex gap-1">
+                        <button onClick={() => openEdit(v)} title="Sửa"
+                          className="w-7 h-7 rounded flex items-center justify-center transition-colors"
+                          style={{ color: 'var(--primary-500)', background: 'rgba(99,102,241,0.08)' }}
+                          onMouseEnter={e => e.currentTarget.style.background = 'rgba(99,102,241,0.18)'}
+                          onMouseLeave={e => e.currentTarget.style.background = 'rgba(99,102,241,0.08)'}>
+                          <span className="icon" style={{ fontSize: 15 }}>edit</span>
+                        </button>
+                        <button onClick={() => deleteVoucher(v.id, v.code)} title="Xóa"
+                          className="w-7 h-7 rounded flex items-center justify-center transition-colors"
+                          style={{ color: '#EF4444', background: 'rgba(239,68,68,0.08)' }}
+                          onMouseEnter={e => e.currentTarget.style.background = 'rgba(239,68,68,0.18)'}
+                          onMouseLeave={e => e.currentTarget.style.background = 'rgba(239,68,68,0.08)'}>
+                          <span className="icon" style={{ fontSize: 15 }}>delete</span>
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
