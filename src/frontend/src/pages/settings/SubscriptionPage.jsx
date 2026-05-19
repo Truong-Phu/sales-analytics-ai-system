@@ -2,6 +2,85 @@ import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import axios from '../../api/axios'
 
+// ── Countdown hook: cập nhật mỗi phút ────────────────────────────────────────
+function useCountdown(expiresAt) {
+  const calc = () => {
+    if (!expiresAt) return null
+    const diff = new Date(expiresAt).getTime() - Date.now()
+    if (diff <= 0) return { expired: true, days: 0, hours: 0, minutes: 0, totalMs: 0 }
+    const days    = Math.floor(diff / 86_400_000)
+    const hours   = Math.floor((diff % 86_400_000) / 3_600_000)
+    const minutes = Math.floor((diff % 3_600_000) / 60_000)
+    return { expired: false, days, hours, minutes, totalMs: diff }
+  }
+  const [countdown, setCountdown] = useState(calc)
+  useEffect(() => {
+    if (!expiresAt) return
+    setCountdown(calc())
+    const id = setInterval(() => setCountdown(calc()), 60_000)
+    return () => clearInterval(id)
+  }, [expiresAt])
+  return countdown
+}
+
+// ── Countdown badge với màu theo mức độ khẩn cấp ─────────────────────────────
+function CountdownBadge({ expiresAt }) {
+  const cd = useCountdown(expiresAt)
+  if (!cd) return null
+
+  if (cd.expired) {
+    return (
+      <div className="flex items-center gap-2 mt-3 px-3 py-2 rounded-lg text-sm font-medium"
+        style={{ background: '#FEE2E2', color: '#991B1B', border: '1px solid #FECACA' }}>
+        <span className="icon icon-sm">error</span>
+        Gói đã hết hạn — tính năng Pro bị tạm khóa
+      </div>
+    )
+  }
+
+  // Chọn màu theo số ngày còn lại
+  const isUrgent  = cd.days < 3
+  const isWarning = cd.days >= 3 && cd.days < 7
+
+  const styles = isUrgent
+    ? { bg: '#FEF2F2', border: '#FECACA', color: '#991B1B', iconColor: '#EF4444', icon: 'timer' }
+    : isWarning
+    ? { bg: '#FFFBEB', border: '#FDE68A', color: '#854D0E', iconColor: '#F59E0B', icon: 'hourglass_bottom' }
+    : { bg: '#F0FDF4', border: '#BBF7D0', color: '#166534', iconColor: '#22C55E', icon: 'verified' }
+
+  // Hiển thị chi tiết giờ/phút nếu còn ít ngày
+  const timeStr = cd.days > 0
+    ? `${cd.days} ngày${cd.hours > 0 ? ` ${cd.hours} giờ` : ''}`
+    : cd.hours > 0
+    ? `${cd.hours} giờ ${cd.minutes} phút`
+    : `${cd.minutes} phút`
+
+  // Progress bar: tỷ lệ thời gian còn lại / 30 ngày (1 tháng = chu kỳ ngắn nhất)
+  const totalDays = 30
+  const pct = Math.min(100, Math.round((cd.days / totalDays) * 100))
+
+  return (
+    <div className="mt-3 rounded-xl overflow-hidden"
+      style={{ background: styles.bg, border: `1px solid ${styles.border}` }}>
+      <div className="flex items-center gap-2 px-3 py-2.5">
+        <span className="icon icon-sm" style={{ color: styles.iconColor }}>{styles.icon}</span>
+        <span className="text-sm font-medium" style={{ color: styles.color }}>
+          {isUrgent ? 'Sắp hết hạn! Còn ' : 'Còn '}
+          <strong>{timeStr}</strong>
+        </span>
+        <span className="ml-auto text-xs font-mono" style={{ color: styles.color }}>
+          {new Date(expiresAt).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+        </span>
+      </div>
+      {/* Progress bar */}
+      <div className="h-1.5 w-full" style={{ background: `${styles.border}` }}>
+        <div className="h-full transition-all duration-500 rounded-full"
+          style={{ width: `${pct}%`, background: styles.iconColor }} />
+      </div>
+    </div>
+  )
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const fmtVnd = (n) =>
   new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(n)
@@ -304,11 +383,6 @@ function PlanTab({ sub, onUpgradeSuccess, t }) {
             <div className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
               {t(`subscription.plan.${sub?.plan ?? 'free'}`)}
             </div>
-            {sub?.expiresAt && (
-              <div className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>
-                {t('subscription.expiresAt')}: {fmtDate(sub.expiresAt)}
-              </div>
-            )}
             {!sub?.expiresAt && sub?.plan === 'free' && (
               <div className="text-sm mt-1" style={{ color: 'var(--text-tertiary)' }}>
                 {t('subscription.neverExpires')}
@@ -317,6 +391,16 @@ function PlanTab({ sub, onUpgradeSuccess, t }) {
           </div>
           <StatusBadge status={sub?.status ?? 'active'} t={t} />
         </div>
+
+        {/* Countdown đếm ngược — hiện khi Pro có expiresAt; nếu Pro nhưng null thì báo chưa kích hoạt */}
+        {sub?.plan !== 'free' && (
+          sub?.expiresAt
+            ? <CountdownBadge expiresAt={sub.expiresAt} />
+            : <div className="mt-3 px-3 py-2 rounded-lg text-sm"
+                style={{ background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.30)', color: '#854D0E' }}>
+                Gói Pro chưa được kích hoạt — liên hệ admin hoặc hoàn tất thanh toán để kích hoạt.
+              </div>
+        )}
 
         <div className="flex flex-wrap gap-3 mt-5">
           {sub?.plan !== 'pro' && sub?.plan !== 'enterprise' && (

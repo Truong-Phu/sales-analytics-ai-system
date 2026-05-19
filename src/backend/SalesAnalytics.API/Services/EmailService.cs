@@ -9,6 +9,8 @@ public interface IEmailService
     Task<bool> SendWelcomeAsync(string toEmail, string companyName, string ownerName);
     Task<bool> SendPasswordResetAsync(string toEmail, string otp);
     Task<bool> SendAlertAsync(string toEmail, string title, string body);
+    Task<bool> SendSubscriptionConfirmedAsync(string toEmail, string companyName, string plan, DateTime expiresAt);
+    Task<bool> SendSubscriptionExpiryWarningAsync(string toEmail, string companyName, DateTime expiresAt, int daysLeft);
 }
 
 public class ResendEmailService(
@@ -50,6 +52,23 @@ public class ResendEmailService(
     {
         var html = BuildAlertHtml(title, body);
         return await SendAsync(toEmail, title, html);
+    }
+
+    public async Task<bool> SendSubscriptionConfirmedAsync(string toEmail, string companyName, string plan, DateTime expiresAt)
+    {
+        var planLabel = plan == "pro" ? "Chuyên nghiệp (Pro)" : "Doanh nghiệp";
+        var subject   = $"[MSAS] Đăng ký gói {planLabel} thành công";
+        var html      = BuildSubscriptionConfirmedHtml(companyName, planLabel, expiresAt);
+        return await SendAsync(toEmail, subject, html);
+    }
+
+    public async Task<bool> SendSubscriptionExpiryWarningAsync(string toEmail, string companyName, DateTime expiresAt, int daysLeft)
+    {
+        var subject = daysLeft <= 1
+            ? $"[MSAS] Gói Pro của {companyName} hết hạn hôm nay!"
+            : $"[MSAS] Gói Pro của {companyName} sắp hết hạn trong {daysLeft} ngày";
+        var html = BuildExpiryWarningHtml(companyName, expiresAt, daysLeft);
+        return await SendAsync(toEmail, subject, html);
     }
 
     // ── Internal: gọi Resend API ─────────────────────────────────────────────
@@ -189,6 +208,110 @@ public class ResendEmailService(
                     <p style="color:#94a3b8;font-size:13px;margin-top:24px">
                       Chúc bạn kinh doanh thành công!<br>
                       <strong>Đội ngũ SalesAnalytics</strong>
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td></tr>
+          </table>
+        </body></html>
+        """;
+
+    private static string BuildSubscriptionConfirmedHtml(string companyName, string planLabel, DateTime expiresAt) => $"""
+        <!DOCTYPE html>
+        <html lang="vi">
+        <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+        <body style="margin:0;padding:0;background:#f4f6f8;font-family:'Segoe UI',Arial,sans-serif">
+          <table width="100%" cellpadding="0" cellspacing="0" style="padding:40px 20px">
+            <tr><td align="center">
+              <table width="560" cellpadding="0" cellspacing="0"
+                     style="background:#ffffff;border-radius:16px;box-shadow:0 4px 24px rgba(0,0,0,0.08);overflow:hidden">
+                <tr>
+                  <td style="background:linear-gradient(135deg,#10b981,#6366f1);padding:32px 40px;text-align:center">
+                    <h1 style="margin:0;color:#fff;font-size:24px;font-weight:700">🎉 Đăng ký thành công!</h1>
+                    <p style="margin:8px 0 0;color:rgba(255,255,255,0.85);font-size:13px">MSAS – SalesAnalytics Platform</p>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:40px">
+                    <p style="color:#1e293b;font-size:16px;margin:0 0 16px">Xin chào <strong>{companyName}</strong>,</p>
+                    <p style="color:#64748b;font-size:15px;line-height:1.7;margin:0 0 24px">
+                      Gói dịch vụ <strong style="color:#6366f1">{planLabel}</strong> của bạn đã được kích hoạt thành công.
+                      Bạn có thể sử dụng đầy đủ các tính năng AI phân tích và báo cáo nâng cao ngay bây giờ.
+                    </p>
+                    <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:12px;padding:20px;margin-bottom:24px">
+                      <table width="100%" cellpadding="4">
+                        <tr>
+                          <td style="color:#166534;font-size:13px;width:50%">📦 Gói dịch vụ</td>
+                          <td style="color:#15803d;font-size:14px;font-weight:700">{planLabel}</td>
+                        </tr>
+                        <tr>
+                          <td style="color:#166534;font-size:13px">🤖 AI & Dự báo</td>
+                          <td style="color:#15803d;font-size:14px;font-weight:700">Đã bật</td>
+                        </tr>
+                        <tr>
+                          <td style="color:#166534;font-size:13px">📅 Hết hạn</td>
+                          <td style="color:#15803d;font-size:14px;font-weight:700">{expiresAt:dd/MM/yyyy}</td>
+                        </tr>
+                      </table>
+                    </div>
+                    <p style="margin:0;color:#94a3b8;font-size:13px;line-height:1.6">
+                      Chúc bạn kinh doanh thành công!<br><strong>Đội ngũ SalesAnalytics</strong>
+                    </p>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="background:#f8fafc;padding:20px 40px;border-top:1px solid #e2e8f0">
+                    <p style="margin:0;color:#94a3b8;font-size:12px;text-align:center">
+                      © 2026 SalesAnalytics · Hệ thống phân tích bán hàng MSAS
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td></tr>
+          </table>
+        </body></html>
+        """;
+
+    private static string BuildExpiryWarningHtml(string companyName, DateTime expiresAt, int daysLeft) => $"""
+        <!DOCTYPE html>
+        <html lang="vi">
+        <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+        <body style="margin:0;padding:0;background:#f4f6f8;font-family:'Segoe UI',Arial,sans-serif">
+          <table width="100%" cellpadding="0" cellspacing="0" style="padding:40px 20px">
+            <tr><td align="center">
+              <table width="560" cellpadding="0" cellspacing="0"
+                     style="background:#ffffff;border-radius:16px;box-shadow:0 4px 24px rgba(0,0,0,0.08);overflow:hidden">
+                <tr>
+                  <td style="background:linear-gradient(135deg,#f59e0b,#ef4444);padding:32px 40px;text-align:center">
+                    <h1 style="margin:0;color:#fff;font-size:24px;font-weight:700">
+                      ⚠️ {(daysLeft <= 1 ? "Gói Pro hết hạn hôm nay!" : $"Gói Pro sắp hết hạn ({daysLeft} ngày)")}
+                    </h1>
+                    <p style="margin:8px 0 0;color:rgba(255,255,255,0.85);font-size:13px">MSAS – SalesAnalytics Platform</p>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:40px">
+                    <p style="color:#1e293b;font-size:16px;margin:0 0 16px">Xin chào <strong>{companyName}</strong>,</p>
+                    <div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:12px;padding:20px;margin-bottom:24px">
+                      <p style="margin:0;color:#92400e;font-size:15px;line-height:1.7">
+                        {(daysLeft <= 1
+                            ? "Gói Pro của bạn <strong>hết hạn hôm nay</strong>. Sau khi hết hạn, các tính năng AI và báo cáo nâng cao sẽ bị tạm khóa."
+                            : $"Gói Pro của bạn sẽ hết hạn vào ngày <strong>{expiresAt:dd/MM/yyyy}</strong> ({daysLeft} ngày nữa).")}
+                      </p>
+                    </div>
+                    <p style="color:#64748b;font-size:14px;line-height:1.7;margin:0 0 24px">
+                      Để tiếp tục sử dụng đầy đủ tính năng AI phân tích, vui lòng đăng nhập và gia hạn gói dịch vụ tại trang <strong>Cài đặt → Gói dịch vụ</strong>.
+                    </p>
+                    <p style="margin:0;color:#94a3b8;font-size:13px">
+                      Trân trọng,<br><strong>Đội ngũ SalesAnalytics</strong>
+                    </p>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="background:#f8fafc;padding:20px 40px;border-top:1px solid #e2e8f0">
+                    <p style="margin:0;color:#94a3b8;font-size:12px;text-align:center">
+                      © 2026 SalesAnalytics · Hệ thống phân tích bán hàng MSAS
                     </p>
                   </td>
                 </tr>

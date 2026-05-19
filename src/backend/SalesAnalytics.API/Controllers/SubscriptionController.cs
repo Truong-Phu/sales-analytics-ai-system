@@ -22,6 +22,7 @@ public class SubscriptionController : ControllerBase
     private readonly AppDbContext   _db;
     private readonly ITenantContext _tenant;
     private readonly ILogger<SubscriptionController> _logger;
+    private readonly IEmailService  _email;
 
     // Giá gói Pro (VND, chưa thuế)
     private const decimal ProMonthlyPrice = 490_000m;
@@ -29,11 +30,12 @@ public class SubscriptionController : ControllerBase
     private const decimal TaxRate         = 0.10m;
 
     public SubscriptionController(AppDbContext db, ITenantContext tenant,
-        ILogger<SubscriptionController> logger)
+        ILogger<SubscriptionController> logger, IEmailService email)
     {
         _db     = db;
         _tenant = tenant;
         _logger = logger;
+        _email  = email;
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -44,6 +46,9 @@ public class SubscriptionController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> GetCurrent()
     {
+        if (_tenant.IsSuperAdmin)
+            return Ok(new { success = true, data = (object?)null, message = "SuperAdmin không thuộc công ty nào" });
+
         var companyId = _tenant.CompanyId;
         if (companyId is null) return Forbid();
 
@@ -253,6 +258,9 @@ public class SubscriptionController : ControllerBase
     [HttpGet("invoices")]
     public async Task<IActionResult> GetInvoices([FromQuery] int page = 1, [FromQuery] int pageSize = 20)
     {
+        if (_tenant.IsSuperAdmin)
+            return Ok(new { success = true, data = Array.Empty<object>(), total = 0, page, pageSize });
+
         var companyId = _tenant.CompanyId;
         if (companyId is null) return Forbid();
 
@@ -282,6 +290,9 @@ public class SubscriptionController : ControllerBase
     [HttpGet("invoices/{id}/pdf")]
     public async Task<IActionResult> DownloadPdf(Guid id)
     {
+        if (_tenant.IsSuperAdmin)
+            return NotFound(new { success = false, message = "SuperAdmin không có hóa đơn" });
+
         var companyId = _tenant.CompanyId;
         if (companyId is null) return Forbid();
 
@@ -423,6 +434,7 @@ public class SubscriptionController : ControllerBase
     private async Task ActivateProPlan(Invoice invoice)
     {
         var sub = await _db.Subscriptions
+            .Include(s => s.Company)
             .Where(s => s.CompanyId == invoice.CompanyId)
             .OrderByDescending(s => s.CreatedAt)
             .FirstOrDefaultAsync();
@@ -442,6 +454,22 @@ public class SubscriptionController : ControllerBase
 
         _logger.LogInformation("Kích hoạt gói Pro cho company {CompanyId}, hết hạn {ExpiresAt}",
             invoice.CompanyId, sub.ExpiresAt);
+
+        // Gửi email xác nhận đến Owner của công ty
+        if (sub.Company is not null && sub.ExpiresAt.HasValue)
+        {
+            var ownerEmail = await _db.Users
+                .Where(u => u.CompanyId == invoice.CompanyId && u.Role == SalesAnalytics.Core.Enums.UserRole.Owner && u.IsActive)
+                .Select(u => u.Email)
+                .FirstOrDefaultAsync();
+
+            var emailTarget = ownerEmail ?? sub.Company.Email;
+            if (!string.IsNullOrEmpty(emailTarget))
+            {
+                _ = _email.SendSubscriptionConfirmedAsync(
+                    emailTarget, sub.Company.Name, invoice.Plan, sub.ExpiresAt.Value);
+            }
+        }
     }
 
     private static SubscriptionDto MapSubscription(Subscription s) => new(

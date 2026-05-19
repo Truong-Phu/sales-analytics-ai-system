@@ -173,6 +173,7 @@ try
     builder.Services.AddHostedService<SubscriptionExpiryJob>();
     builder.Services.AddSingleton<SmartAlertJob>();
     builder.Services.AddHostedService(sp => sp.GetRequiredService<SmartAlertJob>());
+    builder.Services.AddHostedService<EtlSchedulerJob>();
 
     // ── 8. Repository Pattern (DI) ────────────────────────────────────────────
     builder.Services.AddScoped<IProductRepository,   ProductRepository>();

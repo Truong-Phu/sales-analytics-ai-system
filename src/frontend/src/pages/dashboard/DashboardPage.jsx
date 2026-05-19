@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useAuth } from '../../hooks/useAuth'
 import {
   AreaChart, Area, BarChart, Bar, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -509,7 +510,7 @@ function AiInsightsCard() {
 }
 
 // ── Tab: 1 — Overview ─────────────────────────────────────────────────────────
-function TabOverview({ data, compareMode, prevData }) {
+function TabOverview({ data, compareMode, prevData, canViewAnalytics = true }) {
   const { t }  = useTranslation()
   const kpi    = data.kpi
   const sp     = data.sparklines || {}
@@ -598,8 +599,8 @@ function TabOverview({ data, compareMode, prevData }) {
         />
       </div>
 
-      {/* AI Insights */}
-      <AiInsightsCard />
+      {/* AI Insights — chỉ hiện cho Owner/Manager/DataIT/SuperAdmin */}
+      {canViewAnalytics && <AiInsightsCard />}
 
       {/* Hero 2/3 + Donut 1/3 */}
       <div className="grid grid-cols-12 gap-4">
@@ -1977,8 +1978,13 @@ function TabInventory({ data }) {
 }
 
 // ── DashboardPage ─────────────────────────────────────────────────────────────
+// Roles có thể xem các tab nâng cao (website analytics, FB Ads, AI Insights)
+const ANALYST_ROLES = ['Owner', 'Manager', 'DataIT', 'SuperAdmin']
+
 export default function DashboardPage() {
   const { t }      = useTranslation()
+  const { user }   = useAuth()
+  const canViewAnalytics = ANALYST_ROLES.includes(user?.role ?? '')
   const [activeTab,   setActiveTab]   = useState('overview')
   const [presetKey,   setPresetKey]   = useState('month')
   const [customFrom,  setCustomFrom]  = useState('2025-01-01')
@@ -2093,13 +2099,14 @@ export default function DashboardPage() {
       }))
   }, [])
 
-  // Fetch GA4 + FB Ads khi date range thay đổi
+  // Fetch GA4 + FB Ads khi date range thay đổi — chỉ gọi cho Owner/Manager/DataIT/SuperAdmin
   useEffect(() => {
+    if (!canViewAnalytics) return
     const { from, to } = getRange()
     getWebsiteAnalytics(from, to).then(setWebData).catch(() => setWebData(null))
     getFbAds(from, to).then(setFbAdsData).catch(() => setFbAdsData(null))
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [presetKey, customFrom, customTo])
+  }, [presetKey, customFrom, customTo, canViewAnalytics])
 
   return (
     <div className="space-y-4">
@@ -2219,9 +2226,9 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* ── Tab navigation ── */}
+      {/* ── Tab navigation — ẩn tab marketing/website với Staff/Viewer ── */}
       <div className="flex items-center gap-1 overflow-x-auto scrollbar-none border-b pb-0" style={{ borderColor: 'var(--border)' }}>
-        {TABS.map(tab => (
+        {TABS.filter(tab => canViewAnalytics || !['marketing', 'website'].includes(tab.key)).map(tab => (
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
@@ -2249,7 +2256,7 @@ export default function DashboardPage() {
         </div>
       ) : data && (
         <div className="page-enter">
-          {activeTab === 'overview'     && <TabOverview     data={data} compareMode={compareMode} prevData={prevData} />}
+          {activeTab === 'overview'     && <TabOverview     data={data} compareMode={compareMode} prevData={prevData} canViewAnalytics={canViewAnalytics} />}
           {activeTab === 'sales'        && <TabSales        data={data} compareMode={compareMode} prevData={prevData} from={getRange().from} to={getRange().to} />}
           {activeTab === 'multichannel' && <TabMultiChannel data={data} />}
           {activeTab === 'customer'     && <TabCustomer     data={data} />}

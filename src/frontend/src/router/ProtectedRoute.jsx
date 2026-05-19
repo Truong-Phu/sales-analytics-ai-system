@@ -6,9 +6,10 @@ import { PageSpinner } from '../components/ui/Spinner'
  * Bảo vệ route theo xác thực và role.
  * - Chưa login → redirect /login
  * - Chưa hoàn thành onboarding (Owner mới) → redirect /onboarding
- * - Không đủ role → redirect /dashboard (ẩn trang, không hiện lỗi)
+ * - SuperAdmin truy cập business route → redirect /sa (SA dùng /sa/... riêng)
+ * - Không đủ role → redirect /dashboard
  * - roles = [] → chỉ kiểm tra đã login
- * - skipOnboarding = true → bỏ qua kiểm tra onboarding (dùng cho route /onboarding)
+ * - skipOnboarding = true → bỏ qua kiểm tra onboarding
  */
 export default function ProtectedRoute({ children, roles = [], skipOnboarding = false }) {
   const { user, loading } = useAuth()
@@ -18,6 +19,11 @@ export default function ProtectedRoute({ children, roles = [], skipOnboarding = 
 
   if (!user) {
     return <Navigate to="/login" state={{ from: location }} replace />
+  }
+
+  // SuperAdmin không thuộc công ty nào → không được dùng business routes
+  if (user.isSuperAdmin) {
+    return <Navigate to="/sa" replace />
   }
 
   if (!skipOnboarding && user.onboardingCompleted === false) {

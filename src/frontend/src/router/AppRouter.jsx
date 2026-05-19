@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { Suspense, lazy } from 'react'
+import { useAuth } from '../hooks/useAuth'
 import { PageSpinner } from '../components/ui/Spinner'
 import AppShell from '../components/layout/AppShell'
 import AdminLayout from '../components/layout/AdminLayout'
@@ -75,6 +76,12 @@ function Shell({ children }) {
   )
 }
 
+// Redirect thông minh: SuperAdmin → /sa, còn lại → /dashboard
+function RootRedirect() {
+  const { user } = useAuth()
+  return <Navigate to={user?.isSuperAdmin ? '/sa' : '/dashboard'} replace />
+}
+
 export default function AppRouter() {
   return (
     <BrowserRouter>
@@ -97,8 +104,8 @@ export default function AppRouter() {
           </ProtectedRoute>
         } />
 
-        {/* Root redirect */}
-        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+        {/* Root redirect — SA đến /sa, các role khác đến /dashboard */}
+        <Route path="/" element={<RootRedirect />} />
 
         {/* Analytics */}
         <Route path="/dashboard" element={
@@ -278,9 +285,9 @@ export default function AppRouter() {
           </ProtectedRoute>
         } />
 
-        {/* POS — Bán hàng tại quầy */}
+        {/* POS — Bán hàng tại quầy: chỉ Owner/Manager/Staff */}
         <Route path="/pos" element={
-          <ProtectedRoute roles={ALL_ROLES}>
+          <ProtectedRoute roles={['Owner', 'Manager', 'Staff']}>
             <Shell><PosPage /></Shell>
           </ProtectedRoute>
         } />
@@ -324,7 +331,7 @@ export default function AppRouter() {
         </Route>
 
         {/* Fallback */}
-        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        <Route path="*" element={<RootRedirect />} />
       </Routes>
     </BrowserRouter>
   )

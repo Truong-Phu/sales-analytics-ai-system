@@ -8,6 +8,8 @@ import { useAuth } from './useAuth'
  *   const canEdit = usePermission('products.edit')
  *   const canViewReport = usePermission('report.view')
  */
+// Ma trận quyền cho 5 roles TRONG doanh nghiệp.
+// SuperAdmin không dùng hook này — SA có layout và router riêng (/sa/...).
 const PERMISSIONS = {
   // Dashboard
   'dashboard.view':          ['Owner', 'Manager', 'DataIT', 'Staff', 'Viewer'],
@@ -15,7 +17,7 @@ const PERMISSIONS = {
   // AI / Phân tích
   'forecast.view':           ['Owner', 'Manager', 'DataIT'],
   'anomaly.view':            ['Owner', 'Manager', 'DataIT'],
-  'recommendations.view':    ['Owner', 'Manager'],
+  'recommendations.view':    ['Owner', 'Manager', 'DataIT'],
 
   // Sản phẩm / Đơn hàng / Khách hàng
   'orders.view':             ['Owner', 'Manager', 'DataIT', 'Staff', 'Viewer'],

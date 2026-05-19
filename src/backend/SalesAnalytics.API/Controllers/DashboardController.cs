@@ -11,7 +11,7 @@ public class DashboardController(DashboardService service, ITenantContext tenant
 {
     /// <summary>Lấy dữ liệu Dashboard (KPI, doanh thu, kênh, sản phẩm)</summary>
     [HttpGet]
-    [Authorize(Roles = "Owner,Manager,DataIT,Viewer,SuperAdmin")]
+    [Authorize(Roles = "Owner,Manager,DataIT,Staff,Viewer,SuperAdmin")]
     public async Task<IActionResult> GetDashboard(
         [FromQuery] DateOnly? from    = null,
         [FromQuery] DateOnly? to      = null,

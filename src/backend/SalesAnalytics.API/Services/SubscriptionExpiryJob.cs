@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using SalesAnalytics.Core.Enums;
 using SalesAnalytics.Infrastructure.Data;
 
 namespace SalesAnalytics.API.Services;
@@ -7,6 +8,7 @@ namespace SalesAnalytics.API.Services;
 /// Background job chạy hàng ngày lúc 8:00 sáng:
 /// - Downgrade về Free khi subscription hết hạn
 /// - Khóa tính năng Pro khi qua grace period
+/// - Gửi email cảnh báo sắp hết hạn (7 ngày và 1 ngày trước)
 /// </summary>
 public class SubscriptionExpiryJob : BackgroundService
 {
@@ -43,8 +45,9 @@ public class SubscriptionExpiryJob : BackgroundService
         try
         {
             using var scope = _scopeFactory.CreateScope();
-            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            var now = DateTime.UtcNow;
+            var db    = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var email = scope.ServiceProvider.GetRequiredService<IEmailService>();
+            var now   = DateTime.UtcNow;
 
             // 1. Đánh dấu expired cho subscriptions quá hạn nhưng còn trong grace period
             var justExpired = await db.Subscriptions
@@ -83,6 +86,45 @@ public class SubscriptionExpiryJob : BackgroundService
             }
 
             await db.SaveChangesAsync();
+
+            // 3. Gửi email cảnh báo sắp hết hạn (7 ngày và 1 ngày trước)
+            // Job chạy 1 lần/ngày → dùng window ±12h để tránh bỏ sót hoặc gửi 2 lần
+            var warningWindows = new[] { 7, 1 };
+            foreach (var daysLeft in warningWindows)
+            {
+                var windowStart = now.AddDays(daysLeft - 0.5);
+                var windowEnd   = now.AddDays(daysLeft + 0.5);
+
+                var soonExpiring = await db.Subscriptions
+                    .Include(s => s.Company)
+                    .Where(s => s.Status == "active"
+                             && s.Plan != "free"
+                             && s.ExpiresAt.HasValue
+                             && s.ExpiresAt.Value >= windowStart
+                             && s.ExpiresAt.Value <  windowEnd)
+                    .ToListAsync();
+
+                foreach (var sub in soonExpiring)
+                {
+                    if (sub.Company is null || sub.ExpiresAt is null) continue;
+
+                    // Lấy email Owner của công ty
+                    var ownerEmail = await db.Users
+                        .Where(u => u.CompanyId == sub.CompanyId && u.Role == UserRole.Owner && u.IsActive)
+                        .Select(u => u.Email)
+                        .FirstOrDefaultAsync();
+
+                    var target = ownerEmail ?? sub.Company.Email;
+                    if (string.IsNullOrEmpty(target)) continue;
+
+                    var sent = await email.SendSubscriptionExpiryWarningAsync(
+                        target, sub.Company.Name, sub.ExpiresAt.Value, daysLeft);
+
+                    _logger.LogInformation(
+                        "Cảnh báo hết hạn ({Days}d): company={CompanyId} email={Email} sent={Sent}",
+                        daysLeft, sub.CompanyId, target, sent);
+                }
+            }
 
             _logger.LogInformation(
                 "SubscriptionExpiryJob hoàn thành: {Expired} hết hạn, {Downgraded} downgrade",
