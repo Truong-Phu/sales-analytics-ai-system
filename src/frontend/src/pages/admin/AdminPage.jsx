@@ -594,7 +594,7 @@ export default function AdminPage() {
       </div>
 
       {/* ── Users table ── */}
-      {tab !== 'audit' && (
+      {tab === 'all' && (
         <div className="lcard overflow-hidden">
           {loading ? (
             <div className="p-16 flex items-center justify-center"><Spinner size={7} /></div>
