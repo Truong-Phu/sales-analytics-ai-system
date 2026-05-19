@@ -306,8 +306,8 @@ function OrderDetailPanel({ order }) {
 
 export default function OrdersPage() {
   const { t } = useTranslation()
-  const { role } = useAuth()
-  const canDelete = ['Owner', 'Manager'].includes(role)
+  const { user } = useAuth()
+  const canDelete = ['Owner', 'Manager'].includes(user?.role)
   const [data,    setData]    = useState(null)
   const [loading, setLoading] = useState(true)
   const [isMock,  setIsMock]  = useState(false)

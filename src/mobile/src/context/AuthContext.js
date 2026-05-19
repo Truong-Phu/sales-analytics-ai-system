@@ -8,15 +8,35 @@ const AuthContext = createContext(null)
 function parseJwt(token) {
   try {
     const base64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')
-    // Expo SDK 44+ cung cấp globalThis.atob sẵn
     const json = globalThis.atob(base64)
     return JSON.parse(json)
   } catch { return null }
 }
 
+// Chuẩn hóa plan string: 'pro' → 'Pro', 'free' → 'Free'
+function normalizePlan(raw) {
+  if (!raw) return 'Free'
+  const s = String(raw).toLowerCase()
+  if (s === 'pro') return 'Pro'
+  if (s === 'enterprise') return 'Enterprise'
+  return 'Free'
+}
+
 export function AuthProvider({ children }) {
   const [user,    setUser]    = useState(null)
+  const [plan,    setPlan]    = useState('Free')
   const [loading, setLoading] = useState(true)
+
+  // Fetch gói dịch vụ từ /api/subscription (fire-and-forget, không block login)
+  const fetchPlan = useCallback(async () => {
+    try {
+      const res = await api.get('/api/subscription')
+      const sub = res.data?.data ?? res.data
+      if (sub?.plan) setPlan(normalizePlan(sub.plan))
+    } catch {
+      // Nếu lỗi → giữ nguyên 'Free' (thay vì crash app)
+    }
+  }, [])
 
   useEffect(() => {
     storage.getItem('access_token')
@@ -30,6 +50,8 @@ export function AuthProvider({ children }) {
               email: p['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress'] ?? p.email,
               role:  p['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'] ?? p.role,
             })
+            // Fetch plan sau khi xác nhận token còn hạn
+            fetchPlan()
           } else {
             storage.removeItem('access_token')
           }
@@ -37,15 +59,13 @@ export function AuthProvider({ children }) {
       })
       .catch(err => console.warn('[AuthContext] storage error:', err))
       .finally(() => setLoading(false))
-  }, [])
+  }, [fetchPlan])
 
   const login = useCallback(async (identifier, password) => {
-    // Phân biệt email hay username để gửi đúng field cho backend
     const isEmail = typeof identifier === 'string' && identifier.includes('@')
     const body = isEmail
       ? { email: identifier, password }
       : { username: identifier, password }
-    // Backend trả về { success: true, data: { accessToken, refreshToken, ... } }
     const { data: res } = await api.post('/api/auth/login', body)
     const tokenData = res.data
     await storage.setItem('access_token', tokenData.accessToken)
@@ -58,18 +78,20 @@ export function AuthProvider({ children }) {
       role:  p['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'] ?? p.role,
     }
     setUser(u)
-    // Đăng ký push notification sau khi login (fire-and-forget)
     registerForPushNotifications().catch(() => {})
+    // Fetch plan sau khi login (background, không await)
+    fetchPlan()
     return u
-  }, [])
+  }, [fetchPlan])
 
   const logout = useCallback(async () => {
     await storage.multiRemove(['access_token', 'refresh_token'])
     setUser(null)
+    setPlan('Free')
   }, [])
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, plan, loading, login, logout }}>
       {children}
     </AuthContext.Provider>
   )

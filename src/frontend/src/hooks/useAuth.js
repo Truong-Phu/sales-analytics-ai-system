@@ -12,9 +12,14 @@ export function useAuth() {
   if (!ctx) throw new Error('useAuth phải được dùng trong AuthProvider')
 
   const role = ctx.user?.role ?? ''
+  const plan = ctx.plan ?? 'free'
 
   return {
     ...ctx,
+    role,
+    plan,
+    isFree:       plan === 'free',
+    isPro:        plan !== 'free',
     // Role shortcuts
     isOwner:   role === 'Owner',
     isManager: role === 'Manager',

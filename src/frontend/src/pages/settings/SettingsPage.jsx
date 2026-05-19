@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAuth } from '../../hooks/useAuth'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useTheme } from '../../hooks/useTheme'
 import axios from '../../api/axios'
 import SubscriptionPage from './SubscriptionPage'
@@ -120,7 +120,8 @@ export default function SettingsPage() {
     { key: 'policy',        icon: 'gavel',            label: 'Điều khoản & Chính sách' },
   ]
 
-  const [section,    setSection]    = useState('profile')
+  const [searchParams] = useSearchParams()
+  const [section,    setSection]    = useState(() => searchParams.get('tab') ?? 'profile')
   const [saved,      setSaved]      = useState(false)
   const [error,      setError]      = useState('')
   const [avatarUrl,  setAvatarUrl]  = useState(user?.avatarUrl ?? null)

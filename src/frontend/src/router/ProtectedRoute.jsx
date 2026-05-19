@@ -6,7 +6,7 @@ import { PageSpinner } from '../components/ui/Spinner'
  * Bảo vệ route theo xác thực và role.
  * - Chưa login → redirect /login
  * - Chưa hoàn thành onboarding (Owner mới) → redirect /onboarding
- * - Không đủ role → redirect /unauthorized
+ * - Không đủ role → redirect /dashboard (ẩn trang, không hiện lỗi)
  * - roles = [] → chỉ kiểm tra đã login
  * - skipOnboarding = true → bỏ qua kiểm tra onboarding (dùng cho route /onboarding)
  */

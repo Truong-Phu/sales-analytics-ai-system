@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using SalesAnalytics.API.Attributes;
 using SalesAnalytics.API.Services;
 using SalesAnalytics.Infrastructure.Data;
 
@@ -10,6 +11,7 @@ namespace SalesAnalytics.API.Controllers;
 [ApiController]
 [Route("api/[controller]")]
 [Authorize(Roles = "Owner,Manager,DataIT,SuperAdmin")]
+[RequirePlan("pro")]
 public class ReportController(
     ReportService report,
     IAuditLogService audit,

@@ -5,7 +5,7 @@ import { PageSpinner } from '../components/ui/Spinner'
 /**
  * Route guard cho Super Admin Panel.
  * - Chưa login → /login
- * - Đã login nhưng KHÔNG phải isSuperAdmin → /unauthorized
+ * - Đã login nhưng KHÔNG phải isSuperAdmin → /dashboard
  */
 export default function SuperAdminRoute({ children }) {
   const { user, loading } = useAuth()

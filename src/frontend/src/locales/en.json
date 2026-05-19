@@ -39,7 +39,21 @@
     "totalCount": "Total: {{count}}",
     "page": "Page",
     "sending": "Sending...",
-    "saving": "Saving..."
+    "saving": "Saving...",
+    "goBack": "Go Back"
+  },
+  "pro": {
+    "title": "Pro Feature",
+    "defaultMsg": "This feature requires a Pro plan or higher.",
+    "gateMsg": "\"{{feature}}\" requires a Pro plan or higher.",
+    "upgradeBtn": "Upgrade to Pro",
+    "feature": {
+      "forecast": "AI Revenue Forecasting (Prophet)",
+      "anomaly": "Automated Anomaly Detection",
+      "ai": "AI Recommendations & Advanced Analytics",
+      "reports": "Advanced Reports & PDF Export",
+      "customers": "Customer Analytics & RFM"
+    }
   },
   "auth": {
     "login": "Sign In",

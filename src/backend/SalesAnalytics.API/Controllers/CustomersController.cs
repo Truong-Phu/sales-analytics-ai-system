@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Npgsql;
 using NpgsqlTypes;
+using SalesAnalytics.API.Attributes;
 using SalesAnalytics.API.Services;
 using SalesAnalytics.Core.DTOs;
 using SalesAnalytics.Core.Entities;
@@ -34,6 +35,7 @@ public class CustomersController(
     /// </summary>
     [HttpGet]
     [Authorize(Roles = "Owner,Manager,DataIT,SuperAdmin")]
+    [RequirePlan("pro")]
     public async Task<IActionResult> GetCustomers(
         [FromQuery] string?   search  = null,
         [FromQuery] string?   segment = null,   // VIP | REGULAR | NEW | INACTIVE

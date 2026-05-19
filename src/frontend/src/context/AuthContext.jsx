@@ -13,9 +13,27 @@ function parseJwt(token) {
   }
 }
 
+// Chuẩn hóa plan name về lowercase ('free' | 'pro' | 'enterprise')
+function normalizePlan(raw) {
+  if (!raw) return 'free'
+  const p = raw.toLowerCase().trim()
+  return ['pro', 'enterprise'].includes(p) ? p : 'free'
+}
+
 export function AuthProvider({ children }) {
   const [user, setUser]       = useState(null)   // { id, name, email, role, lang }
   const [loading, setLoading] = useState(true)   // kiểm tra token lúc khởi động
+  const [plan, setPlan]       = useState('free') // 'free' | 'pro' | 'enterprise'
+
+  // Lấy thông tin gói dịch vụ từ backend (không block render)
+  const fetchPlan = useCallback(async () => {
+    try {
+      const r = await api.get('/api/subscription')
+      setPlan(normalizePlan(r.data?.data?.plan))
+    } catch {
+      // SuperAdmin hoặc không có subscription → giữ mặc định 'free'
+    }
+  }, [])
 
   // Khôi phục session từ token đang có
   useEffect(() => {
@@ -36,7 +54,8 @@ export function AuthProvider({ children }) {
           onboardingCompleted: true,
         }
         setUser(baseUser)
-        // Fetch profile đầy đủ (avatarUrl, fullName) — không block việc render
+        // Fetch plan + profile đầy đủ — không block việc render
+        fetchPlan()
         api.get('/api/users/me')
           .then(r => {
             const d = r.data
@@ -55,7 +74,7 @@ export function AuthProvider({ children }) {
       }
     }
     setLoading(false)
-  }, [])
+  }, [fetchPlan])
 
   // Đăng nhập – nhận email hoặc username (hoặc cả hai)
   const login = useCallback(async (email, username, password) => {
@@ -73,7 +92,7 @@ export function AuthProvider({ children }) {
       id:                  payload.sub,
       name:                payload['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name'] ?? payload.name,
       email:               payload['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress'] ?? payload.email,
-      role:                payload['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'] ?? payload.role,
+      role:                (() => { const r = (payload['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'] ?? payload.role ?? '').trim(); return r ? r.charAt(0).toUpperCase() + r.slice(1) : r })(),
       lang:                tokenData.preferredLanguage ?? 'vi',
       companyId:           tokenData.companyId,
       companySlug:         tokenData.companySlug,
@@ -82,8 +101,9 @@ export function AuthProvider({ children }) {
     }
     localStorage.setItem('lang', u.lang)
     setUser(u)
+    fetchPlan()
     return u
-  }, [])
+  }, [fetchPlan])
 
   // Đăng ký tài khoản Owner mới (tạo company + subscription)
   const register = useCallback(async (formData) => {
@@ -98,7 +118,7 @@ export function AuthProvider({ children }) {
       id:                  payload.sub,
       name:                payload['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name'] ?? payload.name,
       email:               payload['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress'] ?? payload.email,
-      role:                payload['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'] ?? payload.role,
+      role:                (() => { const r = (payload['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'] ?? payload.role ?? '').trim(); return r ? r.charAt(0).toUpperCase() + r.slice(1) : r })(),
       lang:                'vi',
       companyId:           tokenData.companyId,
       companySlug:         tokenData.companySlug,
@@ -107,14 +127,16 @@ export function AuthProvider({ children }) {
     }
     localStorage.setItem('lang', 'vi')
     setUser(u)
+    fetchPlan()
     return u
-  }, [])
+  }, [fetchPlan])
 
   // Đăng xuất – xóa token và state; navigation do component gọi xử lý
   const logout = useCallback(() => {
     sessionStorage.removeItem('access_token')
     localStorage.removeItem('refresh_token')
     setUser(null)
+    setPlan('free')
   }, [])
 
   // Đổi ngôn ngữ ưa thích
@@ -129,7 +151,7 @@ export function AuthProvider({ children }) {
   }, [])
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout, setLang, updateUser }}>
+    <AuthContext.Provider value={{ user, loading, plan, login, register, logout, setLang, updateUser }}>
       {children}
     </AuthContext.Provider>
   )

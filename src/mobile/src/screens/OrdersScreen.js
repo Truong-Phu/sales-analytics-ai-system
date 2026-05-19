@@ -5,6 +5,7 @@ import {
   RefreshControl, ScrollView, Alert, Modal,
 } from 'react-native'
 import api from '../api/axios'
+import { usePermission } from '../hooks/usePermission'
 import { colors, radius } from '../components/theme'
 
 // ─── Hàm format tiền rút gọn ─────────────────────────────────────────────────
@@ -159,6 +160,7 @@ function OrderItem({ item }) {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function OrdersScreen({ navigation }) {
+  const canAdd = usePermission('orders.add')
   const [data,         setData]         = useState([])
   const [loading,      setLoading]      = useState(true)
   const [refreshing,   setRefreshing]   = useState(false)
@@ -282,7 +284,7 @@ export default function OrdersScreen({ navigation }) {
 
   return (
     <View style={s.container}>
-      {/* SearchBar */}
+      {/* SearchBar + nút lọc */}
       <View style={s.searchWrap}>
         <Text style={s.searchIcon}>🔍</Text>
         <TextInput
@@ -293,9 +295,13 @@ export default function OrdersScreen({ navigation }) {
           onChangeText={setSearch}
           returnKeyType="search"
         />
-        {search.length > 0 && (
+        {search.length > 0 ? (
           <TouchableOpacity onPress={() => setSearch('')} style={s.clearBtn}>
             <Text style={s.clearText}>✕</Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity onPress={() => setShowFilter(true)} style={s.clearBtn}>
+            <Text style={{ fontSize: 16, color: colors.outline }}>⚙</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -374,15 +380,17 @@ export default function OrdersScreen({ navigation }) {
         />
       )}
 
-      {/* FIX 4 — Nút Lọc nâng cao thay FAB "+" */}
-      <TouchableOpacity
-        style={s.fab}
-        onPress={() => setShowFilter(true)}
-        activeOpacity={0.85}
-      >
-        <Text style={s.fabText}>⚙</Text>
-        <Text style={s.fabLabel}>Lọc</Text>
-      </TouchableOpacity>
+      {/* FAB "+ Thêm đơn" – chỉ hiện cho vai trò được phép tạo đơn hàng */}
+      {canAdd && (
+        <TouchableOpacity
+          style={s.fab}
+          onPress={() => navigation.navigate('AddOrder')}
+          activeOpacity={0.85}
+        >
+          <Text style={s.fabText}>+</Text>
+          <Text style={s.fabLabel}>Thêm đơn</Text>
+        </TouchableOpacity>
+      )}
 
       {/* FIX 4 — Modal lọc nâng cao (bottom sheet) */}
       <Modal

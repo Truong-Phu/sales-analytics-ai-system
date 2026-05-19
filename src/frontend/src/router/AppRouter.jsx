@@ -5,6 +5,7 @@ import AppShell from '../components/layout/AppShell'
 import AdminLayout from '../components/layout/AdminLayout'
 import ProtectedRoute from './ProtectedRoute'
 import SuperAdminRoute from './SuperAdminRoute'
+import PlanRoute from './PlanRoute'
 import ErrorBoundary from '../components/ui/ErrorBoundary'
 import LoginPage           from '../pages/auth/LoginPage'
 import RegisterPage        from '../pages/auth/RegisterPage'
@@ -108,19 +109,25 @@ export default function AppRouter() {
 
         <Route path="/forecast" element={
           <ProtectedRoute roles={ANALYST_ROLES}>
-            <Shell><ForecastPage /></Shell>
+            <PlanRoute minPlan="pro" feature="Dự báo doanh thu AI">
+              <Shell><ForecastPage /></Shell>
+            </PlanRoute>
           </ProtectedRoute>
         } />
 
         <Route path="/anomaly" element={
           <ProtectedRoute roles={ANALYST_ROLES}>
-            <Shell><AnomalyPage /></Shell>
+            <PlanRoute minPlan="pro" feature="Phát hiện bất thường">
+              <Shell><AnomalyPage /></Shell>
+            </PlanRoute>
           </ProtectedRoute>
         } />
 
         <Route path="/recommendations" element={
           <ProtectedRoute roles={ANALYST_ROLES}>
-            <Shell><RecommendationsPage /></Shell>
+            <PlanRoute minPlan="pro" feature="Gợi ý thông minh AI">
+              <Shell><RecommendationsPage /></Shell>
+            </PlanRoute>
           </ProtectedRoute>
         } />
 
@@ -151,13 +158,17 @@ export default function AppRouter() {
 
         <Route path="/customers" element={
           <ProtectedRoute roles={ANALYST_ROLES}>
-            <Shell><CustomersPage /></Shell>
+            <PlanRoute minPlan="pro" feature="Phân tích khách hàng">
+              <Shell><CustomersPage /></Shell>
+            </PlanRoute>
           </ProtectedRoute>
         } />
 
         <Route path="/customers/rfm" element={
           <ProtectedRoute roles={ANALYST_ROLES}>
-            <Shell><RfmPage /></Shell>
+            <PlanRoute minPlan="pro" feature="Phân tích RFM">
+              <Shell><RfmPage /></Shell>
+            </PlanRoute>
           </ProtectedRoute>
         } />
 
@@ -177,39 +188,53 @@ export default function AppRouter() {
         {/* Reports */}
         <Route path="/report" element={
           <ProtectedRoute roles={ANALYST_ROLES}>
-            <Shell><ReportPage /></Shell>
+            <PlanRoute minPlan="pro" feature="Xuất báo cáo nâng cao">
+              <Shell><ReportPage /></Shell>
+            </PlanRoute>
           </ProtectedRoute>
         } />
 
         {/* ── Chức năng sáng tạo mới ── */}
         <Route path="/churn" element={
           <ProtectedRoute roles={ANALYST_ROLES}>
-            <Shell><ChurnPage /></Shell>
+            <PlanRoute minPlan="pro" feature="Dự báo rời bỏ khách hàng">
+              <Shell><ChurnPage /></Shell>
+            </PlanRoute>
           </ProtectedRoute>
         } />
         <Route path="/basket" element={
           <ProtectedRoute roles={ANALYST_ROLES}>
-            <Shell><BasketPage /></Shell>
+            <PlanRoute minPlan="pro" feature="Phân tích giỏ hàng">
+              <Shell><BasketPage /></Shell>
+            </PlanRoute>
           </ProtectedRoute>
         } />
         <Route path="/inventory" element={
           <ProtectedRoute roles={ALL_ROLES}>
-            <Shell><InventoryPage /></Shell>
+            <PlanRoute minPlan="pro" feature="Tồn kho thông minh">
+              <Shell><InventoryPage /></Shell>
+            </PlanRoute>
           </ProtectedRoute>
         } />
         <Route path="/whatif" element={
           <ProtectedRoute roles={ANALYST_ROLES}>
-            <Shell><WhatIfPage /></Shell>
+            <PlanRoute minPlan="pro" feature="Phân tích giả định What-If">
+              <Shell><WhatIfPage /></Shell>
+            </PlanRoute>
           </ProtectedRoute>
         } />
         <Route path="/attribution" element={
           <ProtectedRoute roles={ANALYST_ROLES}>
-            <Shell><AttributionPage /></Shell>
+            <PlanRoute minPlan="pro" feature="Phân bổ kênh marketing">
+              <Shell><AttributionPage /></Shell>
+            </PlanRoute>
           </ProtectedRoute>
         } />
         <Route path="/campaign" element={
           <ProtectedRoute roles={ANALYST_ROLES}>
-            <Shell><CampaignPage /></Shell>
+            <PlanRoute minPlan="pro" feature="Phân tích chiến dịch">
+              <Shell><CampaignPage /></Shell>
+            </PlanRoute>
           </ProtectedRoute>
         } />
         <Route path="/leaderboard" element={
@@ -219,27 +244,37 @@ export default function AppRouter() {
         } />
         <Route path="/narrative" element={
           <ProtectedRoute roles={ANALYST_ROLES}>
-            <Shell><NarrativePage /></Shell>
+            <PlanRoute minPlan="pro" feature="Tường thuật AI">
+              <Shell><NarrativePage /></Shell>
+            </PlanRoute>
           </ProtectedRoute>
         } />
         <Route path="/geo" element={
           <ProtectedRoute roles={ANALYST_ROLES}>
-            <Shell><GeoPage /></Shell>
+            <PlanRoute minPlan="pro" feature="Phân tích địa lý">
+              <Shell><GeoPage /></Shell>
+            </PlanRoute>
           </ProtectedRoute>
         } />
         <Route path="/supplier" element={
           <ProtectedRoute roles={ANALYST_ROLES}>
-            <Shell><SupplierPage /></Shell>
+            <PlanRoute minPlan="pro" feature="Phân tích nhà cung cấp">
+              <Shell><SupplierPage /></Shell>
+            </PlanRoute>
           </ProtectedRoute>
         } />
         <Route path="/price" element={
           <ProtectedRoute roles={ANALYST_ROLES}>
-            <Shell><PricePage /></Shell>
+            <PlanRoute minPlan="pro" feature="Phân tích giá">
+              <Shell><PricePage /></Shell>
+            </PlanRoute>
           </ProtectedRoute>
         } />
         <Route path="/sentiment" element={
           <ProtectedRoute roles={ANALYST_ROLES}>
-            <Shell><SentimentPage /></Shell>
+            <PlanRoute minPlan="pro" feature="Phân tích cảm xúc">
+              <Shell><SentimentPage /></Shell>
+            </PlanRoute>
           </ProtectedRoute>
         } />
 

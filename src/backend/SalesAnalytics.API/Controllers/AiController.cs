@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using SalesAnalytics.API.Attributes;
 using SalesAnalytics.API.Services;
 
 namespace SalesAnalytics.API.Controllers;
@@ -8,6 +9,7 @@ namespace SalesAnalytics.API.Controllers;
 [ApiController]
 [Route("api/ai")]
 [Authorize(Roles = "Owner,Manager,DataIT,SuperAdmin")]
+[RequirePlan("pro")]
 public class AiController(AiProxyService ai, ITenantContext tenant) : ControllerBase
 {
     /// <summary>Dự báo doanh thu N ngày tiếp theo</summary>

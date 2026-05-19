@@ -39,7 +39,21 @@
     "totalCount": "Tổng: {{count}}",
     "page": "Trang",
     "sending": "Đang gửi...",
-    "saving": "Đang lưu..."
+    "saving": "Đang lưu...",
+    "goBack": "Quay lại"
+  },
+  "pro": {
+    "title": "Tính năng Pro",
+    "defaultMsg": "Tính năng này yêu cầu gói Pro trở lên.",
+    "gateMsg": "\"{{feature}}\" yêu cầu gói Pro trở lên.",
+    "upgradeBtn": "Nâng cấp Pro ngay",
+    "feature": {
+      "forecast": "Dự báo doanh thu AI (Prophet)",
+      "anomaly": "Phát hiện bất thường tự động",
+      "ai": "Gợi ý AI & phân tích nâng cao",
+      "reports": "Báo cáo nâng cao & xuất PDF",
+      "customers": "Phân tích khách hàng & RFM"
+    }
   },
   "auth": {
     "login": "Đăng nhập",
