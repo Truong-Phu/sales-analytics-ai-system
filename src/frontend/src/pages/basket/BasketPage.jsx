@@ -35,43 +35,45 @@ export default function BasketPage() {
   const liftColor = (lift) => lift >= 3 ? '#EF4444' : lift >= 2 ? '#F59E0B' : '#22C55E'
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="space-y-5">
       {isMock && <MockToast />}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-white">Phân tích sản phẩm hay mua chung</h1>
-          <p className="text-sm text-gray-400 mt-1">Market Basket Analysis – Thuật toán Apriori</p>
-        </div>
+
+      {/* Header */}
+      <div>
+        <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Phân tích sản phẩm hay mua chung</h1>
+        <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>Market Basket Analysis – Thuật toán Apriori</p>
       </div>
 
       {/* Params */}
-      <div className="bg-gray-800 rounded-xl p-4 border border-gray-700 flex gap-6 flex-wrap">
+      <div className="lcard p-4 flex gap-6 flex-wrap items-end">
         <div>
-          <label className="text-xs text-gray-400">Min Confidence: {Math.round(minConf*100)}%</label>
+          <label className="text-xs font-medium block mb-1" style={{ color: 'var(--text-secondary)' }}>
+            Min Confidence: <strong style={{ color: 'var(--text-primary)' }}>{Math.round(minConf*100)}%</strong>
+          </label>
           <input type="range" min={0.1} max={0.9} step={0.05} value={minConf}
-            onChange={e => setMinConf(+e.target.value)} className="w-32 ml-2 accent-blue-500" />
+            onChange={e => setMinConf(+e.target.value)} className="w-32 accent-indigo-500" />
         </div>
         <div>
-          <label className="text-xs text-gray-400">Min Lift: {minLift}x</label>
+          <label className="text-xs font-medium block mb-1" style={{ color: 'var(--text-secondary)' }}>
+            Min Lift: <strong style={{ color: 'var(--text-primary)' }}>{minLift}x</strong>
+          </label>
           <input type="range" min={1} max={5} step={0.5} value={minLift}
-            onChange={e => setMinLift(+e.target.value)} className="w-32 ml-2 accent-blue-500" />
+            onChange={e => setMinLift(+e.target.value)} className="w-32 accent-indigo-500" />
         </div>
-        <button onClick={load} className="px-4 py-1.5 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">
-          Phân tích
-        </button>
+        <button onClick={load} className="lbtn lbtn-primary text-sm">Phân tích</button>
       </div>
 
       {/* Stats */}
       {data && (
         <div className="grid grid-cols-3 gap-4">
           {[
-            { label: 'Tổng đơn hàng', value: data.total_transactions || '(mẫu)', color: 'text-blue-400' },
-            { label: 'Rules tìm được', value: data.total_rules, color: 'text-green-400' },
-            { label: 'Nguồn dữ liệu', value: data.is_mock ? 'Mẫu' : 'Thực', color: data.is_mock ? 'text-yellow-400' : 'text-green-400' },
+            { label: 'Tổng đơn hàng', value: data.total_transactions || '(mẫu)', color: 'var(--primary-500)' },
+            { label: 'Rules tìm được', value: data.total_rules, color: '#22C55E' },
+            { label: 'Nguồn dữ liệu', value: data.is_mock ? 'Mẫu' : 'Thực', color: data.is_mock ? '#F59E0B' : '#22C55E' },
           ].map(k => (
-            <div key={k.label} className="bg-gray-800 rounded-xl p-4 border border-gray-700">
-              <div className="text-xs text-gray-400">{k.label}</div>
-              <div className={`text-2xl font-bold mt-1 ${k.color}`}>{k.value}</div>
+            <div key={k.label} className="lcard p-4">
+              <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{k.label}</div>
+              <div className="text-2xl font-bold mt-1" style={{ color: k.color }}>{k.value}</div>
             </div>
           ))}
         </div>
@@ -80,31 +82,36 @@ export default function BasketPage() {
       {/* Rules */}
       <div className="space-y-3">
         {loading ? (
-          <div className="p-8 text-center text-gray-400">Đang phân tích...</div>
+          <div className="lcard p-10 flex items-center justify-center">
+            <span className="w-6 h-6 border-2 rounded-full animate-spin"
+              style={{ borderColor: 'var(--border)', borderTopColor: 'var(--primary-500)' }} />
+          </div>
         ) : (data?.rules ?? []).map((rule, i) => (
-          <div key={i} className="bg-gray-800 rounded-xl p-4 border border-gray-700 hover:border-blue-500/40 transition-colors">
+          <div key={i} className="lcard p-4 transition-colors lcard-hover">
             <div className="flex items-center gap-2 flex-wrap">
               {rule.antecedents.map(p => (
-                <span key={p} className="px-2 py-1 bg-blue-900/40 text-blue-300 rounded text-sm font-medium">{p}</span>
+                <span key={p} className="px-2 py-1 rounded text-sm font-medium"
+                  style={{ background: 'rgba(99,102,241,0.12)', color: 'var(--primary-600)' }}>{p}</span>
               ))}
-              <span className="text-gray-400">→</span>
+              <span style={{ color: 'var(--text-tertiary)' }}>→</span>
               {rule.consequents.map(p => (
-                <span key={p} className="px-2 py-1 bg-green-900/40 text-green-300 rounded text-sm font-medium">{p}</span>
+                <span key={p} className="px-2 py-1 rounded text-sm font-medium"
+                  style={{ background: 'rgba(16,185,129,0.12)', color: '#059669' }}>{p}</span>
               ))}
-              <div className="ml-auto flex gap-3 text-xs text-gray-400">
-                <span>Support: <strong className="text-white">{(rule.support*100).toFixed(1)}%</strong></span>
-                <span>Confidence: <strong className="text-white">{(rule.confidence*100).toFixed(1)}%</strong></span>
+              <div className="ml-auto flex gap-3 text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                <span>Support: <strong style={{ color: 'var(--text-primary)' }}>{(rule.support*100).toFixed(1)}%</strong></span>
+                <span>Confidence: <strong style={{ color: 'var(--text-primary)' }}>{(rule.confidence*100).toFixed(1)}%</strong></span>
                 <span>Lift: <strong style={{ color: liftColor(rule.lift) }}>{rule.lift}x</strong></span>
-                <span>Đơn: <strong className="text-white">{rule.transactions}</strong></span>
+                <span>Đơn: <strong style={{ color: 'var(--text-primary)' }}>{rule.transactions}</strong></span>
               </div>
             </div>
-            <p className="text-sm text-gray-300 mt-2">{rule.recommendation}</p>
+            <p className="text-sm mt-2" style={{ color: 'var(--text-secondary)' }}>{rule.recommendation}</p>
           </div>
         ))}
       </div>
 
       {data && (
-        <div className="text-xs text-gray-500">{data.note}</div>
+        <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{data.note}</div>
       )}
     </div>
   )

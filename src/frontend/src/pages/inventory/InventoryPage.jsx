@@ -3,12 +3,12 @@ import MockToast from '../../components/ui/MockToast'
 import { getInventoryIntelligence } from '../../api/aiApi'
 
 const STATUS_CONFIG = {
-  CRITICAL:    { color: 'text-red-400',    bg: 'bg-red-900/20',    border: 'border-red-500/30',    icon: '🔴', label: 'Khẩn cấp' },
-  WARNING:     { color: 'text-yellow-400', bg: 'bg-yellow-900/20', border: 'border-yellow-500/30', icon: '🟡', label: 'Sắp hết' },
-  OUT_OF_STOCK:{ color: 'text-red-500',    bg: 'bg-red-900/30',    border: 'border-red-600/40',    icon: '⛔', label: 'Hết hàng' },
-  OK:          { color: 'text-green-400',  bg: 'bg-green-900/20',  border: 'border-green-500/30',  icon: '🟢', label: 'Bình thường' },
-  OVERSTOCK:   { color: 'text-blue-400',   bg: 'bg-blue-900/20',   border: 'border-blue-500/30',   icon: '🔵', label: 'Dư hàng' },
-  NO_SALES:    { color: 'text-gray-400',   bg: 'bg-gray-800',      border: 'border-gray-600',      icon: '⚪', label: 'Không có đơn' },
+  CRITICAL:    { textColor: '#EF4444', bg: 'rgba(239,68,68,0.08)',  border: 'rgba(239,68,68,0.25)',  icon: '🔴', label: 'Khẩn cấp' },
+  WARNING:     { textColor: '#F59E0B', bg: 'rgba(245,158,11,0.08)', border: 'rgba(245,158,11,0.25)', icon: '🟡', label: 'Sắp hết' },
+  OUT_OF_STOCK:{ textColor: '#EF4444', bg: 'rgba(239,68,68,0.12)',  border: 'rgba(239,68,68,0.30)',  icon: '⛔', label: 'Hết hàng' },
+  OK:          { textColor: '#22C55E', bg: 'rgba(34,197,94,0.08)',  border: 'rgba(34,197,94,0.25)',  icon: '🟢', label: 'Bình thường' },
+  OVERSTOCK:   { textColor: '#3B82F6', bg: 'rgba(59,130,246,0.08)', border: 'rgba(59,130,246,0.25)', icon: '🔵', label: 'Dư hàng' },
+  NO_SALES:    { textColor: 'var(--text-tertiary)', bg: 'var(--bg-elevated)', border: 'var(--border)', icon: '⚪', label: 'Không có đơn' },
 }
 
 export default function InventoryPage() {
@@ -44,15 +44,16 @@ export default function InventoryPage() {
   const filtered = (data?.items ?? []).filter(i => filter === 'ALL' || i.status === filter)
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="space-y-5">
       {isMock && <MockToast />}
-      <div className="flex items-center justify-between">
+
+      {/* Header */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-white">Thông minh Tồn kho</h1>
-          <p className="text-sm text-gray-400 mt-1">Dự báo ngày hết hàng và gợi ý đặt thêm</p>
+          <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Thông minh Tồn kho</h1>
+          <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>Dự báo ngày hết hàng và gợi ý đặt thêm</p>
         </div>
-        <select value={days} onChange={e => setDays(+e.target.value)}
-          className="bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 text-sm">
+        <select value={days} onChange={e => setDays(+e.target.value)} className="linput text-sm" style={{ width: 120 }}>
           <option value={7}>7 ngày</option>
           <option value={14}>14 ngày</option>
           <option value={30}>30 ngày</option>
@@ -65,14 +66,14 @@ export default function InventoryPage() {
       {data && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {[
-            { label: '⛔ Hết / Sắp hết', value: data.critical_count + data.warning_count, color: 'text-red-400' },
-            { label: '🔴 Khẩn cấp',       value: data.critical_count,  color: 'text-red-400' },
-            { label: '🟡 Sắp hết',         value: data.warning_count,   color: 'text-yellow-400' },
-            { label: '🔵 Dư hàng',         value: data.overstock_count, color: 'text-blue-400' },
+            { label: '⛔ Hết / Sắp hết', value: data.critical_count + data.warning_count, color: '#EF4444' },
+            { label: '🔴 Khẩn cấp',       value: data.critical_count,  color: '#EF4444' },
+            { label: '🟡 Sắp hết',         value: data.warning_count,   color: '#F59E0B' },
+            { label: '🔵 Dư hàng',         value: data.overstock_count, color: '#3B82F6' },
           ].map(k => (
-            <div key={k.label} className="bg-gray-800 rounded-xl p-4 border border-gray-700">
-              <div className="text-xs text-gray-400">{k.label}</div>
-              <div className={`text-2xl font-bold mt-1 ${k.color}`}>{k.value}</div>
+            <div key={k.label} className="lcard p-4">
+              <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{k.label}</div>
+              <div className="text-2xl font-bold mt-1" style={{ color: k.color }}>{k.value}</div>
             </div>
           ))}
         </div>
@@ -82,8 +83,10 @@ export default function InventoryPage() {
       <div className="flex gap-2 flex-wrap">
         {['ALL','CRITICAL','WARNING','OK','OVERSTOCK'].map(f => (
           <button key={f} onClick={() => setFilter(f)}
-            className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors
-              ${filter === f ? 'bg-blue-600 border-blue-600 text-white' : 'border-gray-600 text-gray-400 hover:border-blue-500'}`}>
+            className="px-3 py-1 rounded-full text-xs font-medium border transition-colors"
+            style={filter === f
+              ? { background: 'var(--primary-500)', borderColor: 'var(--primary-500)', color: '#fff' }
+              : { borderColor: 'var(--border)', color: 'var(--text-tertiary)', background: 'transparent' }}>
             {f === 'ALL' ? 'Tất cả' : STATUS_CONFIG[f]?.label ?? f}
           </button>
         ))}
@@ -91,44 +94,40 @@ export default function InventoryPage() {
 
       {/* Items */}
       {loading ? (
-        <div className="p-8 text-center text-gray-400">Đang phân tích...</div>
+        <div className="lcard p-10 flex items-center justify-center">
+          <span className="w-6 h-6 border-2 rounded-full animate-spin"
+            style={{ borderColor: 'var(--border)', borderTopColor: 'var(--primary-500)' }} />
+        </div>
       ) : (
         <div className="space-y-3">
           {filtered.map(item => {
             const cfg = STATUS_CONFIG[item.status] ?? STATUS_CONFIG.OK
             return (
-              <div key={item.product_id}
-                className={`rounded-xl p-4 border ${cfg.bg} ${cfg.border}`}>
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
+              <div key={item.product_id} className="rounded-xl p-4"
+                style={{ background: cfg.bg, border: `1px solid ${cfg.border}` }}>
+                <div className="flex items-start justify-between gap-4 flex-wrap">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span>{cfg.icon}</span>
-                      <span className="font-semibold text-white">{item.product_name}</span>
-                      <span className={`text-xs font-medium ${cfg.color}`}>{cfg.label}</span>
+                      <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>{item.product_name}</span>
+                      <span className="text-xs font-medium" style={{ color: cfg.textColor }}>{cfg.label}</span>
                     </div>
-                    <p className="text-sm text-gray-300 mt-1">{item.message}</p>
+                    <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>{item.message}</p>
                   </div>
-                  <div className="flex gap-4 text-right text-sm flex-shrink-0">
-                    <div>
-                      <div className="text-xs text-gray-400">Tồn kho</div>
-                      <div className={`font-bold ${cfg.color}`}>{item.current_stock}</div>
-                    </div>
-                    <div>
-                      <div className="text-xs text-gray-400">Bán/ngày</div>
-                      <div className="font-bold text-white">{item.avg_daily_sales}</div>
-                    </div>
-                    <div>
-                      <div className="text-xs text-gray-400">Còn lại</div>
-                      <div className={`font-bold ${cfg.color}`}>
-                        {item.days_until_stockout >= 999 ? '∞' : `${item.days_until_stockout}d`}
+                  <div className="flex gap-4 text-right text-sm shrink-0">
+                    {[
+                      { label: 'Tồn kho', value: item.current_stock, colored: true },
+                      { label: 'Bán/ngày', value: item.avg_daily_sales },
+                      { label: 'Còn lại', value: item.days_until_stockout >= 999 ? '∞' : `${item.days_until_stockout}d`, colored: true },
+                      ...(item.reorder_qty > 0 ? [{ label: 'Cần đặt', value: item.reorder_qty, special: '#F97316' }] : []),
+                    ].map((col, ci) => (
+                      <div key={ci}>
+                        <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{col.label}</div>
+                        <div className="font-bold" style={{ color: col.special ?? (col.colored ? cfg.textColor : 'var(--text-primary)') }}>
+                          {col.value}
+                        </div>
                       </div>
-                    </div>
-                    {item.reorder_qty > 0 && (
-                      <div>
-                        <div className="text-xs text-gray-400">Cần đặt</div>
-                        <div className="font-bold text-orange-400">{item.reorder_qty}</div>
-                      </div>
-                    )}
+                    ))}
                   </div>
                 </div>
               </div>
@@ -137,7 +136,7 @@ export default function InventoryPage() {
         </div>
       )}
 
-      {data && <div className="text-xs text-gray-500">{data.note}</div>}
+      {data && <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{data.note}</div>}
     </div>
   )
 }

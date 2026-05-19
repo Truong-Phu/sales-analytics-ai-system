@@ -36,48 +36,49 @@ export default function NarrativePage() {
 
   useEffect(() => { load() }, [days, lang])
 
-  // Render markdown-like bold
   const renderBold = (text) => text.split('**').map((part, i) =>
-    i % 2 === 0 ? part : <strong key={i} className="text-white font-semibold">{part}</strong>
+    i % 2 === 0 ? part : <strong key={i} style={{ color: 'var(--text-primary)' }}>{part}</strong>
   )
 
-  const revChg = data?.key_metrics?.revenue_change ?? 0
-  const revColor = revChg >= 0 ? 'text-green-400' : 'text-red-400'
+  const revChg   = data?.key_metrics?.revenue_change ?? 0
+  const revColor = revChg >= 0 ? '#22C55E' : '#EF4444'
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="space-y-5">
       {isMock && <MockToast />}
-      <div className="flex items-center justify-between">
+
+      {/* Header */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-white">Nhận xét Thông minh</h1>
-          <p className="text-sm text-gray-400 mt-1">Tự động sinh nhận xét doanh thu bằng ngôn ngữ tự nhiên</p>
+          <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Nhận xét Thông minh</h1>
+          <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>Tự động sinh nhận xét doanh thu bằng ngôn ngữ tự nhiên</p>
         </div>
         <div className="flex gap-2">
-          <select value={days} onChange={e => setDays(+e.target.value)}
-            className="bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 text-sm">
+          <select value={days} onChange={e => setDays(+e.target.value)} className="linput text-sm" style={{ width: 110 }}>
             {[7,14,30,90].map(d => <option key={d} value={d}>{d} ngày</option>)}
           </select>
-          <button onClick={() => setLang(l => l === 'vi' ? 'en' : 'vi')}
-            className="px-4 py-2 border border-gray-600 text-gray-300 rounded-lg text-sm hover:border-blue-500">
+          <button onClick={() => setLang(l => l === 'vi' ? 'en' : 'vi')} className="lbtn lbtn-secondary text-sm">
             {lang === 'vi' ? '🇻🇳 VI' : '🇬🇧 EN'}
           </button>
-          <button onClick={load} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">
-            Làm mới
-          </button>
+          <button onClick={load} className="lbtn lbtn-primary text-sm">Làm mới</button>
         </div>
       </div>
 
       {loading ? (
-        <div className="p-8 text-center text-gray-400">Đang sinh nhận xét...</div>
+        <div className="lcard p-12 flex items-center justify-center">
+          <span className="w-6 h-6 border-2 rounded-full animate-spin"
+            style={{ borderColor: 'var(--border)', borderTopColor: 'var(--primary-500)' }} />
+        </div>
       ) : data && (
         <>
           {/* Headline */}
-          <div className="bg-gradient-to-r from-blue-900/40 to-purple-900/40 border border-blue-500/30 rounded-xl p-6">
+          <div className="rounded-xl p-5"
+            style={{ background: 'linear-gradient(135deg, var(--primary-500) 0%, var(--accent-500) 100%)' }}>
             <div className="flex items-start gap-3">
               <span className="text-3xl">{revChg >= 10 ? '🚀' : revChg >= 0 ? '📈' : '📉'}</span>
               <div>
                 <div className="text-lg font-bold text-white leading-snug">{data.headline}</div>
-                <div className="text-xs text-gray-400 mt-1">
+                <div className="text-xs text-white/80 mt-1">
                   Kỳ: {data.period} · Sinh bởi: {data.generated_by === 'rule_based' ? 'Rule-based AI' : 'AI Model'}
                 </div>
               </div>
@@ -87,39 +88,40 @@ export default function NarrativePage() {
           {/* KPI grid */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {[
-              { label: 'Doanh thu kỳ này', value: `${((data.key_metrics?.current_revenue??0)/1e6).toFixed(1)}M VNĐ`, color: 'text-blue-400' },
+              { label: 'Doanh thu kỳ này', value: `${((data.key_metrics?.current_revenue??0)/1e6).toFixed(1)}M VNĐ`, color: 'var(--primary-500)' },
               { label: 'Tăng trưởng',      value: `${revChg>=0?'+':''}${revChg}%`,  color: revColor },
-              { label: 'Đơn hàng',         value: (data.key_metrics?.current_orders??0).toLocaleString(), color: 'text-green-400' },
-              { label: 'ĐH tăng/giảm',    value: `${(data.key_metrics?.orders_change??0)>=0?'+':''}${data.key_metrics?.orders_change??0}%`, color: (data.key_metrics?.orders_change??0)>=0 ? 'text-green-400' : 'text-red-400' },
+              { label: 'Đơn hàng',         value: (data.key_metrics?.current_orders??0).toLocaleString(), color: '#22C55E' },
+              { label: 'ĐH tăng/giảm',    value: `${(data.key_metrics?.orders_change??0)>=0?'+':''}${data.key_metrics?.orders_change??0}%`, color: (data.key_metrics?.orders_change??0)>=0 ? '#22C55E' : '#EF4444' },
             ].map(k => (
-              <div key={k.label} className="bg-gray-800 rounded-xl p-4 border border-gray-700">
-                <div className="text-xs text-gray-400">{k.label}</div>
-                <div className={`text-xl font-bold mt-1 ${k.color}`}>{k.value}</div>
+              <div key={k.label} className="lcard p-4">
+                <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{k.label}</div>
+                <div className="text-xl font-bold mt-1" style={{ color: k.color }}>{k.value}</div>
               </div>
             ))}
           </div>
 
           {/* Full narrative */}
-          <div className="bg-gray-800 rounded-xl p-5 border border-gray-700">
-            <h3 className="text-sm font-semibold text-gray-300 mb-3">📄 Nhận xét chi tiết</h3>
-            <p className="text-gray-300 leading-relaxed">{renderBold(data.full_narrative)}</p>
+          <div className="lcard p-5">
+            <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-secondary)' }}>📄 Nhận xét chi tiết</h3>
+            <p className="leading-relaxed text-sm" style={{ color: 'var(--text-secondary)' }}>{renderBold(data.full_narrative)}</p>
           </div>
 
           {/* Anomaly note */}
           {data.anomaly_note && (
-            <div className="bg-yellow-900/20 border border-yellow-500/30 rounded-xl p-4 text-sm text-yellow-200">
+            <div className="rounded-xl p-4 text-sm"
+              style={{ background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.30)', color: '#92400E' }}>
               ⚠️ {data.anomaly_note}
             </div>
           )}
 
           {/* Recommendations */}
           {data.recommendations?.length > 0 && (
-            <div className="bg-gray-800 rounded-xl p-5 border border-gray-700">
-              <h3 className="text-sm font-semibold text-gray-300 mb-3">💡 Gợi ý hành động</h3>
+            <div className="lcard p-5">
+              <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-secondary)' }}>💡 Gợi ý hành động</h3>
               <ul className="space-y-2">
                 {data.recommendations.map((r, i) => (
-                  <li key={i} className="flex items-start gap-2 text-sm text-gray-300">
-                    <span className="text-blue-400 font-bold mt-0.5">{i+1}.</span>
+                  <li key={i} className="flex items-start gap-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                    <span className="font-bold mt-0.5" style={{ color: 'var(--primary-500)' }}>{i+1}.</span>
                     <span>{r}</span>
                   </li>
                 ))}
@@ -128,8 +130,8 @@ export default function NarrativePage() {
           )}
 
           {/* Export hint */}
-          <div className="text-xs text-gray-500 bg-gray-800/50 rounded-lg p-3 border border-gray-700">
-            💡 Nhận xét này tự động được chèn vào báo cáo PDF khi xuất tại trang <strong className="text-gray-300">Báo cáo</strong>.
+          <div className="lcard p-3 text-xs" style={{ color: 'var(--text-tertiary)' }}>
+            💡 Nhận xét này tự động được chèn vào báo cáo PDF khi xuất tại trang <strong style={{ color: 'var(--text-secondary)' }}>Báo cáo</strong>.
           </div>
         </>
       )}

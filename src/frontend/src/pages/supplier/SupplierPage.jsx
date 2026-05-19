@@ -4,14 +4,15 @@ import { getSupplierPerformance } from '../../api/aiApi'
 
 function StatusBadge({ status }) {
   const map = {
-    GOOD:     'bg-green-500/20 text-green-400 border border-green-500/30',
-    WARNING:  'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30',
-    CRITICAL: 'bg-red-500/20 text-red-400 border border-red-500/30',
+    GOOD:     { bg: 'rgba(34,197,94,0.10)',  border: 'rgba(34,197,94,0.30)',  color: '#22C55E', label: 'Tốt'       },
+    WARNING:  { bg: 'rgba(245,158,11,0.10)', border: 'rgba(245,158,11,0.30)', color: '#F59E0B', label: 'Cảnh báo'  },
+    CRITICAL: { bg: 'rgba(239,68,68,0.10)',  border: 'rgba(239,68,68,0.30)',  color: '#EF4444', label: 'Nguy hiểm' },
   }
-  const label = { GOOD: 'Tốt', WARNING: 'Cảnh báo', CRITICAL: 'Nguy hiểm' }
+  const s = map[status] ?? map.WARNING
   return (
-    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${map[status] ?? map.WARNING}`}>
-      {label[status] ?? status}
+    <span className="px-2 py-0.5 rounded-full text-xs font-medium"
+      style={{ background: s.bg, border: `1px solid ${s.border}`, color: s.color }}>
+      {s.label}
     </span>
   )
 }
@@ -20,10 +21,22 @@ function QualityStars({ score }) {
   const full = Math.floor(score)
   const half = score - full >= 0.5
   return (
-    <span className="text-yellow-400 text-sm">
+    <span className="text-sm" style={{ color: '#F59E0B' }}>
       {'★'.repeat(full)}{half ? '½' : ''}{'☆'.repeat(5 - full - (half ? 1 : 0))}
-      <span className="text-gray-400 text-xs ml-1">{score.toFixed(1)}</span>
+      <span className="text-xs ml-1" style={{ color: 'var(--text-tertiary)' }}>{score.toFixed(1)}</span>
     </span>
+  )
+}
+
+function OnTimeBar({ rate }) {
+  const color = rate >= 0.85 ? '#22C55E' : rate >= 0.70 ? '#F59E0B' : '#EF4444'
+  return (
+    <div className="flex flex-col items-center gap-1">
+      <span className="font-bold" style={{ color }}>{(rate * 100).toFixed(1)}%</span>
+      <div className="w-20 h-1.5 rounded-full" style={{ background: 'var(--bg-elevated)' }}>
+        <div className="h-full rounded-full transition-all" style={{ width: `${rate * 100}%`, background: color }} />
+      </div>
+    </div>
   )
 }
 
@@ -67,59 +80,59 @@ export default function SupplierPage() {
     return 0
   })
 
-  const counts = { GOOD: 0, WARNING: 0, CRITICAL: 0 }
+  const counts    = { GOOD: 0, WARNING: 0, CRITICAL: 0 }
   suppliers.forEach(s => { counts[s.status] = (counts[s.status] || 0) + 1 })
   const avgOnTime = suppliers.length ? suppliers.reduce((s, r) => s + r.on_time_rate, 0) / suppliers.length : 0
-  const worst = suppliers.reduce((w, s) => (!w || s.on_time_rate < w.on_time_rate) ? s : w, null)
+  const worst     = suppliers.reduce((w, s) => (!w || s.on_time_rate < w.on_time_rate) ? s : w, null)
 
-  const fmt = v => v >= 1e9 ? `${(v / 1e9).toFixed(1)}B` : v >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : v.toLocaleString()
+  const fmt = v => v >= 1e9 ? `${(v/1e9).toFixed(1)}B` : v >= 1e6 ? `${(v/1e6).toFixed(1)}M` : v.toLocaleString()
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="space-y-5">
       {isMock && <MockToast />}
+
+      {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-white">Hiệu suất Nhà cung cấp</h1>
-          <p className="text-sm text-gray-400 mt-1">Tỷ lệ giao đúng hạn, thời gian lead time và chất lượng</p>
+          <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Hiệu suất Nhà cung cấp</h1>
+          <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>Tỷ lệ giao đúng hạn, thời gian lead time và chất lượng</p>
         </div>
         <div className="flex gap-2">
-          <select value={sortBy} onChange={e => setSortBy(e.target.value)}
-            className="bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 text-sm">
+          <select value={sortBy} onChange={e => setSortBy(e.target.value)} className="linput text-sm">
             <option value="on_time_rate">Sắp xếp: Đúng hạn</option>
             <option value="avg_lead_days">Sắp xếp: Lead time</option>
             <option value="total_value">Sắp xếp: Giá trị</option>
           </select>
-          <select value={days} onChange={e => setDays(+e.target.value)}
-            className="bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 text-sm">
+          <select value={days} onChange={e => setDays(+e.target.value)} className="linput text-sm" style={{ width: 110 }}>
             {[30, 60, 90, 180, 365].map(d => <option key={d} value={d}>{d} ngày</option>)}
           </select>
-          <button onClick={load} className="px-3 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">
-            Làm mới
-          </button>
+          <button onClick={load} className="lbtn lbtn-primary text-sm">Làm mới</button>
         </div>
       </div>
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
-          { label: 'Tổng NCC',          value: suppliers.length,           color: 'text-blue-400' },
-          { label: 'TB Đúng hạn',       value: `${(avgOnTime * 100).toFixed(1)}%`, color: avgOnTime >= 0.85 ? 'text-green-400' : 'text-yellow-400' },
-          { label: 'NCC Tốt',           value: counts.GOOD,                color: 'text-green-400' },
-          { label: 'Cần chú ý',         value: counts.WARNING + counts.CRITICAL, color: counts.WARNING + counts.CRITICAL > 0 ? 'text-red-400' : 'text-gray-400' },
+          { label: 'Tổng NCC',    value: suppliers.length, color: 'var(--primary-500)' },
+          { label: 'TB Đúng hạn', value: `${(avgOnTime * 100).toFixed(1)}%`, color: avgOnTime >= 0.85 ? '#22C55E' : '#F59E0B' },
+          { label: 'NCC Tốt',     value: counts.GOOD,      color: '#22C55E' },
+          { label: 'Cần chú ý',   value: counts.WARNING + counts.CRITICAL, color: counts.WARNING + counts.CRITICAL > 0 ? '#EF4444' : 'var(--text-tertiary)' },
         ].map(k => (
-          <div key={k.label} className="bg-gray-800 rounded-xl p-4 border border-gray-700">
-            <div className="text-xs text-gray-400">{k.label}</div>
-            <div className={`text-2xl font-bold mt-1 ${k.color}`}>{k.value}</div>
+          <div key={k.label} className="lcard p-4">
+            <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{k.label}</div>
+            <div className="text-2xl font-bold mt-1" style={{ color: k.color }}>{k.value}</div>
           </div>
         ))}
       </div>
 
       {/* Filter tabs */}
-      <div className="flex gap-2">
+      <div className="flex gap-2 flex-wrap">
         {['ALL', 'GOOD', 'WARNING', 'CRITICAL'].map(f => (
           <button key={f} onClick={() => setFilter(f)}
-            className={`px-3 py-1.5 rounded-lg text-sm transition-colors
-              ${filter === f ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}>
+            className="px-3 py-1.5 rounded-lg text-sm border transition-colors"
+            style={filter === f
+              ? { background: 'var(--primary-500)', borderColor: 'var(--primary-500)', color: '#fff' }
+              : { background: 'var(--bg-elevated)', borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>
             {f === 'ALL' ? 'Tất cả' : f === 'GOOD' ? 'Tốt' : f === 'WARNING' ? 'Cảnh báo' : 'Nguy hiểm'}
             {f !== 'ALL' && <span className="ml-1 text-xs opacity-70">({counts[f] ?? 0})</span>}
           </button>
@@ -128,59 +141,55 @@ export default function SupplierPage() {
 
       {/* Table */}
       {loading ? (
-        <div className="text-center py-12 text-gray-400">Đang tải...</div>
+        <div className="lcard p-10 flex items-center justify-center">
+          <span className="w-6 h-6 border-2 rounded-full animate-spin"
+            style={{ borderColor: 'var(--border)', borderTopColor: 'var(--primary-500)' }} />
+        </div>
       ) : (
-        <div className="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden">
+        <div className="lcard overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="bg-gray-750 border-b border-gray-700">
-                <tr className="text-gray-400 text-xs uppercase">
-                  <th className="text-left p-4">Nhà cung cấp</th>
-                  <th className="text-center p-4">Trạng thái</th>
-                  <th className="text-center p-4">Đúng hạn</th>
-                  <th className="text-center p-4">Lead time</th>
-                  <th className="text-center p-4">Tổng giao</th>
-                  <th className="text-center p-4">Chất lượng</th>
-                  <th className="text-right p-4">Giá trị</th>
+              <thead>
+                <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-elevated)' }}>
+                  {['Nhà cung cấp','Trạng thái','Đúng hạn','Lead time','Tổng giao','Chất lượng','Giá trị'].map(h => (
+                    <th key={h} className="text-left p-4 text-xs font-semibold"
+                      style={{ color: 'var(--text-tertiary)' }}>{h}</th>
+                  ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-700/50">
+              <tbody>
                 {sorted.map(s => (
-                  <tr key={s.supplier_name} className="hover:bg-gray-700/30 transition-colors">
+                  <tr key={s.supplier_name} style={{ borderBottom: '1px solid var(--border)' }}
+                    className="transition-colors"
+                    onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                     <td className="p-4">
-                      <div className="font-medium text-white">{s.supplier_name}</div>
-                      <div className="text-xs text-gray-400">{s.late_deliveries} lần trễ / {s.total_deliveries} lần giao</div>
-                    </td>
-                    <td className="p-4 text-center"><StatusBadge status={s.status} /></td>
-                    <td className="p-4">
-                      <div className="flex flex-col items-center gap-1">
-                        <span className={`font-bold ${s.on_time_rate >= 0.85 ? 'text-green-400' : s.on_time_rate >= 0.70 ? 'text-yellow-400' : 'text-red-400'}`}>
-                          {(s.on_time_rate * 100).toFixed(1)}%
-                        </span>
-                        <div className="w-20 h-1.5 bg-gray-700 rounded-full">
-                          <div className="h-full rounded-full transition-all"
-                            style={{ width: `${s.on_time_rate * 100}%`, background: s.on_time_rate >= 0.85 ? '#22C55E' : s.on_time_rate >= 0.70 ? '#F59E0B' : '#EF4444' }} />
-                        </div>
+                      <div className="font-medium" style={{ color: 'var(--text-primary)' }}>{s.supplier_name}</div>
+                      <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                        {s.late_deliveries} lần trễ / {s.total_deliveries} lần giao
                       </div>
                     </td>
-                    <td className="p-4 text-center text-gray-300">{s.avg_lead_days.toFixed(1)} ngày</td>
-                    <td className="p-4 text-center text-gray-300">{s.total_quantity.toLocaleString()}</td>
+                    <td className="p-4 text-center"><StatusBadge status={s.status} /></td>
+                    <td className="p-4"><OnTimeBar rate={s.on_time_rate} /></td>
+                    <td className="p-4 text-center" style={{ color: 'var(--text-secondary)' }}>{s.avg_lead_days.toFixed(1)} ngày</td>
+                    <td className="p-4 text-center" style={{ color: 'var(--text-secondary)' }}>{s.total_quantity.toLocaleString()}</td>
                     <td className="p-4 text-center"><QualityStars score={s.quality_score} /></td>
-                    <td className="p-4 text-right font-medium text-white">{fmt(s.total_value)} VNĐ</td>
+                    <td className="p-4 text-right font-medium" style={{ color: 'var(--text-primary)' }}>{fmt(s.total_value)} VNĐ</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
           {sorted.length === 0 && (
-            <div className="text-center py-8 text-gray-400">Không có dữ liệu</div>
+            <div className="text-center py-8" style={{ color: 'var(--text-tertiary)' }}>Không có dữ liệu</div>
           )}
         </div>
       )}
 
       {/* Worst supplier alert */}
       {worst && worst.status === 'CRITICAL' && (
-        <div className="bg-red-900/20 border border-red-500/30 rounded-xl p-4 text-sm text-red-200">
+        <div className="rounded-xl p-4 text-sm"
+          style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', color: '#991B1B' }}>
           ⚠️ <strong>{worst.supplier_name}</strong> có tỷ lệ đúng hạn thấp ({(worst.on_time_rate * 100).toFixed(0)}%) —
           cân nhắc đánh giá lại hợp đồng hoặc tìm nhà cung cấp thay thế.
         </div>

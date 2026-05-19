@@ -21,18 +21,16 @@ export default function WhatIfPage() {
   const run = async () => {
     setLoading(true)
     try {
-      const res = await simulateWhatIf({
-        scenario, change_pct: changePct, horizon_days: horizon,
-      })
+      const res = await simulateWhatIf({ scenario, change_pct: changePct, horizon_days: horizon })
       setResult(res)
     } catch {
-      // Fallback mock
       const baseline = Array.from({length: horizon}, (_, i) => ({
         date: new Date(Date.now() + (i+1)*86400000).toISOString().split('T')[0],
         baseline: 5_000_000 + Math.random()*2_000_000,
         simulated: 0, delta: 0, delta_pct: 0,
       }))
-      const mult = scenario === 'price_change' ? 1 + (changePct/100) * (1 + -1.5 * (changePct/100))
+      const mult = scenario === 'price_change'
+        ? 1 + (changePct/100) * (1 + -1.5 * (changePct/100))
         : scenario === 'discount' ? (1 + changePct/100) * (1 - -1.5 * (changePct/100))
         : scenario === 'new_channel' ? 1 + Math.abs(changePct/100)
         : 1 + Math.abs(changePct/100) * 0.3
@@ -56,53 +54,54 @@ export default function WhatIfPage() {
     } finally { setLoading(false) }
   }
 
-  const delta = result ? result.delta_total_pct : 0
+  const delta      = result ? result.delta_total_pct : 0
   const isPositive = delta > 0
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="space-y-5">
+      {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-white">What-If Simulator</h1>
-        <p className="text-sm text-gray-400 mt-1">Mô phỏng kịch bản kinh doanh và dự báo tác động doanh thu</p>
+        <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>What-If Simulator</h1>
+        <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>Mô phỏng kịch bản kinh doanh và dự báo tác động doanh thu</p>
       </div>
 
       {/* Scenario selector */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {SCENARIOS.map(s => (
           <button key={s.value} onClick={() => setScenario(s.value)}
-            className={`p-4 rounded-xl border text-left transition-all
-              ${scenario === s.value
-                ? 'border-blue-500 bg-blue-900/30 text-white'
-                : 'border-gray-700 bg-gray-800 text-gray-400 hover:border-gray-500'}`}>
+            className="p-4 rounded-xl border text-left transition-all"
+            style={scenario === s.value
+              ? { borderColor: 'var(--primary-500)', background: 'var(--primary-50)', color: 'var(--primary-700)' }
+              : { borderColor: 'var(--border)', background: 'var(--bg-surface)', color: 'var(--text-secondary)' }}>
             <div className="text-xl mb-1">{s.icon}</div>
             <div className="font-medium text-sm">{s.label}</div>
-            <div className="text-xs mt-1 opacity-60">{s.desc}</div>
+            <div className="text-xs mt-1 opacity-70">{s.desc}</div>
           </button>
         ))}
       </div>
 
       {/* Controls */}
-      <div className="bg-gray-800 rounded-xl p-5 border border-gray-700 flex flex-wrap gap-6 items-end">
+      <div className="lcard p-5 flex flex-wrap gap-6 items-end">
         <div>
-          <label className="text-sm text-gray-400 block mb-2">
-            {changePct >= 0 ? '📈' : '📉'} Thay đổi: <strong className="text-white">{changePct > 0 ? '+' : ''}{changePct}%</strong>
+          <label className="text-sm font-medium block mb-2" style={{ color: 'var(--text-secondary)' }}>
+            {changePct >= 0 ? '📈' : '📉'} Thay đổi:{' '}
+            <strong style={{ color: 'var(--text-primary)' }}>{changePct > 0 ? '+' : ''}{changePct}%</strong>
           </label>
           <input type="range" min={-50} max={100} step={5} value={changePct}
-            onChange={e => setChangePct(+e.target.value)}
-            className="w-48 accent-blue-500" />
-          <div className="flex justify-between text-xs text-gray-500 mt-1">
+            onChange={e => setChangePct(+e.target.value)} className="w-48 accent-indigo-500" />
+          <div className="flex justify-between text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
             <span>-50%</span><span>0</span><span>+100%</span>
           </div>
         </div>
         <div>
-          <label className="text-sm text-gray-400 block mb-2">Kỳ mô phỏng: <strong className="text-white">{horizon} ngày</strong></label>
-          <select value={horizon} onChange={e => setHorizon(+e.target.value)}
-            className="bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 text-sm">
+          <label className="text-sm font-medium block mb-2" style={{ color: 'var(--text-secondary)' }}>
+            Kỳ mô phỏng: <strong style={{ color: 'var(--text-primary)' }}>{horizon} ngày</strong>
+          </label>
+          <select value={horizon} onChange={e => setHorizon(+e.target.value)} className="linput text-sm">
             {[7,14,30,60,90].map(d => <option key={d} value={d}>{d} ngày</option>)}
           </select>
         </div>
-        <button onClick={run} disabled={loading}
-          className="px-6 py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50">
+        <button onClick={run} disabled={loading} className="lbtn lbtn-primary">
           {loading ? 'Đang mô phỏng...' : '▶ Chạy mô phỏng'}
         </button>
       </div>
@@ -112,45 +111,50 @@ export default function WhatIfPage() {
         <>
           <div className="grid grid-cols-3 gap-4">
             {[
-              { label: 'Baseline (không thay đổi)', value: fmt(result.baseline_total), color: 'text-gray-300' },
-              { label: 'Mô phỏng (sau thay đổi)',   value: fmt(result.simulated_total), color: isPositive ? 'text-green-400' : 'text-red-400' },
-              { label: 'Chênh lệch',                value: `${isPositive?'+':''}${delta}%`, color: isPositive ? 'text-green-400' : 'text-red-400' },
+              { label: 'Baseline (không thay đổi)', value: fmt(result.baseline_total), color: 'var(--text-secondary)' },
+              { label: 'Mô phỏng (sau thay đổi)',   value: fmt(result.simulated_total), color: isPositive ? '#22C55E' : '#EF4444' },
+              { label: 'Chênh lệch',                value: `${isPositive?'+':''}${delta}%`, color: isPositive ? '#22C55E' : '#EF4444' },
             ].map(k => (
-              <div key={k.label} className="bg-gray-800 rounded-xl p-4 border border-gray-700">
-                <div className="text-xs text-gray-400">{k.label}</div>
-                <div className={`text-2xl font-bold mt-1 ${k.color}`}>{k.value} VNĐ</div>
+              <div key={k.label} className="lcard p-4">
+                <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{k.label}</div>
+                <div className="text-2xl font-bold mt-1" style={{ color: k.color }}>{k.value} VNĐ</div>
               </div>
             ))}
           </div>
 
           {/* Chart */}
-          <div className="bg-gray-800 rounded-xl p-4 border border-gray-700">
-            <h3 className="text-sm font-medium text-gray-300 mb-4">Biểu đồ so sánh Baseline vs. Mô phỏng</h3>
+          <div className="lcard p-4">
+            <h3 className="text-sm font-medium mb-4" style={{ color: 'var(--text-secondary)' }}>Biểu đồ so sánh Baseline vs. Mô phỏng</h3>
             <ResponsiveContainer width="100%" height={280}>
               <LineChart data={result.chart_data}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                <XAxis dataKey="date" tick={{ fill:'#9CA3AF', fontSize:11 }} interval="preserveStartEnd" />
-                <YAxis tick={{ fill:'#9CA3AF', fontSize:11 }} tickFormatter={v => `${(v/1e6).toFixed(1)}M`} />
-                <Tooltip formatter={v => `${(v/1e6).toFixed(2)}M VNĐ`}
-                  contentStyle={{ background:'#1F2937', border:'1px solid #374151', borderRadius:8 }}
-                  labelStyle={{ color:'#9CA3AF' }} itemStyle={{ color:'#E5E7EB' }} />
-                <Legend wrapperStyle={{ color:'#9CA3AF', fontSize:12 }} />
-                <Line type="monotone" dataKey="baseline"  name="Baseline" stroke="#6B7280" strokeWidth={2} dot={false} />
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                <XAxis dataKey="date" tick={{ fill:'var(--text-tertiary)', fontSize:11 }} interval="preserveStartEnd" />
+                <YAxis tick={{ fill:'var(--text-tertiary)', fontSize:11 }} tickFormatter={v => `${(v/1e6).toFixed(1)}M`} />
+                <Tooltip
+                  formatter={v => `${(v/1e6).toFixed(2)}M VNĐ`}
+                  contentStyle={{ background:'var(--bg-surface)', border:'1px solid var(--border)', borderRadius:8 }}
+                  labelStyle={{ color:'var(--text-secondary)' }}
+                  itemStyle={{ color:'var(--text-primary)' }}
+                />
+                <Legend wrapperStyle={{ color:'var(--text-tertiary)', fontSize:12 }} />
+                <Line type="monotone" dataKey="baseline"  name="Baseline" stroke="var(--text-tertiary)" strokeWidth={2} dot={false} />
                 <Line type="monotone" dataKey="simulated" name="Mô phỏng" stroke={isPositive ? '#22C55E' : '#EF4444'} strokeWidth={2} dot={false} />
               </LineChart>
             </ResponsiveContainer>
           </div>
 
           {/* Recommendation */}
-          <div className="bg-gray-800 rounded-xl p-4 border border-gray-700">
-            <div className="text-sm font-medium text-blue-400 mb-1">💡 Nhận xét AI</div>
-            <p className="text-gray-300 text-sm">{result.recommendation}</p>
-            <div className="mt-3 pt-3 border-t border-gray-700">
-              <div className="text-xs text-gray-500 font-medium mb-1">Giả định mô hình:</div>
-              <ul className="text-xs text-gray-500 list-disc list-inside space-y-0.5">
-                {result.assumptions?.map((a, i) => <li key={i}>{a}</li>)}
-              </ul>
-            </div>
+          <div className="lcard p-4">
+            <div className="text-sm font-medium mb-1" style={{ color: 'var(--primary-500)' }}>💡 Nhận xét AI</div>
+            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{result.recommendation}</p>
+            {result.assumptions?.length > 0 && (
+              <div className="mt-3 pt-3" style={{ borderTop: '1px solid var(--border)' }}>
+                <div className="text-xs font-medium mb-1" style={{ color: 'var(--text-tertiary)' }}>Giả định mô hình:</div>
+                <ul className="text-xs list-disc list-inside space-y-0.5" style={{ color: 'var(--text-tertiary)' }}>
+                  {result.assumptions.map((a, i) => <li key={i}>{a}</li>)}
+                </ul>
+              </div>
+            )}
           </div>
         </>
       )}

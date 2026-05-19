@@ -4,32 +4,32 @@ import { getPriceIntelligence } from '../../api/aiApi'
 
 function RecoBadge({ rec }) {
   const map = {
-    INCREASE: { cls: 'bg-green-500/20 text-green-400 border border-green-500/30', label: '↑ Tăng giá' },
-    DECREASE: { cls: 'bg-red-500/20 text-red-400 border border-red-500/30',       label: '↓ Giảm giá' },
-    HOLD:     { cls: 'bg-gray-500/20 text-gray-400 border border-gray-600',        label: '— Giữ nguyên' },
+    INCREASE: { bg: 'rgba(34,197,94,0.10)',   border: 'rgba(34,197,94,0.30)',   color: '#22C55E', label: '↑ Tăng giá'   },
+    DECREASE: { bg: 'rgba(239,68,68,0.10)',   border: 'rgba(239,68,68,0.30)',   color: '#EF4444', label: '↓ Giảm giá'   },
+    HOLD:     { bg: 'var(--bg-elevated)',      border: 'var(--border)',           color: 'var(--text-tertiary)', label: '— Giữ nguyên' },
   }
-  const { cls, label } = map[rec] ?? map.HOLD
-  return <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${cls}`}>{label}</span>
+  const s = map[rec] ?? map.HOLD
+  return (
+    <span className="px-2 py-0.5 rounded-full text-xs font-medium"
+      style={{ background: s.bg, border: `1px solid ${s.border}`, color: s.color }}>
+      {s.label}
+    </span>
+  )
 }
 
 function GapBar({ gap }) {
-  const abs  = Math.min(Math.abs(gap), 30)
-  const pct  = (abs / 30) * 50
+  const abs   = Math.min(Math.abs(gap), 30)
+  const pct   = (abs / 30) * 50
   const color = gap < -15 ? '#22C55E' : gap > 10 ? '#EF4444' : '#F59E0B'
   return (
     <div className="flex items-center gap-2">
-      <span className={`text-sm font-bold w-14 text-right ${gap < 0 ? 'text-green-400' : 'text-red-400'}`}>
+      <span className="text-sm font-bold w-14 text-right" style={{ color: gap < 0 ? '#22C55E' : '#EF4444' }}>
         {gap > 0 ? '+' : ''}{gap.toFixed(1)}%
       </span>
-      <div className="relative w-24 h-2 bg-gray-700 rounded-full">
-        <div className="absolute top-0 left-1/2 w-px h-2 bg-gray-500" />
+      <div className="relative w-24 h-2 rounded-full" style={{ background: 'var(--bg-elevated)' }}>
+        <div className="absolute top-0 left-1/2 w-px h-2" style={{ background: 'var(--border)' }} />
         <div className="absolute top-0 h-2 rounded-full"
-          style={{
-            width:  `${pct}%`,
-            left:   gap < 0 ? `${50 - pct}%` : '50%',
-            background: color,
-          }}
-        />
+          style={{ width: `${pct}%`, left: gap < 0 ? `${50 - pct}%` : '50%', background: color }} />
       </div>
     </div>
   )
@@ -76,45 +76,46 @@ export default function PricePage() {
   products.forEach(p => { counts[p.recommendation] = (counts[p.recommendation] || 0) + 1 })
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="space-y-5">
       {isMock && <MockToast />}
+
+      {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-white">Thông minh Giá</h1>
-          <p className="text-sm text-gray-400 mt-1">So sánh giá sản phẩm với mức thị trường – gợi ý điều chỉnh</p>
+          <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Thông minh Giá</h1>
+          <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>So sánh giá sản phẩm với mức thị trường – gợi ý điều chỉnh</p>
         </div>
         <div className="flex gap-2">
-          <select value={days} onChange={e => setDays(+e.target.value)}
-            className="bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 text-sm">
+          <select value={days} onChange={e => setDays(+e.target.value)} className="linput text-sm" style={{ width: 110 }}>
             {[7, 14, 30, 90].map(d => <option key={d} value={d}>{d} ngày</option>)}
           </select>
-          <button onClick={load} className="px-3 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">
-            Làm mới
-          </button>
+          <button onClick={load} className="lbtn lbtn-primary text-sm">Làm mới</button>
         </div>
       </div>
 
       {/* Summary cards */}
       <div className="grid grid-cols-3 gap-4">
         {[
-          { label: 'Nên Tăng giá',    value: counts.INCREASE, color: 'text-green-400', sub: 'đang rẻ hơn thị trường >15%' },
-          { label: 'Giữ nguyên',      value: counts.HOLD,     color: 'text-gray-300',  sub: 'giá phù hợp thị trường'     },
-          { label: 'Nên Giảm giá',    value: counts.DECREASE, color: 'text-red-400',   sub: 'đang đắt hơn thị trường >10%'},
+          { label: 'Nên Tăng giá',  value: counts.INCREASE, color: '#22C55E', sub: 'đang rẻ hơn thị trường >15%' },
+          { label: 'Giữ nguyên',    value: counts.HOLD,     color: 'var(--text-secondary)', sub: 'giá phù hợp thị trường' },
+          { label: 'Nên Giảm giá',  value: counts.DECREASE, color: '#EF4444', sub: 'đang đắt hơn thị trường >10%' },
         ].map(k => (
-          <div key={k.label} className="bg-gray-800 rounded-xl p-4 border border-gray-700">
-            <div className="text-xs text-gray-400">{k.label}</div>
-            <div className={`text-3xl font-bold mt-1 ${k.color}`}>{k.value}</div>
-            <div className="text-xs text-gray-500 mt-1">{k.sub}</div>
+          <div key={k.label} className="lcard p-4">
+            <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{k.label}</div>
+            <div className="text-3xl font-bold mt-1" style={{ color: k.color }}>{k.value}</div>
+            <div className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>{k.sub}</div>
           </div>
         ))}
       </div>
 
       {/* Filter */}
-      <div className="flex gap-2">
+      <div className="flex gap-2 flex-wrap">
         {['ALL', 'INCREASE', 'HOLD', 'DECREASE'].map(f => (
           <button key={f} onClick={() => setFilter(f)}
-            className={`px-3 py-1.5 rounded-lg text-sm transition-colors
-              ${filter === f ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}>
+            className="px-3 py-1.5 rounded-lg text-sm border transition-colors"
+            style={filter === f
+              ? { background: 'var(--primary-500)', borderColor: 'var(--primary-500)', color: '#fff' }
+              : { background: 'var(--bg-elevated)', borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>
             {f === 'ALL' ? 'Tất cả' : f === 'INCREASE' ? '↑ Tăng giá' : f === 'HOLD' ? '— Giữ nguyên' : '↓ Giảm giá'}
           </button>
         ))}
@@ -122,32 +123,36 @@ export default function PricePage() {
 
       {/* Table */}
       {loading ? (
-        <div className="text-center py-12 text-gray-400">Đang tải...</div>
+        <div className="lcard p-10 flex items-center justify-center">
+          <span className="w-6 h-6 border-2 rounded-full animate-spin"
+            style={{ borderColor: 'var(--border)', borderTopColor: 'var(--primary-500)' }} />
+        </div>
       ) : (
-        <div className="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden">
+        <div className="lcard overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="border-b border-gray-700">
-                <tr className="text-gray-400 text-xs uppercase">
-                  <th className="text-left p-4">Sản phẩm</th>
-                  <th className="text-right p-4">Giá mình</th>
-                  <th className="text-right p-4">Thị trường TB</th>
-                  <th className="text-center p-4">Chênh lệch</th>
-                  <th className="text-center p-4">Gợi ý</th>
-                  <th className="text-left p-4">Nguồn</th>
+              <thead>
+                <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-elevated)' }}>
+                  {['Sản phẩm','Giá mình','Thị trường TB','Chênh lệch','Gợi ý','Nguồn'].map(h => (
+                    <th key={h} className="text-left p-4 text-xs font-semibold"
+                      style={{ color: 'var(--text-tertiary)' }}>{h}</th>
+                  ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-700/50">
+              <tbody>
                 {filtered.map(p => (
-                  <tr key={p.product_name} className="hover:bg-gray-700/30 transition-colors">
+                  <tr key={p.product_name} style={{ borderBottom: '1px solid var(--border)' }}
+                    className="transition-colors"
+                    onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                     <td className="p-4">
-                      <div className="font-medium text-white">{p.product_name}</div>
-                      <div className="text-xs text-gray-400">{p.category}</div>
+                      <div className="font-medium" style={{ color: 'var(--text-primary)' }}>{p.product_name}</div>
+                      <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{p.category}</div>
                     </td>
-                    <td className="p-4 text-right font-semibold text-white">{fmt(p.our_price)}đ</td>
-                    <td className="p-4 text-right">
-                      <div className="text-gray-300">{fmt(p.market_avg)}đ</div>
-                      <div className="text-xs text-gray-500">{fmt(p.market_min)} – {fmt(p.market_max)}</div>
+                    <td className="p-4 font-semibold" style={{ color: 'var(--text-primary)' }}>{fmt(p.our_price)}đ</td>
+                    <td className="p-4">
+                      <div style={{ color: 'var(--text-secondary)' }}>{fmt(p.market_avg)}đ</div>
+                      <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{fmt(p.market_min)} – {fmt(p.market_max)}</div>
                     </td>
                     <td className="p-4">
                       <div className="flex justify-center">
@@ -158,7 +163,8 @@ export default function PricePage() {
                     <td className="p-4">
                       <div className="flex flex-wrap gap-1">
                         {p.sources.map(s => (
-                          <span key={s} className="px-1.5 py-0.5 bg-gray-700 rounded text-xs text-gray-400">
+                          <span key={s} className="px-1.5 py-0.5 rounded text-xs"
+                            style={{ background: 'var(--bg-elevated)', color: 'var(--text-tertiary)', border: '1px solid var(--border)' }}>
                             {s.replace('_scrape', '')}
                           </span>
                         ))}
@@ -170,12 +176,12 @@ export default function PricePage() {
             </table>
           </div>
           {filtered.length === 0 && (
-            <div className="text-center py-8 text-gray-400">Không có dữ liệu</div>
+            <div className="text-center py-8" style={{ color: 'var(--text-tertiary)' }}>Không có dữ liệu</div>
           )}
         </div>
       )}
 
-      <div className="text-xs text-gray-500 bg-gray-800/50 rounded-lg p-3 border border-gray-700">
+      <div className="lcard p-3 text-xs" style={{ color: 'var(--text-tertiary)' }}>
         💡 Giá thị trường được thu thập từ web scraping Shopee, Lazada, TikTok Shop. Cập nhật định kỳ hàng ngày.
         Khoảng giá min–max phản ánh biên độ thực tế trên thị trường trong kỳ phân tích.
       </div>
