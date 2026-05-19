@@ -342,14 +342,16 @@ _FACT_SQL = """
         external_order_id, order_count, item_quantity,
         gross_revenue, discount_amount, net_revenue,
         cost_amount, gross_profit, profit_margin,
-        shipping_fee, return_count, return_amount
+        shipping_fee, return_count, return_amount,
+        company_id
     ) VALUES (
         %(date_key)s, %(channel_key)s, %(product_key)s, %(customer_key)s,
         %(region_key)s, %(payment_key)s,
         %(external_order_id)s, %(order_count)s, %(item_quantity)s,
         %(gross_revenue)s, %(discount_amount)s, %(net_revenue)s,
         %(cost_amount)s, %(gross_profit)s, %(profit_margin)s,
-        %(shipping_fee)s, %(return_count)s, %(return_amount)s
+        %(shipping_fee)s, %(return_count)s, %(return_amount)s,
+        %(company_id)s
     )
     ON CONFLICT (external_order_id) DO NOTHING
 """
@@ -393,6 +395,7 @@ def _load_offline_records(conn, fact_records: List[Dict]) -> Tuple[int, int]:
                 "net_revenue":       rec["net_revenue"],
                 "cost_amount":       rec["cost_amount"],
                 "gross_profit":      rec["gross_profit"],
+                "company_id":        rec.get("_company_id"),
                 "profit_margin":     rec.get("profit_margin"),
                 "shipping_fee":      rec["shipping_fee"],
                 "return_count":      rec["return_count"],
@@ -423,7 +426,7 @@ def _load_offline_records(conn, fact_records: List[Dict]) -> Tuple[int, int]:
 
 # ── CSV row → fact record ─────────────────────────────────────────────────────────
 
-def _row_to_fact_record(row: Dict) -> Optional[Dict]:
+def _row_to_fact_record(row: Dict, company_id: Optional[str] = None) -> Optional[Dict]:
     """
     Chuyển một dòng CSV thành fact_record dict.
     Trả về None nếu dòng thiếu dữ liệu bắt buộc.
@@ -460,6 +463,7 @@ def _row_to_fact_record(row: Dict) -> Optional[Dict]:
         "_province":          province,
         "_payment_method":    (row.get("payment_method") or "COD").strip().upper(),
         "_status":            (row.get("status") or "DELIVERED").strip().upper(),
+        "_company_id":        company_id,
         # Metrics
         "order_count":   1,
         "item_quantity": quantity,
@@ -494,12 +498,13 @@ class ExcelImporter:
     def _get_conn(self):
         return psycopg2.connect(self.db_url)
 
-    def import_orders(self, filepath: str) -> Dict:
+    def import_orders(self, filepath: str, company_id: Optional[str] = None) -> Dict:
         """
         Đọc file CSV/Excel và load vào dw.fact_sales.
 
         Args:
             filepath: Đường dẫn file CSV hoặc Excel (.csv, .xlsx).
+            company_id: UUID công ty. Nếu None → tự resolve từ COMPANY_EMAIL.
 
         Returns:
             dict: {'extracted', 'imported', 'skipped', 'errors'}
@@ -507,6 +512,23 @@ class ExcelImporter:
         path  = Path(filepath)
         if not path.exists():
             raise FileNotFoundError(f"File không tồn tại: {path.resolve()}")
+
+        # Resolve company_id nếu chưa có
+        if not company_id and self.db_url:
+            try:
+                _conn = psycopg2.connect(self.db_url)
+                _cur  = _conn.cursor()
+                _cur.execute(
+                    "SELECT id FROM public.companies WHERE email = %s LIMIT 1",
+                    (os.getenv("COMPANY_EMAIL", "contact@phuthinh.vn"),)
+                )
+                row0 = _cur.fetchone()
+                if row0:
+                    company_id = str(row0[0])
+                _cur.close()
+                _conn.close()
+            except Exception as e:
+                logger.warning("Không lấy được company_id: %s", e)
 
         rows  = self._read_file(path)
         stats = {"extracted": len(rows), "imported": 0, "skipped": 0, "errors": 0}
@@ -518,7 +540,7 @@ class ExcelImporter:
         # Transform
         fact_records = []
         for row in rows:
-            rec = _row_to_fact_record(row)
+            rec = _row_to_fact_record(row, company_id)
             if rec is None:
                 stats["errors"] += 1
             else:
@@ -664,6 +686,18 @@ def run_oltp_to_dw(company_id: Optional[str] = None, channel: Optional[str] = No
 
     conn = psycopg2.connect(DB_DSN)
 
+    # -- Resolve actual company UUID ------------------------------------------
+    with conn.cursor() as _c:
+        if company_id:
+            actual_company_id = company_id
+        else:
+            _c.execute(
+                "SELECT id FROM public.companies WHERE email = %s LIMIT 1",
+                (COMPANY_EMAIL,)
+            )
+            row0 = _c.fetchone()
+            actual_company_id = str(row0[0]) if row0 else None
+
     # -- Lấy danh sách order từ OLTP ------------------------------------------
     where_parts = ["o.company_id = (SELECT id FROM public.companies WHERE email = %s)"]
     params: list = [COMPANY_EMAIL]
@@ -746,6 +780,7 @@ def run_oltp_to_dw(company_id: Optional[str] = None, channel: Optional[str] = No
             "_order_date":        order_date,
             "_province":          province or "Khac",
             "_payment_method":    payment_method or "COD",
+            "_company_id":        actual_company_id,
             "order_count":    1,
             "item_quantity":  int(total_qty or 1),
             "gross_revenue":  round(gross_revenue, 2),

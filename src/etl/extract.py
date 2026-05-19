@@ -56,7 +56,7 @@ def extract_shopee(conn, batch_size: int = BATCH_SIZE) -> List[Dict]:
                shipping_carrier, actual_shipping_fee,
                pay_time, create_time, update_time,
                recipient_address, item_list, raw_payload,
-               fetched_at
+               fetched_at, company_id
         FROM staging.shopee_orders_raw
         WHERE is_processed = FALSE
         ORDER BY fetched_at ASC
@@ -84,7 +84,7 @@ def extract_lazada(conn, batch_size: int = BATCH_SIZE) -> List[Dict]:
                price, payment_method,
                customer_first_name, customer_last_name,
                shipping_address, items,
-               created_at, updated_at, raw_payload, fetched_at
+               created_at, updated_at, raw_payload, fetched_at, company_id
         FROM staging.lazada_orders_raw
         WHERE is_processed = FALSE
         ORDER BY fetched_at ASC

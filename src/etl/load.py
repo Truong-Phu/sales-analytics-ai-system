@@ -496,14 +496,16 @@ FACT_INSERT_SQL = """
         external_order_id, order_count, item_quantity,
         gross_revenue, discount_amount, net_revenue,
         cost_amount, gross_profit, profit_margin,
-        shipping_fee, return_count, return_amount
+        shipping_fee, return_count, return_amount,
+        company_id
     ) VALUES (
         %(date_key)s, %(channel_key)s, %(product_key)s, %(customer_key)s,
         %(region_key)s, %(payment_key)s,
         %(external_order_id)s, %(order_count)s, %(item_quantity)s,
         %(gross_revenue)s, %(discount_amount)s, %(net_revenue)s,
         %(cost_amount)s, %(gross_profit)s, %(profit_margin)s,
-        %(shipping_fee)s, %(return_count)s, %(return_amount)s
+        %(shipping_fee)s, %(return_count)s, %(return_amount)s,
+        %(company_id)s
     )
     ON CONFLICT (external_order_id) DO NOTHING
 """
@@ -577,6 +579,7 @@ def load_fact_records(conn, fact_records: List[Dict]) -> Tuple[int, int]:
                 "shipping_fee":      rec["shipping_fee"],
                 "return_count":      rec["return_count"],
                 "return_amount":     rec["return_amount"],
+                "company_id":        rec.get("_company_id"),
             }
 
             with conn.cursor() as cur:

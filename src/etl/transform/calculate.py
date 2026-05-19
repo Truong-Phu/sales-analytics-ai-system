@@ -133,6 +133,7 @@ def calculate_shopee(rows: List[Dict], product_costs: Dict[str, float] = None) -
                 "_channel_name":    "shopee",
                 "_payment_method":  order.get("payment_method_normalized", "COD"),
                 "_status":          order.get("status_normalized", "DELIVERED"),
+                "_company_id":      order.get("company_id"),
                 # Measures
                 **metrics,
             })
@@ -167,6 +168,7 @@ def calculate_lazada(rows: List[Dict], product_costs: Dict[str, float] = None) -
                 "_channel_name":    "lazada",
                 "_payment_method":  order.get("payment_method_normalized", "TRANSFER"),
                 "_status":          order.get("status_normalized", "DELIVERED"),
+                "_company_id":      order.get("company_id"),
                 **metrics,
             })
 
