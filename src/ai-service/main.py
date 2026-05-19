@@ -3,10 +3,10 @@
 AI/ML Service – FastAPI
 
 Endpoints cốt lõi:
-  GET /forecast        – Dự báo doanh thu (Prophet)
-  GET /anomaly         – Phát hiện bất thường (Z-score)
-  GET /trend           – Phân tích xu hướng
-  GET /recommendation  – Gợi ý hành động
+  GET  /forecast        – Dự báo doanh thu (Prophet)
+  GET  /anomaly         – Phát hiện bất thường (Z-score)
+  GET  /trend           – Phân tích xu hướng
+  GET  /recommendation  – Gợi ý hành động
 
 Endpoints mới (chức năng sáng tạo):
   GET  /churn          – Dự báo khách hàng có nguy cơ rời bỏ (RandomForest)
@@ -18,6 +18,10 @@ Endpoints mới (chức năng sáng tạo):
   GET  /geo            – Phân bổ khách hàng theo địa lý (Heatmap)
   GET  /leaderboard    – Bảng xếp hạng hiệu suất bán hàng
   GET  /narrative      – Sinh nhận xét tự động bằng ngôn ngữ tự nhiên
+
+ETL:
+  POST /etl/oltp-to-dw – Đồng bộ OLTP → Data Warehouse (idempotent)
+  GET  /etl/status     – Trạng thái lần ETL cuối
 
 Chạy:
   uvicorn main:app --host 0.0.0.0 --port 8001 --reload
@@ -52,6 +56,7 @@ from routers.leaderboard import router as leaderboard_router
 from routers.narrative   import router as narrative_router
 from routers.supplier    import router as supplier_router
 from routers.price       import router as price_router
+from routers.etl         import router as etl_router
 from scheduler import scheduler as _scheduler, retrain_prophet, get_retrain_status
 
 # Chỉ định rõ đường dẫn .env (repo root), tránh find_dotenv() fail khi chạy từ subdirectory
@@ -105,6 +110,7 @@ app.include_router(leaderboard_router)
 app.include_router(narrative_router)
 app.include_router(supplier_router)
 app.include_router(price_router)
+app.include_router(etl_router)
 
 
 @app.on_event("startup")
