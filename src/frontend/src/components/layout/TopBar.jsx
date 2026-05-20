@@ -493,21 +493,10 @@ export default function TopBar() {
     ...(canSeeAI ? [{ label: t('nav.rfmAnalysis', 'Phân tích RFM'), desc: 'Phân khúc khách hàng RFM', icon: 'pie_chart', href: '/customers/rfm' }] : []),
   ]
 
-  // ── Nhóm Thị trường & Kênh ────────────────────────────────────────────────
-  const marketMenuItems = [
-    { label: t('nav.geo',         'Phân bổ địa lý'),      desc: 'Phân tích địa lý khách hàng',           icon: 'map',                  href: '/geo' },
-    { label: t('nav.campaign',    'Chiến dịch Marketing'), desc: 'Lên lịch chiến dịch tự động bằng AI',   icon: 'campaign',             href: '/campaign' },
-    { label: t('nav.attribution', 'Phân bổ kênh'),        desc: 'Attribution doanh thu theo kênh',        icon: 'account_tree',         href: '/attribution' },
-    { label: t('nav.leaderboard', 'Bảng xếp hạng'),       desc: 'Hiệu suất sản phẩm & nhân viên',        icon: 'leaderboard',          href: '/leaderboard' },
-    { label: t('nav.sentiment',   'Phân tích Sentiment'), desc: 'Cảm xúc khách hàng từ mạng xã hội',    icon: 'sentiment_satisfied',  href: '/sentiment' },
-  ]
-
   // ── Nhóm Vận hành & ETL ───────────────────────────────────────────────────
   const opsMenuItems = [
-    { label: t('nav.dataSync',   'Đồng bộ dữ liệu'),  desc: 'Kết nối sàn TMĐT & nguồn dữ liệu',       icon: 'sync',           href: '/data-sync' },
-    { label: t('nav.etlMonitor', 'Giám sát ETL'),      desc: 'Giám sát pipeline dữ liệu',               icon: 'monitoring',     href: '/etl-monitor' },
-    { label: t('nav.supplier',   'Nhà cung cấp'),      desc: 'Phân tích hiệu suất nhà cung cấp',        icon: 'local_shipping', href: '/supplier' },
-    { label: t('nav.inventory',  'AI Tồn kho'),        desc: 'Dự báo tồn kho & gợi ý đặt hàng thông minh', icon: 'inventory',  href: '/inventory' },
+    { label: t('nav.dataSync',   'Đồng bộ dữ liệu'), desc: 'Kết nối sàn TMĐT & nguồn dữ liệu', icon: 'sync',       href: '/data-sync' },
+    { label: t('nav.etlMonitor', 'Giám sát ETL'),     desc: 'Giám sát pipeline dữ liệu',         icon: 'monitoring', href: '/etl-monitor' },
   ]
 
   // ── Build navTabs theo role ────────────────────────────────────────────────
@@ -521,13 +510,6 @@ export default function TopBar() {
       hasMega: true,
       menuItems: aiMenuItems,
       columns: 2,
-    }] : []),
-    ...(canSeeAI ? [{
-      href: '/geo',
-      icon: 'storefront',
-      label: t('nav.market', 'Thị trường'),
-      hasMega: true,
-      menuItems: marketMenuItems,
     }] : []),
     {
       href: '/orders',
