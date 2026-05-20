@@ -40,7 +40,36 @@
     "page": "Page",
     "sending": "Sending...",
     "saving": "Saving...",
-    "goBack": "Go Back"
+    "goBack": "Go Back",
+    "addNew": "Add New",
+    "view": "View",
+    "close": "Close",
+    "yes": "Yes",
+    "no": "No",
+    "name": "Name",
+    "description": "Description",
+    "saveSuccess": "Saved successfully",
+    "saveError": "Failed to save. Please try again.",
+    "deleteSuccess": "Deleted successfully",
+    "deleteError": "Failed to delete. Please try again.",
+    "deleteConfirm": "Are you sure you want to delete?",
+    "connectSuccess": "Connected successfully!",
+    "connectError": "Connection error",
+    "disconnectSuccess": "Disconnected successfully",
+    "cartEmpty": "Cart is empty",
+    "orderSuccess": "Order created successfully!",
+    "orderError": "Failed to create order",
+    "cannotLoadData": "Unable to load data",
+    "active": "Active",
+    "inactive": "Inactive",
+    "pending": "Pending",
+    "add": "Add",
+    "update": "Update",
+    "create": "Create",
+    "export_csv": "Export CSV",
+    "import": "Import Data",
+    "preview": "Preview",
+    "reset": "Reset"
   },
   "pro": {
     "title": "Pro Feature",
@@ -258,7 +287,10 @@
     "marketDesc": "Geo, campaigns, attribution, leaderboard",
     "pos": "Point of Sale",
     "posDesc": "POS – checkout, loyalty points, vouchers",
-    "sectionSales": "Sales"
+    "sectionSales": "Sales",
+    "aiAnalysis": "AI Analytics",
+    "dataManagement": "Data",
+    "operations": "Operations"
   },
   "dashboard": {
     "title": "Business Overview",
@@ -674,7 +706,9 @@
     "saveSuccess": "Settings saved",
     "avatarHint": "Max 2MB image",
     "changeAvatar": "Change Avatar",
-    "avatarFormat": "PNG/JPG, max 2MB"
+    "avatarFormat": "PNG/JPG, max 2MB",
+    "switchLight": "Switch to light mode",
+    "switchDark": "Switch to dark mode"
   },
   "categories": {
     "title": "Product Categories",
@@ -713,7 +747,13 @@
     "filterSystem": "System",
     "noMore": "All notifications shown",
     "deleteSuccess": "Notification deleted",
-    "markReadSuccess": "Marked as read"
+    "markReadSuccess": "Marked as read",
+    "timeJustNow": "Just now",
+    "timeMinutes": "{{n}} minutes ago",
+    "timeHours": "{{n}} hours ago",
+    "timeDays": "{{n}} days ago",
+    "filterAI": "AI Alerts",
+    "filterOrders": "Orders"
   },
   "topbar": {
     "subtitle": "Multi-channel Sales"

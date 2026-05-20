@@ -91,7 +91,7 @@ public class ReportController(
             userAgent:  HttpContext.Request.Headers["User-Agent"].ToString());
 
         var prefix   = language == "en" ? "SalesReport" : "BaoCao";
-        var fileName = $"{prefix}_{dateFrom:ddMMyyyy}_{dateTo:ddMMyyyy}.pdf";
+        var fileName = $"{prefix}_{dateFrom:yyyy-MM-dd}_{dateTo:yyyy-MM-dd}.pdf";
         return File(pdfBytes, "application/pdf", fileName);
     }
 }

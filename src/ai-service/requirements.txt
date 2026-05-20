@@ -21,3 +21,7 @@ anthropic>=0.25.0
 mlxtend>=0.23.0          # Market Basket Analysis (Apriori algorithm)
 apscheduler>=3.10.4      # Job scheduler (KPI email hàng ngày)
 jinja2>=3.1.4            # Template engine cho email KPI
+
+# Web scraping (Google/DuckDuckGo Scraper)
+requests>=2.31.0         # HTTP client cho scraper
+beautifulsoup4>=4.12.0   # HTML parser cho SERP/trang kết quả

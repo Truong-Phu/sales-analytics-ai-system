@@ -1,21 +1,24 @@
 # -*- coding: utf-8 -*-
 """
-GoogleScraper – Thu thập xu hướng thị trường bằng Google Search trực tiếp.
+GoogleScraper – Thu thập xu hướng thị trường bằng Google Search / DuckDuckGo.
 
 DISCLAIMER:
     Chỉ dùng cho mục đích nghiên cứu khóa luận tốt nghiệp.
     Dữ liệu thu thập ở mức thông tin công khai (kết quả tìm kiếm).
 
-CHIẾN LƯỢC 2 BƯỚC:
-    Bước 1: Gửi search query đến https://www.google.com/search?q=KEYWORD&num=20
-            với User-Agent hợp lệ, lấy danh sách URL kết quả.
-    Bước 2: Truy cập từng URL, crawl nội dung thực tế (title, giá, mô tả...).
+CHIẾN LƯỢC TÌM KIẾM (theo thứ tự ưu tiên):
+    1. Google Search  → https://www.google.com/search?q=KEYWORD&num=20
+    2. DuckDuckGo HTML → https://html.duckduckgo.com/html/?q=KEYWORD  (fallback)
 
 XỬ LÝ BỊ CHẶN:
-    Nếu Google trả về 429 hoặc CAPTCHA:
-    - Log rõ lý do vào ETL log
-    - KHÔNG tạo mock data
-    - Trả về empty DataFrame / raise exception để caller biết
+    - Google 429 / CAPTCHA → thử DuckDuckGo tự động
+    - DuckDuckGo cũng fail → log rõ, bỏ keyword đó, tiếp tục
+    - Ghi blocked keywords vào response để caller biết
+
+RATE LIMIT CONFIG:
+    MIN_DELAY_BETWEEN_KEYWORDS : 3 giây (tối thiểu)
+    MAX_KEYWORDS_PER_RUN       : 5
+    RETRY_ON_429               : True (chờ 60s rồi retry 1 lần)
 
 OFFLINE MODE (SCRAPER_MODE=offline):
     Bỏ qua scrape, đọc CSV mẫu từ notebooks/sample_data/sample_google_data.csv
@@ -56,20 +59,41 @@ _OUTPUT_DIR  = _REPO_ROOT / "notebooks" / "sample_data"
 # UTC+7 (Vietnam)
 _TZ_VN = timezone(timedelta(hours=7))
 
-# ── User-Agents xoay vòng ──────────────────────────────────────────────────
+# ── RATE LIMIT CONFIG ──────────────────────────────────────────────────────────
+MIN_DELAY_BETWEEN_KEYWORDS = 3     # giây tối thiểu giữa 2 keyword
+MAX_DELAY_BETWEEN_KEYWORDS = 7     # giây tối đa
+MAX_KEYWORDS_PER_RUN       = 5     # giới hạn số keyword mỗi lần chạy
+RETRY_ON_429               = True  # thử lại 1 lần nếu bị 429
+RETRY_429_WAIT_SECS        = 60    # chờ 60 giây trước khi retry
+
+# ── User-Agents xoay vòng (8 UA thật của Chrome/Firefox/Edge 2024-2025) ───────
 _USER_AGENTS = [
+    # Chrome 124 Windows
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 "
-    "(KHTML, like Gecko) Version/17.4 Safari/605.1.15",
-    "Mozilla/5.0 (X11; Linux x86_64; rv:125.0) Gecko/20100101 Firefox/125.0",
+    # Chrome 124 macOS
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    # Firefox 126 Windows
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:126.0) "
     "Gecko/20100101 Firefox/126.0",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 14.5) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    # Firefox 125 Linux
+    "Mozilla/5.0 (X11; Linux x86_64; rv:125.0) Gecko/20100101 Firefox/125.0",
+    # Safari 17 macOS Sonoma
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 "
+    "(KHTML, like Gecko) Version/17.4 Safari/605.1.15",
+    # Edge 124 Windows
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Edg/124.0.0.0",
+    # Chrome 123 Android (mobile UA — thường ít bị block hơn)
+    "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/123.0.6312.86 Mobile Safari/537.36",
+    # Firefox 124 macOS
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 14.4; rv:124.0) "
+    "Gecko/20100101 Firefox/124.0",
 ]
 
-# ── Keywords xoay theo ngày (5 keywords, mỗi keyword 10-20 URL) ──────────
+# ── Keywords mặc định ─────────────────────────────────────────────────────────
 DEFAULT_KEYWORDS = [
     "xu hướng sản phẩm bán chạy online Việt Nam 2025",
     "trending products Vietnam ecommerce 2025",
@@ -78,10 +102,10 @@ DEFAULT_KEYWORDS = [
     "top sản phẩm bán chạy thương mại điện tử Việt Nam",
 ]
 
-_REQUEST_TIMEOUT    = 10
-_CRAWL_TIMEOUT      = 8
-_MAX_URLS_PER_KW    = 20  # số URL lấy mỗi keyword (theo yêu cầu num=20)
-_MAX_CRAWL_PER_RUN  = 80  # giới hạn crawl để tránh chạy quá lâu
+_REQUEST_TIMEOUT    = 12   # timeout request đến Google/DDG (giây)
+_CRAWL_TIMEOUT      = 8    # timeout crawl từng URL kết quả (giây)
+_MAX_URLS_PER_KW    = 20   # số URL lấy mỗi keyword
+_MAX_CRAWL_PER_RUN  = 80   # giới hạn crawl để tránh chạy quá lâu
 
 
 class GoogleBlockedError(Exception):
@@ -91,10 +115,11 @@ class GoogleBlockedError(Exception):
 
 class GoogleScraper:
     """
-    Thu thập xu hướng thị trường từ Google Search.
+    Thu thập xu hướng thị trường từ Google Search (fallback: DuckDuckGo HTML).
 
     Luồng:
         1. search_google(keyword) → danh sách URL từ trang SERP
+           Nếu Google block → search_duckduckgo(keyword)
         2. crawl_url(url)         → extract nội dung thực tế từng trang
         3. save_to_db(records)    → INSERT vào raw_google_data (dedup by hash)
         4. export_csv(records)    → lưu CSV notebooks/sample_data/
@@ -104,7 +129,7 @@ class GoogleScraper:
         self,
         company_id: str = "",
         keywords: Optional[list] = None,
-        delay_range: tuple = (2, 5),
+        delay_range: tuple = (MIN_DELAY_BETWEEN_KEYWORDS, MAX_DELAY_BETWEEN_KEYWORDS),
         crawl_delay_range: tuple = (1, 3),
     ):
         self.company_id        = company_id
@@ -122,6 +147,14 @@ class GoogleScraper:
             self.keywords = keywords
         else:
             self.keywords = self.load_keywords_from_db()
+
+        # Giới hạn số keyword mỗi run
+        if len(self.keywords) > MAX_KEYWORDS_PER_RUN:
+            logger.info(
+                "Giới hạn MAX_KEYWORDS_PER_RUN=%d (tổng có %d keywords)",
+                MAX_KEYWORDS_PER_RUN, len(self.keywords),
+            )
+            self.keywords = self.keywords[:MAX_KEYWORDS_PER_RUN]
 
         logger.info(
             "GoogleScraper khởi tạo: %d từ khóa, delay=%s, company=%s",
@@ -157,7 +190,7 @@ class GoogleScraper:
 
     # ── DB Keyword Management ─────────────────────────────────────────────────
 
-    def load_keywords_from_db(self, limit: int = 5) -> list[str]:
+    def load_keywords_from_db(self, limit: int = MAX_KEYWORDS_PER_RUN) -> list[str]:
         """
         Đọc keywords từ bảng scraper_keywords.
         Ưu tiên keyword ít dùng nhất (ORDER BY last_used_at ASC NULLS FIRST).
@@ -249,7 +282,6 @@ class GoogleScraper:
         """
         if not text:
             return None
-        # Loại bỏ mọi thứ trừ chữ số và dấu phân cách
         digits = re.sub(r"[^\d]", "", text)
         if digits:
             try:
@@ -271,22 +303,54 @@ class GoogleScraper:
             return True
         return False
 
-    # ── BƯỚC 1: Lấy URL từ Google SERP ───────────────────────────────────────
+    def _build_google_headers(self) -> dict:
+        """Tạo HTTP headers giả lập browser thật cho Google Search."""
+        return {
+            "User-Agent":                self._random_ua(),
+            "Accept":                    "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+            "Accept-Language":           "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7",
+            "Accept-Encoding":           "gzip, deflate, br",
+            "Referer":                   "https://www.google.com/",
+            "DNT":                       "1",
+            "Upgrade-Insecure-Requests": "1",
+            "Sec-Fetch-Dest":            "document",
+            "Sec-Fetch-Mode":            "navigate",
+            "Sec-Fetch-Site":            "same-origin",
+            "Sec-Fetch-User":            "?1",
+            "Cache-Control":             "max-age=0",
+        }
 
-    def search_google(self, keyword: str, num: int = _MAX_URLS_PER_KW) -> list[str]:
+    def _build_ddg_headers(self) -> dict:
+        """Tạo HTTP headers cho DuckDuckGo HTML search."""
+        return {
+            "User-Agent":      self._random_ua(),
+            "Accept":          "text/html,application/xhtml+xml,*/*;q=0.8",
+            "Accept-Language": "vi-VN,vi;q=0.9,en;q=0.8",
+            "Accept-Encoding": "gzip, deflate",
+            "Referer":         "https://duckduckgo.com/",
+            "DNT":             "1",
+            "Cache-Control":   "no-cache",
+        }
+
+    # ── BƯỚC 1a: Lấy URL từ Google SERP ──────────────────────────────────────
+
+    def search_google(self, keyword: str, num: int = _MAX_URLS_PER_KW,
+                      _retry: bool = False) -> list[str]:
         """
         Gửi query đến Google Search, parse HTML lấy danh sách URL kết quả.
 
         Args:
             keyword: Từ khóa tìm kiếm.
             num:     Số kết quả yêu cầu (max 20 mỗi request).
+            _retry:  True nếu đây là lần retry sau khi chờ 429.
 
         Returns:
-            List[str]: Danh sách URL kết quả (bỏ URL nội bộ Google).
+            List[str]: Danh sách URL kết quả.
 
         Raises:
-            GoogleBlockedError: Khi Google trả về 429 hoặc CAPTCHA.
+            GoogleBlockedError: Khi Google trả về 429 / CAPTCHA và không retry.
         """
+        encoded_kw = urllib.parse.quote(keyword)
         params = {
             "q":    keyword,
             "num":  num,
@@ -294,14 +358,14 @@ class GoogleScraper:
             "gl":   "vn",
             "safe": "off",
         }
-        headers = {
-            "User-Agent":      self._random_ua(),
-            "Accept-Language": "vi-VN,vi;q=0.9,en;q=0.8",
-            "Accept":          "text/html,application/xhtml+xml,*/*;q=0.8",
-            "Accept-Encoding": "gzip, deflate, br",
-            "Referer":         "https://www.google.com/",
-            "DNT":             "1",
-        }
+        headers = self._build_google_headers()
+
+        # Log URL request để debug
+        search_url = (
+            "https://www.google.com/search?"
+            + urllib.parse.urlencode(params)
+        )
+        logger.info("[GOOGLE] Request URL: %s", search_url)
 
         try:
             resp = self._session.get(
@@ -312,52 +376,88 @@ class GoogleScraper:
                 allow_redirects=True,
             )
         except requests.Timeout:
-            logger.error("Timeout khi search Google keyword: %s", keyword)
+            logger.error("[GOOGLE] Timeout khi search keyword: %s", keyword)
             return []
         except requests.ConnectionError as e:
-            logger.error("Lỗi kết nối Google: %s", e)
+            logger.error("[GOOGLE] Lỗi kết nối: %s", e)
             return []
+
+        # Log HTTP status + preview response body
+        logger.info(
+            "[GOOGLE] keyword='%s' | HTTP %d | final_url=%s",
+            keyword, resp.status_code, resp.url,
+        )
+        body_preview = resp.text[:500].replace("\n", " ").replace("\r", "")
+        logger.info("[GOOGLE] Response body (500 chars): %s", body_preview)
+
+        # Xử lý 429 với retry
+        if resp.status_code == 429:
+            if RETRY_ON_429 and not _retry:
+                logger.warning(
+                    "[GOOGLE] HTTP 429 cho keyword '%s'. Chờ %ds rồi retry...",
+                    keyword, RETRY_429_WAIT_SECS,
+                )
+                time.sleep(RETRY_429_WAIT_SECS)
+                return self.search_google(keyword, num, _retry=True)
+            raise GoogleBlockedError(
+                f"Google 429 Rate Limited cho keyword '{keyword}'"
+            )
 
         if self._is_blocked_response(resp):
             msg = (
-                f"Google Search bị chặn (HTTP {resp.status_code}) "
-                f"cho keyword '{keyword}' — cần thử lại sau"
+                f"Google Search bị chặn (HTTP {resp.status_code}, "
+                f"url={resp.url}) cho keyword '{keyword}'"
             )
-            logger.warning(msg)
+            logger.warning("[GOOGLE] %s", msg)
             raise GoogleBlockedError(msg)
 
         if resp.status_code != 200:
-            logger.warning("Google HTTP %d cho '%s'", resp.status_code, keyword)
+            logger.warning(
+                "[GOOGLE] HTTP %d cho keyword '%s' — bỏ qua",
+                resp.status_code, keyword,
+            )
             return []
 
         urls = self._parse_google_serp(resp.text)
-        logger.info("Google SERP '%s': %d URL", keyword, len(urls))
+        logger.info("[GOOGLE] Parse SERP '%s': %d URL tìm thấy", keyword, len(urls))
+
+        if not urls:
+            # Log thêm chi tiết để debug selector
+            logger.warning(
+                "[GOOGLE] 0 URL parsed cho '%s'. Kiểm tra HTML bên dưới:",
+                keyword,
+            )
+            # Log thêm 1000 chars để có thể kiểm tra cấu trúc
+            logger.debug("[GOOGLE] Full HTML (1000 chars): %s", resp.text[:1000].replace("\n", " "))
+
         return urls
 
     def _parse_google_serp(self, html: str) -> list[str]:
         """
         Parse HTML trang Google SERP, trích xuất URL kết quả.
 
-        Google thay đổi class name thường xuyên → dùng nhiều chiến lược
-        để tăng độ bền với mọi version HTML:
-          1. Tìm /url?q=... trong toàn bộ href (cách đáng tin nhất)
-          2. jsname="UWckNb" — organic result link (khá ổn định 2024–2025)
-          3. div[data-ved] > a — fallback data attribute
-          4. h3 > a — title link trong result block
-          5. div.g a — selector cũ (dự phòng)
+        Google thay đổi class name thường xuyên → dùng nhiều chiến lược:
+          1. /url?q=... trong toàn bộ href (đáng tin nhất cho Google SERP cổ điển)
+          2. jsname="UWckNb" — organic result link (khá ổn định 2024-2025)
+          3. data-ved + href bắt đầu bằng https://
+          4. h3 parent link (title wrapper)
+          5. Quét toàn bộ href https:// ngoài Google (last resort)
         """
         soup = BeautifulSoup(html, "html.parser")
         urls: list[str] = []
         seen: set[str]  = set()
 
-        _GOOGLE_HOSTS = ("google.com", "google.co.", "googleusercontent",
-                         "googleapis", "gstatic", "youtube.com")
+        _GOOGLE_HOSTS = (
+            "google.com", "google.co.", "google.com.vn",
+            "googleusercontent", "googleapis", "gstatic",
+            "youtube.com", "accounts.google", "support.google",
+        )
 
         def _is_google(href: str) -> bool:
             return any(h in href for h in _GOOGLE_HOSTS)
 
         def _try_add(href: str) -> bool:
-            """Chuẩn hóa href, thêm vào danh sách nếu hợp lệ. Trả True nếu thêm được."""
+            """Chuẩn hóa href, thêm vào danh sách nếu hợp lệ."""
             if not href:
                 return False
             # Giải mã /url?q=... format
@@ -374,34 +474,50 @@ class GoogleScraper:
             urls.append(href)
             return True
 
-        # Chiến lược 1: mọi <a href="/url?q=..."> trong trang (đáng tin nhất)
+        # Chiến lược 1: /url?q=... (đáng tin nhất)
         for a in soup.find_all("a", href=lambda h: h and h.startswith("/url?q=")):
             _try_add(a["href"])
             if len(urls) >= _MAX_URLS_PER_KW:
                 break
 
-        # Chiến lược 2: jsname="UWckNb" – organic result link (ổn định 2024-2025)
+        # Chiến lược 2: jsname="UWckNb" (organic result, ổn định 2024-2025)
         if len(urls) < _MAX_URLS_PER_KW:
             for a in soup.find_all("a", attrs={"jsname": "UWckNb"}):
                 _try_add(a.get("href", ""))
                 if len(urls) >= _MAX_URLS_PER_KW:
                     break
 
-        # Chiến lược 3: div[data-ved] > a (thẻ thường bao organic results)
+        # Chiến lược 3: data-ved + href https:// (result block links)
         if len(urls) < _MAX_URLS_PER_KW:
-            for a in soup.select("div[data-ved] > a[href]"):
+            for a in soup.find_all("a", attrs={"data-ved": True}):
+                href = a.get("href", "")
+                if href.startswith("https://"):
+                    _try_add(href)
+                if len(urls) >= _MAX_URLS_PER_KW:
+                    break
+
+        # Chiến lược 4: thẻ cha của h3 (title block) → a[href]
+        if len(urls) < _MAX_URLS_PER_KW:
+            for h3 in soup.find_all("h3"):
+                parent = h3.find_parent("a")
+                if parent:
+                    _try_add(parent.get("href", ""))
+                else:
+                    # h3 > a hoặc a > h3
+                    a_child = h3.find("a")
+                    if a_child:
+                        _try_add(a_child.get("href", ""))
+                if len(urls) >= _MAX_URLS_PER_KW:
+                    break
+
+        # Chiến lược 5: div.g a (selector cũ) + div[data-ved] > a
+        if len(urls) < _MAX_URLS_PER_KW:
+            for a in soup.select("div.g a[href], div[data-ved] > a[href]"):
                 _try_add(a.get("href", ""))
                 if len(urls) >= _MAX_URLS_PER_KW:
                     break
 
-        # Chiến lược 4: h3 > a và div.g a (selector cũ, fallback)
-        if len(urls) < _MAX_URLS_PER_KW:
-            for a in soup.select("h3 a[href], div.g a[href]"):
-                _try_add(a.get("href", ""))
-                if len(urls) >= _MAX_URLS_PER_KW:
-                    break
-
-        # Chiến lược 5: quét toàn bộ <a href="https://..."> ngoài Google
+        # Chiến lược 6 (last resort): quét toàn bộ a[href=https://...]
         if len(urls) < 3:
             for a in soup.find_all("a", href=lambda h: h and h.startswith("https://")):
                 _try_add(a.get("href", ""))
@@ -409,9 +525,104 @@ class GoogleScraper:
                     break
 
         if not urls:
-            # Ghi log một đoạn HTML để debug (100 char đầu body)
             body_preview = html[:300].replace("\n", " ")
-            logger.debug("SERP parse 0 URL. HTML preview: %s", body_preview)
+            logger.warning(
+                "[GOOGLE] SERP parse 0 URL sau 6 chiến lược. "
+                "HTML preview: %s", body_preview,
+            )
+        else:
+            logger.debug("[GOOGLE] URLs parsed: %s", urls[:5])
+
+        return urls
+
+    # ── BƯỚC 1b: DuckDuckGo Fallback ─────────────────────────────────────────
+
+    def search_duckduckgo(self, keyword: str) -> list[str]:
+        """
+        Fallback tìm kiếm qua DuckDuckGo HTML (không cần API key).
+        Dùng khi Google bị blocked.
+
+        Returns:
+            List[str]: Danh sách URL kết quả từ DDG.
+        """
+        params  = {"q": keyword, "kl": "vn-vi"}
+        headers = self._build_ddg_headers()
+
+        search_url = "https://html.duckduckgo.com/html/?" + urllib.parse.urlencode(params)
+        logger.info("[DDG] Fallback request URL: %s", search_url)
+
+        try:
+            resp = requests.post(
+                "https://html.duckduckgo.com/html/",
+                data={"q": keyword, "kl": "vn-vi"},
+                headers=headers,
+                timeout=_REQUEST_TIMEOUT,
+                allow_redirects=True,
+            )
+        except requests.Timeout:
+            logger.error("[DDG] Timeout khi search keyword: %s", keyword)
+            return []
+        except requests.ConnectionError as e:
+            logger.error("[DDG] Lỗi kết nối: %s", e)
+            return []
+        except Exception as e:
+            logger.error("[DDG] Lỗi không xác định: %s", e, exc_info=True)
+            return []
+
+        logger.info(
+            "[DDG] keyword='%s' | HTTP %d | url=%s",
+            keyword, resp.status_code, resp.url,
+        )
+        body_preview = resp.text[:500].replace("\n", " ")
+        logger.info("[DDG] Response body (500 chars): %s", body_preview)
+
+        if resp.status_code != 200:
+            logger.warning("[DDG] HTTP %d — bỏ qua keyword '%s'", resp.status_code, keyword)
+            return []
+
+        urls = self._parse_ddg_results(resp.text)
+        logger.info("[DDG] Parse '%s': %d URL tìm thấy", keyword, len(urls))
+        return urls
+
+    def _parse_ddg_results(self, html: str) -> list[str]:
+        """
+        Parse HTML từ DuckDuckGo HTML search.
+        DDG HTML dùng class "result__a" cho organic result links.
+        """
+        soup = BeautifulSoup(html, "html.parser")
+        urls: list[str] = []
+        seen: set[str]  = set()
+
+        _SKIP_DOMAINS = ("duckduckgo.com", "duck.com")
+
+        def _skip(href: str) -> bool:
+            return any(d in href for d in _SKIP_DOMAINS)
+
+        # Selector chính: class="result__a" (DDG organic results)
+        for a in soup.find_all("a", class_="result__a"):
+            href = a.get("href", "")
+            # DDG dùng redirect /l/?uddg=URL
+            if "uddg=" in href:
+                qs   = urllib.parse.parse_qs(urllib.parse.urlparse(href).query)
+                href = urllib.parse.unquote(qs.get("uddg", [""])[0])
+            if href.startswith("http") and not _skip(href) and href not in seen:
+                seen.add(href)
+                urls.append(href)
+                if len(urls) >= _MAX_URLS_PER_KW:
+                    break
+
+        # Fallback: tất cả <a href="https://..."> ngoài DDG
+        if len(urls) < 3:
+            for a in soup.find_all("a", href=lambda h: h and h.startswith("https://")):
+                href = a.get("href", "")
+                if not _skip(href) and href not in seen:
+                    seen.add(href)
+                    urls.append(href)
+                    if len(urls) >= _MAX_URLS_PER_KW:
+                        break
+
+        if not urls:
+            logger.warning("[DDG] Parse 0 URL. HTML preview: %s", html[:300].replace("\n", " "))
 
         return urls
 
@@ -438,13 +649,14 @@ class GoogleScraper:
                 allow_redirects=True,
             )
         except (requests.Timeout, requests.ConnectionError, requests.TooManyRedirects) as e:
-            logger.debug("Crawl thất bại '%s': %s", url[:80], e)
+            logger.debug("[CRAWL] Thất bại '%s': %s", url[:80], e)
             return None
         except Exception as e:
-            logger.debug("Lỗi crawl '%s': %s", url[:80], e)
+            logger.debug("[CRAWL] Lỗi không xác định '%s': %s", url[:80], e)
             return None
 
         if resp.status_code != 200:
+            logger.debug("[CRAWL] HTTP %d cho '%s'", resp.status_code, url[:80])
             return None
 
         # Chỉ xử lý HTML
@@ -491,7 +703,6 @@ class GoogleScraper:
         breadcrumb = soup.select("nav ol li, .breadcrumb li, [class*=breadcrumb] li")
         if breadcrumb:
             crumbs = [el.get_text(strip=True) for el in breadcrumb]
-            # Bỏ phần tử đầu (Home/Trang chủ) và cuối (tên sản phẩm)
             if len(crumbs) > 2:
                 category = " > ".join(crumbs[1:-1])
             elif len(crumbs) == 2:
@@ -509,7 +720,7 @@ class GoogleScraper:
             if m:
                 price_text = m.group(0)
                 price = self._normalize_price(price_text)
-                if price and price > 100:  # lọc số quá nhỏ
+                if price and price > 100:
                     break
                 else:
                     price = None
@@ -546,58 +757,117 @@ class GoogleScraper:
 
     # ── Luồng chính ───────────────────────────────────────────────────────────
 
-    def scrape_all(self) -> list[dict]:
+    def scrape_all(self) -> tuple[list[dict], list[str]]:
         """
         Bước 1: Lấy URL từ Google (mỗi keyword → 10-20 URL).
+                Nếu Google block → tự động thử DuckDuckGo.
         Bước 2: Crawl từng URL thu được.
 
-        Tổng mục tiêu: 50-100 URL từ 5 keywords.
-        Giới hạn _MAX_CRAWL_PER_RUN để tránh chạy quá lâu.
-
         Returns:
-            List[dict]: Danh sách bản ghi đã crawl.
+            (records, blocked_keywords)
+            records          : Danh sách bản ghi đã crawl.
+            blocked_keywords : Danh sách keyword bị block ở cả Google lẫn DDG.
 
         Raises:
-            GoogleBlockedError: Nếu TẤT CẢ keywords đều bị chặn.
+            GoogleBlockedError: Nếu TẤT CẢ keywords đều bị chặn ở cả 2 nguồn.
         """
-        all_urls   = []  # (url, keyword)
-        blocked_kw = 0
+        all_urls        = []   # list of (url, keyword)
+        blocked_kw      = []   # keyword bị block cả Google lẫn DDG
+        kw_source_map   = {}   # keyword → "google" | "duckduckgo" | "blocked"
 
         for i, keyword in enumerate(self.keywords):
-            logger.info("[%d/%d] Tìm kiếm Google: '%s'", i + 1, len(self.keywords), keyword)
+            logger.info(
+                "[SCRAPER] [%d/%d] Xử lý keyword: '%s'",
+                i + 1, len(self.keywords), keyword,
+            )
+            urls_found = []
+
+            # Thử Google trước
             try:
-                urls = self.search_google(keyword)
-                for u in urls:
-                    all_urls.append((u, keyword))
-                logger.info("  → %d URL", len(urls))
-                self.update_keyword_usage(keyword)
+                urls_found = self.search_google(keyword)
+                kw_source_map[keyword] = "google"
+                logger.info(
+                    "[SCRAPER] Google OK cho '%s': %d URL",
+                    keyword, len(urls_found),
+                )
             except GoogleBlockedError as e:
-                blocked_kw += 1
-                logger.warning("Keyword '%s' bị chặn: %s", keyword, e)
+                logger.warning(
+                    "[SCRAPER] Google bị block cho '%s': %s — thử DuckDuckGo...",
+                    keyword, e,
+                )
                 self._log_etl_blocked(keyword, str(e))
 
-            if i < len(self.keywords) - 1:
-                self._sleep()
+                # Thử DuckDuckGo fallback
+                try:
+                    urls_found = self.search_duckduckgo(keyword)
+                    if urls_found:
+                        kw_source_map[keyword] = "duckduckgo"
+                        logger.info(
+                            "[SCRAPER] DuckDuckGo fallback thành công '%s': %d URL",
+                            keyword, len(urls_found),
+                        )
+                    else:
+                        kw_source_map[keyword] = "blocked"
+                        blocked_kw.append(keyword)
+                        logger.warning(
+                            "[SCRAPER] DuckDuckGo cũng 0 URL cho '%s' — bỏ qua",
+                            keyword,
+                        )
+                        self._log_etl_blocked(keyword, "DDG cũng 0 URL")
+                except Exception as ddg_exc:
+                    kw_source_map[keyword] = "blocked"
+                    blocked_kw.append(keyword)
+                    logger.error(
+                        "[SCRAPER] DuckDuckGo lỗi cho '%s': %s",
+                        keyword, ddg_exc, exc_info=True,
+                    )
+                    self._log_etl_blocked(keyword, f"DDG error: {ddg_exc}")
 
-        if blocked_kw == len(self.keywords):
+            except Exception as e:
+                logger.error(
+                    "[SCRAPER] Lỗi không xác định tìm kiếm '%s': %s",
+                    keyword, e, exc_info=True,
+                )
+                blocked_kw.append(keyword)
+
+            for u in urls_found:
+                all_urls.append((u, keyword))
+
+            if urls_found:
+                self.update_keyword_usage(keyword)
+
+            # Delay giữa các keyword (ít nhất MIN_DELAY_BETWEEN_KEYWORDS giây)
+            if i < len(self.keywords) - 1:
+                delay = random.uniform(
+                    max(self.delay_range[0], MIN_DELAY_BETWEEN_KEYWORDS),
+                    max(self.delay_range[1], MIN_DELAY_BETWEEN_KEYWORDS + 1),
+                )
+                logger.info("[SCRAPER] Chờ %.1f giây trước keyword tiếp theo...", delay)
+                time.sleep(delay)
+
+        # Tất cả keyword đều bị block
+        if len(blocked_kw) == len(self.keywords):
             raise GoogleBlockedError(
-                "Tất cả keywords đều bị Google chặn — cần thử lại sau"
+                "Tất cả keywords đều bị chặn ở cả Google lẫn DuckDuckGo — cần thử lại sau"
             )
 
-        # Bỏ URL trùng, giữ mapping keyword
+        # Dedup URL, giữ mapping keyword
         seen_urls = {}
         for url, kw in all_urls:
             if url not in seen_urls:
                 seen_urls[url] = kw
 
-        logger.info("Tổng %d URL duy nhất từ %d keywords", len(seen_urls), len(self.keywords))
+        logger.info(
+            "[SCRAPER] Tổng %d URL duy nhất từ %d/%d keywords thành công",
+            len(seen_urls), len(self.keywords) - len(blocked_kw), len(self.keywords),
+        )
 
         # Giới hạn số URL crawl
         urls_to_crawl = list(seen_urls.items())[:_MAX_CRAWL_PER_RUN]
         records = []
 
         for j, (url, keyword) in enumerate(urls_to_crawl):
-            logger.debug("[%d/%d] Crawl: %s", j + 1, len(urls_to_crawl), url[:80])
+            logger.debug("[CRAWL] [%d/%d] %s", j + 1, len(urls_to_crawl), url[:80])
             data = self.crawl_url(url)
             if data:
                 data["keyword"]      = keyword
@@ -607,15 +877,14 @@ class GoogleScraper:
                 )
                 records.append(data)
 
-            # Delay nhỏ giữa các crawl
             if j < len(urls_to_crawl) - 1:
                 self._sleep(self.crawl_delay_range)
 
         logger.info(
-            "scrape_all hoàn thành: %d URL crawl → %d bản ghi",
-            len(urls_to_crawl), len(records),
+            "[SCRAPER] scrape_all hoàn thành: %d URL crawl → %d bản ghi | blocked=%s",
+            len(urls_to_crawl), len(records), blocked_kw,
         )
-        return records
+        return records, blocked_kw
 
     # ── Export CSV ────────────────────────────────────────────────────────────
 
@@ -641,11 +910,7 @@ class GoogleScraper:
     # ── Database ──────────────────────────────────────────────────────────────
 
     def _fetch_keyword_id_map(self, cur, keywords: list[str]) -> dict[str, int]:
-        """Tra cứu keyword_id từ scraper_keywords theo danh sách keyword string.
-
-        Returns:
-            dict mapping keyword_string → id (chỉ những keyword tồn tại trong DB).
-        """
+        """Tra cứu keyword_id từ scraper_keywords theo danh sách keyword string."""
         if not keywords:
             return {}
         try:
@@ -664,9 +929,6 @@ class GoogleScraper:
     def save_to_db(self, records: list[dict]) -> tuple[int, int]:
         """
         INSERT các bản ghi vào raw_google_data, bỏ qua bản ghi trùng hash.
-        Lưu đầy đủ: keyword_id (FK), company_id, product_name, category,
-        price, sales_count, trend_description, source_domain.
-        expires_at tự tính bởi trigger DB (scraped_at + 30 ngày).
 
         Returns:
             (inserted, skipped)
@@ -702,7 +964,7 @@ class GoogleScraper:
             unique_keywords = list({r.get("keyword", "") for r in records if r.get("keyword")})
             kw_id_map = self._fetch_keyword_id_map(cur, unique_keywords)
 
-            cid = self.company_id or None  # UUID string hoặc None
+            cid = self.company_id or None
 
             for r in records:
                 ch = r.get("content_hash")
@@ -711,7 +973,7 @@ class GoogleScraper:
                     continue
 
                 kw  = r.get("keyword", "")
-                kid = kw_id_map.get(kw)  # None nếu keyword chưa có trong DB
+                kid = kw_id_map.get(kw)
 
                 cur.execute(
                     """
@@ -761,13 +1023,16 @@ class GoogleScraper:
     # ── ETL Log ───────────────────────────────────────────────────────────────
 
     def _log_etl_blocked(self, keyword: str, reason: str) -> None:
-        """Ghi log vào file ETL khi Google chặn — để trace lại sau."""
-        log_dir = _REPO_ROOT / "logs"
-        log_dir.mkdir(exist_ok=True)
-        log_file = log_dir / "etl_google_blocked.log"
-        ts = self._now_vn()
-        with open(log_file, "a", encoding="utf-8") as f:
-            f.write(f"[{ts}] keyword='{keyword}' | {reason}\n")
+        """Ghi log vào file ETL khi Google/DDG chặn — để trace lại sau."""
+        try:
+            log_dir = _REPO_ROOT / "logs"
+            log_dir.mkdir(exist_ok=True)
+            log_file = log_dir / "etl_google_blocked.log"
+            ts = self._now_vn()
+            with open(log_file, "a", encoding="utf-8") as f:
+                f.write(f"[{ts}] keyword='{keyword}' | {reason}\n")
+        except Exception as e:
+            logger.debug("Không ghi được ETL log file: %s", e)
 
     # ── Offline mode ──────────────────────────────────────────────────────────
 
@@ -796,48 +1061,103 @@ class GoogleScraper:
         Luồng đầy đủ: scrape_all() → export_csv() → save_to_db().
 
         Returns:
-            dict: {total_scraped, inserted, skipped, csv_path}
+            dict: {status, keywords_processed, results_found, results_new,
+                   results_skipped, blocked_keywords, error_detail, csv_path}
         """
         logger.info("=== GoogleScraper bắt đầu (mode=%s) ===", _SCRAPER_MODE)
+
+        blocked_keywords: list[str] = []
 
         if _SCRAPER_MODE == "offline":
             records = self._load_offline_csv()
         else:
-            records = self.scrape_all()
+            try:
+                records, blocked_keywords = self.scrape_all()
+            except GoogleBlockedError as e:
+                logger.error("Tất cả keywords bị block: %s", e)
+                return {
+                    "status":             "blocked",
+                    "keywords_processed": len(self.keywords),
+                    "results_found":      0,
+                    "results_new":        0,
+                    "results_skipped":    0,
+                    "blocked_keywords":   self.keywords,
+                    "error_detail":       str(e),
+                    "csv_path":           None,
+                    # Legacy keys cho backward-compat
+                    "total_scraped":      0,
+                    "inserted":           0,
+                    "skipped":            0,
+                }
+            except Exception as e:
+                logger.error("Lỗi không xác định trong run(): %s", e, exc_info=True)
+                return {
+                    "status":             "error",
+                    "keywords_processed": len(self.keywords),
+                    "results_found":      0,
+                    "results_new":        0,
+                    "results_skipped":    0,
+                    "blocked_keywords":   blocked_keywords,
+                    "error_detail":       str(e)[:500],
+                    "csv_path":           None,
+                    "total_scraped":      0,
+                    "inserted":           0,
+                    "skipped":            0,
+                }
 
         csv_path = self.export_csv(records)
         inserted, skipped = self.save_to_db(records)
 
+        # Xác định status tổng hợp
+        if len(blocked_keywords) == 0:
+            status = "success"
+        elif len(blocked_keywords) < len(self.keywords):
+            status = "partial"
+        else:
+            status = "blocked"
+
         summary = {
-            "total_scraped": len(records),
-            "inserted":      inserted,
-            "skipped":       skipped,
-            "csv_path":      str(csv_path) if csv_path else None,
+            "status":             status,
+            "keywords_processed": len(self.keywords),
+            "results_found":      len(records),
+            "results_new":        inserted,
+            "results_skipped":    skipped,
+            "blocked_keywords":   blocked_keywords,
+            "error_detail":       None,
+            "csv_path":           str(csv_path) if csv_path else None,
+            # Legacy keys cho backward-compat với main.py
+            "total_scraped":      len(records),
+            "inserted":           inserted,
+            "skipped":            skipped,
         }
         logger.info(
-            "=== GoogleScraper xong: scraped=%d | inserted=%d | skipped=%d ===",
-            len(records), inserted, skipped,
+            "=== GoogleScraper xong: status=%s | found=%d | new=%d | skipped=%d | blocked=%s ===",
+            status, len(records), inserted, skipped, blocked_keywords,
         )
         return summary
 
     def run_with_fallback(self) -> pd.DataFrame:
         """
-        Wrapper an toàn: thử scrape Google thật.
-        - Nếu bị chặn → log warning + trả về empty DataFrame.
-        - KHÔNG tạo mock data trong bất kỳ trường hợp.
+        Wrapper an toàn: thử scrape Google/DDG.
+        KHÔNG tạo mock data trong bất kỳ trường hợp.
 
         Returns:
             pd.DataFrame: Dữ liệu scrape được (có thể rỗng nếu bị chặn).
         """
         try:
-            records  = self.scrape_all()
+            records, blocked_kw = self.scrape_all()
             csv_path = self.export_csv(records)
             self.save_to_db(records)
+            if blocked_kw:
+                logger.warning(
+                    "run_with_fallback: %d keyword bị block: %s",
+                    len(blocked_kw), blocked_kw,
+                )
             logger.info("run_with_fallback: %d bản ghi thu thập được", len(records))
             return pd.DataFrame(records) if records else pd.DataFrame()
         except GoogleBlockedError as e:
             logger.warning(
-                "Google Search bị chặn — trả về empty DataFrame. Lý do: %s", e
+                "Google+DDG đều bị chặn — trả về empty DataFrame. Lý do: %s", e
             )
             return pd.DataFrame()
         except Exception as e:

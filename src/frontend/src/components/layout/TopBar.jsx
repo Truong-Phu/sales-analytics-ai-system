@@ -10,13 +10,21 @@ import axios from '../../api/axios'
 // ── Logo ───────────────────────────────────────────────────────────────────────
 function LuminaLogo({ size = 32 }) {
   return (
-    <img
-      src="/logo.png"
-      alt="MSAS"
-      width={size}
-      height={size}
-      style={{ borderRadius: 6, objectFit: 'contain' }}
-    />
+    <svg width={size} height={size} viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="msas-grad" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="#6366F1" />
+          <stop offset="100%" stopColor="#3B82F6" />
+        </linearGradient>
+      </defs>
+      <rect width="32" height="32" rx="8" fill="url(#msas-grad)" />
+      {/* Bar chart ascending */}
+      <rect x="6"  y="20" width="5" height="7" rx="1.5" fill="white" fillOpacity="0.7" />
+      <rect x="13" y="14" width="5" height="13" rx="1.5" fill="white" fillOpacity="0.85" />
+      <rect x="20" y="8"  width="5" height="19" rx="1.5" fill="white" />
+      {/* Trend arrow */}
+      <path d="M20 9 L25 6 L25 11" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none" opacity="0.9" />
+    </svg>
   )
 }
 
@@ -27,7 +35,7 @@ function ThemeToggle() {
     <button
       onClick={toggle}
       className="lbtn lbtn-ghost w-8 h-8 p-0 justify-center rounded-lg"
-      title={isDark ? 'Chuyển sáng' : 'Chuyển tối'}
+      title={isDark ? t('settings.switchLight', 'Chuyển sáng') : t('settings.switchDark', 'Chuyển tối')}
       style={{ transition: 'transform 300ms' }}
     >
       <span className="icon text-base" style={{ color: 'var(--text-secondary)' }}>
@@ -186,10 +194,10 @@ function NotificationBell() {
 
   const timeAgo = (dateStr) => {
     const diff = (Date.now() - new Date(dateStr).getTime()) / 1000
-    if (diff < 60)    return 'Vừa xong'
-    if (diff < 3600)  return `${Math.floor(diff / 60)} phút trước`
-    if (diff < 86400) return `${Math.floor(diff / 3600)} giờ trước`
-    return `${Math.floor(diff / 86400)} ngày trước`
+    if (diff < 60)    return t('notifications.timeJustNow', 'Vừa xong')
+    if (diff < 3600)  return t('notifications.timeMinutes', '{{n}} phút trước', { n: Math.floor(diff / 60) })
+    if (diff < 86400) return t('notifications.timeHours',   '{{n}} giờ trước',  { n: Math.floor(diff / 3600) })
+    return t('notifications.timeDays', '{{n}} ngày trước', { n: Math.floor(diff / 86400) })
   }
 
   const typeIcon  = { info: 'info', warning: 'warning', error: 'error', success: 'check_circle' }
@@ -200,7 +208,7 @@ function NotificationBell() {
       <button
         onClick={() => { setOpen(o => !o); if (!open) fetchNotifs() }}
         className="relative lbtn lbtn-ghost w-8 h-8 p-0 justify-center rounded-lg"
-        title="Thông báo"
+        title={t('notifications.title')}
       >
         <span className="icon text-base" style={{ color: 'var(--text-secondary)' }}>notifications</span>
         {unreadCount > 0 && (
@@ -548,7 +556,7 @@ export default function TopBar() {
       </div>
 
       {/* CENTER — Nav tabs: hiện trên md+ */}
-      <nav className="hidden md:flex items-center gap-1 flex-1">
+      <nav className="hidden md:flex items-center gap-0.5 flex-1 justify-center">
         {navTabs.map(tab => (
           <NavTab key={tab.href} {...tab} />
         ))}

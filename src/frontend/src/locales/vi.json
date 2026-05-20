@@ -40,7 +40,36 @@
     "page": "Trang",
     "sending": "Đang gửi...",
     "saving": "Đang lưu...",
-    "goBack": "Quay lại"
+    "goBack": "Quay lại",
+    "addNew": "Thêm mới",
+    "view": "Xem",
+    "close": "Đóng",
+    "yes": "Có",
+    "no": "Không",
+    "name": "Tên",
+    "description": "Mô tả",
+    "saveSuccess": "Lưu thành công",
+    "saveError": "Lỗi khi lưu. Vui lòng thử lại.",
+    "deleteSuccess": "Đã xóa thành công",
+    "deleteError": "Lỗi khi xóa. Vui lòng thử lại.",
+    "deleteConfirm": "Bạn có chắc muốn xóa?",
+    "connectSuccess": "Kết nối thành công!",
+    "connectError": "Lỗi kết nối",
+    "disconnectSuccess": "Đã ngắt kết nối",
+    "cartEmpty": "Giỏ hàng trống",
+    "orderSuccess": "Tạo đơn hàng thành công!",
+    "orderError": "Lỗi tạo đơn hàng",
+    "cannotLoadData": "Không thể tải dữ liệu",
+    "active": "Đang hoạt động",
+    "inactive": "Không hoạt động",
+    "pending": "Đang chờ",
+    "add": "Thêm",
+    "update": "Cập nhật",
+    "create": "Tạo mới",
+    "export_csv": "Xuất CSV",
+    "import": "Nhập dữ liệu",
+    "preview": "Xem trước",
+    "reset": "Đặt lại"
   },
   "pro": {
     "title": "Tính năng Pro",
@@ -258,7 +287,10 @@
     "marketDesc": "Địa lý, chiến dịch, attribution, xếp hạng",
     "pos": "Bán hàng tại quầy",
     "posDesc": "POS – thanh toán, tích điểm, voucher",
-    "sectionSales": "Bán hàng"
+    "sectionSales": "Bán hàng",
+    "aiAnalysis": "Phân tích AI",
+    "dataManagement": "Dữ liệu",
+    "operations": "Vận hành"
   },
   "dashboard": {
     "title": "Tổng quan kinh doanh",
@@ -674,7 +706,9 @@
     "saveSuccess": "Đã lưu cài đặt",
     "avatarHint": "Ảnh tối đa 2MB",
     "changeAvatar": "Đổi ảnh đại diện",
-    "avatarFormat": "PNG/JPG, tối đa 2MB"
+    "avatarFormat": "PNG/JPG, tối đa 2MB",
+    "switchLight": "Chuyển sang giao diện sáng",
+    "switchDark": "Chuyển sang giao diện tối"
   },
   "categories": {
     "title": "Danh mục sản phẩm",
@@ -713,7 +747,13 @@
     "filterSystem": "Hệ thống",
     "noMore": "Đã hiển thị tất cả thông báo",
     "deleteSuccess": "Đã xóa thông báo",
-    "markReadSuccess": "Đã đánh dấu đã đọc"
+    "markReadSuccess": "Đã đánh dấu đã đọc",
+    "timeJustNow": "Vừa xong",
+    "timeMinutes": "{{n}} phút trước",
+    "timeHours": "{{n}} giờ trước",
+    "timeDays": "{{n}} ngày trước",
+    "filterAI": "AI Cảnh báo",
+    "filterOrders": "Đơn hàng"
   },
   "topbar": {
     "subtitle": "Bán hàng đa kênh"

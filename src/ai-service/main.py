@@ -411,6 +411,17 @@ async def scrape_google(company_id: str):
     Kích hoạt scrape Google Search thủ công cho một tenant.
     Đọc keywords từ bảng scraper_keywords theo company_id.
     Lưu kết quả vào raw_google_data (dedup by content_hash).
+
+    Chiến lược:
+      1. Google Search → nếu bị block → tự động fallback DuckDuckGo HTML
+      2. Delay ngẫu nhiên 3-7s giữa các keyword (rate limit)
+      3. Retry 1 lần nếu HTTP 429 (chờ 60s)
+
+    Response status:
+      "success"  — tất cả keyword xử lý OK
+      "partial"  — một số keyword bị block nhưng vẫn có kết quả
+      "blocked"  — tất cả keyword bị chặn
+      "error"    — lỗi không xác định
     """
     import sys
     from pathlib import Path
@@ -435,28 +446,73 @@ async def scrape_google(company_id: str):
         scraper = module.GoogleScraper(company_id=company_id)
         result  = scraper.run()
 
-        total   = result.get("total_scraped", 0)
+        status           = result.get("status", "unknown")
+        results_found    = result.get("results_found", result.get("total_scraped", 0))
+        results_new      = result.get("results_new", result.get("inserted", 0))
+        results_skipped  = result.get("results_skipped", result.get("skipped", 0))
+        blocked_keywords = result.get("blocked_keywords", [])
+        error_detail     = result.get("error_detail")
+
+        # Sinh message rõ ràng theo status
+        if status == "success" and results_found > 0:
+            message = (
+                f"Scrape hoàn tất: {results_found} kết quả, "
+                f"{results_new} mới, {results_skipped} bỏ qua"
+            )
+        elif status == "partial":
+            message = (
+                f"Scrape một phần: {results_found} kết quả "
+                f"({results_new} mới). "
+                f"{len(blocked_keywords)} keyword bị chặn: {blocked_keywords}"
+            )
+        elif status == "blocked":
+            message = (
+                "Google Search và DuckDuckGo đều bị chặn. "
+                "Thử lại sau hoặc đặt SCRAPER_MODE=offline."
+            )
+        elif status == "error":
+            message = f"Lỗi: {error_detail or 'Xem log FastAPI terminal'}"
+        else:
+            message = (
+                "Scrape hoàn tất nhưng không thu thập được kết quả. "
+                "Có thể Google/DDG đang giới hạn hoặc chưa có keywords active."
+            )
+
         return {
-            "success":       True,
-            "company_id":    company_id,
-            "total_scraped": total,
-            "inserted":      result.get("inserted", 0),
-            "skipped":       result.get("skipped", 0),
-            "csv_path":      result.get("csv_path"),
-            "message": (
-                f"Đã scrape {total} bản ghi từ Google Search"
-                if total > 0
-                else "Không thu thập được kết quả. Có thể Google đang giới hạn hoặc chưa có keywords."
-            ),
+            "success":            status in ("success", "partial"),
+            "status":             status,
+            "company_id":         company_id,
+            "keywords_processed": result.get("keywords_processed", 0),
+            "results_found":      results_found,
+            "results_new":        results_new,
+            "results_skipped":    results_skipped,
+            "blocked_keywords":   blocked_keywords,
+            "error_detail":       error_detail,
+            "csv_path":           result.get("csv_path"),
+            "message":            message,
+            # Legacy keys (backward-compat)
+            "total_scraped":      results_found,
+            "inserted":           results_new,
+            "skipped":            results_skipped,
         }
     except Exception as e:
-        logger.error("Scrape Google thất bại: company=%s error=%s", company_id, e)
+        logger.error("Scrape Google thất bại: company=%s error=%s", company_id, e, exc_info=True)
         return {
-            "success":       False,
-            "company_id":    company_id,
-            "total_scraped": 0,
-            "message":       f"Lỗi: {str(e)[:200]}",
-            "hint":          "Kiểm tra log FastAPI terminal để biết thêm chi tiết",
+            "success":            False,
+            "status":             "error",
+            "company_id":         company_id,
+            "keywords_processed": 0,
+            "results_found":      0,
+            "results_new":        0,
+            "results_skipped":    0,
+            "blocked_keywords":   [],
+            "error_detail":       str(e)[:500],
+            "csv_path":           None,
+            "message":            f"Lỗi không xác định: {str(e)[:200]}",
+            "hint":               "Kiểm tra log FastAPI terminal để biết thêm chi tiết",
+            "total_scraped":      0,
+            "inserted":           0,
+            "skipped":            0,
         }
 
 
