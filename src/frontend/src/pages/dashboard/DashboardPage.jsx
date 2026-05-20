@@ -1326,6 +1326,70 @@ function TabCustomer({ data, wd = {}, wl = {} }) {
 
       {/* Phản hồi mạng xã hội (Facebook) */}
       <SocialFeedbackSection data={sentData} loading={sentLoading} />
+
+      {/* ── Geo + Sentiment mini-widgets ── */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <MiniWidget title="Phân bổ địa lý khách hàng" icon="location_on" href="/geo" loading={geoLoading}>
+          {geoData ? (
+            <div className="space-y-2">
+              {(geoData.points ?? []).slice(0, 5).map((p, i) => {
+                const maxRev = geoData.points?.[0]
+                const rev    = Number(p.revenue ?? 0)
+                const maxR   = Number(maxRev?.revenue ?? 1)
+                return (
+                  <div key={i}>
+                    <div className="flex justify-between text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>
+                      <span>{p.province ?? '—'}</span>
+                      <span className="font-mono">{fmtM(rev)}</span>
+                    </div>
+                    <div className="h-1.5 rounded-full" style={{ background: 'var(--bg-elevated)' }}>
+                      <div className="h-full rounded-full" style={{ width: `${maxR > 0 ? Math.min(rev / maxR * 100, 100) : 0}%`, background: '#6366F1' }} />
+                    </div>
+                  </div>
+                )
+              })}
+              {!(geoData.points?.length) && (
+                <p className="text-xs text-center py-2" style={{ color: 'var(--text-tertiary)' }}>Chưa có dữ liệu</p>
+              )}
+            </div>
+          ) : (
+            <p className="text-xs text-center py-2" style={{ color: 'var(--text-tertiary)' }}>Không tải được dữ liệu</p>
+          )}
+        </MiniWidget>
+
+        <MiniWidget title="Cảm xúc khách hàng (Sentiment)" icon="sentiment_satisfied" href="/sentiment" loading={sentLoading}>
+          {sentData ? (() => {
+            const pos = sentData.positive ?? 0
+            const neg = sentData.negative ?? 0
+            const neu = sentData.neutral  ?? 0
+            const tot = pos + neg + neu || 1
+            return (
+              <div className="space-y-2">
+                {[
+                  { label: 'Tích cực', count: pos, pct: ((pos / tot) * 100).toFixed(1), color: '#10B981' },
+                  { label: 'Tiêu cực', count: neg, pct: ((neg / tot) * 100).toFixed(1), color: '#EF4444' },
+                  { label: 'Trung lập', count: neu, pct: ((neu / tot) * 100).toFixed(1), color: '#94A3B8' },
+                ].map(s => (
+                  <div key={s.label}>
+                    <div className="flex justify-between text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>
+                      <span>{s.label}</span>
+                      <span className="font-mono font-semibold" style={{ color: s.color }}>{s.pct}%</span>
+                    </div>
+                    <div className="h-2 rounded-full" style={{ background: 'var(--bg-elevated)' }}>
+                      <div className="h-full rounded-full" style={{ width: `${s.pct}%`, background: s.color }} />
+                    </div>
+                  </div>
+                ))}
+                <p className="text-xs text-right mt-1" style={{ color: 'var(--text-tertiary)' }}>
+                  {tot} bình luận đã phân tích
+                </p>
+              </div>
+            )
+          })() : (
+            <p className="text-xs text-center py-2" style={{ color: 'var(--text-tertiary)' }}>Không tải được dữ liệu</p>
+          )}
+        </MiniWidget>
+      </div>
     </div>
   )
 }
@@ -1461,70 +1525,6 @@ function SocialFeedbackSection({ data = null, loading = false }) {
           </div>
         </div>
       )}
-
-      {/* ── Geo + Sentiment mini-widgets ── */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <MiniWidget title="Phân bổ địa lý khách hàng" icon="location_on" href="/geo" loading={geoLoading}>
-          {geoData ? (
-            <div className="space-y-2">
-              {(geoData.points ?? []).slice(0, 5).map((p, i) => {
-                const maxRev = geoData.points?.[0]
-                const rev    = Number(p.revenue ?? 0)
-                const maxR   = Number(maxRev?.revenue ?? 1)
-                return (
-                  <div key={i}>
-                    <div className="flex justify-between text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>
-                      <span>{p.province ?? '—'}</span>
-                      <span className="font-mono">{fmtM(rev)}</span>
-                    </div>
-                    <div className="h-1.5 rounded-full" style={{ background: 'var(--bg-elevated)' }}>
-                      <div className="h-full rounded-full" style={{ width: `${maxR > 0 ? Math.min(rev / maxR * 100, 100) : 0}%`, background: '#6366F1' }} />
-                    </div>
-                  </div>
-                )
-              })}
-              {!(geoData.points?.length) && (
-                <p className="text-xs text-center py-2" style={{ color: 'var(--text-tertiary)' }}>Chưa có dữ liệu</p>
-              )}
-            </div>
-          ) : (
-            <p className="text-xs text-center py-2" style={{ color: 'var(--text-tertiary)' }}>Không tải được dữ liệu</p>
-          )}
-        </MiniWidget>
-
-        <MiniWidget title="Cảm xúc khách hàng (Sentiment)" icon="sentiment_satisfied" href="/sentiment" loading={sentLoading}>
-          {sentData ? (() => {
-            const pos = sentData.positive ?? 0
-            const neg = sentData.negative ?? 0
-            const neu = sentData.neutral  ?? 0
-            const tot = pos + neg + neu || 1
-            return (
-              <div className="space-y-2">
-                {[
-                  { label: 'Tích cực', count: pos, pct: ((pos / tot) * 100).toFixed(1), color: '#10B981' },
-                  { label: 'Tiêu cực', count: neg, pct: ((neg / tot) * 100).toFixed(1), color: '#EF4444' },
-                  { label: 'Trung lập', count: neu, pct: ((neu / tot) * 100).toFixed(1), color: '#94A3B8' },
-                ].map(s => (
-                  <div key={s.label}>
-                    <div className="flex justify-between text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>
-                      <span>{s.label}</span>
-                      <span className="font-mono font-semibold" style={{ color: s.color }}>{s.pct}%</span>
-                    </div>
-                    <div className="h-2 rounded-full" style={{ background: 'var(--bg-elevated)' }}>
-                      <div className="h-full rounded-full" style={{ width: `${s.pct}%`, background: s.color }} />
-                    </div>
-                  </div>
-                ))}
-                <p className="text-xs text-right mt-1" style={{ color: 'var(--text-tertiary)' }}>
-                  {tot} bình luận đã phân tích
-                </p>
-              </div>
-            )
-          })() : (
-            <p className="text-xs text-center py-2" style={{ color: 'var(--text-tertiary)' }}>Không tải được dữ liệu</p>
-          )}
-        </MiniWidget>
-      </div>
     </div>
   )
 }
