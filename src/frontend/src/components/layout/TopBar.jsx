@@ -462,23 +462,19 @@ export default function TopBar() {
   const canSeeOperations = ['DataIT', 'Owner'].includes(role)
   const canSeeAdmin      = role === 'Owner'
 
-  // ── Nhóm Phân tích AI (16 chức năng) ──────────────────────────────────────
+  // ── Nhóm Phân tích AI (7 chức năng cốt lõi) ──────────────────────────────
+  // Các tính năng còn lại được tích hợp vào tab Dashboard tương ứng:
+  // geo/sentiment → tab Khách hàng | attribution → tab Đa kênh
+  // campaign → tab Marketing | supplier/inventory → tab Tồn kho & Vận hành
+  // leaderboard → tab Tổng quan
   const aiMenuItems = [
-    { label: t('nav.forecast',        'Dự báo doanh thu'),     desc: 'Prophet AI – xu hướng & seasonality',   icon: 'trending_up',         href: '/forecast' },
-    { label: t('nav.anomaly',         'Phát hiện bất thường'), desc: 'Cảnh báo dữ liệu bất thường',           icon: 'crisis_alert',        href: '/anomaly' },
-    { label: t('nav.recommendations', 'Gợi ý thông minh'),     desc: 'Hỏi AI & Insights tự động',             icon: 'psychology',          href: '/recommendations' },
-    { label: t('nav.narrative',       'Tường thuật AI'),       desc: 'Tự động sinh narrative từ dữ liệu',     icon: 'auto_awesome',        href: '/narrative' },
-    { label: t('nav.churn',           'Dự báo rời bỏ'),        desc: 'Churn prediction khách hàng',           icon: 'person_off',          href: '/churn' },
-    { label: t('nav.basket',          'Phân tích giỏ hàng'),   desc: 'Market basket analysis',                icon: 'shopping_bag',        href: '/basket' },
-    { label: t('nav.whatIf',          'Phân tích giả định'),   desc: 'What-if scenario simulation',           icon: 'science',             href: '/whatif' },
-    { label: t('nav.geo',             'Phân tích địa lý'),     desc: 'Bản đồ doanh thu theo vùng',            icon: 'map',                 href: '/geo' },
-    { label: t('nav.campaign',        'Phân tích chiến dịch'), desc: 'Hiệu quả marketing campaigns',          icon: 'campaign',            href: '/campaign' },
-    { label: t('nav.attribution',     'Phân bổ kênh'),         desc: 'Marketing attribution model',           icon: 'account_tree',        href: '/attribution' },
-    { label: t('nav.supplier',        'Nhà cung cấp'),         desc: 'Đánh giá supplier performance',         icon: 'local_shipping',      href: '/supplier' },
-    { label: t('nav.leaderboard',     'Bảng xếp hạng'),        desc: 'Top sản phẩm & nhân viên',              icon: 'leaderboard',         href: '/leaderboard' },
-    { label: t('nav.inventory',       'Tồn kho thông minh'),   desc: 'Dự báo và cảnh báo tồn kho',           icon: 'inventory',           href: '/inventory' },
-    { label: t('nav.sentiment',       'Phân tích cảm xúc'),    desc: 'Sentiment từ đánh giá khách hàng',      icon: 'sentiment_satisfied', href: '/sentiment' },
-    { label: t('nav.price',           'Phân tích giá'),        desc: 'Tối ưu chiến lược định giá',            icon: 'price_check',         href: '/price' },
+    { label: t('nav.forecast',    'Dự báo doanh thu'),     desc: 'Prophet AI – xu hướng & seasonality', icon: 'trending_up',  href: '/forecast' },
+    { label: t('nav.anomaly',     'Phát hiện bất thường'), desc: 'Cảnh báo dữ liệu bất thường',         icon: 'crisis_alert', href: '/anomaly' },
+    { label: t('nav.churn',       'Dự báo Churn'),         desc: 'Churn prediction khách hàng',         icon: 'person_off',   href: '/churn' },
+    { label: t('nav.basket',      'Phân tích giỏ hàng'),   desc: 'Market basket analysis',              icon: 'shopping_bag', href: '/basket' },
+    { label: t('nav.whatIf',      'Mô phỏng What-If'),     desc: 'What-if scenario simulation',         icon: 'science',      href: '/whatif' },
+    { label: t('nav.price',       'Thông minh Giá'),       desc: 'Tối ưu chiến lược định giá',          icon: 'price_check',  href: '/price' },
+    { label: t('nav.aiInsights',  'AI Insights'),          desc: 'Gợi ý thông minh & tường thuật AI',  icon: 'auto_awesome', href: '/recommendations' },
   ]
 
   // ── Nhóm Quản lý dữ liệu ──────────────────────────────────────────────────

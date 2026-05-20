@@ -1602,12 +1602,16 @@ function FacebookPostsModal({ onClose }) {
             const { positive = 0, negative = 0, neutral = 0 } = post.sentiment ?? {}
             const tot    = positive + negative + neutral
 
+            // Tính sentiment chủ đạo từ bình luận
+            const dominantSentiment = positive >= negative && positive >= neutral
+              ? 'positive' : negative >= neutral ? 'negative' : 'neutral'
+
             return (
               <div key={post.postId} className="rounded-xl p-4 space-y-3"
                    style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)' }}>
 
-                {/* Post header */}
-                <div className="flex items-center gap-2.5">
+                {/* Post header + sentiment badge */}
+                <div className="flex items-start gap-2.5">
                   <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0"
                        style={{ background: '#1877F2' }}>
                     <span className="icon text-white text-sm">person</span>
@@ -1620,11 +1624,8 @@ function FacebookPostsModal({ onClose }) {
                       {formatDate(post.postedAt)}
                     </div>
                   </div>
-                  {post.reactionsCount > 0 && (
-                    <div className="flex items-center gap-1 text-xs" style={{ color: '#EF4444' }}>
-                      <span className="icon text-sm">favorite</span> {post.reactionsCount}
-                    </div>
-                  )}
+                  {/* Sentiment badge góc trên phải */}
+                  {tot > 0 && <SentimentBadge type={dominantSentiment} />}
                 </div>
 
                 {/* Content */}
@@ -1647,47 +1648,66 @@ function FacebookPostsModal({ onClose }) {
                       {negative > 0 && <div style={{ flex: negative, background: '#EF4444' }} />}
                     </div>
                     <div className="flex gap-3 text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                      {positive > 0 && <span style={{ color: '#10B981' }}>👍 {positive}</span>}
-                      {neutral  > 0 && <span>😐 {neutral}</span>}
-                      {negative > 0 && <span style={{ color: '#EF4444' }}>👎 {negative}</span>}
+                      {positive > 0 && <span style={{ color: '#10B981' }}>😊 {positive} tích cực</span>}
+                      {neutral  > 0 && <span>😐 {neutral} trung lập</span>}
+                      {negative > 0 && <span style={{ color: '#EF4444' }}>😞 {negative} tiêu cực</span>}
                     </div>
                   </div>
                 )}
 
-                {/* Comments */}
-                {cmts.length > 0 && (
-                  <div>
+                {/* Metric strip */}
+                <div className="flex items-center gap-4 pt-2"
+                     style={{ borderTop: '1px solid var(--border-default)' }}>
+                  <span className="flex items-center gap-1 text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                    <span className="icon text-sm" style={{ color: '#1877F2' }}>thumb_up</span>
+                    {post.reactionsCount ?? 0}
+                  </span>
+                  <span className="flex items-center gap-1 text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                    <span className="icon text-sm">chat_bubble_outline</span>
+                    {cmts.length}
+                  </span>
+                  {(post.shareCount ?? 0) > 0 && (
+                    <span className="flex items-center gap-1 text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                      <span className="icon text-sm">share</span>
+                      {post.shareCount}
+                    </span>
+                  )}
+                  {/* Nút xem bình luận */}
+                  {cmts.length > 0 && (
                     <button onClick={() => setOpenCmt(p => ({ ...p, [post.postId]: !showCm }))}
-                            className="flex items-center gap-1 text-xs"
-                            style={{ color: 'var(--text-secondary)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-                      <span className="icon text-sm">chat_bubble_outline</span>
-                      {showCm ? 'Ẩn bình luận' : `${cmts.length} bình luận`}
+                            className="ml-auto flex items-center gap-1 text-xs font-medium rounded-lg px-2.5 py-1 transition-colors"
+                            style={showCm
+                              ? { background: 'rgba(24,119,242,0.12)', color: '#1877F2' }
+                              : { background: 'var(--bg-card)', color: 'var(--text-secondary)', border: '1px solid var(--border-default)' }}>
                       <span className="icon text-sm">{showCm ? 'expand_less' : 'expand_more'}</span>
+                      {showCm ? 'Ẩn bình luận' : 'Xem chi tiết'}
                     </button>
-                    {showCm && (
-                      <div className="mt-2 space-y-2 pl-3 border-l-2"
-                           style={{ borderColor: 'var(--border-default)' }}>
-                        {cmts.map((c, i) => (
-                          <div key={i} className="flex gap-2">
-                            <div className="w-6 h-6 rounded-full shrink-0 flex items-center justify-center"
-                                 style={{ background: 'var(--bg-card)' }}>
-                              <span className="icon text-xs" style={{ color: 'var(--text-tertiary)' }}>person</span>
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="rounded-xl px-3 py-2 text-xs"
-                                   style={{ background: 'var(--bg-card)' }}>
-                                <p style={{ color: 'var(--text-primary)', lineHeight: 1.5 }}>
-                                  {c.text || c.comment_text}
-                                </p>
-                              </div>
-                              <div className="mt-0.5 ml-1">
-                                <SentimentBadge type={c.sentiment} />
-                              </div>
-                            </div>
+                  )}
+                </div>
+
+                {/* Comments */}
+                {showCm && cmts.length > 0 && (
+                  <div className="space-y-2 pl-3 border-l-2"
+                       style={{ borderColor: 'var(--border-default)' }}>
+                    {cmts.map((c, i) => (
+                      <div key={i} className="flex gap-2">
+                        <div className="w-6 h-6 rounded-full shrink-0 flex items-center justify-center"
+                             style={{ background: 'var(--bg-card)' }}>
+                          <span className="icon text-xs" style={{ color: 'var(--text-tertiary)' }}>person</span>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="rounded-xl px-3 py-2 text-xs"
+                               style={{ background: 'var(--bg-card)' }}>
+                            <p style={{ color: 'var(--text-primary)', lineHeight: 1.5 }}>
+                              {c.text || c.comment_text}
+                            </p>
                           </div>
-                        ))}
+                          <div className="mt-0.5 ml-1">
+                            <SentimentBadge type={c.sentiment} />
+                          </div>
+                        </div>
                       </div>
-                    )}
+                    ))}
                   </div>
                 )}
               </div>

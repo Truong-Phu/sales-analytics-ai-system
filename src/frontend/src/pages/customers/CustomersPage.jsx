@@ -1,9 +1,18 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import MockToast from '../../components/ui/MockToast'
-import { getCustomers, createCustomer, updateCustomer, deactivateCustomer } from '../../api/dashboardApi'
+import { getCustomers, createCustomer, updateCustomer, deactivateCustomer, getCustomerOrderHistory } from '../../api/dashboardApi'
 import { MOCK_CUSTOMERS } from '../../mockData/customers'
 import { useAuth } from '../../hooks/useAuth'
+import i18n from '../../i18n'
+
+// Xử lý segment_label có thể là string hoặc object {vi, en}
+function resolveSegment(seg) {
+  if (!seg) return 'NEW'
+  if (typeof seg === 'string') return seg.toUpperCase()
+  const lang = i18n.language?.startsWith('en') ? 'en' : 'vi'
+  return (seg[lang] ?? seg.vi ?? seg.en ?? 'NEW').toUpperCase()
+}
 
 const EMPTY_CUST = { fullName: '', email: '', phoneNumber: '', address: '', province: '', district: '' }
 
@@ -124,19 +133,33 @@ function Avatar({ name }) {
 export default function CustomersPage() {
   const { t } = useTranslation()
   const { user } = useAuth()
-  const [data,     setData]     = useState(null)
-  const [loading,  setLoading]  = useState(true)
-  const [isMock,   setIsMock]   = useState(false)
-  const [search,   setSearch]   = useState('')
-  const [segment,  setSegment]  = useState('all')
-  const [page,     setPage]     = useState(1)
-  const [selected, setSelected] = useState(null)
-  const [formMode, setFormMode] = useState(null)   // 'create' | 'edit'
-  const [formInit, setFormInit] = useState(null)
-  const [toast,    setToast]    = useState('')
+  const [data,          setData]          = useState(null)
+  const [loading,       setLoading]       = useState(true)
+  const [isMock,        setIsMock]        = useState(false)
+  const [search,        setSearch]        = useState('')
+  const [segment,       setSegment]       = useState('all')
+  const [page,          setPage]          = useState(1)
+  const [selected,      setSelected]      = useState(null)
+  const [formMode,      setFormMode]      = useState(null)   // 'create' | 'edit'
+  const [formInit,      setFormInit]      = useState(null)
+  const [toast,         setToast]         = useState('')
+  const [selOrders,     setSelOrders]     = useState(null)   // lịch sử đơn KH đang xem
+  const [selOrdersLoad, setSelOrdersLoad] = useState(false)
 
   const canEdit = ['Owner', 'Manager', 'Staff'].includes(user?.role)
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 3000) }
+
+  // Fetch lịch sử đơn hàng khi chọn KH
+  useEffect(() => {
+    if (!selected || isMock) { setSelOrders(null); return }
+    const cid = selected.customer_id ?? selected.customerId
+    if (!cid) return
+    setSelOrdersLoad(true)
+    getCustomerOrderHistory(cid, 5)
+      .then(orders => setSelOrders(orders))
+      .catch(() => setSelOrders([]))
+      .finally(() => setSelOrdersLoad(false))
+  }, [selected, isMock])
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -350,67 +373,172 @@ export default function CustomersPage() {
         )}
       </div>
 
-      {/* Detail modal */}
-      {selected && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-             style={{ background: 'rgba(0,0,0,0.6)' }}
-             onClick={() => setSelected(null)}>
-          <div className="lcard w-full max-w-md p-6 space-y-4 scale-in" onClick={e => e.stopPropagation()}>
-            <div className="flex items-start justify-between">
-              <div className="flex items-center gap-3">
-                <Avatar name={selected.full_name} />
+      {/* Detail modal — layout nâng cấp */}
+      {selected && (() => {
+        const seg = resolveSegment(selected.segment_label)
+        const segLabel = t(`customers.segment.${seg}`, seg)
+        const hue = (selected.full_name ?? '').charCodeAt(0) * 37 % 360
+        const lastOrderDays = selected.last_order_date
+          ? Math.floor((Date.now() - new Date(selected.last_order_date).getTime()) / 86_400_000)
+          : null
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+               style={{ background: 'rgba(0,0,0,0.6)' }}
+               onClick={() => setSelected(null)}>
+            <div className="lcard w-full max-w-lg scale-in overflow-y-auto" style={{ maxHeight: '90vh' }}
+                 onClick={e => e.stopPropagation()}>
+
+              {/* Header — avatar lớn + tên + segment */}
+              <div className="flex items-center gap-4 px-6 py-5"
+                   style={{ borderBottom: '1px solid var(--border)' }}>
+                <div className="w-14 h-14 rounded-full flex items-center justify-center text-xl font-bold text-white shrink-0"
+                     style={{ background: `hsl(${hue},50%,48%)` }}>
+                  {(selected.full_name ?? '?').split(' ').slice(-2).map(s => s[0]).join('').toUpperCase()}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xl font-bold leading-tight truncate" style={{ color: 'var(--text-primary)' }}>
+                    {selected.full_name ?? '—'}
+                  </p>
+                  <div className="mt-1">
+                    <SegmentBadge seg={seg} label={segLabel} />
+                  </div>
+                </div>
+                <button onClick={() => setSelected(null)}
+                        className="w-8 h-8 flex items-center justify-center rounded-lg shrink-0"
+                        style={{ color: 'var(--text-secondary)' }}
+                        onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                  <span className="icon">close</span>
+                </button>
+              </div>
+
+              <div className="px-6 py-4 space-y-5">
+                {/* Section: Thông tin liên hệ */}
                 <div>
-                  <div className="font-bold text-sm" style={{ color: 'var(--text-primary)' }}>{selected.full_name}</div>
-                  <SegmentBadge seg={selected.segment_label}
-                                label={t(`customers.segment.${selected.segment_label}`, selected.segment_label)} />
+                  <p className="text-xs font-semibold uppercase tracking-wide mb-2"
+                     style={{ color: 'var(--text-tertiary)' }}>Thông tin liên hệ</p>
+                  <div className="space-y-2">
+                    {[
+                      { icon: 'email',     label: selected.email    ?? '—' },
+                      { icon: 'location_on', label: [selected.province, selected.district].filter(Boolean).join(', ') || '—' },
+                    ].map(item => (
+                      <div key={item.icon} className="flex items-center gap-2.5 text-sm">
+                        <span className="icon text-base shrink-0" style={{ color: 'var(--text-tertiary)' }}>{item.icon}</span>
+                        <span style={{ color: 'var(--text-primary)' }}>{item.label}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
-              <button onClick={() => setSelected(null)}
-                      className="w-8 h-8 flex items-center justify-center rounded-lg"
-                      style={{ color: 'var(--text-secondary)' }}
-                      onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
-                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                <span className="icon">close</span>
-              </button>
-            </div>
 
-            <div className="space-y-2 text-sm">
-              {[
-                [t('customers.email'),       selected.email ?? '—'],
-                [t('customers.province'),    selected.province ?? '—'],
-                [t('customers.totalOrders'), fmt(selected.total_orders)],
-                [t('customers.totalRevenue'),`${fmt(selected.total_revenue)}₫`],
-                [t('customers.avgOrder'),    `${fmt(selected.avg_order_value)}₫`],
-                [t('customers.lastOrder'),   selected.last_order_date
-                  ? new Date(selected.last_order_date).toLocaleDateString('vi-VN') : '—'],
-                ['Điểm tích lũy', selected.loyalty_points != null ? `${fmt(selected.loyalty_points)} điểm` : '—'],
-              ].map(([label, value]) => (
-                <div key={label} className="flex justify-between gap-4 py-2"
-                     style={{ borderBottom: '1px solid var(--border)' }}>
-                  <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{label}</span>
-                  <span className="font-medium text-sm" style={{ color: 'var(--text-primary)' }}>{value}</span>
+                {/* Section: Số liệu mua hàng — grid 2x2 */}
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide mb-2"
+                     style={{ color: 'var(--text-tertiary)' }}>Số liệu mua hàng</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    {[
+                      ['Tổng đơn hàng',  fmt(selected.total_orders),                     'shopping_cart'],
+                      ['Tổng chi tiêu',  `${fmt(selected.total_revenue)}₫`,              'payments'],
+                      ['TB mỗi đơn',     `${fmt(selected.avg_order_value)}₫`,            'receipt'],
+                      ['Điểm tích lũy',  selected.loyalty_points != null ? `${fmt(selected.loyalty_points)} điểm` : '—', 'star'],
+                    ].map(([label, value, icon]) => (
+                      <div key={label} className="rounded-xl px-4 py-3"
+                           style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)' }}>
+                        <div className="flex items-center gap-1.5 mb-1">
+                          <span className="icon text-sm" style={{ color: 'var(--primary-400)' }}>{icon}</span>
+                          <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{label}</p>
+                        </div>
+                        <p className="font-bold text-sm" style={{ color: 'var(--text-primary)' }}>{value}</p>
+                      </div>
+                    ))}
+                  </div>
+                  {lastOrderDays != null && (
+                    <p className="text-xs mt-2" style={{ color: 'var(--text-tertiary)' }}>
+                      Lần cuối mua:{' '}
+                      <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>
+                        {lastOrderDays === 0 ? 'Hôm nay' : lastOrderDays === 1 ? 'Hôm qua' : `${lastOrderDays} ngày trước`}
+                        {' '}({new Date(selected.last_order_date).toLocaleDateString('vi-VN')})
+                      </span>
+                    </p>
+                  )}
                 </div>
-              ))}
-            </div>
-            <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{t('customers.historyNote')}</p>
 
-            {canEdit && !isMock && (
-              <div className="flex gap-2 pt-2">
-                <button onClick={() => openEdit(selected)} className="lbtn lbtn-secondary flex-1 justify-center !h-9">
-                  <span className="icon text-base">edit</span>
-                  Sửa
-                </button>
-                <button onClick={() => handleDeactivate(selected)}
-                        className="lbtn !h-9 flex-1 justify-center"
-                        style={{ background: 'rgba(239,68,68,0.1)', color: '#EF4444', border: '1px solid rgba(239,68,68,0.3)' }}>
-                  <span className="icon text-base">person_off</span>
-                  Ẩn
-                </button>
+                {/* Section: Lịch sử đơn hàng gần nhất */}
+                {!isMock && (
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide mb-2"
+                       style={{ color: 'var(--text-tertiary)' }}>5 đơn hàng gần nhất</p>
+                    {selOrdersLoad ? (
+                      <div className="flex items-center justify-center py-4">
+                        <span className="w-5 h-5 border-2 rounded-full animate-spin"
+                              style={{ borderColor: 'var(--border)', borderTopColor: 'var(--primary-500)' }} />
+                      </div>
+                    ) : !selOrders || selOrders.length === 0 ? (
+                      <p className="text-xs py-3 text-center" style={{ color: 'var(--text-tertiary)' }}>Chưa có đơn hàng</p>
+                    ) : (
+                      <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border)' }}>
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr style={{ background: 'var(--bg-elevated)', borderBottom: '1px solid var(--border)' }}>
+                              {['Mã đơn', 'Ngày', 'Kênh', 'Giá trị', 'Trạng thái'].map(h => (
+                                <th key={h} className="px-3 py-2 text-left font-semibold"
+                                    style={{ color: 'var(--text-tertiary)' }}>{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {selOrders.map((o, i) => (
+                              <tr key={o.orderId ?? i} style={{ borderBottom: '1px solid var(--border)' }}>
+                                <td className="px-3 py-2 font-mono" style={{ color: 'var(--text-secondary)' }}>
+                                  {o.orderCode ?? o.orderId ?? '—'}
+                                </td>
+                                <td className="px-3 py-2" style={{ color: 'var(--text-tertiary)', whiteSpace: 'nowrap' }}>
+                                  {o.orderDate ? new Date(o.orderDate).toLocaleDateString('vi-VN') : '—'}
+                                </td>
+                                <td className="px-3 py-2" style={{ color: 'var(--text-secondary)' }}>
+                                  {o.channelName ?? '—'}
+                                </td>
+                                <td className="px-3 py-2 font-medium" style={{ color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
+                                  {fmt(o.totalAmount)}₫
+                                </td>
+                                <td className="px-3 py-2">
+                                  <span className="px-1.5 py-0.5 rounded text-[10px]"
+                                        style={{
+                                          background: o.status === 'completed' ? 'rgba(16,185,129,0.1)' : 'rgba(99,102,241,0.1)',
+                                          color: o.status === 'completed' ? '#10B981' : 'var(--primary-500)',
+                                        }}>
+                                    {o.status ?? '—'}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
-            )}
+
+              {/* Footer buttons */}
+              {canEdit && !isMock && (
+                <div className="flex gap-2 px-6 py-4" style={{ borderTop: '1px solid var(--border)' }}>
+                  <button onClick={() => openEdit(selected)} className="lbtn lbtn-secondary flex-1 justify-center !h-9">
+                    <span className="icon text-base">edit</span>
+                    Sửa
+                  </button>
+                  <button onClick={() => handleDeactivate(selected)}
+                          className="lbtn !h-9 flex-1 justify-center"
+                          style={{ background: 'rgba(239,68,68,0.1)', color: '#EF4444', border: '1px solid rgba(239,68,68,0.3)' }}>
+                    <span className="icon text-base">person_off</span>
+                    Ẩn
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
     </div>
   )
 }

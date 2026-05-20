@@ -786,6 +786,134 @@ public class AdminController(
         }
         return Ok(new { customerId = id, page, orders });
     }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // PHẦN 5 – [SA] Platform Analytics & Usage Monitor
+    // ══════════════════════════════════════════════════════════════════════════
+
+    /// <summary>[SA] Thống kê nền tảng — tổng công ty, phân bổ gói, tăng trưởng theo tháng</summary>
+    [HttpGet("sa/analytics")]
+    [RequireSuperAdmin]
+    public async Task<IActionResult> GetPlatformAnalytics()
+    {
+        var totalCompanies   = await db.Companies.CountAsync();
+        var activeCompanies  = await db.Companies.CountAsync(c => c.IsActive);
+        var totalUsers       = await db.Users.CountAsync(u => u.IsActive);
+        var activeUsers      = await db.Users.CountAsync(u => u.IsActive);
+
+        var subscriptions    = await db.Subscriptions.ToListAsync();
+        var byPlan = new
+        {
+            free       = subscriptions.Count(s => s.Plan == "free"),
+            pro        = subscriptions.Count(s => s.Plan == "pro"),
+            enterprise = subscriptions.Count(s => s.Plan == "enterprise"),
+        };
+        var proSubscriptions  = byPlan.pro + byPlan.enterprise;
+        var trialCompanies    = subscriptions.Count(s => s.Status == "trial");
+        var expiredCompanies  = subscriptions.Count(s => s.Status == "expired");
+
+        // Tăng trưởng công ty mới theo tháng (6 tháng gần nhất)
+        var sixMonthsAgo = DateTime.UtcNow.AddMonths(-5);
+        var monthlyGrowth = await db.Companies
+            .Where(c => c.CreatedAt >= sixMonthsAgo)
+            .GroupBy(c => new { c.CreatedAt.Year, c.CreatedAt.Month })
+            .Select(g => new
+            {
+                month        = $"{g.Key.Year}-{g.Key.Month:D2}",
+                newCompanies = g.Count(),
+            })
+            .OrderBy(r => r.month)
+            .ToListAsync();
+
+        return Ok(new
+        {
+            totalCompanies, activeCompanies, trialCompanies, expiredCompanies,
+            totalUsers, activeUsers, proSubscriptions,
+            byPlan, monthlyGrowth,
+        });
+    }
+
+    /// <summary>[SA] Giám sát sử dụng — mức dùng kênh & user theo từng công ty</summary>
+    [HttpGet("sa/usage")]
+    [RequireSuperAdmin]
+    public async Task<IActionResult> GetUsageMonitor(
+        [FromQuery] string? search   = null,
+        [FromQuery] int     page     = 1,
+        [FromQuery] int     pageSize = 20)
+    {
+        if (page < 1) page = 1;
+        if (pageSize < 1 || pageSize > 100) pageSize = 20;
+
+        var query = db.Companies.AsQueryable();
+        if (!string.IsNullOrWhiteSpace(search))
+            query = query.Where(c => c.Name.Contains(search) || c.Email.Contains(search));
+
+        var total = await query.CountAsync();
+
+        var companies = await query
+            .OrderBy(c => c.Name)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(c => new { companyId = c.Id, companyName = c.Name, companyEmail = c.Email })
+            .ToListAsync();
+
+        var companyIds = companies.Select(c => c.companyId).ToList();
+
+        var subs = await db.Subscriptions
+            .Where(s => companyIds.Contains(s.CompanyId))
+            .Select(s => new { s.CompanyId, s.Plan, s.Status, s.ExpiresAt, s.MaxChannels, s.MaxUsers })
+            .ToListAsync();
+
+        var userCounts = await db.Users
+            .Where(u => u.CompanyId.HasValue && companyIds.Contains(u.CompanyId.Value) && u.IsActive)
+            .GroupBy(u => u.CompanyId!.Value)
+            .Select(g => new { CompanyId = g.Key, Count = g.Count() })
+            .ToListAsync();
+
+        // Channel count từ raw SQL (không có DbSet<SalesChannel>)
+        var channelCountMap = new Dictionary<Guid, int>();
+        await using var conn2 = new NpgsqlConnection(_connStr);
+        await conn2.OpenAsync();
+        await using var cmd2 = new NpgsqlCommand(
+            "SELECT company_id, COUNT(*) FROM public.sales_channels WHERE is_active = TRUE GROUP BY company_id", conn2);
+        await using var r2 = await cmd2.ExecuteReaderAsync();
+        while (await r2.ReadAsync())
+            channelCountMap[r2.GetGuid(0)] = (int)r2.GetInt64(1);
+
+        var result = companies.Select(c =>
+        {
+            var sub   = subs.FirstOrDefault(s => s.CompanyId == c.companyId);
+            var users = userCounts.FirstOrDefault(u => u.CompanyId == c.companyId)?.Count ?? 0;
+            channelCountMap.TryGetValue(c.companyId, out var chans);
+            return new
+            {
+                c.companyId, c.companyName, c.companyEmail,
+                plan         = sub?.Plan    ?? "free",
+                status       = sub?.Status  ?? "active",
+                expiresAt    = sub?.ExpiresAt,
+                maxChannels  = sub?.MaxChannels ?? 1,
+                maxUsers     = sub?.MaxUsers    ?? 3,
+                channelsUsed = chans,
+                usersCount   = users,
+            };
+        });
+
+        return Ok(new { data = result, total, page, pageSize,
+            totalPages = (int)Math.Ceiling((double)total / pageSize) });
+    }
+
+    /// <summary>[SA] Cấu hình mặc định theo gói — dùng cho frontend auto-fill form</summary>
+    [HttpGet("sa/plan-configs")]
+    [RequireSuperAdmin]
+    public IActionResult GetPlanConfigs()
+    {
+        return Ok(new object[]
+        {
+            new { planName = "free",       maxChannels = 1,  maxUsers = 3,  price = 0,      features = new[] { "1 kênh bán hàng", "3 người dùng", "Import CSV/Excel", "Dashboard cơ bản" } },
+            new { planName = "pro",        maxChannels = 5,  maxUsers = 20, price = 499000, features = new[] { "5 kênh bán hàng", "20 người dùng", "AI dự báo & anomaly", "Báo cáo nâng cao", "Export PDF" } },
+            new { planName = "enterprise", maxChannels = -1, maxUsers = -1, price = -1,     features = new[] { "Kênh không giới hạn", "Người dùng không giới hạn", "Tất cả tính năng AI", "SLA ưu tiên", "Tùy chỉnh theo yêu cầu" } },
+        });
+    }
 }
 
 public record CreateUserRequest(

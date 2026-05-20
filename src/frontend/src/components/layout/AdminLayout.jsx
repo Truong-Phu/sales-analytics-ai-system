@@ -9,6 +9,8 @@ const NAV = [
   { to: '/sa/companies',                 icon: 'business',          label: 'Companies',           labelVi: 'Công ty' },
   { to: '/sa/users',                     icon: 'group',             label: 'Users',               labelVi: 'Người dùng' },
   { to: '/sa/subscriptions',             icon: 'workspace_premium', label: 'Subscriptions',       labelVi: 'Đăng ký' },
+  { to: '/sa/analytics',                 icon: 'bar_chart',         label: 'Analytics',           labelVi: 'Thống kê nền tảng' },
+  { to: '/sa/usage',                     icon: 'speed',             label: 'Usage Monitor',       labelVi: 'Giám sát sử dụng' },
   { to: '/sa/sync-monitor',              icon: 'sync',              label: 'Sync Monitor',        labelVi: 'Giám sát Sync' },
   { to: '/sa/audit-logs',                icon: 'history',           label: 'Audit Logs',          labelVi: 'Nhật ký' },
   { to: '/sa/system/payment-accounts',   icon: 'payments',          label: 'Payment Accounts',    labelVi: 'Tài khoản thanh toán' },

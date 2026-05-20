@@ -41,6 +41,8 @@ const SaSubscriptionsPage = lazy(() => import('../pages/sa/SaSubscriptionsPage')
 const SaSyncMonitorPage   = lazy(() => import('../pages/sa/SaSyncMonitorPage'))
 const SaAuditLogsPage         = lazy(() => import('../pages/sa/SaAuditLogsPage'))
 const SaPaymentAccountsPage   = lazy(() => import('../pages/sa/SaPaymentAccountsPage'))
+const SaAnalyticsPage         = lazy(() => import('../pages/sa/SaAnalyticsPage'))
+const SaUsagePage             = lazy(() => import('../pages/sa/SaUsagePage'))
 
 // Chức năng sáng tạo mới
 const ChurnPage       = lazy(() => import('../pages/churn/ChurnPage'))
@@ -328,6 +330,8 @@ export default function AppRouter() {
           <Route path="sync-monitor"    element={<Suspense fallback={<PageSpinner />}><SaSyncMonitorPage /></Suspense>} />
           <Route path="audit-logs"      element={<Suspense fallback={<PageSpinner />}><SaAuditLogsPage /></Suspense>} />
           <Route path="system/payment-accounts" element={<Suspense fallback={<PageSpinner />}><SaPaymentAccountsPage /></Suspense>} />
+          <Route path="analytics"       element={<Suspense fallback={<PageSpinner />}><SaAnalyticsPage /></Suspense>} />
+          <Route path="usage"           element={<Suspense fallback={<PageSpinner />}><SaUsagePage /></Suspense>} />
         </Route>
 
         {/* Fallback */}

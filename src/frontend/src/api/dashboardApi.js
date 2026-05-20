@@ -200,6 +200,11 @@ export const deactivateCustomer = (id) =>
 export const getTodayVsYesterday = () =>
   api.get('/api/dashboard/today-vs-yesterday').then(r => r.data)
 
+// ── Customer order history (5 đơn gần nhất) ──────────────────────────────────
+export const getCustomerOrderHistory = (customerId, limit = 5) =>
+  api.get(`/api/admin/customers/${customerId}/history`, { params: { page: 1 } })
+    .then(r => (r.data.orders ?? []).slice(0, limit))
+
 // ── Drill-down: đơn hàng theo sản phẩm (Dashboard Pareto) ────────────────────
 
 export const getDrillDownOrders = async (productKey, from, to, limit = 50) => {

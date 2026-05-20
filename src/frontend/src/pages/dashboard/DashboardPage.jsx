@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import {
   AreaChart, Area, BarChart, Bar, LineChart, Line,
@@ -12,7 +13,9 @@ import { SkeletonCard } from '../../components/ui/Skeleton'
 import MockToast from '../../components/ui/MockToast'
 import { getDashboard, getTodayVsYesterday, getDrillDownOrders, getDrillDownCustomers,
          getWebsiteAnalytics, getFbAds } from '../../api/dashboardApi'
-import { getInsights } from '../../api/aiApi'
+import { getInsights, getLeaderboard, getGeoDistribution, getChannelAttribution,
+         getCampaignPlan, getSupplierPerformance, getFeedbackSummary,
+         getInventoryIntelligence } from '../../api/aiApi'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function relDate(offsetDays) {
@@ -37,6 +40,35 @@ function exportCsv(filename, rows) {
   const a       = document.createElement('a')
   a.href = url; a.download = filename; a.click()
   URL.revokeObjectURL(url)
+}
+
+// ── MiniWidget: card nhỏ tích hợp AI vào tab Dashboard ───────────────────────
+function MiniWidget({ title, icon, href, loading, children }) {
+  const navigate = useNavigate()
+  return (
+    <div className="lcard p-4">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <span className="icon text-base" style={{ color: 'var(--primary-500)' }}>{icon}</span>
+          <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{title}</span>
+        </div>
+        <button onClick={() => navigate(href)}
+                className="flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-lg transition-colors"
+                style={{ color: 'var(--primary-600)', background: 'rgba(99,102,241,0.08)' }}
+                onMouseEnter={e => e.currentTarget.style.background = 'rgba(99,102,241,0.16)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'rgba(99,102,241,0.08)'}>
+          Xem đầy đủ
+          <span className="icon text-sm">arrow_forward</span>
+        </button>
+      </div>
+      {loading ? (
+        <div className="flex items-center justify-center py-6">
+          <span className="w-5 h-5 border-2 rounded-full"
+                style={{ borderColor: 'var(--border)', borderTopColor: 'var(--primary-500)', animation: 'spin 0.8s linear infinite' }} />
+        </div>
+      ) : children}
+    </div>
+  )
 }
 
 function generateMockData(from, to) {
@@ -514,6 +546,15 @@ function TabOverview({ data, compareMode, prevData, canViewAnalytics = true }) {
   const { t }  = useTranslation()
   const kpi    = data.kpi
   const sp     = data.sparklines || {}
+  const [lbData,    setLbData]    = useState(null)
+  const [lbLoading, setLbLoading] = useState(true)
+
+  useEffect(() => {
+    getLeaderboard({ limit: 5 })
+      .then(r => setLbData(r))
+      .catch(() => setLbData(null))
+      .finally(() => setLbLoading(false))
+  }, [])
 
   // Dữ liệu chart gộp kỳ này + kỳ trước (index-based)
   const trendData = data.revenueByDay.map((d, i) => {
@@ -680,6 +721,34 @@ function TabOverview({ data, compareMode, prevData, canViewAnalytics = true }) {
           </div>
         </div>
       </div>
+
+      {/* ── Leaderboard mini-widget ── */}
+      <MiniWidget title="Bảng xếp hạng hiệu suất" icon="leaderboard" href="/leaderboard" loading={lbLoading}>
+        {lbData ? (
+          <div className="space-y-2">
+            {(lbData.top_products ?? lbData.products ?? []).slice(0, 5).map((p, i) => (
+              <div key={i} className="flex items-center gap-3">
+                <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
+                      style={{ background: i < 3 ? ['rgba(251,191,36,0.15)','rgba(148,163,184,0.15)','rgba(180,83,9,0.12)'][i] : 'var(--bg-elevated)',
+                               color:      i < 3 ? ['#D97706','#64748B','#92400E'][i] : 'var(--text-tertiary)' }}>
+                  {i + 1}
+                </span>
+                <span className="flex-1 text-sm truncate" style={{ color: 'var(--text-secondary)' }}>
+                  {p.product_name ?? p.name ?? p.channel ?? '—'}
+                </span>
+                <span className="text-sm font-semibold font-mono" style={{ color: 'var(--text-primary)' }}>
+                  {fmtM(p.revenue ?? p.total_revenue ?? 0)}
+                </span>
+              </div>
+            ))}
+            {!(lbData.top_products ?? lbData.products)?.length && (
+              <p className="text-xs text-center py-2" style={{ color: 'var(--text-tertiary)' }}>Chưa có dữ liệu</p>
+            )}
+          </div>
+        ) : (
+          <p className="text-xs text-center py-2" style={{ color: 'var(--text-tertiary)' }}>Không tải được dữ liệu</p>
+        )}
+      </MiniWidget>
     </div>
   )
 }
@@ -907,8 +976,16 @@ function TabSales({ data, compareMode, prevData, from, to }) {
 // ── Tab: 3 — Multi-channel ────────────────────────────────────────────────────
 function TabMultiChannel({ data }) {
   const { t } = useTranslation()
-  // Toggle ẩn/hiện bảng so sánh chi tiết — mặc định ẩn
   const [showChannelDetailTable, setShowChannelDetailTable] = useState(false)
+  const [attrData,    setAttrData]    = useState(null)
+  const [attrLoading, setAttrLoading] = useState(true)
+
+  useEffect(() => {
+    getChannelAttribution()
+      .then(r => setAttrData(r))
+      .catch(() => setAttrData(null))
+      .finally(() => setAttrLoading(false))
+  }, [])
 
   // Bảng so sánh chi tiết kênh
   const channelTableData = data.revenueByChannel.map(ch => ({
@@ -1042,6 +1119,33 @@ function TabMultiChannel({ data }) {
           </div>
         </div>
       </div>
+
+      {/* ── Attribution mini-widget ── */}
+      <MiniWidget title="Phân bổ doanh thu theo kênh (Attribution)" icon="hub" href="/attribution" loading={attrLoading}>
+        {attrData ? (
+          <div className="space-y-2">
+            {(attrData.channels ?? attrData.attribution ?? []).slice(0, 5).map((ch, i) => {
+              const pct = Number(ch.pct ?? ch.contribution_pct ?? ch.attribution_pct ?? 0)
+              return (
+                <div key={i}>
+                  <div className="flex justify-between text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>
+                    <span>{ch.channel ?? ch.channelName ?? ch.name ?? '—'}</span>
+                    <span className="font-semibold font-mono">{pct.toFixed(1)}%</span>
+                  </div>
+                  <div className="h-2 rounded-full" style={{ background: 'var(--bg-elevated)' }}>
+                    <div className="h-full rounded-full" style={{ width: `${Math.min(pct, 100)}%`, background: CHART_COLORS[i % CHART_COLORS.length] }} />
+                  </div>
+                </div>
+              )
+            })}
+            {!(attrData.channels ?? attrData.attribution)?.length && (
+              <p className="text-xs text-center py-2" style={{ color: 'var(--text-tertiary)' }}>Chưa có dữ liệu</p>
+            )}
+          </div>
+        ) : (
+          <p className="text-xs text-center py-2" style={{ color: 'var(--text-tertiary)' }}>Không tải được dữ liệu</p>
+        )}
+      </MiniWidget>
     </div>
   )
 }
@@ -1053,6 +1157,21 @@ function TabCustomer({ data }) {
   const [drillSeg,      setDrillSeg]      = useState(null)
   const [drillCusts,    setDrillCusts]    = useState([])
   const [drillCustLoad, setDrillCustLoad] = useState(false)
+  const [geoData,     setGeoData]     = useState(null)
+  const [geoLoading,  setGeoLoading]  = useState(true)
+  const [sentData,    setSentData]    = useState(null)
+  const [sentLoading, setSentLoading] = useState(true)
+
+  useEffect(() => {
+    getGeoDistribution({ limit: 5 })
+      .then(r => setGeoData(r))
+      .catch(() => setGeoData(null))
+      .finally(() => setGeoLoading(false))
+    getFeedbackSummary()
+      .then(r => setSentData(r))
+      .catch(() => setSentData(null))
+      .finally(() => setSentLoading(false))
+  }, [])
 
   const handleDrillSeg = async (seg) => {
     setDrillSeg(seg)
@@ -1318,6 +1437,70 @@ function SocialFeedbackSection() {
           </div>
         </div>
       )}
+
+      {/* ── Geo + Sentiment mini-widgets ── */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <MiniWidget title="Phân bổ địa lý khách hàng" icon="location_on" href="/geo" loading={geoLoading}>
+          {geoData ? (
+            <div className="space-y-2">
+              {(geoData.provinces ?? geoData.top_provinces ?? geoData.data ?? []).slice(0, 5).map((p, i) => {
+                const maxRev = (geoData.provinces ?? geoData.top_provinces ?? geoData.data ?? [])[0]
+                const rev    = Number(p.revenue ?? p.total_revenue ?? 0)
+                const maxR   = Number(maxRev?.revenue ?? maxRev?.total_revenue ?? 1)
+                return (
+                  <div key={i}>
+                    <div className="flex justify-between text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>
+                      <span>{p.province ?? p.name ?? '—'}</span>
+                      <span className="font-mono">{fmtM(rev)}</span>
+                    </div>
+                    <div className="h-1.5 rounded-full" style={{ background: 'var(--bg-elevated)' }}>
+                      <div className="h-full rounded-full" style={{ width: `${maxR > 0 ? Math.min(rev / maxR * 100, 100) : 0}%`, background: '#6366F1' }} />
+                    </div>
+                  </div>
+                )
+              })}
+              {!(geoData.provinces ?? geoData.top_provinces ?? geoData.data)?.length && (
+                <p className="text-xs text-center py-2" style={{ color: 'var(--text-tertiary)' }}>Chưa có dữ liệu</p>
+              )}
+            </div>
+          ) : (
+            <p className="text-xs text-center py-2" style={{ color: 'var(--text-tertiary)' }}>Không tải được dữ liệu</p>
+          )}
+        </MiniWidget>
+
+        <MiniWidget title="Cảm xúc khách hàng (Sentiment)" icon="sentiment_satisfied" href="/sentiment" loading={sentLoading}>
+          {sentData ? (() => {
+            const pos = sentData.positive ?? 0
+            const neg = sentData.negative ?? 0
+            const neu = sentData.neutral  ?? 0
+            const tot = pos + neg + neu || 1
+            return (
+              <div className="space-y-2">
+                {[
+                  { label: 'Tích cực', count: pos, pct: ((pos / tot) * 100).toFixed(1), color: '#10B981' },
+                  { label: 'Tiêu cực', count: neg, pct: ((neg / tot) * 100).toFixed(1), color: '#EF4444' },
+                  { label: 'Trung lập', count: neu, pct: ((neu / tot) * 100).toFixed(1), color: '#94A3B8' },
+                ].map(s => (
+                  <div key={s.label}>
+                    <div className="flex justify-between text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>
+                      <span>{s.label}</span>
+                      <span className="font-mono font-semibold" style={{ color: s.color }}>{s.pct}%</span>
+                    </div>
+                    <div className="h-2 rounded-full" style={{ background: 'var(--bg-elevated)' }}>
+                      <div className="h-full rounded-full" style={{ width: `${s.pct}%`, background: s.color }} />
+                    </div>
+                  </div>
+                ))}
+                <p className="text-xs text-right mt-1" style={{ color: 'var(--text-tertiary)' }}>
+                  {tot} bình luận đã phân tích
+                </p>
+              </div>
+            )
+          })() : (
+            <p className="text-xs text-center py-2" style={{ color: 'var(--text-tertiary)' }}>Không tải được dữ liệu</p>
+          )}
+        </MiniWidget>
+      </div>
     </div>
   )
 }
@@ -1365,8 +1548,16 @@ function HeatmapGrid({ data }) {
 // ── Tab: 5 — Marketing & ROI ──────────────────────────────────────────────────
 function TabMarketing({ data, fbAdsData }) {
   const { t } = useTranslation()
-  // Toggle ẩn/hiện bảng hiệu quả Marketing — mặc định ẩn
   const [showMarketingTable, setShowMarketingTable] = useState(false)
+  const [campData,    setCampData]    = useState(null)
+  const [campLoading, setCampLoading] = useState(true)
+
+  useEffect(() => {
+    getCampaignPlan()
+      .then(r => setCampData(r))
+      .catch(() => setCampData(null))
+      .finally(() => setCampLoading(false))
+  }, [])
 
   const comboData = data.revenueByChannel.map(ch => ({
     name:       ch.channelName.split(' ')[0],
@@ -1609,6 +1800,43 @@ function TabMarketing({ data, fbAdsData }) {
           </>
         )
       })()}
+
+      {/* ── Campaign mini-widget ── */}
+      <MiniWidget title="Chiến dịch Marketing được đề xuất" icon="campaign" href="/campaign" loading={campLoading}>
+        {campData ? (
+          <div className="space-y-2">
+            {(campData.campaigns ?? campData.recommendations ?? campData.data ?? []).slice(0, 4).map((c, i) => (
+              <div key={i} className="flex items-start gap-2.5 px-3 py-2 rounded-lg"
+                   style={{ background: 'var(--bg-elevated)' }}>
+                <span className="icon text-base shrink-0 mt-0.5"
+                      style={{ color: ['#6366F1','#10B981','#F59E0B','#EC4899'][i % 4] }}>
+                  {['email','local_offer','campaign','notifications'][i % 4]}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>
+                    {c.title ?? c.campaign_name ?? c.name ?? `Chiến dịch ${i + 1}`}
+                  </p>
+                  {(c.description ?? c.insight ?? c.channel) && (
+                    <p className="text-xs mt-0.5 line-clamp-1" style={{ color: 'var(--text-tertiary)' }}>
+                      {c.description ?? c.insight ?? c.channel}
+                    </p>
+                  )}
+                </div>
+                {c.expected_roas && (
+                  <span className="text-xs font-bold shrink-0" style={{ color: '#10B981' }}>
+                    {c.expected_roas}x
+                  </span>
+                )}
+              </div>
+            ))}
+            {!(campData.campaigns ?? campData.recommendations ?? campData.data)?.length && (
+              <p className="text-xs text-center py-2" style={{ color: 'var(--text-tertiary)' }}>Chưa có đề xuất</p>
+            )}
+          </div>
+        ) : (
+          <p className="text-xs text-center py-2" style={{ color: 'var(--text-tertiary)' }}>Không tải được dữ liệu</p>
+        )}
+      </MiniWidget>
     </div>
   )
 }
@@ -1756,6 +1984,21 @@ function TabWebsite({ from, to, webData }) {
 function TabInventory({ data }) {
   const { t } = useTranslation()
   const invKpi = data.inventoryKpi || { avgDIO: 0, overstockRate: '0.0', stockoutRate: '0.0' }
+  const [supplierData,    setSupplierData]    = useState(null)
+  const [supplierLoading, setSupplierLoading] = useState(true)
+  const [invAiData,       setInvAiData]       = useState(null)
+  const [invAiLoading,    setInvAiLoading]    = useState(true)
+
+  useEffect(() => {
+    getSupplierPerformance({ limit: 5 })
+      .then(r => setSupplierData(r))
+      .catch(() => setSupplierData(null))
+      .finally(() => setSupplierLoading(false))
+    getInventoryIntelligence({ limit: 5 })
+      .then(r => setInvAiData(r))
+      .catch(() => setInvAiData(null))
+      .finally(() => setInvAiLoading(false))
+  }, [])
 
   const invKpis = [
     { label: 'Số ngày tồn kho (DIO)',    value: `${invKpi.avgDIO} ngày`, icon: 'hourglass_empty',   color: '#6366F1' },
@@ -1973,6 +2216,83 @@ function TabInventory({ data }) {
           </div>
         )}
       </div>
+
+      {/* ── Supplier + Inventory AI mini-widgets ── */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <MiniWidget title="Hiệu suất Nhà cung cấp" icon="local_shipping" href="/supplier" loading={supplierLoading}>
+          {supplierData ? (
+            <div className="space-y-2">
+              {(supplierData.suppliers ?? supplierData.data ?? []).slice(0, 5).map((s, i) => {
+                const rate = Number(s.on_time_rate ?? s.onTimeRate ?? s.delivery_rate ?? 0)
+                return (
+                  <div key={i} className="flex items-center gap-3">
+                    <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0"
+                         style={{ background: 'var(--bg-elevated)' }}>
+                      <span className="icon text-sm" style={{ color: 'var(--text-tertiary)' }}>store</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium truncate" style={{ color: 'var(--text-primary)' }}>
+                        {s.supplier_name ?? s.name ?? `NCC ${i + 1}`}
+                      </p>
+                      <div className="h-1.5 rounded-full mt-1" style={{ background: 'var(--bg-elevated)' }}>
+                        <div className="h-full rounded-full"
+                             style={{ width: `${Math.min(rate, 100)}%`,
+                                      background: rate >= 90 ? '#10B981' : rate >= 70 ? '#F59E0B' : '#EF4444' }} />
+                      </div>
+                    </div>
+                    <span className="text-xs font-bold shrink-0"
+                          style={{ color: rate >= 90 ? '#10B981' : rate >= 70 ? '#F59E0B' : '#EF4444' }}>
+                      {rate.toFixed(0)}%
+                    </span>
+                  </div>
+                )
+              })}
+              {!(supplierData.suppliers ?? supplierData.data)?.length && (
+                <p className="text-xs text-center py-2" style={{ color: 'var(--text-tertiary)' }}>Chưa có dữ liệu</p>
+              )}
+            </div>
+          ) : (
+            <p className="text-xs text-center py-2" style={{ color: 'var(--text-tertiary)' }}>Không tải được dữ liệu</p>
+          )}
+        </MiniWidget>
+
+        <MiniWidget title="Gợi ý đặt hàng thông minh" icon="add_shopping_cart" href="/inventory" loading={invAiLoading}>
+          {invAiData ? (
+            <div className="space-y-2">
+              {(invAiData.reorder_suggestions ?? invAiData.suggestions ?? invAiData.data ?? []).slice(0, 5).map((item, i) => (
+                <div key={i} className="flex items-center gap-2.5 px-3 py-2 rounded-lg"
+                     style={{ background: 'var(--bg-elevated)' }}>
+                  <span className="icon text-sm shrink-0"
+                        style={{ color: (item.urgency ?? item.priority) === 'high' ? '#EF4444' : '#F59E0B' }}>
+                    {(item.urgency ?? item.priority) === 'high' ? 'warning' : 'info'}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium truncate" style={{ color: 'var(--text-primary)' }}>
+                      {item.product_name ?? item.name ?? `Sản phẩm ${i + 1}`}
+                    </p>
+                    {item.reorder_qty != null && (
+                      <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                        Đặt thêm: {item.reorder_qty} {item.unit ?? 'đơn vị'}
+                      </p>
+                    )}
+                  </div>
+                  {item.days_left != null && (
+                    <span className="text-xs font-bold shrink-0"
+                          style={{ color: item.days_left <= 7 ? '#EF4444' : '#F59E0B' }}>
+                      {item.days_left}d
+                    </span>
+                  )}
+                </div>
+              ))}
+              {!(invAiData.reorder_suggestions ?? invAiData.suggestions ?? invAiData.data)?.length && (
+                <p className="text-xs text-center py-2" style={{ color: 'var(--text-tertiary)' }}>Tồn kho ổn định</p>
+              )}
+            </div>
+          ) : (
+            <p className="text-xs text-center py-2" style={{ color: 'var(--text-tertiary)' }}>Không tải được dữ liệu</p>
+          )}
+        </MiniWidget>
+      </div>
     </div>
   )
 }
@@ -2062,6 +2382,16 @@ export default function DashboardPage() {
         revenueByChannel: res.revenueByChannel?.length ? res.revenueByChannel : mock.revenueByChannel,
         topProducts:      res.topProducts?.length      ? res.topProducts      : mock.topProducts,
       }
+      // Tính sparklines từ revenueByDay thực — lấy 7 điểm cuối
+      const last7 = merged.revenueByDay.slice(-7)
+      if (last7.length > 0) {
+        merged.sparklines = {
+          ...mock.sparklines,
+          revenue: last7.map(d => ({ v: Number(d.netRevenue) })),
+          orders:  last7.map(d => ({ v: Number(d.orderCount) })),
+          profit:  last7.map(d => ({ v: Number(d.grossProfit) })),
+        }
+      }
       setData(merged)
       setIsMock(false)
     } catch {
@@ -2093,9 +2423,9 @@ export default function DashboardPage() {
     getTodayVsYesterday()
       .then(setTvy)
       .catch(() => setTvy({
-        today:     { revenue: 12_500_000, orders: 43, profit: 3_800_000 },
-        yesterday: { revenue: 10_200_000, orders: 38, profit: 3_100_000 },
-        revenuePct: 22.5, ordersPct: 13.2,
+        today:     { revenue: 0, orders: 0, profit: 0 },
+        yesterday: { revenue: 0, orders: 0, profit: 0 },
+        revenuePct: 0, ordersPct: 0,
       }))
   }, [])
 

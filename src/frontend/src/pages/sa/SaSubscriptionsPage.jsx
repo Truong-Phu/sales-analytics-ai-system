@@ -16,26 +16,47 @@ const STATUS_CFG = {
   cancelled: { bg: '#F1F5F9', color: '#475569' },
 }
 
+// Cấu hình mặc định theo gói — SuperAdmin vẫn có thể override
+const PLAN_DEFAULTS = {
+  free:       { maxChannels: 1,  maxUsers: 3,  price: 0,       label: 'Free',       features: ['1 kênh bán hàng', '3 người dùng', 'Import CSV/Excel', 'Dashboard cơ bản'] },
+  pro:        { maxChannels: 5,  maxUsers: 20, price: 499000,  label: 'Pro',        features: ['5 kênh bán hàng', '20 người dùng', 'AI dự báo & anomaly', 'Báo cáo nâng cao', 'Export PDF'] },
+  enterprise: { maxChannels: -1, maxUsers: -1, price: -1,      label: 'Enterprise', features: ['Kênh không giới hạn', 'Người dùng không giới hạn', 'Tất cả tính năng AI', 'SLA ưu tiên', 'Tùy chỉnh theo yêu cầu'] },
+}
+
 function EditModal({ sub, onClose, onSaved }) {
   const [form, setForm] = useState({
-    plan:       sub.plan       ?? 'free',
-    status:     sub.status     ?? 'active',
-    expiresAt:  fmtDateInput(sub.expiresAt),
-    maxChannels: sub.maxChannels ?? 2,
-    maxUsers:   sub.maxUsers   ?? 3,
+    plan:        sub.plan        ?? 'free',
+    status:      sub.status      ?? 'active',
+    expiresAt:   fmtDateInput(sub.expiresAt),
+    maxChannels: sub.maxChannels ?? PLAN_DEFAULTS.free.maxChannels,
+    maxUsers:    sub.maxUsers    ?? PLAN_DEFAULTS.free.maxUsers,
   })
   const [loading, setLoading] = useState(false)
   const [error,   setError]   = useState('')
+
+  // Khi thay đổi gói → tự động điền giá trị mặc định
+  const handlePlanChange = (plan) => {
+    const def = PLAN_DEFAULTS[plan] ?? PLAN_DEFAULTS.free
+    setForm(f => ({
+      ...f,
+      plan,
+      maxChannels: def.maxChannels,
+      maxUsers:    def.maxUsers,
+    }))
+  }
+
+  const isEnterprise = form.plan === 'enterprise'
+  const planDef = PLAN_DEFAULTS[form.plan] ?? PLAN_DEFAULTS.free
 
   const save = async () => {
     setLoading(true); setError('')
     try {
       await axios.put(`/api/admin/sa/subscriptions/${sub.id}`, {
-        plan:       form.plan,
-        status:     form.status,
-        expiresAt:  form.expiresAt ? new Date(form.expiresAt).toISOString() : null,
-        maxChannels: form.maxChannels === '' ? null : Number(form.maxChannels),
-        maxUsers:   form.maxUsers    === '' ? null : Number(form.maxUsers),
+        plan:        form.plan,
+        status:      form.status,
+        expiresAt:   form.expiresAt ? new Date(form.expiresAt).toISOString() : null,
+        maxChannels: isEnterprise ? -1 : (form.maxChannels === '' ? null : Number(form.maxChannels)),
+        maxUsers:    isEnterprise ? -1 : (form.maxUsers    === '' ? null : Number(form.maxUsers)),
       })
       onSaved()
     } catch (err) {
@@ -52,7 +73,7 @@ function EditModal({ sub, onClose, onSaved }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center"
       style={{ background: 'rgba(0,0,0,0.5)' }}>
-      <div className="rounded-xl shadow-2xl w-full max-w-md mx-4 overflow-hidden"
+      <div className="rounded-xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden"
         style={{ background: 'var(--bg-surface)' }}>
         <div className="flex items-center justify-between px-5 py-4"
           style={{ borderBottom: '1px solid var(--border)' }}>
@@ -68,8 +89,10 @@ function EditModal({ sub, onClose, onSaved }) {
             <div>
               <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-tertiary)' }}>Gói</label>
               <select className={inp} style={inpStyle}
-                value={form.plan} onChange={e => setForm(f => ({ ...f, plan: e.target.value }))}>
-                {['free', 'pro', 'enterprise'].map(p => <option key={p} value={p}>{p}</option>)}
+                value={form.plan} onChange={e => handlePlanChange(e.target.value)}>
+                {['free', 'pro', 'enterprise'].map(p => (
+                  <option key={p} value={p}>{PLAN_DEFAULTS[p].label}</option>
+                ))}
               </select>
             </div>
             <div>
@@ -81,6 +104,20 @@ function EditModal({ sub, onClose, onSaved }) {
             </div>
           </div>
 
+          {/* Mô tả gói — features list */}
+          <div className="px-3 py-2.5 rounded-lg text-xs space-y-1"
+            style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)' }}>
+            <p className="font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>
+              Gói {planDef.label} — {planDef.price === -1 ? 'Liên hệ' : planDef.price === 0 ? 'Miễn phí' : `${planDef.price.toLocaleString('vi-VN')} VND/tháng`}
+            </p>
+            {planDef.features.map(f => (
+              <div key={f} className="flex items-center gap-1.5" style={{ color: 'var(--text-tertiary)' }}>
+                <span className="icon text-xs" style={{ color: '#10B981' }}>check_circle</span>
+                {f}
+              </div>
+            ))}
+          </div>
+
           <div>
             <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-tertiary)' }}>Hết hạn</label>
             <input type="date" className={inp} style={inpStyle}
@@ -90,16 +127,30 @@ function EditModal({ sub, onClose, onSaved }) {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-tertiary)' }}>Tối đa Kênh (-1=∞)</label>
-              <input type="number" className={inp} style={inpStyle}
-                value={form.maxChannels}
-                onChange={e => setForm(f => ({ ...f, maxChannels: e.target.value }))} />
+              <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-tertiary)' }}>
+                Tối đa Kênh
+                {!isEnterprise && <span className="ml-1 opacity-60">(mặc định: {planDef.maxChannels})</span>}
+              </label>
+              {isEnterprise ? (
+                <div className={`${inp} opacity-60`} style={{ ...inpStyle, cursor: 'not-allowed' }}>Không giới hạn (∞)</div>
+              ) : (
+                <input type="number" className={inp} style={inpStyle}
+                  value={form.maxChannels}
+                  onChange={e => setForm(f => ({ ...f, maxChannels: e.target.value }))} />
+              )}
             </div>
             <div>
-              <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-tertiary)' }}>Tối đa Người dùng (-1=∞)</label>
-              <input type="number" className={inp} style={inpStyle}
-                value={form.maxUsers}
-                onChange={e => setForm(f => ({ ...f, maxUsers: e.target.value }))} />
+              <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-tertiary)' }}>
+                Tối đa Người dùng
+                {!isEnterprise && <span className="ml-1 opacity-60">(mặc định: {planDef.maxUsers})</span>}
+              </label>
+              {isEnterprise ? (
+                <div className={`${inp} opacity-60`} style={{ ...inpStyle, cursor: 'not-allowed' }}>Không giới hạn (∞)</div>
+              ) : (
+                <input type="number" className={inp} style={inpStyle}
+                  value={form.maxUsers}
+                  onChange={e => setForm(f => ({ ...f, maxUsers: e.target.value }))} />
+              )}
             </div>
           </div>
 
