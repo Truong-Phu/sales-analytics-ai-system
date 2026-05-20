@@ -150,6 +150,8 @@ function NotificationBell() {
   const [unreadCount, setUnreadCount] = useState(0)
   const ref = useRef(null)
 
+  const fetchedRef = useRef(false)
+
   const fetchNotifs = useCallback(async () => {
     try {
       const res = await axios.get('/api/notifications?limit=5')
@@ -159,7 +161,11 @@ function NotificationBell() {
   }, [])
 
   useEffect(() => {
-    fetchNotifs()
+    // chặn StrictMode double-invoke: chỉ fetch ngay lần đầu tiên
+    if (!fetchedRef.current) {
+      fetchedRef.current = true
+      fetchNotifs()
+    }
     const id = setInterval(fetchNotifs, 30_000)
     return () => clearInterval(id)
   }, [fetchNotifs])

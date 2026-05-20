@@ -1,4 +1,4 @@
-import { createContext, useState, useEffect, useCallback } from 'react'
+import { createContext, useState, useEffect, useCallback, useRef } from 'react'
 import api from '../api/axios'
 
 export const AuthContext = createContext(null)
@@ -24,6 +24,7 @@ export function AuthProvider({ children }) {
   const [user, setUser]       = useState(null)   // { id, name, email, role, lang }
   const [loading, setLoading] = useState(true)   // kiểm tra token lúc khởi động
   const [plan, setPlan]       = useState('free') // 'free' | 'pro' | 'enterprise'
+  const initRef               = useRef(false)    // chặn StrictMode double-invoke
 
   // Lấy thông tin gói dịch vụ từ backend (không block render)
   const fetchPlan = useCallback(async () => {
@@ -35,8 +36,10 @@ export function AuthProvider({ children }) {
     }
   }, [])
 
-  // Khôi phục session từ token đang có
+  // Khôi phục session từ token đang có — chạy đúng 1 lần dù StrictMode double-invoke
   useEffect(() => {
+    if (initRef.current) return
+    initRef.current = true
     const token = sessionStorage.getItem('access_token')
     if (token) {
       const payload = parseJwt(token)
