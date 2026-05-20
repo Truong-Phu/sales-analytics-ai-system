@@ -484,16 +484,7 @@ function DrillDownModal({ title, subtitle, columns, data, onClose, onExport }) {
 }
 
 // ── AI Insights Card — tổng hợp insights từ forecast + anomaly + RFM ─────────
-function AiInsightsCard() {
-  const [insights, setInsights] = useState(null)
-  const [loading,  setLoading]  = useState(true)
-
-  useEffect(() => {
-    getInsights()
-      .then(d => setInsights(d))
-      .catch(() => setInsights(null))
-      .finally(() => setLoading(false))
-  }, [])
+function AiInsightsCard({ insights = null, loading = false }) {
 
   const ICONS = ['trending_up', 'warning', 'group', 'analytics', 'lightbulb']
   const COLORS = ['#6366F1', '#F59E0B', '#10B981', '#3B82F6', '#8B5CF6']
@@ -546,8 +537,10 @@ function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd 
   const { t }  = useTranslation()
   const kpi    = data.kpi
   const sp     = data.sparklines || {}
-  const lbData    = wd.leaderboard ?? null
-  const lbLoading = wl.leaderboard ?? false
+  const lbData       = wd.leaderboard ?? null
+  const lbLoading    = wl.leaderboard ?? false
+  const insData      = wd.insights   ?? null
+  const insLoading   = wl.insights   ?? false
 
   // Dữ liệu chart gộp kỳ này + kỳ trước (index-based)
   const trendData = data.revenueByDay.map((d, i) => {
@@ -634,7 +627,7 @@ function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd 
       </div>
 
       {/* AI Insights — chỉ hiện cho Owner/Manager/DataIT/SuperAdmin */}
-      {canViewAnalytics && <AiInsightsCard />}
+      {canViewAnalytics && <AiInsightsCard insights={insData} loading={insLoading} />}
 
       {/* Hero 2/3 + Donut 1/3 */}
       <div className="grid grid-cols-12 gap-4">
@@ -1265,7 +1258,7 @@ function TabCustomer({ data, wd = {}, wl = {} }) {
       )}
 
       {/* Phản hồi mạng xã hội (Facebook) */}
-      <SocialFeedbackSection />
+      <SocialFeedbackSection data={sentData} loading={sentLoading} />
     </div>
   )
 }
@@ -1274,18 +1267,7 @@ function TabCustomer({ data, wd = {}, wl = {} }) {
 const SENTIMENT_COLORS = { positive: '#10B981', negative: '#EF4444', neutral: '#64748B' }
 const SENTIMENT_BG     = { positive: 'rgba(16,185,129,0.10)', negative: 'rgba(239,68,68,0.10)', neutral: 'rgba(100,116,139,0.10)' }
 
-function SocialFeedbackSection() {
-  const [data,    setData]    = useState(null)
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    import('../../api/axios').then(m => {
-      m.default.get('/api/ai/feedback-summary')
-        .then(r => setData(r.data))
-        .catch(() => setData(null))
-        .finally(() => setLoading(false))
-    })
-  }, [])
+function SocialFeedbackSection({ data = null, loading = false }) {
 
   if (loading) return (
     <div className="lcard p-5 flex justify-center py-10">
@@ -2411,8 +2393,10 @@ export default function DashboardPage() {
   }, [])
 
   useEffect(() => {
-    if (activeTab === 'overview')
+    if (activeTab === 'overview') {
       loadWidget('leaderboard', () => getLeaderboard({ limit: 5 }))
+      loadWidget('insights',    () => getInsights())
+    }
     if (activeTab === 'multichannel')
       loadWidget('attribution', () => getChannelAttribution())
     if (activeTab === 'customer') {
