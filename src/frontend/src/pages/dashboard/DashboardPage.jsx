@@ -1132,7 +1132,7 @@ function TabMultiChannel({ data, wd = {}, wl = {} }) {
 // ── Tab: 4 — Customer Analytics ───────────────────────────────────────────────
 function TabCustomer({ data, wd = {}, wl = {} }) {
   const { t }        = useTranslation()
-  const maxFunnel    = data.funnel[0].value
+  const maxFunnel    = data?.funnel?.[0]?.value ?? 1
   const [drillSeg,      setDrillSeg]      = useState(null)
   const [drillCusts,    setDrillCusts]    = useState([])
   const [drillCustLoad, setDrillCustLoad] = useState(false)
@@ -1191,9 +1191,9 @@ function TabCustomer({ data, wd = {}, wl = {} }) {
         <div className="lcard p-5 col-span-12 lg:col-span-6">
           <SectionTitle>{t('dashboard.chart.funnel')}</SectionTitle>
           <div className="space-y-2 mt-2">
-            {data.funnel.map((stage, i) => {
+            {(data.funnel ?? []).map((stage, i) => {
               const pct      = (stage.value / maxFunnel) * 100
-              const convRate = i === 0 ? 100 : (stage.value / data.funnel[i - 1].value * 100).toFixed(1)
+              const convRate = i === 0 ? 100 : (stage.value / (data.funnel[i - 1]?.value || 1) * 100).toFixed(1)
               const dropPct  = i === 0 ? null : (100 - parseFloat(convRate)).toFixed(1)
               return (
                 <div key={i}>
@@ -1230,7 +1230,7 @@ function TabCustomer({ data, wd = {}, wl = {} }) {
                 tickFormatter={v => fmtM(v)} />
               <ZAxis dataKey="value" range={[40, 280]} />
               <Tooltip cursor={{ strokeDasharray: '3 3' }} formatter={(v, name) => name === 'CLV' ? fmtM(v) : v} />
-              {data.customerSegments.map((seg, i) => (
+              {(data.customerSegments ?? []).map((seg, i) => (
                 <Scatter key={i} name={seg.name} data={[seg]} fill={CHART_COLORS[i]} />
               ))}
               <Legend wrapperStyle={{ fontSize: 11 }} />
@@ -1242,7 +1242,7 @@ function TabCustomer({ data, wd = {}, wl = {} }) {
       <div className="lcard p-5">
         <SectionTitle>{t('dashboard.chart.heatmap')}</SectionTitle>
         <div className="overflow-x-auto">
-          <HeatmapGrid data={data.heatmap} />
+          <HeatmapGrid data={data.heatmap ?? []} />
         </div>
       </div>
 
@@ -1400,14 +1400,14 @@ function SocialFeedbackSection({ data = null, loading = false }) {
         <MiniWidget title="Phân bổ địa lý khách hàng" icon="location_on" href="/geo" loading={geoLoading}>
           {geoData ? (
             <div className="space-y-2">
-              {(geoData.provinces ?? geoData.top_provinces ?? geoData.data ?? []).slice(0, 5).map((p, i) => {
-                const maxRev = (geoData.provinces ?? geoData.top_provinces ?? geoData.data ?? [])[0]
-                const rev    = Number(p.revenue ?? p.total_revenue ?? 0)
-                const maxR   = Number(maxRev?.revenue ?? maxRev?.total_revenue ?? 1)
+              {(geoData.points ?? []).slice(0, 5).map((p, i) => {
+                const maxRev = geoData.points?.[0]
+                const rev    = Number(p.revenue ?? 0)
+                const maxR   = Number(maxRev?.revenue ?? 1)
                 return (
                   <div key={i}>
                     <div className="flex justify-between text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>
-                      <span>{p.province ?? p.name ?? '—'}</span>
+                      <span>{p.province ?? '—'}</span>
                       <span className="font-mono">{fmtM(rev)}</span>
                     </div>
                     <div className="h-1.5 rounded-full" style={{ background: 'var(--bg-elevated)' }}>
@@ -1416,7 +1416,7 @@ function SocialFeedbackSection({ data = null, loading = false }) {
                   </div>
                 )
               })}
-              {!(geoData.provinces ?? geoData.top_provinces ?? geoData.data)?.length && (
+              {!(geoData.points?.length) && (
                 <p className="text-xs text-center py-2" style={{ color: 'var(--text-tertiary)' }}>Chưa có dữ liệu</p>
               )}
             </div>
@@ -1462,11 +1462,11 @@ function SocialFeedbackSection({ data = null, loading = false }) {
   )
 }
 
-function HeatmapGrid({ data }) {
+function HeatmapGrid({ data = [] }) {
   const { t }   = useTranslation()
   const days    = ['T2','T3','T4','T5','T6','T7','CN']
   const hours   = [...new Set(data.map(d => d.hour))].sort()
-  const maxOrders = Math.max(...data.map(d => d.orders))
+  const maxOrders = data.length ? Math.max(...data.map(d => d.orders)) : 0
 
   return (
     <div>
