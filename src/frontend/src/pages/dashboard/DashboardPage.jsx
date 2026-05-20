@@ -1145,6 +1145,34 @@ function buildSegmentCardsFromRfm(rfm) {
   ]
 }
 
+// Map màu cố định cho từng phân khúc RFM
+const RFM_SEG_COLORS = {
+  'VIP':        '#F59E0B',
+  'Champions':  '#8B5CF6',
+  'Loyal':      '#10B981',
+  'Returning':  '#6366F1',
+  'New':        '#3B82F6',
+  'At Risk':    '#F97316',
+  'Lost':       '#EF4444',
+  'Potential':  '#06B6D4',
+}
+
+// Xây dữ liệu CLV Scatter từ RFM segment_summary thật
+function buildClvScatterFromRfm(rfm) {
+  if (!rfm?.segment_summary) return null
+  const s = rfm.segment_summary
+  return Object.entries(s)
+    .filter(([, v]) => v?.count > 0)
+    .map(([name, v]) => ({
+      name,
+      freq:  Number(v.avg_frequency ?? 0),
+      clv:   Number(v.avg_monetary  ?? 0),
+      value: Number(v.count         ?? 1),
+      color: RFM_SEG_COLORS[name] ?? '#94A3B8',
+    }))
+    .sort((a, b) => b.clv - a.clv)
+}
+
 function TabCustomer({ data, wd = {}, wl = {} }) {
   const { t }        = useTranslation()
   const maxFunnel    = data?.funnel?.[0]?.value ?? 1
@@ -1155,10 +1183,11 @@ function TabCustomer({ data, wd = {}, wl = {} }) {
   const geoLoading = wl.geo       ?? false
   const sentData   = wd.sentiment ?? null
   const sentLoading = wl.sentiment ?? false
-  // Segment cards: ưu tiên RFM thật, fallback mock
-  const rfmData    = wd.rfm ?? null
-  const segCards   = buildSegmentCardsFromRfm(rfmData) ?? data.customerSegmentCards ?? []
-  const totalCusts = rfmData?.total_customers ?? data.totalCustomers ?? 1
+  // Segment cards + CLV scatter: ưu tiên RFM thật, fallback mock
+  const rfmData      = wd.rfm ?? null
+  const segCards     = buildSegmentCardsFromRfm(rfmData) ?? data.customerSegmentCards ?? []
+  const totalCusts   = rfmData?.total_customers ?? data.totalCustomers ?? 1
+  const clvScatter   = buildClvScatterFromRfm(rfmData) ?? data.customerSegments ?? []
 
   const handleDrillSeg = async (seg) => {
     setDrillSeg(seg)
@@ -1241,16 +1270,35 @@ function TabCustomer({ data, wd = {}, wl = {} }) {
 
         <div className="lcard p-5 col-span-12 lg:col-span-6">
           <SectionTitle>{t('dashboard.chart.clv')}</SectionTitle>
-          <ResponsiveContainer width="100%" height={260}>
+          <p className="text-caption mb-2" style={{ color: 'var(--text-tertiary)' }}>
+            X: tần suất mua · Y: CLV trung bình · Kích thước: số khách
+            {rfmData && <span className="ml-2 font-semibold" style={{ color: 'var(--accent-500)' }}>● Dữ liệu thật</span>}
+          </p>
+          <ResponsiveContainer width="100%" height={240}>
             <ScatterChart margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-              <XAxis dataKey="freq" name={t('dashboard.kpi.orders')} tick={{ fontSize: 10, fill: 'var(--text-tertiary)' }} axisLine={false} tickLine={false} />
-              <YAxis dataKey="clv" name="CLV" tick={{ fontSize: 10, fill: 'var(--text-tertiary)' }} axisLine={false} tickLine={false} width={52}
+              <XAxis dataKey="freq" name="Tần suất" label={{ value: 'Số đơn TB', position: 'insideBottom', offset: -2, fontSize: 10, fill: 'var(--text-tertiary)' }}
+                tick={{ fontSize: 10, fill: 'var(--text-tertiary)' }} axisLine={false} tickLine={false} />
+              <YAxis dataKey="clv" name="CLV" tick={{ fontSize: 10, fill: 'var(--text-tertiary)' }} axisLine={false} tickLine={false} width={56}
                 tickFormatter={v => fmtM(v)} />
-              <ZAxis dataKey="value" range={[40, 280]} />
-              <Tooltip cursor={{ strokeDasharray: '3 3' }} formatter={(v, name) => name === 'CLV' ? fmtM(v) : v} />
-              {(data.customerSegments ?? []).map((seg, i) => (
-                <Scatter key={i} name={seg.name} data={[seg]} fill={CHART_COLORS[i]} />
+              <ZAxis dataKey="value" range={[50, 350]} name="Số KH" />
+              <Tooltip
+                cursor={{ strokeDasharray: '3 3' }}
+                content={({ payload }) => {
+                  if (!payload?.length) return null
+                  const d = payload[0].payload
+                  return (
+                    <div className="lcard p-2 text-xs space-y-0.5" style={{ minWidth: 150 }}>
+                      <p className="font-semibold" style={{ color: d.color ?? 'var(--text-primary)' }}>{d.name}</p>
+                      <p>CLV TB: <span className="font-mono">{Number(d.clv).toLocaleString('vi-VN')} ₫</span></p>
+                      <p>Tần suất TB: <span className="font-mono">{Number(d.freq).toFixed(1)} đơn</span></p>
+                      <p>Số KH: <span className="font-mono">{Number(d.value).toLocaleString('vi-VN')}</span></p>
+                    </div>
+                  )
+                }}
+              />
+              {clvScatter.map((seg, i) => (
+                <Scatter key={seg.name ?? i} name={seg.name} data={[seg]} fill={seg.color ?? CHART_COLORS[i % CHART_COLORS.length]} />
               ))}
               <Legend wrapperStyle={{ fontSize: 11 }} />
             </ScatterChart>
