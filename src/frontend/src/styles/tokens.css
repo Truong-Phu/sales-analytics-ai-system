@@ -71,10 +71,17 @@
   --color-info:    #3B82F6;
 
   /* ── Colors: Text ── */
-  --text-primary:   #0F1117;
-  --text-secondary: #4B5563;
-  --text-tertiary:  #9CA3AF;
+  --text-primary:   #0f172a;   /* Heading, số liệu KPI — contrast 19:1 trên white */
+  --text-secondary: #1e293b;   /* Label cột, KPI label — contrast 16:1 */
+  --text-tertiary:  #475569;   /* Mô tả, placeholder — contrast 7:1 */
+  --text-muted:     #64748b;   /* Timestamp, hint — contrast 5:1, đạt AA */
   --text-inverse:   #FFFFFF;
+
+  /* ── Foreground aliases — map về text-* tier tương ứng ── */
+  --foreground:          #0f172a;   /* primary text */
+  --muted-foreground:    #475569;   /* = text-tertiary: đủ contrast cho label phụ */
+  --card-foreground:     #0f172a;
+  --popover-foreground:  #0f172a;
 
   /* ── Colors: Border ── */
   --border:        #E5E7EB;
@@ -154,9 +161,17 @@
   --accent-400: #6EE7B7;
   --accent-500: #34D399;
 
-  --text-primary:   #E8E9F0;
-  --text-secondary: #8B8FA8;
-  --text-tertiary:  #5C6080;
+  /* ── Colors: Text (dark) — đảm bảo contrast trên bg-surface #1A1B23 ── */
+  --text-primary:   #f8fafc;   /* contrast 19:1 trên #1A1B23 */
+  --text-secondary: #e2e8f0;   /* contrast 15:1 — FIX CHÍNH cho KPI label dark mode */
+  --text-tertiary:  #94a3b8;   /* contrast 6:1 */
+  --text-muted:     #64748b;   /* contrast 4.5:1, đạt AA */
+
+  /* ── Foreground aliases dark ── */
+  --foreground:          #f8fafc;   /* primary text */
+  --muted-foreground:    #94a3b8;   /* = text-tertiary dark */
+  --card-foreground:     #f8fafc;
+  --popover-foreground:  #f8fafc;
 
   --border:        #252630;
   --border-strong: #32344A;

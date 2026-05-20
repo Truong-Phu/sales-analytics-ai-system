@@ -54,7 +54,7 @@ export default function AdminLayout() {
           </div>
           <div>
             <div className="text-white text-sm font-semibold leading-tight">Super Admin</div>
-            <div className="text-xs" style={{ color: 'rgba(255,255,255,0.4)' }}>Bảng điều khiển</div>
+            <div className="text-xs" style={{ color: 'rgba(255,255,255,0.60)' }}>Bảng điều khiển</div>
           </div>
         </div>
 
@@ -67,12 +67,12 @@ export default function AdminLayout() {
               end={item.exact}
               className={({ isActive }) =>
                 `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                  isActive ? 'text-white' : 'text-slate-400 hover:text-white hover:bg-white/5'
+                  isActive ? 'text-white' : 'hover:text-white hover:bg-white/5'
                 }`
               }
               style={({ isActive }) => ({
                 background: isActive ? 'rgba(99,102,241,0.18)' : undefined,
-                color:      isActive ? '#A5B4FC' : undefined,
+                color:      isActive ? '#A5B4FC' : 'rgba(255,255,255,0.72)',
               })}>
               <span className="icon text-lg">{item.icon}</span>
               {currentLang === 'vi' ? item.labelVi : item.label}
@@ -86,9 +86,9 @@ export default function AdminLayout() {
           <button
             onClick={() => navigate('/dashboard')}
             className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all"
-            style={{ color: 'rgba(255,255,255,0.45)', background: 'transparent' }}
+            style={{ color: 'rgba(255,255,255,0.60)', background: 'transparent' }}
             onMouseEnter={e => { e.currentTarget.style.color = '#fff'; e.currentTarget.style.background = 'rgba(255,255,255,0.05)' }}
-            onMouseLeave={e => { e.currentTarget.style.color = 'rgba(255,255,255,0.45)'; e.currentTarget.style.background = 'transparent' }}>
+            onMouseLeave={e => { e.currentTarget.style.color = 'rgba(255,255,255,0.60)'; e.currentTarget.style.background = 'transparent' }}>
             <span className="icon text-base">arrow_back</span>
             {currentLang === 'vi' ? 'Về ứng dụng' : 'Back to App'}
           </button>
@@ -99,7 +99,7 @@ export default function AdminLayout() {
             </div>
             <div className="flex-1 min-w-0">
               <div className="text-xs font-medium text-white truncate">{user?.name ?? 'Super Admin'}</div>
-              <div className="text-xs truncate" style={{ color: 'rgba(255,255,255,0.4)' }}>
+              <div className="text-xs truncate" style={{ color: 'rgba(255,255,255,0.60)' }}>
                 {user?.email ?? ''}
               </div>
             </div>

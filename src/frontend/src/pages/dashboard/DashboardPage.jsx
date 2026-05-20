@@ -26,10 +26,12 @@ function relDate(offsetDays) {
 }
 
 function fmtM(v) {
-  if (v >= 1_000_000_000) return `₫${(v / 1_000_000_000).toFixed(1)}B`
-  if (v >= 1_000_000)     return `₫${(v / 1_000_000).toFixed(1)}M`
-  if (v >= 1_000)         return `₫${(v / 1_000).toFixed(0)}K`
-  return `₫${v}`
+  if (v == null || !Number.isFinite(Number(v))) return '₫0'
+  const n = Number(v)
+  if (n >= 1_000_000_000) return `₫${(n / 1_000_000_000).toFixed(1)}B`
+  if (n >= 1_000_000)     return `₫${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1_000)         return `₫${(n / 1_000).toFixed(0)}K`
+  return `₫${n}`
 }
 
 // Xuất CSV đơn giản từ array of objects
@@ -52,7 +54,7 @@ function MiniWidget({ title, icon, href, loading, children }) {
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <span className="icon text-base" style={{ color: 'var(--primary-500)' }}>{icon}</span>
-          <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{title}</span>
+          <span className="text-sm font-semibold text-foreground">{title}</span>
         </div>
         <button onClick={() => navigate(href)}
                 className="flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-lg transition-colors"
@@ -154,12 +156,12 @@ function generateMockData(from, to) {
   ]
   const inventory = inventoryRaw.map(item => ({
     ...item,
-    stockDiffPct: (((item.stock - item.forecast) / item.forecast) * 100).toFixed(1),
+    stockDiffPct: item.forecast > 0 ? (((item.stock - item.forecast) / item.forecast) * 100).toFixed(1) : '0.0',
     daysOfStock:  item.dailySales > 0 ? Math.round(item.stock / item.dailySales) : 999,
   }))
 
   // KPI tồn kho
-  const avgDIO         = Math.round(inventory.reduce((s, i) => s + i.daysOfStock, 0) / inventory.length)
+  const avgDIO         = inventory.length > 0 ? Math.round(inventory.reduce((s, i) => s + i.daysOfStock, 0) / inventory.length) : 0
   const overstockItems = inventory.filter(i => i.stock > i.forecast * 1.3).length
   const stockoutItems  = inventory.filter(i => i.stock < i.dailySales * 7).length
   const overstockRate  = ((overstockItems / inventory.length) * 100).toFixed(1)
@@ -178,11 +180,11 @@ function generateMockData(from, to) {
   return {
     kpi: {
       totalRevenue, totalProfit, totalOrders,
-      avgOrderValue:      Math.round(totalRevenue / totalOrders),
+      avgOrderValue:      totalOrders > 0 ? Math.round(totalRevenue / totalOrders) : 0,
       conversionRate:     3.8 + Math.random() * 1.2,
       newCustomers,
       retentionRate,
-      roi:                ((totalProfit / (totalRevenue * 0.25)) * 100).toFixed(1),
+      roi:                totalRevenue > 0 ? ((totalProfit / (totalRevenue * 0.25)) * 100).toFixed(1) : '0.0',
       revenueGrowthPct:   12.5,
       ordersGrowthPct:    8.3,
       customersGrowthPct: 5.1,
@@ -203,7 +205,7 @@ function generateMockData(from, to) {
       orders:       Math.round(totalOrders * ch.pct),
       revenuePct:   ch.pct * 100,
       adSpend:      ch.adSpend,
-      roas:         ((totalRevenue * ch.pct) / ch.adSpend).toFixed(1),
+      roas:         ch.adSpend > 0 ? ((totalRevenue * ch.pct) / ch.adSpend).toFixed(1) : '0.0',
       cac:          Math.round(ch.adSpend / (totalOrders * ch.pct * 0.3)),
       growth:       ((-5 + Math.random() * 25)).toFixed(1),
       roasTarget:   4.0,
@@ -245,7 +247,7 @@ function generateMockData(from, to) {
       revenue:    Math.round(ch.pct * 100),
     })),
     inventory,
-    inventoryKpi: { avgDIO, overstockRate, stockoutRate },
+    inventoryKpi: { avgDIO, overstockRate, stockoutRate, returnRate: 3.2, cancelRate: 5.1, deliverySuccess: 91.7 },
     top5Overstock,
     top5LowStock,
     returnByChannel,
@@ -274,7 +276,7 @@ function resolvePreset(p) {
 // ── Shared UI ─────────────────────────────────────────────────────────────────
 function SectionTitle({ children }) {
   return (
-    <h3 className="text-subtitle font-semibold mb-4" style={{ color: 'var(--text-primary)' }}>
+    <h3 className="text-[22px] font-bold mb-4 tracking-tight leading-snug text-foreground">
       {children}
     </h3>
   )
@@ -292,22 +294,23 @@ function Sparkline({ data, color = '#6366F1' }) {
 function KpiCard({ label, value, trend, trendLabel, icon, color = 'var(--primary-500)', sparkData, sparkColor }) {
   const up = trend > 0
   return (
-    <div className="lcard lcard-hover px-4 py-3 cursor-default flex-shrink-0" style={{ minWidth: 160 }}>
-      <div className="flex items-center gap-1.5 mb-1">
-        <span className="icon icon-sm" style={{ color, fontSize: 16 }}>{icon}</span>
-        <span className="text-caption font-medium" style={{ color: 'var(--text-tertiary)' }}>{label}</span>
+    <div className="lcard lcard-hover px-4 py-3 cursor-default w-full">
+      <div className="flex items-center gap-1.5 mb-2">
+        <span className="icon" style={{ color, fontSize: 18 }}>{icon}</span>
+        <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-secondary)', letterSpacing: '0.05em' }}>{label}</span>
       </div>
-      <div className="text-title font-bold font-mono mb-0.5" style={{ color: 'var(--text-primary)' }}>{value}</div>
+      <div className="text-3xl font-bold font-mono mb-1 leading-none text-foreground">{value}</div>
       {trend !== undefined && (
-        <div className="flex items-center gap-1 text-caption mb-1">
+        <div className="flex items-center gap-1 mb-1">
           <span className="icon" style={{ fontSize: 12, color: up ? 'var(--accent-500)' : 'var(--color-error)' }}>
             {up ? 'arrow_upward' : 'arrow_downward'}
           </span>
-          <span style={{ color: up ? 'var(--accent-500)' : 'var(--color-error)' }}>{Math.abs(trend)}%</span>
-          <span style={{ color: 'var(--text-tertiary)' }}>{trendLabel}</span>
+          <span className={`text-sm font-medium ${up ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
+            {Math.abs(trend)}%
+          </span>
+          <span className="text-xs text-muted-foreground">{trendLabel}</span>
         </div>
       )}
-      {/* Sparkline mini bên dưới số liệu */}
       {sparkData && (
         <div className="mt-1" style={{ opacity: 0.75 }}>
           <Sparkline data={sparkData} color={sparkColor || color} />
@@ -495,37 +498,36 @@ function AiInsightsCard({ insights = null, loading = false }) {
     <div className="lcard p-5" style={{ borderLeft: '3px solid var(--primary-500)' }}>
       <div className="flex items-center gap-2 mb-3">
         <span className="icon" style={{ color: 'var(--primary-500)', fontSize: 20 }}>auto_awesome</span>
-        <span className="text-subtitle font-semibold" style={{ color: 'var(--text-primary)' }}>
+        <span className="text-[22px] font-bold text-foreground">
           AI Insights
         </span>
-        <span className="text-caption px-2 py-0.5 rounded-full ml-1"
-          style={{ background: 'var(--primary-100)', color: 'var(--primary-600)', fontSize: 10 }}>
+        <span className="lbadge lbadge-primary ml-1">
           Tự động
         </span>
         {insights?.generated_at && (
-          <span className="text-caption ml-auto" style={{ color: 'var(--text-tertiary)' }}>
+          <span className="text-xs text-muted-foreground ml-auto">
             Cập nhật: {new Date(insights.generated_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
           </span>
         )}
       </div>
 
       {loading ? (
-        <div className="flex items-center gap-2 text-caption" style={{ color: 'var(--text-tertiary)' }}>
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <span className="icon animate-spin" style={{ fontSize: 16 }}>refresh</span>
           Đang tải insights từ AI...
         </div>
       ) : !insights ? (
-        <div className="text-caption" style={{ color: 'var(--text-tertiary)' }}>
+        <div className="text-xs text-muted-foreground">
           AI Service chưa khởi động — chạy start_all.bat để bật đầy đủ tính năng AI.
         </div>
       ) : (
         <ul className="space-y-2">
           {(insights.insights || []).map((text, i) => (
-            <li key={i} className="flex items-start gap-2.5 text-body">
+            <li key={i} className="flex items-start gap-2.5 text-sm">
               <span className="icon shrink-0 mt-0.5" style={{ fontSize: 16, color: COLORS[i % COLORS.length] }}>
                 {ICONS[i % ICONS.length]}
               </span>
-              <span style={{ color: 'var(--text-secondary)' }}>{text}</span>
+              <span className="text-foreground">{text}</span>
             </li>
           ))}
         </ul>
@@ -558,8 +560,8 @@ function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd 
 
   return (
     <div className="space-y-5">
-      {/* KPI strip — thêm Khách hàng mới + Tỷ lệ giữ chân, mỗi card có sparkline */}
-      <div className="flex gap-3 overflow-x-auto pb-1 scrollbar-none">
+      {/* KPI strip — 8 cards trải đều màn hình */}
+      <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-3">
         <KpiCard
           label={t('dashboard.kpi.revenue')}
           value={fmtM(kpi.totalRevenue)}
@@ -961,7 +963,7 @@ function TabSales({ data, compareMode, prevData, from, to }) {
             return (
               <div key={i}>
                 {dropPct !== null && (
-                  <div className="text-center text-caption py-0.5" style={{ color: '#FCA5A5' }}>
+                  <div className="text-center text-caption py-0.5" style={{ color: 'var(--color-error)' }}>
                     ↓ {dropPct}% rơi rụng
                   </div>
                 )}
@@ -1039,8 +1041,8 @@ function TabMultiChannel({ data, wd = {}, wl = {} }) {
             ))}
             {/* Đường Total tổng tất cả kênh */}
             <Line type="monotone" dataKey="Total" name="Tổng"
-              stroke="#374151" strokeWidth={2.5} strokeDasharray="6 3"
-              dot={{ fill: '#374151', r: 4 }} />
+              stroke="var(--text-secondary)" strokeWidth={2.5} strokeDasharray="6 3"
+              dot={{ fill: 'var(--text-secondary)', r: 4 }} />
           </ComposedChart>
         </ResponsiveContainer>
       </div>
@@ -1123,8 +1125,8 @@ function TabMultiChannel({ data, wd = {}, wl = {} }) {
                       {parseFloat(ch.growth) >= 0 ? '+' : ''}{ch.growth}%
                     </td>
                     <td className="py-2 px-3 text-right font-mono font-bold"
-                      style={{ color: parseFloat(ch.roas) >= 4 ? 'var(--accent-500)' : parseFloat(ch.roas) >= 2 ? '#F59E0B' : 'var(--color-error)' }}>
-                      {ch.roas}x
+                      style={{ color: parseFloat(ch.roas) >= 4 ? 'var(--accent-500)' : parseFloat(ch.roas) >= 2 ? '#F59E0B' : (parseFloat(ch.roas) > 0 ? 'var(--color-error)' : 'var(--text-tertiary)') }}>
+                      {Number.isFinite(parseFloat(ch.roas)) && parseFloat(ch.roas) > 0 ? `${parseFloat(ch.roas).toFixed(1)}x` : '—'}
                     </td>
                     <td className="py-2 px-3 text-right font-mono" style={{ color: 'var(--text-primary)' }}>{ch.orders.toLocaleString('vi-VN')}</td>
                     <td className="py-2 px-3 text-right font-mono" style={{ color: 'var(--text-primary)' }}>{ch.revPct}%</td>
@@ -1249,7 +1251,7 @@ function TabCustomer({ data, wd = {}, wl = {} }) {
       {/* 4 Cards phân khúc KH */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {segCards.map(seg => {
-          const pct = ((seg.count / totalCusts) * 100).toFixed(1)
+          const pct = totalCusts > 0 ? ((seg.count / totalCusts) * 100).toFixed(1) : '0.0'
           return (
             <div key={seg.key}
               className="lcard lcard-hover px-4 py-3 cursor-pointer"
@@ -1259,7 +1261,7 @@ function TabCustomer({ data, wd = {}, wl = {} }) {
                 <span className="icon icon-sm" style={{ color: seg.color, fontSize: 18 }}>{seg.icon}</span>
                 <span className="text-caption font-semibold" style={{ color: 'var(--text-secondary)' }}>{seg.label}</span>
               </div>
-              <div className="text-xl font-bold font-mono" style={{ color: seg.color }}>
+              <div className="text-2xl font-bold font-mono" style={{ color: seg.color }}>
                 {seg.count.toLocaleString('vi-VN')}
               </div>
               <div className="text-caption mt-0.5" style={{ color: 'var(--text-tertiary)' }}>{pct}% tổng KH</div>
@@ -1575,18 +1577,19 @@ function TabMarketing({ data, fbAdsData, wd = {}, wl = {} }) {
   const campData    = wd.campaign ?? null
   const campLoading = wl.campaign ?? false
 
+  const safeRoas = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? n : 0 }
   const comboData = data.revenueByChannel.map(ch => ({
     name:       ch.channelName.split(' ')[0],
     adSpend:    ch.adSpend / 1_000_000,
     revenue:    ch.revenue / 1_000_000,
-    roas:       parseFloat(ch.roas),
+    roas:       safeRoas(ch.roas),
     roasTarget: ch.roasTarget || 4.0,
     cac:        ch.cac,
   }))
 
   // Label ROAS tùy chỉnh hiển thị trực tiếp trên bar
   const RoasLabel = ({ x, y, width, value }) => {
-    if (!value) return null
+    if (!value || !Number.isFinite(value) || value <= 0) return null
     return (
       <text x={x + width / 2} y={y - 5} fill="#F59E0B" fontSize={10} textAnchor="middle" fontWeight="bold">
         {value}x
@@ -1633,13 +1636,13 @@ function TabMarketing({ data, fbAdsData, wd = {}, wl = {} }) {
                 <div className="flex justify-between text-caption mb-1" style={{ color: 'var(--text-secondary)' }}>
                   <span>{ch.name}</span>
                   <span className="font-mono font-bold"
-                    style={{ color: ch.roas >= 4 ? 'var(--accent-500)' : ch.roas >= 2 ? '#F59E0B' : 'var(--color-error)' }}>
-                    {ch.roas}x
+                    style={{ color: ch.roas >= 4 ? 'var(--accent-500)' : ch.roas >= 2 ? '#F59E0B' : (ch.roas > 0 ? 'var(--color-error)' : 'var(--text-tertiary)') }}>
+                    {ch.roas > 0 ? `${ch.roas}x` : '—'}
                   </span>
                 </div>
                 <div className="h-2 rounded-full" style={{ background: 'var(--bg-elevated)' }}>
                   <div className="h-full rounded-full"
-                    style={{ width: `${Math.min(ch.roas / 8 * 100, 100)}%`, background: CHART_COLORS[i] }} />
+                    style={{ width: `${Math.min((ch.roas || 0) / 8 * 100, 100)}%`, background: CHART_COLORS[i] }} />
                 </div>
               </div>
             ))}
@@ -1764,7 +1767,7 @@ function TabMarketing({ data, fbAdsData, wd = {}, wl = {} }) {
                   </div>
                   <div>
                     <p className="text-caption" style={{ color: 'var(--text-tertiary)' }}>{k.label}</p>
-                    <p className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>{k.value}</p>
+                    <p className="text-2xl font-bold text-foreground">{k.value}</p>
                   </div>
                 </div>
               ))}
@@ -1801,12 +1804,12 @@ function TabMarketing({ data, fbAdsData, wd = {}, wl = {} }) {
                       <div className="flex justify-between text-caption mb-1" style={{ color: 'var(--text-secondary)' }}>
                         <span className="truncate max-w-[160px]">{c.campaign}</span>
                         <span className="font-mono font-bold"
-                          style={{ color: c.roas >= 4 ? 'var(--accent-500)' : c.roas >= 2 ? '#F59E0B' : 'var(--color-error)' }}>
-                          {c.roas}x
+                          style={{ color: c.roas >= 4 ? 'var(--accent-500)' : c.roas >= 2 ? '#F59E0B' : (c.roas > 0 ? 'var(--color-error)' : 'var(--text-tertiary)') }}>
+                          {c.roas > 0 ? `${c.roas}x` : '—'}
                         </span>
                       </div>
                       <div className="h-2 rounded-full" style={{ background: 'var(--bg-elevated)' }}>
-                        <div className="h-full rounded-full" style={{ width: `${Math.min(c.roas / 8 * 100, 100)}%`, background: CHART_COLORS[i % CHART_COLORS.length] }} />
+                        <div className="h-full rounded-full" style={{ width: `${Math.min((c.roas || 0) / 8 * 100, 100)}%`, background: CHART_COLORS[i % CHART_COLORS.length] }} />
                       </div>
                     </div>
                   ))}
@@ -1910,7 +1913,7 @@ function TabWebsite({ from, to, webData }) {
             </div>
             <div>
               <p className="text-caption" style={{ color: 'var(--text-tertiary)' }}>{k.label}</p>
-              <p className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>{k.value}</p>
+              <p className="text-2xl font-bold text-foreground">{k.value}</p>
             </div>
           </div>
         ))}
@@ -2040,8 +2043,8 @@ function TabInventory({ data, wd = {}, wl = {} }) {
 
   return (
     <div className="space-y-5">
-      {/* KPI strip mở rộng */}
-      <div className="flex gap-3 overflow-x-auto pb-1 scrollbar-none">
+      {/* KPI strip mở rộng — 7 cards trải đều màn hình */}
+      <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-3">
         {invKpis.map((k, i) => (
           <KpiCard
             key={i}
@@ -2427,9 +2430,9 @@ export default function DashboardPage() {
           ...mock.inventoryKpi,
           ...(invData?.inventoryKpi ?? {}),
           // Ops KPI từ OLTP orders (ghi đè nếu có)
-          returnRate:      opsData?.returnRate      ?? mock.inventoryKpi?.returnRate,
-          cancelRate:      opsData?.cancelRate      ?? mock.inventoryKpi?.cancelRate,
-          deliverySuccess: opsData?.deliverySuccess ?? mock.inventoryKpi?.deliverySuccess,
+          returnRate:      Number(opsData?.returnRate      ?? mock.inventoryKpi?.returnRate      ?? 0),
+          cancelRate:      Number(opsData?.cancelRate      ?? mock.inventoryKpi?.cancelRate      ?? 0),
+          deliverySuccess: Number(opsData?.deliverySuccess ?? mock.inventoryKpi?.deliverySuccess ?? 0),
         },
         returnByChannel: opsData?.returnByChannel ?? mock.returnByChannel ?? [],
       }
@@ -2526,7 +2529,7 @@ export default function DashboardPage() {
       {/* ── Header bar ── */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
+          <h1 className="text-2xl font-bold text-foreground">
             {t('dashboard.title')}
           </h1>
           <p className="text-caption mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
@@ -2617,7 +2620,7 @@ export default function DashboardPage() {
                     {card.icon}
                   </span>
                 </div>
-                <div className="font-mono text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
+                <div className="font-mono text-2xl font-bold text-foreground">
                   {card.value}
                 </div>
                 <div className="flex items-center gap-1.5 mt-1">
@@ -2639,12 +2642,12 @@ export default function DashboardPage() {
       )}
 
       {/* ── Tab navigation — ẩn tab marketing/website với Staff/Viewer ── */}
-      <div className="flex items-center gap-1 overflow-x-auto scrollbar-none border-b pb-0" style={{ borderColor: 'var(--border)' }}>
+      <div className="flex items-center w-full border-b pb-0" style={{ borderColor: 'var(--border)' }}>
         {TABS.filter(tab => canViewAnalytics || !['marketing', 'website'].includes(tab.key)).map(tab => (
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
-            className="flex items-center gap-1.5 px-4 py-2.5 text-body font-medium whitespace-nowrap border-b-2 transition-all shrink-0"
+            className="flex flex-1 items-center justify-center gap-1.5 px-2 py-2.5 text-body font-medium whitespace-nowrap border-b-2 transition-all"
             style={{
               borderColor:  activeTab === tab.key ? 'var(--primary-500)' : 'transparent',
               color:        activeTab === tab.key ? 'var(--primary-600)' : 'var(--text-secondary)',
