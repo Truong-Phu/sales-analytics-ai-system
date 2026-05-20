@@ -325,4 +325,185 @@ public class DashboardService
         }
         return result;
     }
+
+    // ── Monthly revenue by channel (DW fact_sales) ──────────────────────────
+
+    public async Task<List<object>> GetMonthlyByChannelAsync(
+        DateOnly from, DateOnly to, Guid? companyId)
+    {
+        await using var conn = new NpgsqlConnection(_connStr);
+        await conn.OpenAsync();
+
+        // Lấy tất cả kênh
+        var channelSql = """
+            SELECT DISTINCT dc.channel_name
+            FROM dw.fact_sales fs
+            JOIN dw.dim_channel dc ON fs.channel_key = dc.channel_key
+            JOIN dw.dim_date    dd ON fs.date_key    = dd.date_key
+            WHERE dd.full_date BETWEEN @from AND @to
+              AND (@companyId IS NULL OR fs.company_id = @companyId::uuid)
+            ORDER BY dc.channel_name
+            """;
+        await using var chCmd = new NpgsqlCommand(channelSql, conn);
+        chCmd.Parameters.AddWithValue("from", from.ToDateTime(TimeOnly.MinValue));
+        chCmd.Parameters.AddWithValue("to",   to.ToDateTime(TimeOnly.MinValue));
+        chCmd.Parameters.Add(new NpgsqlParameter("companyId", NpgsqlDbType.Text) { Value = (object?)companyId?.ToString() ?? DBNull.Value });
+        var channels = new List<string>();
+        await using (var r = await chCmd.ExecuteReaderAsync())
+            while (await r.ReadAsync()) channels.Add(r.GetString(0));
+
+        // Lấy doanh thu theo tháng × kênh
+        var sql = """
+            SELECT
+                TO_CHAR(dd.full_date, 'YYYY-MM') AS month_key,
+                dc.channel_name,
+                SUM(fs.net_revenue)::bigint AS revenue
+            FROM dw.fact_sales fs
+            JOIN dw.dim_date    dd ON fs.date_key    = dd.date_key
+            JOIN dw.dim_channel dc ON fs.channel_key = dc.channel_key
+            WHERE dd.full_date BETWEEN @from AND @to
+              AND (@companyId IS NULL OR fs.company_id = @companyId::uuid)
+            GROUP BY month_key, dc.channel_name
+            ORDER BY month_key, dc.channel_name
+            """;
+        await using var cmd = new NpgsqlCommand(sql, conn);
+        cmd.Parameters.AddWithValue("from", from.ToDateTime(TimeOnly.MinValue));
+        cmd.Parameters.AddWithValue("to",   to.ToDateTime(TimeOnly.MinValue));
+        cmd.Parameters.Add(new NpgsqlParameter("companyId", NpgsqlDbType.Text) { Value = (object?)companyId?.ToString() ?? DBNull.Value });
+
+        // Pivot: month_key → { channelName: revenue }
+        var pivot = new Dictionary<string, Dictionary<string, long>>();
+        await using (var reader = await cmd.ExecuteReaderAsync())
+        {
+            while (await reader.ReadAsync())
+            {
+                var mk  = reader.GetString(0);
+                var ch  = reader.GetString(1);
+                var rev = reader.GetInt64(2);
+                if (!pivot.ContainsKey(mk)) pivot[mk] = new Dictionary<string, long>();
+                pivot[mk][ch] = rev;
+            }
+        }
+
+        // Tên tháng tiếng Việt viết tắt: "2024-01" → "T1/24"
+        static string MonthLabel(string mk)
+        {
+            var parts = mk.Split('-');
+            return $"T{int.Parse(parts[1])}/{parts[0][2..]}";
+        }
+
+        var result = new List<object>();
+        foreach (var (mk, chMap) in pivot.OrderBy(x => x.Key))
+        {
+            var row = new Dictionary<string, object> { ["month"] = MonthLabel(mk) };
+            long total = 0;
+            foreach (var ch in channels)
+            {
+                var rev = chMap.GetValueOrDefault(ch, 0L);
+                row[ch] = rev;
+                total  += rev;
+            }
+            row["Total"] = total;
+            result.Add(row);
+        }
+        return result;
+    }
+
+    // ── Order heatmap (OLTP orders — theo giờ x thứ trong tuần) ─────────────
+
+    private static readonly string[] _dowVi = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
+
+    public async Task<List<object>> GetOrderHeatmapAsync(
+        DateOnly from, DateOnly to, string? channel, Guid? companyId)
+    {
+        await using var conn = new NpgsqlConnection(_connStr);
+        await conn.OpenAsync();
+
+        // Query OLTP orders theo giờ (làm tròn 2h) × thứ trong tuần (giờ VN)
+        var sql = """
+            SELECT
+                EXTRACT(DOW  FROM order_date AT TIME ZONE 'Asia/Ho_Chi_Minh')::int           AS dow,
+                (EXTRACT(HOUR FROM order_date AT TIME ZONE 'Asia/Ho_Chi_Minh')::int / 2) * 2 AS hour_slot,
+                COUNT(*)::int AS order_count
+            FROM public.orders o
+            LEFT JOIN public.sales_channels sc ON o.channel_id = sc.channel_id
+            WHERE o.order_date >= @from
+              AND o.order_date <  @to
+              AND (@companyId IS NULL OR o.company_id = @companyId::uuid)
+              AND (@channel   IS NULL OR sc.channel_name ILIKE '%' || @channel || '%')
+            GROUP BY dow, hour_slot
+            ORDER BY dow, hour_slot
+            """;
+
+        await using var cmd = new NpgsqlCommand(sql, conn);
+        cmd.Parameters.AddWithValue("from", from.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc));
+        cmd.Parameters.AddWithValue("to",   to.AddDays(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc));
+        cmd.Parameters.Add(new NpgsqlParameter("companyId", NpgsqlDbType.Text) { Value = (object?)companyId?.ToString() ?? DBNull.Value });
+        cmd.Parameters.Add(new NpgsqlParameter("channel",   NpgsqlDbType.Text) { Value = (object?)channel   ?? DBNull.Value });
+
+        var result = new List<object>();
+        await using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            int dow      = reader.GetInt32(0);
+            int hourSlot = reader.GetInt32(1);
+            int count    = reader.GetInt32(2);
+            result.Add(new
+            {
+                day    = _dowVi[dow],
+                hour   = $"{hourSlot}:00",
+                orders = count,
+            });
+        }
+        return result;
+    }
+
+    // ── Order status funnel (OLTP orders) ────────────────────────────────────
+
+    public async Task<List<object>> GetOrderFunnelAsync(
+        DateOnly from, DateOnly to, string? channel, Guid? companyId)
+    {
+        await using var conn = new NpgsqlConnection(_connStr);
+        await conn.OpenAsync();
+
+        var sql = """
+            SELECT status, COUNT(*)::int AS cnt
+            FROM public.orders o
+            LEFT JOIN public.sales_channels sc ON o.channel_id = sc.channel_id
+            WHERE o.order_date >= @from
+              AND o.order_date <  @to
+              AND (@companyId IS NULL OR o.company_id = @companyId::uuid)
+              AND (@channel   IS NULL OR sc.channel_name ILIKE '%' || @channel || '%')
+            GROUP BY status
+            """;
+
+        await using var cmd = new NpgsqlCommand(sql, conn);
+        cmd.Parameters.AddWithValue("from", from.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc));
+        cmd.Parameters.AddWithValue("to",   to.AddDays(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc));
+        cmd.Parameters.Add(new NpgsqlParameter("companyId", NpgsqlDbType.Text) { Value = (object?)companyId?.ToString() ?? DBNull.Value });
+        cmd.Parameters.Add(new NpgsqlParameter("channel",   NpgsqlDbType.Text) { Value = (object?)channel   ?? DBNull.Value });
+
+        var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        await using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+            counts[reader.GetString(0)] = reader.GetInt32(1);
+
+        int total    = counts.Values.Sum();
+        int confirmed = counts.GetValueOrDefault("CONFIRMED") + counts.GetValueOrDefault("SHIPPING")
+                      + counts.GetValueOrDefault("DELIVERED") + counts.GetValueOrDefault("RETURNED");
+        int shipping  = counts.GetValueOrDefault("SHIPPING")  + counts.GetValueOrDefault("DELIVERED")
+                      + counts.GetValueOrDefault("RETURNED");
+        int delivered = counts.GetValueOrDefault("DELIVERED");
+        int returned  = counts.GetValueOrDefault("RETURNED");
+        int cancelled = counts.GetValueOrDefault("CANCELLED");
+
+        return new List<object>
+        {
+            new { stage = "Tổng đơn hàng",    value = total },
+            new { stage = "Đã xác nhận",       value = confirmed },
+            new { stage = "Đang giao",         value = shipping },
+            new { stage = "Giao thành công",   value = delivered },
+            new { stage = "Hoàn/Hủy",         value = returned + cancelled },
+        };
+    }
 }

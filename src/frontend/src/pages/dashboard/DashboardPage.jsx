@@ -12,10 +12,11 @@ import {
 import { SkeletonCard } from '../../components/ui/Skeleton'
 import MockToast from '../../components/ui/MockToast'
 import { getDashboard, getTodayVsYesterday, getDrillDownOrders, getDrillDownCustomers,
-         getWebsiteAnalytics, getFbAds } from '../../api/dashboardApi'
+         getWebsiteAnalytics, getFbAds,
+         getOrderHeatmap, getOrderFunnel, getMonthlyByChannel } from '../../api/dashboardApi'
 import { getInsights, getLeaderboard, getGeoDistribution, getChannelAttribution,
          getCampaignPlan, getSupplierPerformance, getFeedbackSummary,
-         getInventoryIntelligence } from '../../api/aiApi'
+         getInventoryIntelligence, getRfmSegments } from '../../api/aiApi'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function relDate(offsetDays) {
@@ -1130,6 +1131,19 @@ function TabMultiChannel({ data, wd = {}, wl = {} }) {
 }
 
 // ── Tab: 4 — Customer Analytics ───────────────────────────────────────────────
+// Tính segment cards từ RFM data thật (AI /customers/segments)
+function buildSegmentCardsFromRfm(rfm) {
+  if (!rfm?.segment_summary) return null
+  const s = rfm.segment_summary
+  const total = rfm.total_customers || 1
+  return [
+    { key: 'new',       label: 'Mới',         count: s.New?.count ?? 0,                               total, color: '#6366F1', icon: 'person_add'        },
+    { key: 'returning', label: 'Quay lại',     count: (s.Loyal?.count ?? 0) + (s.Returning?.count ?? 0), total, color: '#10B981', icon: 'replay'         },
+    { key: 'vip',       label: 'VIP',          count: s.VIP?.count ?? 0,                               total, color: '#F59E0B', icon: 'workspace_premium'  },
+    { key: 'atrisk',    label: 'Nguy cơ rời',  count: (s['At Risk']?.count ?? 0) + (s.Lost?.count ?? 0), total, color: '#EF4444', icon: 'warning'         },
+  ]
+}
+
 function TabCustomer({ data, wd = {}, wl = {} }) {
   const { t }        = useTranslation()
   const maxFunnel    = data?.funnel?.[0]?.value ?? 1
@@ -1140,6 +1154,10 @@ function TabCustomer({ data, wd = {}, wl = {} }) {
   const geoLoading = wl.geo       ?? false
   const sentData   = wd.sentiment ?? null
   const sentLoading = wl.sentiment ?? false
+  // Segment cards: ưu tiên RFM thật, fallback mock
+  const rfmData    = wd.rfm ?? null
+  const segCards   = buildSegmentCardsFromRfm(rfmData) ?? data.customerSegmentCards ?? []
+  const totalCusts = rfmData?.total_customers ?? data.totalCustomers ?? 1
 
   const handleDrillSeg = async (seg) => {
     setDrillSeg(seg)
@@ -1166,8 +1184,8 @@ function TabCustomer({ data, wd = {}, wl = {} }) {
     <div className="space-y-5">
       {/* 4 Cards phân khúc KH */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {(data.customerSegmentCards || []).map(seg => {
-          const pct = ((seg.count / (data.totalCustomers || 1)) * 100).toFixed(1)
+        {segCards.map(seg => {
+          const pct = ((seg.count / totalCusts) * 100).toFixed(1)
           return (
             <div key={seg.key}
               className="lcard lcard-hover px-4 py-3 cursor-pointer"
@@ -1755,31 +1773,36 @@ function TabMarketing({ data, fbAdsData, wd = {}, wl = {} }) {
       <MiniWidget title="Chiến dịch Marketing được đề xuất" icon="campaign" href="/campaign" loading={campLoading}>
         {campData ? (
           <div className="space-y-2">
-            {(campData.campaigns ?? campData.recommendations ?? campData.data ?? []).slice(0, 4).map((c, i) => (
+            {(campData.upcoming_events ?? campData.windows ?? []).slice(0, 4).map((c, i) => (
               <div key={i} className="flex items-start gap-2.5 px-3 py-2 rounded-lg"
                    style={{ background: 'var(--bg-elevated)' }}>
                 <span className="icon text-base shrink-0 mt-0.5"
                       style={{ color: ['#6366F1','#10B981','#F59E0B','#EC4899'][i % 4] }}>
-                  {['email','local_offer','campaign','notifications'][i % 4]}
+                  {c.days_until != null ? 'event' : 'campaign'}
                 </span>
                 <div className="flex-1 min-w-0">
                   <p className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>
-                    {c.title ?? c.campaign_name ?? c.name ?? `Chiến dịch ${i + 1}`}
+                    {c.name ?? c.label ?? `Chiến dịch ${i + 1}`}
                   </p>
-                  {(c.description ?? c.insight ?? c.channel) && (
-                    <p className="text-xs mt-0.5 line-clamp-1" style={{ color: 'var(--text-tertiary)' }}>
-                      {c.description ?? c.insight ?? c.channel}
-                    </p>
-                  )}
+                  <p className="text-xs mt-0.5 line-clamp-1" style={{ color: 'var(--text-tertiary)' }}>
+                    {c.tip ?? (c.events?.length ? c.events.join(', ') : '')}
+                    {c.days_until != null && ` · còn ${c.days_until} ngày`}
+                  </p>
                 </div>
-                {c.expected_roas && (
+                {c.boost_expected != null && (
                   <span className="text-xs font-bold shrink-0" style={{ color: '#10B981' }}>
-                    {c.expected_roas}x
+                    +{Math.round((c.boost_expected - 1) * 100)}%
+                  </span>
+                )}
+                {c.vs_overall_pct != null && c.boost_expected == null && (
+                  <span className="text-xs font-bold shrink-0"
+                        style={{ color: c.vs_overall_pct > 0 ? '#10B981' : '#F59E0B' }}>
+                    {c.vs_overall_pct > 0 ? '+' : ''}{c.vs_overall_pct}%
                   </span>
                 )}
               </div>
             ))}
-            {!(campData.campaigns ?? campData.recommendations ?? campData.data)?.length && (
+            {!(campData.upcoming_events ?? campData.windows)?.length && (
               <p className="text-xs text-center py-2" style={{ color: 'var(--text-tertiary)' }}>Chưa có đề xuất</p>
             )}
           </div>
@@ -2304,26 +2327,41 @@ export default function DashboardPage() {
     try {
       // Truyền from, to, channel vào API call để filter đúng
       const ch  = channel === 'all' ? null : channel
-      const res = await getDashboard(from, to, ch)
-      if (res?.kpi == null) throw new Error('no_data')
+      // Fetch song song: dashboard KPI + monthly-by-channel + heatmap + order-funnel
+      const [res, monthlyReal, heatmapReal, funnelReal] = await Promise.allSettled([
+        getDashboard(from, to, ch),
+        getMonthlyByChannel(from, to),
+        getOrderHeatmap(from, to, ch),
+        getOrderFunnel(from, to, ch),
+      ])
+      const resData = res.status === 'fulfilled' ? res.value : null
+      if (resData?.kpi == null) throw new Error('no_data')
+
       // Merge real DW data với mock-generated fields cho các tabs chưa có endpoint riêng
       const mock = generateMockData(from, to)
       const merged = {
-        ...mock,                    // base mock (fallback cho tabs Sales/Customer/Marketing)
+        ...mock,                    // base mock (fallback cho tabs chưa có endpoint riêng)
         kpi: {
-          ...mock.kpi,              // giữ conversionRate, retentionRate, roi mock
-          totalRevenue:     Number(res.kpi.totalRevenue   ?? mock.kpi.totalRevenue),
-          totalProfit:      Number(res.kpi.totalProfit    ?? mock.kpi.totalProfit),
-          totalOrders:      Number(res.kpi.totalOrders    ?? mock.kpi.totalOrders),
-          avgOrderValue:    Number(res.kpi.avgOrderValue  ?? mock.kpi.avgOrderValue),
-          newCustomers:     Number(res.kpi.newCustomers   ?? mock.kpi.newCustomers),
-          revenueGrowthPct: Number(res.kpi.revenueGrowthPct ?? mock.kpi.revenueGrowthPct),
-          ordersGrowthPct:  Number(res.kpi.ordersGrowthPct  ?? mock.kpi.ordersGrowthPct),
-          profitMarginPct:  Number(res.kpi.profitMarginPct  ?? mock.kpi.profitMarginPct),
+          ...mock.kpi,
+          totalRevenue:     Number(resData.kpi.totalRevenue   ?? mock.kpi.totalRevenue),
+          totalProfit:      Number(resData.kpi.totalProfit    ?? mock.kpi.totalProfit),
+          totalOrders:      Number(resData.kpi.totalOrders    ?? mock.kpi.totalOrders),
+          avgOrderValue:    Number(resData.kpi.avgOrderValue  ?? mock.kpi.avgOrderValue),
+          newCustomers:     Number(resData.kpi.newCustomers   ?? mock.kpi.newCustomers),
+          revenueGrowthPct: Number(resData.kpi.revenueGrowthPct ?? mock.kpi.revenueGrowthPct),
+          ordersGrowthPct:  Number(resData.kpi.ordersGrowthPct  ?? mock.kpi.ordersGrowthPct),
+          profitMarginPct:  Number(resData.kpi.profitMarginPct  ?? mock.kpi.profitMarginPct),
         },
-        revenueByDay:     res.revenueByDay?.length     ? res.revenueByDay     : mock.revenueByDay,
-        revenueByChannel: res.revenueByChannel?.length ? res.revenueByChannel : mock.revenueByChannel,
-        topProducts:      res.topProducts?.length      ? res.topProducts      : mock.topProducts,
+        revenueByDay:      resData.revenueByDay?.length     ? resData.revenueByDay     : mock.revenueByDay,
+        revenueByChannel:  resData.revenueByChannel?.length ? resData.revenueByChannel : mock.revenueByChannel,
+        topProducts:       resData.topProducts?.length      ? resData.topProducts      : mock.topProducts,
+        // Dữ liệu thật từ DB (thay mock nếu API thành công)
+        monthlyByChannel:  monthlyReal.status === 'fulfilled' && monthlyReal.value?.length
+                             ? monthlyReal.value : mock.monthlyByChannel,
+        heatmap:           heatmapReal.status === 'fulfilled' && heatmapReal.value?.length
+                             ? heatmapReal.value : mock.heatmap,
+        funnel:            funnelReal.status === 'fulfilled'  && funnelReal.value?.length
+                             ? funnelReal.value  : mock.funnel,
       }
       // Tính sparklines từ revenueByDay thực — lấy 7 điểm cuối
       const last7 = merged.revenueByDay.slice(-7)
@@ -2402,6 +2440,7 @@ export default function DashboardPage() {
     if (activeTab === 'customer') {
       loadWidget('geo',       () => getGeoDistribution({ limit: 5 }))
       loadWidget('sentiment', () => getFeedbackSummary())
+      loadWidget('rfm',       () => getRfmSegments())
     }
     if (activeTab === 'marketing')
       loadWidget('campaign',  () => getCampaignPlan())

@@ -214,6 +214,71 @@ public class DashboardController(DashboardService service, ITenantContext tenant
         });
     }
 
+    /// <summary>Doanh thu theo tháng và kênh — dùng cho biểu đồ stacked bar Tab Sales</summary>
+    [HttpGet("monthly-by-channel")]
+    [Authorize(Roles = "Owner,Manager,DataIT,Viewer,SuperAdmin")]
+    public async Task<IActionResult> GetMonthlyByChannel(
+        [FromQuery] DateOnly? from = null,
+        [FromQuery] DateOnly? to   = null)
+    {
+        var dateFrom  = from ?? DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-180));
+        var dateTo    = to   ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
+        try
+        {
+            var data = await service.GetMonthlyByChannelAsync(dateFrom, dateTo, companyId);
+            return Ok(data);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(503, new { message = "Lỗi kết nối database.", detail = ex.Message });
+        }
+    }
+
+    /// <summary>Nhiệt đồ đơn hàng theo giờ trong ngày và thứ trong tuần (OLTP orders)</summary>
+    [HttpGet("heatmap")]
+    [Authorize(Roles = "Owner,Manager,DataIT,Viewer,SuperAdmin")]
+    public async Task<IActionResult> GetOrderHeatmap(
+        [FromQuery] DateOnly? from    = null,
+        [FromQuery] DateOnly? to      = null,
+        [FromQuery] string?   channel = null)
+    {
+        var dateFrom  = from ?? DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-30));
+        var dateTo    = to   ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
+        try
+        {
+            var data = await service.GetOrderHeatmapAsync(dateFrom, dateTo, channel, companyId);
+            return Ok(data);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(503, new { message = "Lỗi kết nối database.", detail = ex.Message });
+        }
+    }
+
+    /// <summary>Phễu trạng thái đơn hàng (OLTP orders) — thay thế funnel web-tracking</summary>
+    [HttpGet("order-funnel")]
+    [Authorize(Roles = "Owner,Manager,DataIT,Viewer,SuperAdmin")]
+    public async Task<IActionResult> GetOrderFunnel(
+        [FromQuery] DateOnly? from    = null,
+        [FromQuery] DateOnly? to      = null,
+        [FromQuery] string?   channel = null)
+    {
+        var dateFrom  = from ?? DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-30));
+        var dateTo    = to   ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
+        try
+        {
+            var data = await service.GetOrderFunnelAsync(dateFrom, dateTo, channel, companyId);
+            return Ok(data);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(503, new { message = "Lỗi kết nối database.", detail = ex.Message });
+        }
+    }
+
     /// <summary>So sánh doanh thu & đơn hàng hôm nay vs hôm qua</summary>
     [HttpGet("today-vs-yesterday")]
     [Authorize(Roles = "Owner,Manager,DataIT,Staff,Viewer,SuperAdmin")]

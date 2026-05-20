@@ -260,3 +260,21 @@ export const getWebsiteAnalytics = (from, to) =>
 // ── Facebook Ads Performance ──────────────────────────────────────────────────
 export const getFbAds = (from, to) =>
   api.get('/api/dashboard/fb-ads', { params: { from, to } }).then(r => r.data)
+
+// ── Heatmap đơn hàng theo giờ × thứ (OLTP) ───────────────────────────────────
+export const getOrderHeatmap = (from, to, channel = null) => {
+  const params = { from, to }
+  if (channel && channel !== 'all') params.channel = channel
+  return api.get('/api/dashboard/heatmap', { params }).then(r => r.data)
+}
+
+// ── Phễu trạng thái đơn hàng (OLTP) ─────────────────────────────────────────
+export const getOrderFunnel = (from, to, channel = null) => {
+  const params = { from, to }
+  if (channel && channel !== 'all') params.channel = channel
+  return api.get('/api/dashboard/order-funnel', { params }).then(r => r.data)
+}
+
+// ── Doanh thu theo tháng × kênh (DW) ─────────────────────────────────────────
+export const getMonthlyByChannel = (from, to) =>
+  api.get('/api/dashboard/monthly-by-channel', { params: { from, to } }).then(r => r.data)
