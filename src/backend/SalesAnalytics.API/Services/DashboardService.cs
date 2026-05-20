@@ -326,6 +326,171 @@ public class DashboardService
         return result;
     }
 
+    // ── Operations KPIs (return rate, cancel rate, delivery success) ─────────
+
+    public async Task<object> GetOpsKpiAsync(DateOnly from, DateOnly to, string? channel, Guid? companyId)
+    {
+        await using var conn = new NpgsqlConnection(_connStr);
+        await conn.OpenAsync();
+
+        var sql = """
+            SELECT
+                COUNT(*)::float                                                          AS total,
+                COUNT(*) FILTER (WHERE o.status = 'RETURNED')::float                   AS returned,
+                COUNT(*) FILTER (WHERE o.status = 'CANCELLED')::float                  AS cancelled,
+                COUNT(*) FILTER (WHERE o.shipping_status = 'DELIVERED')::float         AS delivered
+            FROM public.orders o
+            LEFT JOIN public.sales_channels sc ON o.channel_id = sc.channel_id
+            WHERE o.order_date >= @from
+              AND o.order_date <  @to
+              AND (@companyId IS NULL OR o.company_id = @companyId::uuid)
+              AND (@channel   IS NULL OR sc.channel_name ILIKE '%' || @channel || '%')
+            """;
+
+        await using var cmd = new NpgsqlCommand(sql, conn);
+        cmd.Parameters.AddWithValue("from", from.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc));
+        cmd.Parameters.AddWithValue("to",   to.AddDays(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc));
+        cmd.Parameters.Add(new NpgsqlParameter("companyId", NpgsqlDbType.Text) { Value = (object?)companyId?.ToString() ?? DBNull.Value });
+        cmd.Parameters.Add(new NpgsqlParameter("channel",   NpgsqlDbType.Text) { Value = (object?)channel   ?? DBNull.Value });
+
+        await using var r = await cmd.ExecuteReaderAsync();
+        await r.ReadAsync();
+        double total      = r.GetDouble(0);
+        double returned   = r.GetDouble(1);
+        double cancelled  = r.GetDouble(2);
+        double delivered  = r.GetDouble(3);
+        await r.CloseAsync();
+
+        double returnRate      = total > 0 ? Math.Round(returned  / total * 100, 1) : 0;
+        double cancelRate      = total > 0 ? Math.Round(cancelled / total * 100, 1) : 0;
+        double deliverySuccess = total > 0 ? Math.Round(delivered / total * 100, 1) : 0;
+
+        // returnByChannel
+        var sqlCh = """
+            SELECT
+                sc.channel_name,
+                COUNT(*)::float                                                  AS total,
+                COUNT(*) FILTER (WHERE o.status = 'RETURNED')::float            AS returned
+            FROM public.orders o
+            JOIN public.sales_channels sc ON o.channel_id = sc.channel_id
+            WHERE o.order_date >= @from
+              AND o.order_date <  @to
+              AND (@companyId IS NULL OR o.company_id = @companyId::uuid)
+            GROUP BY sc.channel_name
+            ORDER BY sc.channel_name
+            """;
+        await using var cmdCh = new NpgsqlCommand(sqlCh, conn);
+        cmdCh.Parameters.AddWithValue("from", from.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc));
+        cmdCh.Parameters.AddWithValue("to",   to.AddDays(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc));
+        cmdCh.Parameters.Add(new NpgsqlParameter("companyId", NpgsqlDbType.Text) { Value = (object?)companyId?.ToString() ?? DBNull.Value });
+
+        var returnByChannel = new List<object>();
+        await using var rCh = await cmdCh.ExecuteReaderAsync();
+        while (await rCh.ReadAsync())
+        {
+            double tot = rCh.GetDouble(1), ret = rCh.GetDouble(2);
+            returnByChannel.Add(new
+            {
+                channelName = rCh.GetString(0),
+                returnRate  = tot > 0 ? (ret / tot * 100).ToString("F1") : "0.0",
+            });
+        }
+
+        return new { returnRate, cancelRate, deliverySuccess, returnByChannel };
+    }
+
+    // ── Real inventory from OLTP products + order_items ───────────────────────
+
+    public async Task<object> GetInventoryRealAsync(DateOnly from, DateOnly to, Guid? companyId)
+    {
+        await using var conn = new NpgsqlConnection(_connStr);
+        await conn.OpenAsync();
+
+        int days = Math.Max(1, to.DayNumber - from.DayNumber + 1);
+
+        var sql = """
+            SELECT
+                p.product_id,
+                p.product_name,
+                p.stock_quantity,
+                COALESCE(SUM(oi.quantity) FILTER (WHERE o.status NOT IN ('CANCELLED')), 0)::float   AS qty_sold,
+                COALESCE(COUNT(DISTINCT o.order_id) FILTER (WHERE o.status = 'RETURNED'), 0)::float AS returned_cnt,
+                COALESCE(COUNT(DISTINCT o.order_id) FILTER (WHERE o.status NOT IN ('CANCELLED')), 0)::float AS order_cnt
+            FROM public.products p
+            LEFT JOIN public.order_items oi ON p.product_id = oi.product_id
+            LEFT JOIN public.orders o       ON oi.order_id  = o.order_id
+                AND o.order_date >= @from
+                AND o.order_date <  @to
+                AND (@companyId IS NULL OR o.company_id = @companyId::uuid)
+            WHERE p.is_active = TRUE
+              AND (@companyId IS NULL OR p.company_id = @companyId::uuid)
+            GROUP BY p.product_id, p.product_name, p.stock_quantity
+            ORDER BY qty_sold DESC
+            LIMIT 30
+            """;
+
+        await using var cmd = new NpgsqlCommand(sql, conn);
+        cmd.Parameters.AddWithValue("from", from.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc));
+        cmd.Parameters.AddWithValue("to",   to.AddDays(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc));
+        cmd.Parameters.Add(new NpgsqlParameter("companyId", NpgsqlDbType.Text) { Value = (object?)companyId?.ToString() ?? DBNull.Value });
+
+        var rows = new List<(string Name, int Stock, double DailySales, double ReturnRate, long Forecast, double DiffPct, int DaysOfStock)>();
+        await using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            string name    = reader.GetString(1);
+            int    stock   = reader.GetInt32(2);
+            double qtySold = reader.GetDouble(3);
+            double retCnt  = reader.GetDouble(4);
+            double ordCnt  = reader.GetDouble(5);
+
+            double dailySales = qtySold / days;
+            long   forecast   = Math.Max(1, (long)(dailySales * 30));
+            double diffPct    = Math.Round((stock - forecast) / (double)forecast * 100, 1);
+            int    daysLeft   = dailySales > 0 ? (int)(stock / dailySales) : 999;
+            double retRate    = ordCnt > 0 ? Math.Round(retCnt / ordCnt * 100, 1) : 0;
+
+            rows.Add((name, stock, Math.Round(dailySales, 1), retRate, forecast, diffPct, daysLeft));
+        }
+
+        var inventory = rows.Select(r => new
+        {
+            product      = r.Name,
+            stock        = r.Stock,
+            forecast     = (int)r.Forecast,
+            dailySales   = r.DailySales,
+            returnRate   = r.ReturnRate,
+            stockDiffPct = r.DiffPct.ToString("F1"),
+            daysOfStock  = r.DaysOfStock,
+        }).ToList<object>();
+
+        var top5Over  = rows.Where(r => r.Stock > r.Forecast * 1.3)
+                           .OrderByDescending(r => r.Stock - r.Forecast)
+                           .Take(5)
+                           .Select(r => new { product = r.Name, stock = r.Stock, forecast = (int)r.Forecast, stockDiffPct = r.DiffPct.ToString("F1"), daysOfStock = r.DaysOfStock })
+                           .ToList<object>();
+
+        var top5Low   = rows.Where(r => r.DaysOfStock < 14 && r.DailySales > 0)
+                           .OrderBy(r => r.DaysOfStock)
+                           .Take(5)
+                           .Select(r => new { product = r.Name, stock = r.Stock, dailySales = r.DailySales, daysOfStock = r.DaysOfStock })
+                           .ToList<object>();
+
+        int avgDIO          = rows.Count > 0 ? (int)rows.Average(r => Math.Min(r.DaysOfStock, 365)) : 0;
+        int overstockCount  = rows.Count(r => r.Stock > r.Forecast * 1.3);
+        int stockoutCount   = rows.Count(r => r.DaysOfStock < 14 && r.DailySales > 0);
+        string overstockRate = rows.Count > 0 ? ((double)overstockCount / rows.Count * 100).ToString("F1") : "0.0";
+        string stockoutRate  = rows.Count > 0 ? ((double)stockoutCount  / rows.Count * 100).ToString("F1") : "0.0";
+
+        return new
+        {
+            inventory,
+            top5Overstock = top5Over,
+            top5LowStock  = top5Low,
+            inventoryKpi  = new { avgDIO, overstockRate, stockoutRate },
+        };
+    }
+
     // ── Monthly revenue by channel (DW fact_sales) ──────────────────────────
 
     public async Task<List<object>> GetMonthlyByChannelAsync(

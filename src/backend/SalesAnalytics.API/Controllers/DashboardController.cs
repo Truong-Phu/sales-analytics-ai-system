@@ -279,6 +279,49 @@ public class DashboardController(DashboardService service, ITenantContext tenant
         }
     }
 
+    /// <summary>KPI vận hành: tỷ lệ hoàn, huỷ, giao hàng thành công (OLTP orders)</summary>
+    [HttpGet("ops-kpi")]
+    [Authorize(Roles = "Owner,Manager,DataIT,Viewer,SuperAdmin")]
+    public async Task<IActionResult> GetOpsKpi(
+        [FromQuery] DateOnly? from    = null,
+        [FromQuery] DateOnly? to      = null,
+        [FromQuery] string?   channel = null)
+    {
+        var dateFrom  = from ?? DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-30));
+        var dateTo    = to   ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
+        try
+        {
+            var data = await service.GetOpsKpiAsync(dateFrom, dateTo, channel, companyId);
+            return Ok(data);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(503, new { message = "Lỗi kết nối database.", detail = ex.Message });
+        }
+    }
+
+    /// <summary>Dữ liệu tồn kho thực tế từ OLTP products + order_items</summary>
+    [HttpGet("inventory-real")]
+    [Authorize(Roles = "Owner,Manager,DataIT,Viewer,SuperAdmin")]
+    public async Task<IActionResult> GetInventoryReal(
+        [FromQuery] DateOnly? from = null,
+        [FromQuery] DateOnly? to   = null)
+    {
+        var dateFrom  = from ?? DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-30));
+        var dateTo    = to   ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
+        try
+        {
+            var data = await service.GetInventoryRealAsync(dateFrom, dateTo, companyId);
+            return Ok(data);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(503, new { message = "Lỗi kết nối database.", detail = ex.Message });
+        }
+    }
+
     /// <summary>So sánh doanh thu & đơn hàng hôm nay vs hôm qua</summary>
     [HttpGet("today-vs-yesterday")]
     [Authorize(Roles = "Owner,Manager,DataIT,Staff,Viewer,SuperAdmin")]

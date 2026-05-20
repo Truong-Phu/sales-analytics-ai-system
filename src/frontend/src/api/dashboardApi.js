@@ -278,3 +278,14 @@ export const getOrderFunnel = (from, to, channel = null) => {
 // ── Doanh thu theo tháng × kênh (DW) ─────────────────────────────────────────
 export const getMonthlyByChannel = (from, to) =>
   api.get('/api/dashboard/monthly-by-channel', { params: { from, to } }).then(r => r.data)
+
+// ── KPI vận hành: hoàn/huỷ/giao thành công (OLTP) ────────────────────────────
+export const getOpsKpi = (from, to, channel = null) => {
+  const params = { from, to }
+  if (channel && channel !== 'all') params.channel = channel
+  return api.get('/api/dashboard/ops-kpi', { params }).then(r => r.data)
+}
+
+// ── Tồn kho thực tế (OLTP products + order_items) ────────────────────────────
+export const getInventoryReal = (from, to) =>
+  api.get('/api/dashboard/inventory-real', { params: { from, to } }).then(r => r.data)

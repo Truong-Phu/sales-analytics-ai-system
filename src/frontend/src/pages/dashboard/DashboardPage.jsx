@@ -13,7 +13,8 @@ import { SkeletonCard } from '../../components/ui/Skeleton'
 import MockToast from '../../components/ui/MockToast'
 import { getDashboard, getTodayVsYesterday, getDrillDownOrders, getDrillDownCustomers,
          getWebsiteAnalytics, getFbAds,
-         getOrderHeatmap, getOrderFunnel, getMonthlyByChannel } from '../../api/dashboardApi'
+         getOrderHeatmap, getOrderFunnel, getMonthlyByChannel,
+         getOpsKpi, getInventoryReal } from '../../api/dashboardApi'
 import { getInsights, getLeaderboard, getGeoDistribution, getChannelAttribution,
          getCampaignPlan, getSupplierPerformance, getFeedbackSummary,
          getInventoryIntelligence, getRfmSegments } from '../../api/aiApi'
@@ -1962,14 +1963,15 @@ function TabInventory({ data, wd = {}, wl = {} }) {
   const invAiData       = wd.invAi   ?? null
   const invAiLoading    = wl.invAi   ?? false
 
+  const fmtPct = (v) => v != null ? `${Number(v).toFixed(1)}%` : '—'
   const invKpis = [
-    { label: 'Số ngày tồn kho (DIO)',    value: `${invKpi.avgDIO} ngày`, icon: 'hourglass_empty',   color: '#6366F1' },
-    { label: 'Tỷ lệ tồn kho dư',         value: `${invKpi.overstockRate}%`, icon: 'inventory',      color: '#F59E0B' },
-    { label: 'Tỷ lệ hết hàng',           value: `${invKpi.stockoutRate}%`,  icon: 'remove_shopping_cart', color: 'var(--color-error)' },
-    { labelKey: 'invKpi.returnRate',      value: '3.1%',    icon: 'assignment_return', color: '#EC4899' },
-    { labelKey: 'invKpi.cancelRate',      value: '2.4%',    icon: 'cancel',            color: 'var(--color-error)' },
-    { labelKey: 'invKpi.deliverySuccess', value: '94.5%',   icon: 'local_shipping',    color: 'var(--accent-500)' },
-    { labelKey: 'invKpi.processingTime',  value: '2.3h',    icon: 'timer',             color: '#F59E0B' },
+    { label: 'Số ngày tồn kho (DIO)',    value: `${invKpi.avgDIO ?? '—'} ngày`, icon: 'hourglass_empty',      color: '#6366F1' },
+    { label: 'Tỷ lệ tồn kho dư',         value: fmtPct(invKpi.overstockRate),   icon: 'inventory',             color: '#F59E0B' },
+    { label: 'Tỷ lệ hết hàng',           value: fmtPct(invKpi.stockoutRate),    icon: 'remove_shopping_cart',  color: 'var(--color-error)' },
+    { label: 'Tỷ lệ hoàn hàng',          value: fmtPct(invKpi.returnRate),      icon: 'assignment_return',     color: '#EC4899' },
+    { label: 'Tỷ lệ huỷ đơn',           value: fmtPct(invKpi.cancelRate),      icon: 'cancel',                color: 'var(--color-error)' },
+    { label: 'Giao hàng thành công',      value: fmtPct(invKpi.deliverySuccess), icon: 'local_shipping',       color: 'var(--accent-500)' },
+    { labelKey: 'invKpi.processingTime',  value: '2.3h',                         icon: 'timer',                color: '#F59E0B' },
   ]
 
   // Label % chênh lệch tồn kho
@@ -2327,18 +2329,26 @@ export default function DashboardPage() {
     try {
       // Truyền from, to, channel vào API call để filter đúng
       const ch  = channel === 'all' ? null : channel
-      // Fetch song song: dashboard KPI + monthly-by-channel + heatmap + order-funnel
-      const [res, monthlyReal, heatmapReal, funnelReal] = await Promise.allSettled([
+      // Fetch song song: dashboard KPI + monthly-by-channel + heatmap + order-funnel + ops KPI + inventory
+      const [res, monthlyReal, heatmapReal, funnelReal, opsReal, invReal] = await Promise.allSettled([
         getDashboard(from, to, ch),
         getMonthlyByChannel(from, to),
         getOrderHeatmap(from, to, ch),
         getOrderFunnel(from, to, ch),
+        getOpsKpi(from, to, ch),
+        getInventoryReal(from, to),
       ])
       const resData = res.status === 'fulfilled' ? res.value : null
       if (resData?.kpi == null) throw new Error('no_data')
 
       // Merge real DW data với mock-generated fields cho các tabs chưa có endpoint riêng
       const mock = generateMockData(from, to)
+
+      // Ops KPI (hoàn/huỷ/giao thành công) từ OLTP
+      const opsData = opsReal.status === 'fulfilled' ? opsReal.value : null
+      // Inventory thực từ OLTP products + order_items
+      const invData = invReal.status === 'fulfilled' ? invReal.value : null
+
       const merged = {
         ...mock,                    // base mock (fallback cho tabs chưa có endpoint riêng)
         kpi: {
@@ -2362,6 +2372,19 @@ export default function DashboardPage() {
                              ? heatmapReal.value : mock.heatmap,
         funnel:            funnelReal.status === 'fulfilled'  && funnelReal.value?.length
                              ? funnelReal.value  : mock.funnel,
+        // Inventory: merge real data nếu có, giữ mock nếu API lỗi
+        inventory:         invData?.inventory?.length ? invData.inventory : mock.inventory,
+        top5Overstock:     invData?.top5Overstock?.length ? invData.top5Overstock : mock.top5Overstock,
+        top5LowStock:      invData?.top5LowStock?.length  ? invData.top5LowStock  : mock.top5LowStock,
+        inventoryKpi: {
+          ...mock.inventoryKpi,
+          ...(invData?.inventoryKpi ?? {}),
+          // Ops KPI từ OLTP orders (ghi đè nếu có)
+          returnRate:      opsData?.returnRate      ?? mock.inventoryKpi?.returnRate,
+          cancelRate:      opsData?.cancelRate      ?? mock.inventoryKpi?.cancelRate,
+          deliverySuccess: opsData?.deliverySuccess ?? mock.inventoryKpi?.deliverySuccess,
+        },
+        returnByChannel: opsData?.returnByChannel ?? mock.returnByChannel ?? [],
       }
       // Tính sparklines từ revenueByDay thực — lấy 7 điểm cuối
       const last7 = merged.revenueByDay.slice(-7)
