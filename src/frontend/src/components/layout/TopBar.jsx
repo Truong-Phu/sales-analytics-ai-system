@@ -474,13 +474,14 @@ export default function TopBar() {
   // campaign → tab Marketing | supplier/inventory → tab Tồn kho & Vận hành
   // leaderboard → tab Tổng quan
   const aiMenuItems = [
-    { label: t('nav.forecast',    'Dự báo doanh thu'),     desc: 'Prophet AI – xu hướng & seasonality', icon: 'trending_up',  href: '/forecast' },
-    { label: t('nav.anomaly',     'Phát hiện bất thường'), desc: 'Cảnh báo dữ liệu bất thường',         icon: 'crisis_alert', href: '/anomaly' },
-    { label: t('nav.churn',       'Dự báo Churn'),         desc: 'Churn prediction khách hàng',         icon: 'person_off',   href: '/churn' },
-    { label: t('nav.basket',      'Phân tích giỏ hàng'),   desc: 'Market basket analysis',              icon: 'shopping_bag', href: '/basket' },
-    { label: t('nav.whatIf',      'Mô phỏng What-If'),     desc: 'What-if scenario simulation',         icon: 'science',      href: '/whatif' },
-    { label: t('nav.price',       'Thông minh Giá'),       desc: 'Tối ưu chiến lược định giá',          icon: 'price_check',  href: '/price' },
-    { label: t('nav.aiInsights',  'AI Insights'),          desc: 'Gợi ý thông minh & tường thuật AI',  icon: 'auto_awesome', href: '/recommendations' },
+    { label: t('nav.forecast',       'Dự báo doanh thu'),      desc: 'Prophet AI – xu hướng & seasonality', icon: 'trending_up',   href: '/forecast' },
+    { label: t('nav.anomaly',        'Phát hiện bất thường'),  desc: 'Cảnh báo dữ liệu bất thường',         icon: 'crisis_alert',  href: '/anomaly' },
+    { label: t('nav.narrative',      'Nhận xét Thông minh'),   desc: 'Tự động sinh nhận xét ngôn ngữ tự nhiên', icon: 'auto_awesome', href: '/narrative' },
+    { label: t('nav.recommendations','Gợi ý hành động'),       desc: 'Khuyến nghị từ AI insights',          icon: 'psychology',    href: '/recommendations' },
+    { label: t('nav.churn',          'Dự báo Churn'),          desc: 'Churn prediction khách hàng',         icon: 'person_off',    href: '/churn' },
+    { label: t('nav.basket',         'Phân tích giỏ hàng'),    desc: 'Market basket analysis',              icon: 'shopping_bag',  href: '/basket' },
+    { label: t('nav.whatIf',         'Mô phỏng What-If'),      desc: 'What-if scenario simulation',         icon: 'science',       href: '/whatif' },
+    { label: t('nav.price',          'Thông minh Giá'),        desc: 'Tối ưu chiến lược định giá',          icon: 'price_check',   href: '/price' },
   ]
 
   // ── Nhóm Quản lý dữ liệu ──────────────────────────────────────────────────
