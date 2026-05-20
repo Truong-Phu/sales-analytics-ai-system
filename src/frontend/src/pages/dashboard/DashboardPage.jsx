@@ -587,7 +587,6 @@ function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd 
           trend={kpi.revenueGrowthPct}
           trendLabel={t('dashboard.compare')}
           icon="payments"
-          valueColor="var(--primary-500)"
           sparkData={sp.revenue}
           sparkColor="#6366F1"
         />
@@ -623,7 +622,6 @@ function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd 
           value={fmtM(kpi.avgOrderValue)}
           icon="receipt_long"
           color="var(--accent-500)"
-          valueColor="var(--accent-500)"
         />
         <KpiCard
           label={t('dashboard.kpi.conversionRate')}
@@ -640,7 +638,7 @@ function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd 
           trendLabel={t('dashboard.compare')}
           icon="percent"
           color="#8B5CF6"
-          valueColor={kpi.totalProfit >= 0 ? '#059669' : '#DC2626'}
+          valueColor={kpi.totalProfit >= 0 ? 'var(--profit-positive)' : 'var(--profit-negative)'}
           sparkData={sp.profit}
           sparkColor="#8B5CF6"
         />
@@ -649,7 +647,7 @@ function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd 
           value={`${kpi.roi}%`}
           icon="trending_up"
           color="#EC4899"
-          valueColor={kpi.roi >= 0 ? '#059669' : '#DC2626'}
+          valueColor={kpi.roi >= 0 ? 'var(--profit-positive)' : 'var(--profit-negative)'}
         />
       </div>
 
@@ -2642,9 +2640,10 @@ export default function DashboardPage() {
           ].map(card => {
             const isUp = card.pct >= 0
             // Màu semantic cho giá trị chính — revenue=brand, profit=lãi/lỗ, orders=neutral
+            // Quy tắc: CHỈ lợi nhuận mới có màu (dương=xanh, âm=đỏ). Tổng tiền & đếm dùng neutral.
             const valueColor =
-              card.type === 'revenue' ? 'var(--primary-500)' :
-              card.type === 'profit'  ? (card.rawValue >= 0 ? '#059669' : '#DC2626') :
+              card.type === 'profit' && card.rawValue >= 0 ? 'var(--profit-positive)' :
+              card.type === 'profit' && card.rawValue <  0 ? 'var(--profit-negative)' :
               'var(--text-primary)'
             return (
               <div key={card.label} className="lcard p-4">

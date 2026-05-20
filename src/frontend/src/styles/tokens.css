@@ -32,6 +32,11 @@
   --error:   #EF4444;
   --info:    #3B82F6;
 
+  /* Semantic colors cho số liệu tài chính có chiều hướng
+     QUY TẮC: CHỈ dùng cho lợi nhuận / ROI / margin — KHÔNG dùng cho tổng tiền / đếm */
+  --profit-positive: #059669;  /* emerald-600, contrast 7:1 trên white */
+  --profit-negative: #DC2626;  /* red-600,     contrast 5.7:1 trên white */
+
   /* Border aliases */
   --border-default: #E5E7EB;
   --divider:        #F3F4F6;
@@ -143,6 +148,10 @@
   --border-default: #252630;
   --divider:        #1E2030;
   --text-disabled:  #4B5063;
+
+  /* Semantic dark — màu sáng hơn để đạt contrast trên nền tối #1A1B23 */
+  --profit-positive: #34D399;  /* emerald-400, contrast 7.3:1 trên dark */
+  --profit-negative: #F87171;  /* red-400,     contrast 5.4:1 trên dark */
 
   /* Chart palette dark (nhẹ hơn một chút) */
   --chart-1: #818CF8;

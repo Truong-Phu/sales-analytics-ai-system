@@ -53,10 +53,10 @@ const MOCK_TOP_PRODUCTS = [
 
 const MOCK_CHANNEL_REVENUE = [
   { channel: 'Shopee',   revenue: 45_000_000, color: '#EE4D2D' },
-  { channel: 'Lazada',   revenue: 28_000_000, color: '#0F146D' },
-  { channel: 'TikTok',   revenue: 22_000_000, color: '#010101' },
+  { channel: 'Lazada',   revenue: 28_000_000, color: '#0F3DD1' },
+  { channel: 'TikTok',   revenue: 22_000_000, color: '#2DD4BF' },
   { channel: 'Facebook', revenue: 18_000_000, color: '#1877F2' },
-  { channel: 'Website',  revenue: 12_000_000, color: '#6B7280' },
+  { channel: 'Website',  revenue: 12_000_000, color: '#6366F1' },
 ]
 
 const MOCK_ALERTS = [
@@ -64,18 +64,24 @@ const MOCK_ALERTS = [
   { title: 'Doanh thu giảm bất thường', body: 'Kênh Lazada giảm 23% hôm nay',        type: 'error'   },
 ]
 
-// ─── Màu badge kênh bán ───────────────────────────────────────────────────────
+// ─── Màu brand chuẩn theo kênh (nhất quán với web) ──────────────────────────
+// Quy tắc: dùng màu chính thức của từng sàn, đủ sáng để đọc được trên nền tối
 const CHANNEL_COLORS = {
-  Shopee:   '#ff6600',
-  TikTok:   '#69c9d0',
-  Lazada:   '#0f146d',
-  Facebook: '#1877f2',
-  Website:  '#4ae176',
-  Zalo:     '#0066cc',
+  Shopee:   '#EE4D2D', // cam-đỏ chính thức Shopee
+  TikTok:   '#2DD4BF', // teal — đọc được cả light+dark
+  Lazada:   '#0F3DD1', // xanh dương Lazada
+  Facebook: '#1877F2', // xanh Facebook
+  Website:  '#6366F1', // indigo — brand hệ thống
+  Zalo:     '#0068FF', // xanh Zalo
 }
 function channelColor(ch = '') {
   return CHANNEL_COLORS[ch] ?? colors.secondary
 }
+
+// ─── Màu semantic cho lợi nhuận / ROI (dương=xanh, âm=đỏ) ──────────────────
+// Quy tắc: CHỈ áp dụng cho metric có chiều hướng lãi/lỗ
+const PROFIT_POSITIVE = '#34D399' // emerald-400, đủ contrast trên nền tối
+const PROFIT_NEGATIVE = '#F87171' // red-400,     đủ contrast trên nền tối
 
 // ─── Skeleton placeholder ─────────────────────────────────────────────────────
 function Skeleton({ width = '100%', height = 16, style }) {
@@ -106,14 +112,16 @@ function Skeleton({ width = '100%', height = 16, style }) {
 }
 
 // ─── KPI Card ─────────────────────────────────────────────────────────────────
-function KpiCard({ label, value, pct, emoji }) {
+// valueColor: truyền vào khi metric có chiều hướng lãi/lỗ (profit, ROI)
+// Còn lại (doanh thu, đơn hàng) dùng màu neutral mặc định
+function KpiCard({ label, value, pct, emoji, valueColor }) {
   const isUp   = pct > 0
   const isDown = pct < 0
   return (
     <View style={s.kpiCard}>
       <Text style={s.kpiEmoji}>{emoji}</Text>
       <Text style={s.kpiLabel}>{label}</Text>
-      <Text style={s.kpiValue}>₫{value}</Text>
+      <Text style={[s.kpiValue, valueColor ? { color: valueColor } : null]}>₫{value}</Text>
       {pct !== undefined && pct !== null && (
         <Text style={[s.kpiTrend, isUp ? s.up : isDown ? s.down : s.flat]}>
           {isUp ? '▲' : isDown ? '▼' : '–'} {Math.abs(pct).toFixed(1)}%
@@ -416,6 +424,7 @@ export default function DashboardScreen({ navigation }) {
           value={formatMoney(kpiData.todayProfit)}
           pct={kpiData.todayProfitVsYesterday}
           emoji="📈"
+          valueColor={kpiData.todayProfit >= 0 ? PROFIT_POSITIVE : PROFIT_NEGATIVE}
         />
       </View>
 
@@ -638,9 +647,9 @@ const s = StyleSheet.create({
     borderRadius: radius.md, padding: 14,
     borderWidth: 1, borderColor: colors.outlineVariant,
   },
-  kpiEmoji: { fontSize: 22, marginBottom: 8 },
-  kpiLabel: { fontSize: 11, color: colors.outline },
-  kpiValue: { fontSize: 20, fontWeight: '700', color: colors.onSurface, marginTop: 2 },
+  kpiEmoji: { fontSize: 22, marginBottom: 6 },
+  kpiLabel: { fontSize: 11, fontWeight: '600', color: colors.onSurfaceVariant, letterSpacing: 0.3 },
+  kpiValue: { fontSize: 22, fontWeight: '700', color: colors.onSurface, marginTop: 4, letterSpacing: -0.5 },
   kpiTrend: { fontSize: 11, marginTop: 4 },
   up:   { color: colors.tertiary },
   down: { color: colors.error    },
