@@ -152,10 +152,13 @@ function KpiCardCount({ label, value, pct, emoji }) {
 function DashboardSkeleton() {
   return (
     <ScrollView style={s.container} scrollEnabled={false}>
-      <View style={s.header}>
+      {/* Skeleton header */}
+      <View style={{ padding: 16, paddingTop: 52, paddingBottom: 14, backgroundColor: '#0d1c2d', flexDirection: 'row', alignItems: 'center' }}>
+        <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#1c2b3c', marginRight: 10 }} />
         <View>
-          <Skeleton width={160} height={20} style={{ marginBottom: 8 }} />
-          <Skeleton width={120} height={13} />
+          <Skeleton width={100} height={12} style={{ marginBottom: 6 }} />
+          <Skeleton width={160} height={18} style={{ marginBottom: 4 }} />
+          <Skeleton width={120} height={11} />
         </View>
       </View>
       {/* Mock banner placeholder */}
@@ -193,6 +196,37 @@ function DashboardSkeleton() {
   )
 }
 
+// ─── AI Insights mock fallback ────────────────────────────────────────────────
+const MOCK_INSIGHTS = [
+  { type: 'anomaly', level: 'warning', text: 'Doanh thu kênh TikTok giảm 23% so với tuần trước.' },
+  { type: 'churn',   level: 'alert',   text: '12 khách hàng VIP chưa mua hàng trong 30 ngày.' },
+  { type: 'trend',   level: 'info',    text: 'Xu hướng tăng trưởng Shopee +15% trong 7 ngày qua.' },
+  { type: 'stock',   level: 'warning', text: '3 sản phẩm sắp hết hàng dưới mức tối thiểu.' },
+]
+
+const INSIGHT_CONFIG = {
+  anomaly: { emoji: '📉', color: '#EF4444', bg: 'rgba(239,68,68,0.12)',    navigate: 'ForecastTab' },
+  churn:   { emoji: '⚠️', color: '#F59E0B', bg: 'rgba(245,158,11,0.12)',   navigate: 'Alerts'      },
+  trend:   { emoji: '📈', color: '#4AE176', bg: 'rgba(74,225,118,0.12)',   navigate: null          },
+  stock:   { emoji: '🏭', color: '#F59E0B', bg: 'rgba(245,158,11,0.12)',   navigate: null          },
+  info:    { emoji: '💡', color: '#60A5FA', bg: 'rgba(96,165,250,0.12)',   navigate: null          },
+}
+
+const LEVEL_BADGE = {
+  alert:   { label: 'Cảnh báo',  color: '#EF4444', bg: 'rgba(239,68,68,0.2)'  },
+  warning: { label: 'Chú ý',     color: '#F59E0B', bg: 'rgba(245,158,11,0.2)' },
+  info:    { label: 'Thông tin', color: '#60A5FA', bg: 'rgba(96,165,250,0.2)' },
+}
+
+// Mapping role → màu badge
+const ROLE_COLORS = {
+  Owner:   { color: '#FFD700', bg: 'rgba(255,215,0,0.2)',    label: 'Chủ DN'   },
+  Manager: { color: '#A78BFA', bg: 'rgba(167,139,250,0.2)',  label: 'Quản lý'  },
+  Staff:   { color: '#4AE176', bg: 'rgba(74,225,118,0.2)',   label: 'Nhân viên'},
+  DataIT:  { color: '#60A5FA', bg: 'rgba(96,165,250,0.2)',   label: 'Data/IT'  },
+  Viewer:  { color: '#9CA3AF', bg: 'rgba(156,163,175,0.2)',  label: 'Xem'      },
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function DashboardScreen({ navigation }) {
   const { user, logout } = useAuth()
@@ -203,6 +237,7 @@ export default function DashboardScreen({ navigation }) {
   const [topProducts,    setTopProducts]    = useState([])
   const [channelRevenue, setChannelRevenue] = useState([])
   const [alerts,         setAlerts]         = useState([])
+  const [aiInsights,     setAiInsights]     = useState([])
 
   const [loading,    setLoading]    = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -336,20 +371,38 @@ export default function DashboardScreen({ navigation }) {
     }
   }
 
+  // ── Fetch AI Insights ─────────────────────────────────────────────────────
+  const fetchInsights = async () => {
+    try {
+      const res  = await api.get('/api/ai/insights')
+      const raw  = res.data?.data ?? res.data
+      const list = Array.isArray(raw) ? raw : (raw?.insights ?? raw?.items ?? [])
+      return list.slice(0, 4).map(ins => ({
+        type:  ins.type   ?? 'info',
+        level: ins.level  ?? ins.severity ?? 'info',
+        text:  ins.text   ?? ins.message  ?? ins.description ?? '',
+      }))
+    } catch {
+      return MOCK_INSIGHTS
+    }
+  }
+
   // ── Tải song song tất cả sections bằng Promise.all ────────────────────────
   const loadData = async () => {
-    const [kpiResult, trend, products, channels, alertList] = await Promise.all([
+    const [kpiResult, trend, products, channels, alertList, insightList] = await Promise.all([
       fetchKpi(),
       fetchRevenueTrend(),
       fetchTopProducts(),
       fetchChannelRevenue(),
       fetchAlerts(),
+      fetchInsights(),
     ])
     setKpi(kpiResult.data)
     setRevenueTrend(trend)
     setTopProducts(products)
     setChannelRevenue(channels)
     setAlerts(alertList)
+    setAiInsights(insightList)
     setIsMock(kpiResult.mock)
   }
 
@@ -377,17 +430,45 @@ export default function DashboardScreen({ navigation }) {
       }
     >
       {/* ── Header ──────────────────────────────────────────────────────── */}
-      <View style={s.header}>
-        <View>
-          <Text style={s.greeting}>Xin chào, {user?.name?.split(' ').pop()} 👋</Text>
-          <Text style={s.dateText}>
-            {new Date().toLocaleDateString('vi-VN', { weekday: 'long', day: 'numeric', month: 'long' })}
-          </Text>
-        </View>
-        <TouchableOpacity onPress={logout} style={s.logoutBtn}>
-          <Text style={s.logoutText}>Đăng xuất</Text>
-        </TouchableOpacity>
-      </View>
+      {(() => {
+        const roleCfg = ROLE_COLORS[user?.role] ?? { color: colors.secondary, bg: 'rgba(173,198,255,0.15)', label: user?.role ?? 'User' }
+        const companyName = user?.companyName ?? user?.company ?? null
+        const companyInitial = companyName ? companyName.charAt(0).toUpperCase() : 'S'
+        return (
+          <View style={s.header}>
+            {/* Logo chữ cái đầu + thông tin */}
+            <View style={s.headerLeft}>
+              <View style={s.companyLogo}>
+                <Text style={s.companyLogoText}>{companyInitial}</Text>
+              </View>
+              <View>
+                {companyName && (
+                  <Text style={s.companyName} numberOfLines={1}>{companyName}</Text>
+                )}
+                <Text style={s.greeting}>Xin chào, {user?.name?.split(' ').pop()} 👋</Text>
+                <Text style={s.dateText}>
+                  {new Date().toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })}
+                </Text>
+              </View>
+            </View>
+            {/* Actions bên phải */}
+            <View style={s.headerRight}>
+              {/* Badge role */}
+              <View style={[s.roleBadge, { backgroundColor: roleCfg.bg }]}>
+                <Text style={[s.roleBadgeText, { color: roleCfg.color }]}>{roleCfg.label}</Text>
+              </View>
+              {/* Refresh */}
+              <TouchableOpacity onPress={onRefresh} style={s.headerBtn} disabled={refreshing}>
+                <Text style={{ fontSize: 18 }}>{refreshing ? '⏳' : '🔄'}</Text>
+              </TouchableOpacity>
+              {/* Notification */}
+              <TouchableOpacity onPress={() => navigation?.navigate('Alerts')} style={s.headerBtn}>
+                <Text style={{ fontSize: 18 }}>🔔</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )
+      })()}
 
       {/* ── Banner dữ liệu mẫu ──────────────────────────────────────────── */}
       {isMock && (
@@ -535,6 +616,43 @@ export default function DashboardScreen({ navigation }) {
       )}
 
       {/* ════════════════════════════════════════════════════════════════════
+          SECTION 4B — AI Insights (tối đa 4 items)
+          ════════════════════════════════════════════════════════════════════ */}
+      {aiInsights.length > 0 && (
+        <View style={s.darkCard}>
+          <Text style={s.darkCardLabel}>AI INSIGHTS</Text>
+          {aiInsights.map((ins, i) => {
+            const cfg  = INSIGHT_CONFIG[ins.type] ?? INSIGHT_CONFIG.info
+            const lvl  = LEVEL_BADGE[ins.level]   ?? LEVEL_BADGE.info
+            return (
+              <TouchableOpacity
+                key={i}
+                onPress={() => cfg.navigate && navigation?.navigate(cfg.navigate)}
+                activeOpacity={cfg.navigate ? 0.7 : 1}
+                style={[
+                  {
+                    flexDirection: 'row', alignItems: 'flex-start',
+                    backgroundColor: cfg.bg, borderRadius: 8,
+                    padding: 10, marginBottom: i < aiInsights.length - 1 ? 8 : 0,
+                  },
+                ]}
+              >
+                <Text style={{ fontSize: 18, marginRight: 10 }}>{cfg.emoji}</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: '#F9FAFB', fontSize: 13, lineHeight: 18 }}>
+                    {ins.text}
+                  </Text>
+                </View>
+                <View style={[{ paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8, marginLeft: 8 }, { backgroundColor: lvl.bg }]}>
+                  <Text style={{ fontSize: 10, fontWeight: '700', color: lvl.color }}>{lvl.label}</Text>
+                </View>
+              </TouchableOpacity>
+            )
+          })}
+        </View>
+      )}
+
+      {/* ════════════════════════════════════════════════════════════════════
           SECTION 5 — Cảnh báo nhanh (chỉ hiện nếu có alerts)
           ════════════════════════════════════════════════════════════════════ */}
       {alerts.length > 0 && (
@@ -594,13 +712,31 @@ export default function DashboardScreen({ navigation }) {
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surface },
   header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    padding: 20, paddingTop: 52,
+    flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between',
+    paddingHorizontal: 16, paddingTop: 52, paddingBottom: 14,
+    backgroundColor: colors.surfaceContainerLow,
+    borderBottomWidth: 1, borderBottomColor: colors.outlineVariant,
   },
-  greeting:   { fontSize: 18, fontWeight: '700', color: colors.onSurface },
-  dateText:   { fontSize: 12, color: colors.outline, marginTop: 2 },
-  logoutBtn:  { padding: 8 },
-  logoutText: { fontSize: 13, color: colors.error },
+  headerLeft:  { flexDirection: 'row', alignItems: 'flex-start', flex: 1 },
+  headerRight: { alignItems: 'flex-end', gap: 6 },
+  headerBtn:   { padding: 4 },
+
+  // Logo chữ cái đầu công ty
+  companyLogo: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: colors.primaryContainer,
+    alignItems: 'center', justifyContent: 'center',
+    marginRight: 10, marginTop: 2,
+  },
+  companyLogoText: { fontSize: 18, fontWeight: '700', color: colors.surface },
+  companyName: { fontSize: 12, color: colors.outline, marginBottom: 1 },
+
+  // Role badge
+  roleBadge:     { paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.full },
+  roleBadgeText: { fontSize: 10, fontWeight: '700' },
+
+  greeting:   { fontSize: 16, fontWeight: '700', color: colors.onSurface },
+  dateText:   { fontSize: 11, color: colors.outline, marginTop: 1 },
 
   // Banner mock
   mockBanner: {

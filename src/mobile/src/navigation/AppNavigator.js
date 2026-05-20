@@ -1,24 +1,32 @@
-import React from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { NavigationContainer } from '@react-navigation/native'
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs'
 import { createStackNavigator }     from '@react-navigation/stack'
 import { Text, View }               from 'react-native'
 import { useAuth }                  from '../context/AuthContext'
 import { colors }                   from '../components/theme'
+import api                          from '../api/axios'
 
-// Screens
+// Screens – Auth
 import LoginScreen           from '../screens/LoginScreen'
 import ForgotPasswordScreen  from '../screens/ForgotPasswordScreen'
 import ResetPasswordScreen   from '../screens/ResetPasswordScreen'
+import ChangePasswordScreen  from '../screens/ChangePasswordScreen'
+
+// Screens – Main
 import DashboardScreen       from '../screens/DashboardScreen'
 import OrdersScreen          from '../screens/OrdersScreen'
+import OrderDetailScreen     from '../screens/OrderDetailScreen'
 import AddOrderScreen        from '../screens/AddOrderScreen'
 import AlertsScreen          from '../screens/AlertsScreen'
 import ProfileScreen         from '../screens/ProfileScreen'
-import ChangePasswordScreen  from '../screens/ChangePasswordScreen'
 import ProductsScreen        from '../screens/ProductsScreen'
 import QuickReportScreen     from '../screens/QuickReportScreen'
 import CustomersScreen       from '../screens/CustomersScreen'
+import POSScreen             from '../screens/POSScreen'
+import KhachHangScreen       from '../screens/KhachHangScreen'
+import TonKhoScreen          from '../screens/TonKhoScreen'
+import KPINhanVienScreen     from '../screens/KPINhanVienScreen'
 
 const Tab       = createBottomTabNavigator()
 const Stack     = createStackNavigator()
@@ -39,6 +47,41 @@ function TabIcon({ emoji, focused }) {
   )
 }
 
+// Badge số thông báo chưa đọc
+function TabIconWithBadge({ emoji, focused, badge }) {
+  return (
+    <View style={{ position: 'relative' }}>
+      <Text style={{ fontSize: 22, opacity: focused ? 1 : 0.5 }}>{emoji}</Text>
+      {badge > 0 && (
+        <View style={{
+          position: 'absolute', top: -4, right: -8,
+          backgroundColor: '#EF4444',
+          borderRadius: 9, minWidth: 18, height: 18,
+          alignItems: 'center', justifyContent: 'center',
+          paddingHorizontal: 3,
+        }}>
+          <Text style={{ color: '#FFF', fontSize: 10, fontWeight: '700' }}>
+            {badge > 99 ? '99+' : String(badge)}
+          </Text>
+        </View>
+      )}
+    </View>
+  )
+}
+
+// Tab POS nổi bật (màu primary)
+function TabIconPOS({ focused }) {
+  return (
+    <View style={{
+      backgroundColor: focused ? '#6366F1' : '#3730A3',
+      borderRadius: 16, paddingHorizontal: 10, paddingVertical: 4,
+      marginTop: -4,
+    }}>
+      <Text style={{ fontSize: 20 }}>🛍️</Text>
+    </View>
+  )
+}
+
 // ─── Sub-stacks ───────────────────────────────────────────────────────────────
 
 // Dashboard Stack – bao gồm AlertsScreen để "Xem tất cả cảnh báo" hoạt động
@@ -48,6 +91,9 @@ function DashboardWithAlertsStack() {
     <Stack.Navigator screenOptions={STACK_SCREEN_OPTIONS}>
       <Stack.Screen name="DashboardMain" component={DashboardScreen} options={{ headerShown: false }} />
       <Stack.Screen name="Alerts" component={AlertsScreen} options={{ title: 'Cảnh báo & Thông báo' }} />
+      <Stack.Screen name="KhachHang"     component={KhachHangScreen}   options={{ title: 'Khách hàng'       }} />
+      <Stack.Screen name="TonKho"        component={TonKhoScreen}       options={{ title: 'Tồn kho'          }} />
+      <Stack.Screen name="KPINhanVien"   component={KPINhanVienScreen}  options={{ title: 'KPI của tôi'      }} />
     </Stack.Navigator>
   )
 }
@@ -57,16 +103,29 @@ function DashboardSimpleStack() {
   return (
     <Stack.Navigator screenOptions={STACK_SCREEN_OPTIONS}>
       <Stack.Screen name="DashboardMain" component={DashboardScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="KhachHang"     component={KhachHangScreen}   options={{ title: 'Khách hàng'       }} />
+      <Stack.Screen name="TonKho"        component={TonKhoScreen}       options={{ title: 'Tồn kho'          }} />
+      <Stack.Screen name="KPINhanVien"   component={KPINhanVienScreen}  options={{ title: 'KPI của tôi'      }} />
     </Stack.Navigator>
   )
 }
 
-// Orders Stack (Orders list + AddOrder)
+// Orders Stack (Orders list + OrderDetail + AddOrder)
 function OrdersStack() {
   return (
     <Stack.Navigator screenOptions={STACK_SCREEN_OPTIONS}>
-      <Stack.Screen name="OrdersList" component={OrdersScreen}  options={{ title: 'Đơn hàng'     }} />
-      <Stack.Screen name="AddOrder"   component={AddOrderScreen} options={{ title: 'Thêm đơn hàng' }} />
+      <Stack.Screen name="OrdersList"   component={OrdersScreen}      options={{ title: 'Đơn hàng'      }} />
+      <Stack.Screen name="OrderDetail"  component={OrderDetailScreen} options={{ title: 'Chi tiết đơn'   }} />
+      <Stack.Screen name="AddOrder"     component={AddOrderScreen}    options={{ title: 'Thêm đơn hàng' }} />
+    </Stack.Navigator>
+  )
+}
+
+// POS Stack
+function POSStack() {
+  return (
+    <Stack.Navigator screenOptions={STACK_SCREEN_OPTIONS}>
+      <Stack.Screen name="POSMain" component={POSScreen} options={{ title: 'Bán hàng (POS)' }} />
     </Stack.Navigator>
   )
 }
@@ -76,6 +135,15 @@ function ProductsStack() {
   return (
     <Stack.Navigator screenOptions={STACK_SCREEN_OPTIONS}>
       <Stack.Screen name="ProductsList" component={ProductsScreen} options={{ title: 'Sản phẩm' }} />
+    </Stack.Navigator>
+  )
+}
+
+// Notifications Stack (Tab Thông báo)
+function NotificationsStack() {
+  return (
+    <Stack.Navigator screenOptions={STACK_SCREEN_OPTIONS}>
+      <Stack.Screen name="AlertsMain" component={AlertsScreen} options={{ title: 'Thông báo' }} />
     </Stack.Navigator>
   )
 }
@@ -90,14 +158,42 @@ function ReportsStack() {
   )
 }
 
-// Profile Stack (Profile + ChangePassword)
+// Profile Stack (Profile + ChangePassword + KPI + TonKho)
 function ProfileStack() {
   return (
     <Stack.Navigator screenOptions={STACK_SCREEN_OPTIONS}>
-      <Stack.Screen name="ProfileMain"    component={ProfileScreen}        options={{ title: 'Tài khoản'    }} />
+      <Stack.Screen name="ProfileMain"    component={ProfileScreen}       options={{ title: 'Tài khoản'    }} />
       <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} options={{ title: 'Đổi mật khẩu' }} />
+      <Stack.Screen name="KPINhanVien"    component={KPINhanVienScreen}   options={{ title: 'KPI của tôi'  }} />
+      <Stack.Screen name="TonKho"         component={TonKhoScreen}        options={{ title: 'Tồn kho'      }} />
     </Stack.Navigator>
   )
+}
+
+// ─── Hook lấy số thông báo chưa đọc ─────────────────────────────────────────
+function useUnreadCount() {
+  const [count, setCount] = useState(0)
+
+  useEffect(() => {
+    let cancelled = false
+    const fetch = async () => {
+      try {
+        const res = await api.get('/api/notifications', { params: { limit: 50 } })
+        const raw = res.data?.data ?? res.data
+        const items = Array.isArray(raw) ? raw : (raw?.items ?? [])
+        const unread = items.filter(n => !n.isRead).length
+        if (!cancelled) setCount(unread)
+      } catch {
+        // Im lặng nếu lỗi, giữ count = 0
+      }
+    }
+    fetch()
+    // Poll mỗi 60s
+    const timer = setInterval(fetch, 60_000)
+    return () => { cancelled = true; clearInterval(timer) }
+  }, [])
+
+  return count
 }
 
 // ─── Tab cấu hình chuẩn ──────────────────────────────────────────────────────
@@ -118,9 +214,12 @@ const TAB_SCREEN_OPTIONS = {
 }
 
 // ─── Main Tabs theo role ──────────────────────────────────────────────────────
+// Tab 5 chuẩn: Tổng quan | Đơn hàng | POS | Thông báo | Tôi
+// RBAC giữ nguyên logic cũ — thêm POS tab và Thông báo tab với badge
 
-// Staff: Dashboard(+Alerts) | Orders(+Add) | Products | Profile
+// Staff: Tổng quan(+Alerts) | Đơn hàng(+Add) | POS | Sản phẩm | Tôi
 function StaffTabs() {
+  const unread = useUnreadCount()
   return (
     <Tab.Navigator screenOptions={TAB_SCREEN_OPTIONS}>
       <Tab.Screen
@@ -134,21 +233,30 @@ function StaffTabs() {
         options={{ title: 'Đơn hàng', headerShown: false, tabBarIcon: ({ focused }) => <TabIcon emoji="🛒" focused={focused} /> }}
       />
       <Tab.Screen
-        name="Products"
-        component={ProductsStack}
-        options={{ title: 'Sản phẩm', headerShown: false, tabBarIcon: ({ focused }) => <TabIcon emoji="📦" focused={focused} /> }}
+        name="POS"
+        component={POSStack}
+        options={{
+          title: 'Bán hàng', headerShown: false,
+          tabBarIcon: ({ focused }) => <TabIconPOS focused={focused} />,
+        }}
+      />
+      <Tab.Screen
+        name="Notifications"
+        component={NotificationsStack}
+        options={{ title: 'Thông báo', headerShown: false, tabBarIcon: ({ focused }) => <TabIconWithBadge emoji="🔔" focused={focused} badge={unread} /> }}
       />
       <Tab.Screen
         name="Profile"
         component={ProfileStack}
-        options={{ title: 'Tài khoản', headerShown: false, tabBarIcon: ({ focused }) => <TabIcon emoji="👤" focused={focused} /> }}
+        options={{ title: 'Tôi', headerShown: false, tabBarIcon: ({ focused }) => <TabIcon emoji="👤" focused={focused} /> }}
       />
     </Tab.Navigator>
   )
 }
 
-// Owner / Manager: Dashboard(+Alerts) | Orders | Reports | Profile
+// Owner / Manager: Tổng quan | Đơn hàng | POS | Thông báo | Tôi
 function OwnerManagerTabs() {
+  const unread = useUnreadCount()
   return (
     <Tab.Navigator screenOptions={TAB_SCREEN_OPTIONS}>
       <Tab.Screen
@@ -162,21 +270,30 @@ function OwnerManagerTabs() {
         options={{ title: 'Đơn hàng', headerShown: false, tabBarIcon: ({ focused }) => <TabIcon emoji="🛒" focused={focused} /> }}
       />
       <Tab.Screen
-        name="Reports"
-        component={ReportsStack}
-        options={{ title: 'Báo cáo', headerShown: false, tabBarIcon: ({ focused }) => <TabIcon emoji="📈" focused={focused} /> }}
+        name="POS"
+        component={POSStack}
+        options={{
+          title: 'Bán hàng', headerShown: false,
+          tabBarIcon: ({ focused }) => <TabIconPOS focused={focused} />,
+        }}
+      />
+      <Tab.Screen
+        name="Notifications"
+        component={NotificationsStack}
+        options={{ title: 'Thông báo', headerShown: false, tabBarIcon: ({ focused }) => <TabIconWithBadge emoji="🔔" focused={focused} badge={unread} /> }}
       />
       <Tab.Screen
         name="Profile"
         component={ProfileStack}
-        options={{ title: 'Tài khoản', headerShown: false, tabBarIcon: ({ focused }) => <TabIcon emoji="👤" focused={focused} /> }}
+        options={{ title: 'Tôi', headerShown: false, tabBarIcon: ({ focused }) => <TabIcon emoji="👤" focused={focused} /> }}
       />
     </Tab.Navigator>
   )
 }
 
-// DataIT: Dashboard | Orders(view-only context, add button hidden by usePermission) | Alerts | Profile
+// DataIT: Tổng quan | Đơn hàng | POS | Thông báo | Tôi
 function DataITTabs() {
+  const unread = useUnreadCount()
   return (
     <Tab.Navigator screenOptions={TAB_SCREEN_OPTIONS}>
       <Tab.Screen
@@ -190,21 +307,30 @@ function DataITTabs() {
         options={{ title: 'Đơn hàng', headerShown: false, tabBarIcon: ({ focused }) => <TabIcon emoji="🛒" focused={focused} /> }}
       />
       <Tab.Screen
-        name="Alerts"
-        component={AlertsScreen}
-        options={{ title: 'Cảnh báo', tabBarIcon: ({ focused }) => <TabIcon emoji="⚠️" focused={focused} /> }}
+        name="POS"
+        component={POSStack}
+        options={{
+          title: 'Bán hàng', headerShown: false,
+          tabBarIcon: ({ focused }) => <TabIconPOS focused={focused} />,
+        }}
+      />
+      <Tab.Screen
+        name="Notifications"
+        component={NotificationsStack}
+        options={{ title: 'Thông báo', headerShown: false, tabBarIcon: ({ focused }) => <TabIconWithBadge emoji="🔔" focused={focused} badge={unread} /> }}
       />
       <Tab.Screen
         name="Profile"
         component={ProfileStack}
-        options={{ title: 'Tài khoản', headerShown: false, tabBarIcon: ({ focused }) => <TabIcon emoji="👤" focused={focused} /> }}
+        options={{ title: 'Tôi', headerShown: false, tabBarIcon: ({ focused }) => <TabIcon emoji="👤" focused={focused} /> }}
       />
     </Tab.Navigator>
   )
 }
 
-// Viewer: Dashboard | Orders(read-only) | Alerts | Profile
+// Viewer: Tổng quan | Đơn hàng | Thông báo | Tôi (không có POS)
 function ViewerTabs() {
+  const unread = useUnreadCount()
   return (
     <Tab.Navigator screenOptions={TAB_SCREEN_OPTIONS}>
       <Tab.Screen
@@ -218,14 +344,14 @@ function ViewerTabs() {
         options={{ title: 'Đơn hàng', headerShown: false, tabBarIcon: ({ focused }) => <TabIcon emoji="🛒" focused={focused} /> }}
       />
       <Tab.Screen
-        name="Alerts"
-        component={AlertsScreen}
-        options={{ title: 'Cảnh báo', tabBarIcon: ({ focused }) => <TabIcon emoji="⚠️" focused={focused} /> }}
+        name="Notifications"
+        component={NotificationsStack}
+        options={{ title: 'Thông báo', headerShown: false, tabBarIcon: ({ focused }) => <TabIconWithBadge emoji="🔔" focused={focused} badge={unread} /> }}
       />
       <Tab.Screen
         name="Profile"
         component={ProfileStack}
-        options={{ title: 'Tài khoản', headerShown: false, tabBarIcon: ({ focused }) => <TabIcon emoji="👤" focused={focused} /> }}
+        options={{ title: 'Tôi', headerShown: false, tabBarIcon: ({ focused }) => <TabIcon emoji="👤" focused={focused} /> }}
       />
     </Tab.Navigator>
   )
@@ -233,6 +359,7 @@ function ViewerTabs() {
 
 // Fallback tabs – dùng nếu role không xác định
 function DefaultTabs() {
+  const unread = useUnreadCount()
   return (
     <Tab.Navigator screenOptions={TAB_SCREEN_OPTIONS}>
       <Tab.Screen
@@ -241,14 +368,14 @@ function DefaultTabs() {
         options={{ title: 'Tổng quan', headerShown: false, tabBarIcon: ({ focused }) => <TabIcon emoji="📊" focused={focused} /> }}
       />
       <Tab.Screen
-        name="Alerts"
-        component={AlertsScreen}
-        options={{ title: 'Cảnh báo', tabBarIcon: ({ focused }) => <TabIcon emoji="⚠️" focused={focused} /> }}
+        name="Notifications"
+        component={NotificationsStack}
+        options={{ title: 'Thông báo', headerShown: false, tabBarIcon: ({ focused }) => <TabIconWithBadge emoji="🔔" focused={focused} badge={unread} /> }}
       />
       <Tab.Screen
         name="Profile"
         component={ProfileStack}
-        options={{ title: 'Tài khoản', headerShown: false, tabBarIcon: ({ focused }) => <TabIcon emoji="👤" focused={focused} /> }}
+        options={{ title: 'Tôi', headerShown: false, tabBarIcon: ({ focused }) => <TabIcon emoji="👤" focused={focused} /> }}
       />
     </Tab.Navigator>
   )

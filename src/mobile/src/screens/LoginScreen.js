@@ -54,7 +54,12 @@ export default function LoginScreen({ navigation }) {
       {/* Logo */}
       <View style={s.logoBox}>
         <View style={s.logoIcon}>
-          <Text style={s.logoText}>📊</Text>
+          {/* Bar chart ascending — đồng bộ với web TopBar */}
+          <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 4 }}>
+            <View style={{ width: 8, height: 14, backgroundColor: 'rgba(255,255,255,0.65)', borderRadius: 2 }} />
+            <View style={{ width: 8, height: 20, backgroundColor: 'rgba(255,255,255,0.82)', borderRadius: 2 }} />
+            <View style={{ width: 8, height: 27, backgroundColor: '#ffffff', borderRadius: 2 }} />
+          </View>
         </View>
         <Text style={s.appName}>SalesAnalytics</Text>
         <Text style={s.appSub}>Hệ thống phân tích bán hàng đa kênh</Text>
@@ -140,11 +145,10 @@ const s = StyleSheet.create({
   logoBox: { alignItems: 'center', marginBottom: 32 },
   logoIcon: {
     width: 64, height: 64, borderRadius: 16,
-    backgroundColor: colors.primaryContainer,
+    backgroundColor: '#6366F1',
     alignItems: 'center', justifyContent: 'center',
     marginBottom: 12,
   },
-  logoText:  { fontSize: 32 },
   appName:   { fontSize: 22, fontWeight: '700', color: colors.onSurface },
   appSub:    { fontSize: 13, color: colors.outline, marginTop: 4, textAlign: 'center' },
   card: {

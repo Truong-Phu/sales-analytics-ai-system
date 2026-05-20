@@ -111,8 +111,8 @@ function relativeTime(dateStr) {
   return new Date(dateStr).toLocaleDateString('vi-VN')
 }
 
-// ─── Item component — FIX 2: field mapping đa format + card redesign ─────────
-function OrderItem({ item }) {
+// ─── Item component — field mapping đa format + card redesign ────────────────
+function OrderItem({ item, onPress }) {
   // Lấy field theo nhiều tên khác nhau từ các backend format
   const orderCode    = item.externalOrderId ?? item.external_order_id ?? item.code ?? `#${item.orderId ?? item.id ?? '?'}`
   const customerName = item.customerName   ?? item.customer_name   ?? item.customer?.name   ?? 'Khách lẻ'
@@ -130,7 +130,11 @@ function OrderItem({ item }) {
     : ''
 
   return (
-    <View style={[s.orderCard, { borderLeftColor: cfg.border }]}>
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.8}
+      style={[s.orderCard, { borderLeftColor: cfg.border }]}
+    >
       {/* Dòng 1: mã đơn + badge trạng thái */}
       <View style={s.orderHeader}>
         <Text style={s.orderId} numberOfLines={1}>{orderCode}</Text>
@@ -154,7 +158,7 @@ function OrderItem({ item }) {
         <Text style={s.date}>{dateDisplay}</Text>
         <Text style={s.amount}>₫{formatMoney(total)}</Text>
       </View>
-    </View>
+    </TouchableOpacity>
   )
 }
 
@@ -358,7 +362,15 @@ export default function OrdersScreen({ navigation }) {
         <FlatList
           data={data}
           keyExtractor={(item, i) => `${item.orderId ?? i}`}
-          renderItem={({ item }) => <OrderItem item={item} />}
+          renderItem={({ item }) => (
+              <OrderItem
+                item={item}
+                onPress={() => navigation.navigate('OrderDetail', {
+                  orderId:   item.orderId ?? item.id,
+                  orderData: item,
+                })}
+              />
+            )}}
           contentContainerStyle={s.list}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />

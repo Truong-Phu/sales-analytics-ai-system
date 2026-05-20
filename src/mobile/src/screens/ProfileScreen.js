@@ -179,15 +179,37 @@ export default function ProfileScreen({ navigation }) {
         </View>
       </View>
 
+      {/* Menu: Nhanh đến */}
+      <View style={s.menuSection}>
+        <Text style={s.sectionTitle}>NHANH ĐẾN</Text>
+        <View style={s.menuCard}>
+          <MenuItem
+            icon="📊"
+            label="KPI của tôi"
+            subtitle="Xem tiến độ cá nhân"
+            onPress={() => navigation.navigate('KPINhanVien')}
+          />
+          <View style={s.divider} />
+          <MenuItem
+            icon="🛍️"
+            label="Tồn kho"
+            subtitle="Kiểm tra sản phẩm sắp hết"
+            onPress={() => navigation.navigate('TonKho')}
+          />
+        </View>
+      </View>
+
       {/* Menu: Cài đặt */}
       <View style={s.menuSection}>
         <Text style={s.sectionTitle}>CÀI ĐẶT</Text>
         <View style={s.menuCard}>
           <MenuItem
             icon="🔔"
-            label="Thông báo"
+            label="Push notification"
             subtitle="Bật"
-            onPress={() => {}}
+            onPress={() => {
+              Alert.alert('Push notification', 'Tính năng đang phát triển.', [{ text: 'OK' }])
+            }}
           />
           <View style={s.divider} />
           <MenuItem
@@ -200,6 +222,19 @@ export default function ProfileScreen({ navigation }) {
                 { text: 'English',    onPress: () => {} },
                 { text: 'Hủy', style: 'cancel' },
               ])
+            }}
+          />
+          <View style={s.divider} />
+          <MenuItem
+            icon="🖥️"
+            label="IP Server"
+            subtitle={BASE_URL}
+            onPress={() => {
+              Alert.alert(
+                'Địa chỉ Server',
+                `Địa chỉ hiện tại:\n${BASE_URL}\n\nĐể thay đổi, cập nhật biến EXPO_PUBLIC_API_URL trong file .env và khởi động lại app.`,
+                [{ text: 'Đã hiểu' }]
+              )
             }}
           />
         </View>

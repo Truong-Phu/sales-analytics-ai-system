@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import {
   View, Text, FlatList, StyleSheet,
   ActivityIndicator, RefreshControl, TouchableOpacity,
-  Alert,
+  ScrollView, Alert,
 } from 'react-native'
 import api from '../api/axios'
 import { colors, radius } from '../components/theme'
@@ -21,21 +21,35 @@ function relativeTime(dateStr) {
   return new Date(dateStr).toLocaleDateString('vi-VN')
 }
 
-// ─── Icon và style theo phân loại ────────────────────────────────────────────
-// category: 'low_stock' | 'revenue_anomaly' | 'system' | 'order' | 'payment'
+// ─── Cấu hình icon và style theo category ────────────────────────────────────
 const CATEGORY_CONFIG = {
-  low_stock:       { emoji: '🏭', color: '#ffb400', bg: 'rgba(255,180,0,0.10)',   border: 'rgba(255,180,0,0.25)'   },
-  revenue_anomaly: { emoji: '📉', color: '#ffb4ab', bg: 'rgba(255,180,171,0.10)', border: 'rgba(255,180,171,0.25)' },
-  system:          { emoji: '⚙️', color: '#adc6ff', bg: 'rgba(173,198,255,0.10)', border: 'rgba(173,198,255,0.25)' },
-  order:           { emoji: '🛒', color: '#4ae176', bg: 'rgba(74,225,118,0.10)',   border: 'rgba(74,225,118,0.25)'  },
-  payment:         { emoji: '💳', color: '#c4c0ff', bg: 'rgba(196,192,255,0.10)', border: 'rgba(196,192,255,0.25)' },
-  // Mức nghiêm trọng từ anomaly endpoint cũ
-  high:   { emoji: '🔴', color: '#ffb4ab', bg: 'rgba(255,180,171,0.10)', border: 'rgba(255,180,171,0.25)' },
-  medium: { emoji: '🟡', color: '#ffb400', bg: 'rgba(255,180,0,0.10)',   border: 'rgba(255,180,0,0.25)'   },
-  low:    { emoji: '🔵', color: '#adc6ff', bg: 'rgba(173,198,255,0.10)', border: 'rgba(173,198,255,0.25)' },
+  // AI Cảnh báo
+  low_stock:       { emoji: '🏭', color: '#F59E0B', bg: 'rgba(245,158,11,0.10)',   border: 'rgba(245,158,11,0.25)',   tab: 'ai'     },
+  revenue_anomaly: { emoji: '📉', color: '#EF4444', bg: 'rgba(239,68,68,0.10)',    border: 'rgba(239,68,68,0.25)',    tab: 'ai'     },
+  churn:           { emoji: '⚠️', color: '#F59E0B', bg: 'rgba(245,158,11,0.10)',   border: 'rgba(245,158,11,0.25)',   tab: 'ai'     },
+  at_risk:         { emoji: '🟡', color: '#F59E0B', bg: 'rgba(245,158,11,0.10)',   border: 'rgba(245,158,11,0.25)',   tab: 'ai'     },
+  // Mức độ anomaly (từ endpoint AI cũ)
+  high:            { emoji: '🔴', color: '#EF4444', bg: 'rgba(239,68,68,0.10)',    border: 'rgba(239,68,68,0.25)',    tab: 'ai'     },
+  medium:          { emoji: '🟡', color: '#F59E0B', bg: 'rgba(245,158,11,0.10)',   border: 'rgba(245,158,11,0.25)',   tab: 'ai'     },
+  low:             { emoji: '🔵', color: '#60A5FA', bg: 'rgba(96,165,250,0.10)',   border: 'rgba(96,165,250,0.25)',   tab: 'ai'     },
+  // Hệ thống
+  system:          { emoji: '⚙️', color: '#60A5FA', bg: 'rgba(96,165,250,0.10)',   border: 'rgba(96,165,250,0.25)',   tab: 'system' },
+  etl:             { emoji: '🔄', color: '#60A5FA', bg: 'rgba(96,165,250,0.10)',   border: 'rgba(96,165,250,0.25)',   tab: 'system' },
+  success:         { emoji: '✅', color: '#4AE176', bg: 'rgba(74,225,118,0.10)',   border: 'rgba(74,225,118,0.25)',   tab: 'system' },
+  // Đơn hàng
+  order:           { emoji: '🛒', color: '#4AE176', bg: 'rgba(74,225,118,0.10)',   border: 'rgba(74,225,118,0.25)',   tab: 'order'  },
+  payment:         { emoji: '💳', color: '#A78BFA', bg: 'rgba(167,139,250,0.10)', border: 'rgba(167,139,250,0.25)', tab: 'order'  },
+  shipping:        { emoji: '🚚', color: '#60A5FA', bg: 'rgba(96,165,250,0.10)',   border: 'rgba(96,165,250,0.25)',   tab: 'order'  },
 }
+const DEFAULT_CFG = { emoji: '🔔', color: colors.secondary, bg: 'rgba(173,198,255,0.08)', border: 'rgba(173,198,255,0.2)', tab: 'system' }
 
-const DEFAULT_CFG = { emoji: '🔔', color: colors.secondary, bg: 'rgba(173,198,255,0.08)', border: 'rgba(173,198,255,0.2)' }
+// ─── Tab lọc ─────────────────────────────────────────────────────────────────
+const FILTER_TABS = [
+  { key: 'all',    label: 'Tất cả'      },
+  { key: 'ai',     label: 'AI Cảnh báo' },
+  { key: 'system', label: 'Hệ thống'    },
+  { key: 'order',  label: 'Đơn hàng'    },
+]
 
 // ─── Mock data fallback ───────────────────────────────────────────────────────
 const MOCK_ALERTS = [
@@ -69,6 +83,12 @@ const MOCK_ALERTS = [
     message: 'Đơn SP-2026-0034: thanh toán MoMo thất bại. Vui lòng kiểm tra lại.',
     createdAt: new Date(Date.now() - 30 * 60_000).toISOString(),
   },
+  {
+    id: 6, category: 'churn', isRead: false,
+    title: 'Khách hàng có nguy cơ rời bỏ',
+    message: '12 khách hàng phân khúc "At Risk" chưa mua hàng trong 45 ngày.',
+    createdAt: new Date(Date.now() - 3 * 3_600_000).toISOString(),
+  },
 ]
 
 // ─── Item component ───────────────────────────────────────────────────────────
@@ -77,16 +97,10 @@ function AlertItem({ item, onMarkRead }) {
   return (
     <TouchableOpacity
       activeOpacity={0.75}
-      onPress={() => {
-        if (!item.isRead) onMarkRead(item.id)
-      }}
+      onPress={() => { if (!item.isRead) onMarkRead(item.id) }}
       style={[
         s.card,
-        {
-          backgroundColor: cfg.bg,
-          borderColor: cfg.border,
-          opacity: item.isRead ? 0.65 : 1,
-        },
+        { backgroundColor: cfg.bg, borderColor: cfg.border, opacity: item.isRead ? 0.65 : 1 },
       ]}
     >
       <View style={s.cardHeader}>
@@ -111,39 +125,41 @@ function AlertItem({ item, onMarkRead }) {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function AlertsScreen() {
-  const [alerts,     setAlerts]     = useState([])
-  const [loading,    setLoading]    = useState(true)
-  const [refreshing, setRefreshing] = useState(false)
-  const [isMock,     setIsMock]     = useState(false)
+  const [alerts,      setAlerts]      = useState([])
+  const [loading,     setLoading]     = useState(true)
+  const [refreshing,  setRefreshing]  = useState(false)
+  const [isMock,      setIsMock]      = useState(false)
+  const [activeTab,   setActiveTab]   = useState('all')
+  const [markingAll,  setMarkingAll]  = useState(false)
 
-  // Gọi GET /api/notifications?category=alert — fallback mock
+  // Gọi GET /api/notifications — fallback AI anomaly → mock
   const fetchAlerts = useCallback(async () => {
     try {
       const res = await api.get('/api/notifications', {
-        params: { category: 'alert', limit: 50 },
+        params: { limit: 100 },
       })
-      const raw = res.data?.data ?? res.data
+      const raw   = res.data?.data ?? res.data
       const items = Array.isArray(raw) ? raw : (raw?.items ?? [])
       setAlerts(items)
       setIsMock(false)
     } catch {
-      // Thử endpoint anomaly cũ (AI anomaly detection)
+      // Fallback: thử endpoint anomaly AI cũ
       try {
         const res2 = await api.get('/api/ai/anomaly', { params: { days: 30 } })
         const anomalies = res2.data?.anomalies ?? res2.data?.data?.anomalies ?? []
-        // Map sang format mới
         const mapped = anomalies.map((a, i) => ({
           id: i,
-          category: a.severity,
+          category: a.severity ?? 'low',
           isRead: false,
-          title: a.severity === 'high'   ? 'Bất thường nghiêm trọng'
-               : a.severity === 'medium' ? 'Bất thường trung bình'
-               :                           'Biến động nhỏ',
-          message: `${a.channel ?? 'Kênh không xác định'} — ₫${(a.value / 1_000_000).toFixed(2)}M (z-score=${a.zScore?.toFixed(2)}σ)`,
+          title:
+            a.severity === 'high'   ? 'Bất thường nghiêm trọng'
+          : a.severity === 'medium' ? 'Bất thường trung bình'
+          :                           'Biến động nhỏ',
+          message: `${a.channel ?? 'Kênh không xác định'} — ₫${Number.isFinite(a.value) ? (a.value / 1_000_000).toFixed(2) : '—'}M (z-score=${a.zScore?.toFixed(2) ?? '—'}σ)`,
           createdAt: a.date ? new Date(a.date).toISOString() : new Date().toISOString(),
         }))
-        setAlerts(mapped)
-        setIsMock(false)
+        setAlerts(mapped.length ? mapped : MOCK_ALERTS)
+        setIsMock(!mapped.length)
       } catch {
         setAlerts(MOCK_ALERTS)
         setIsMock(true)
@@ -161,21 +177,67 @@ export default function AlertsScreen() {
     setRefreshing(false)
   }
 
-  // Đánh dấu đã đọc — PATCH /api/notifications/{id}/read
+  // Đánh dấu đã đọc 1 item — PATCH /api/notifications/{id}/read
   const handleMarkRead = async (id) => {
-    // Cập nhật local ngay (optimistic)
     setAlerts(prev => prev.map(a => a.id === id ? { ...a, isRead: true } : a))
     try {
       await api.patch(`/api/notifications/${id}/read`)
     } catch {
-      // Nếu lỗi, rollback (không throw — im lặng)
       setAlerts(prev => prev.map(a => a.id === id ? { ...a, isRead: false } : a))
     }
   }
 
+  // Đánh dấu tất cả đã đọc — POST /api/notifications/read-all
+  const handleMarkAllRead = async () => {
+    if (markingAll) return
+    const unread = alerts.filter(a => !a.isRead)
+    if (unread.length === 0) { Alert.alert('', 'Tất cả đã được đọc.'); return }
+    setMarkingAll(true)
+    // Optimistic update
+    setAlerts(prev => prev.map(a => ({ ...a, isRead: true })))
+    try {
+      await api.post('/api/notifications/read-all')
+    } catch {
+      // Rollback nếu lỗi
+      setAlerts(prev => prev.map((a, i) => ({ ...a, isRead: !unread.find(u => u.id === a.id) })))
+      Alert.alert('Lỗi', 'Không thể đánh dấu. Thử lại sau.')
+    } finally {
+      setMarkingAll(false)
+    }
+  }
+
+  // Xóa thông báo — DELETE /api/notifications/{id}
+  const handleDelete = async (id) => {
+    Alert.alert(
+      'Xóa thông báo',
+      'Bạn có chắc muốn xóa thông báo này?',
+      [
+        { text: 'Hủy', style: 'cancel' },
+        {
+          text: 'Xóa', style: 'destructive',
+          onPress: async () => {
+            setAlerts(prev => prev.filter(a => a.id !== id))
+            try {
+              await api.delete(`/api/notifications/${id}`)
+            } catch {
+              // Nếu lỗi, reload lại
+              fetchAlerts()
+            }
+          },
+        },
+      ]
+    )
+  }
+
+  // Lọc theo tab
+  const filtered = activeTab === 'all'
+    ? alerts
+    : alerts.filter(a => {
+        const cfg = CATEGORY_CONFIG[a.category ?? a.severity] ?? DEFAULT_CFG
+        return cfg.tab === activeTab
+      })
+
   const unreadCount = alerts.filter(a => !a.isRead).length
-  const highCount   = alerts.filter(a => a.category === 'high'   || a.category === 'revenue_anomaly').length
-  const mediumCount = alerts.filter(a => a.category === 'medium' || a.category === 'low_stock').length
 
   if (loading) {
     return (
@@ -187,21 +249,57 @@ export default function AlertsScreen() {
 
   return (
     <View style={s.container}>
-      {/* Tóm tắt thống kê */}
+      {/* ── Tóm tắt thống kê ────────────────────────────────────────────── */}
       <View style={s.summaryRow}>
         <View style={s.summaryCard}>
           <Text style={s.summaryNum}>{alerts.length}</Text>
-          <Text style={s.summaryLabel}>Tổng cảnh báo</Text>
+          <Text style={s.summaryLabel}>Tổng thông báo</Text>
         </View>
         <View style={s.summaryCard}>
-          <Text style={[s.summaryNum, { color: colors.error }]}>{unreadCount}</Text>
+          <Text style={[s.summaryNum, { color: '#EF4444' }]}>{unreadCount}</Text>
           <Text style={s.summaryLabel}>Chưa đọc</Text>
         </View>
-        <View style={s.summaryCard}>
-          <Text style={[s.summaryNum, { color: '#ffb400' }]}>{highCount + mediumCount}</Text>
-          <Text style={s.summaryLabel}>Cần xử lý</Text>
-        </View>
+        <TouchableOpacity
+          style={[s.summaryCard, s.markAllCard]}
+          onPress={handleMarkAllRead}
+          disabled={markingAll || unreadCount === 0}
+        >
+          {markingAll
+            ? <ActivityIndicator size="small" color={colors.primary} />
+            : <Text style={s.summaryNum}>✓</Text>
+          }
+          <Text style={s.summaryLabel}>Đọc tất cả</Text>
+        </TouchableOpacity>
       </View>
+
+      {/* ── Tab lọc ─────────────────────────────────────────────────────── */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ paddingHorizontal: 12, paddingVertical: 8 }}
+      >
+        {FILTER_TABS.map(tab => {
+          const active  = activeTab === tab.key
+          const tabCount = tab.key === 'all'
+            ? alerts.filter(a => !a.isRead).length
+            : alerts.filter(a => {
+                const cfg = CATEGORY_CONFIG[a.category ?? a.severity] ?? DEFAULT_CFG
+                return cfg.tab === tab.key && !a.isRead
+              }).length
+          return (
+            <TouchableOpacity
+              key={tab.key}
+              onPress={() => setActiveTab(tab.key)}
+              style={[s.filterTab, active && s.filterTabActive]}
+            >
+              <Text style={[s.filterTabText, active && s.filterTabTextActive]}>
+                {tab.label}
+                {tabCount > 0 ? `  ${tabCount}` : ''}
+              </Text>
+            </TouchableOpacity>
+          )
+        })}
+      </ScrollView>
 
       {/* Banner mock */}
       {isMock && (
@@ -210,9 +308,9 @@ export default function AlertsScreen() {
         </View>
       )}
 
-      {/* FlatList cảnh báo */}
+      {/* ── Danh sách thông báo ──────────────────────────────────────────── */}
       <FlatList
-        data={alerts}
+        data={filtered}
         keyExtractor={(item, i) => `alert-${item.id ?? i}`}
         contentContainerStyle={s.list}
         refreshControl={
@@ -224,7 +322,9 @@ export default function AlertsScreen() {
         ListEmptyComponent={
           <View style={s.empty}>
             <Text style={s.emptyIcon}>✅</Text>
-            <Text style={s.emptyTitle}>Không có cảnh báo nào</Text>
+            <Text style={s.emptyTitle}>
+              {activeTab === 'all' ? 'Không có thông báo nào' : 'Không có thông báo trong mục này'}
+            </Text>
             <Text style={s.emptySubText}>Hệ thống đang hoạt động bình thường</Text>
           </View>
         }
@@ -239,14 +339,27 @@ const s = StyleSheet.create({
   center:    { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface },
 
   // Summary bar
-  summaryRow: { flexDirection: 'row', padding: 12, paddingBottom: 6, gap: 8 },
+  summaryRow: { flexDirection: 'row', padding: 12, paddingBottom: 0, gap: 8 },
   summaryCard: {
     flex: 1, backgroundColor: colors.surfaceContainerLow,
     borderRadius: radius.md, padding: 12, alignItems: 'center',
     borderWidth: 1, borderColor: colors.outlineVariant,
   },
-  summaryNum:   { fontSize: 22, fontWeight: '700', color: colors.onSurface },
+  markAllCard: { borderColor: colors.primary + '55' },
+  summaryNum:   { fontSize: 20, fontWeight: '700', color: colors.onSurface },
   summaryLabel: { fontSize: 10, color: colors.outline, marginTop: 3, textAlign: 'center' },
+
+  // Filter tabs
+  filterTab: {
+    height: 34, paddingHorizontal: 14,
+    borderRadius: 17, justifyContent: 'center', alignItems: 'center',
+    marginRight: 8,
+    backgroundColor: 'transparent',
+    borderWidth: 1, borderColor: colors.outlineVariant,
+  },
+  filterTabActive:     { backgroundColor: '#6366F1', borderColor: '#6366F1' },
+  filterTabText:       { fontSize: 12, fontWeight: '500', color: '#9CA3AF' },
+  filterTabTextActive: { color: '#FFFFFF', fontWeight: '700' },
 
   // Mock banner
   mockBanner: {
@@ -272,7 +385,7 @@ const s = StyleSheet.create({
   cardTitle:  { fontSize: 14, fontWeight: '700', flex: 1 },
   unreadDot:  {
     width: 8, height: 8, borderRadius: 4,
-    backgroundColor: colors.error, marginLeft: 6, flexShrink: 0,
+    backgroundColor: '#EF4444', marginLeft: 6, flexShrink: 0,
   },
   cardMessage: { fontSize: 13, color: colors.onSurface, lineHeight: 18, marginBottom: 6 },
   cardTime:    { fontSize: 11, color: colors.outline },
