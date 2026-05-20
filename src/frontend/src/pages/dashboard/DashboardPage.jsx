@@ -542,19 +542,12 @@ function AiInsightsCard() {
 }
 
 // ── Tab: 1 — Overview ─────────────────────────────────────────────────────────
-function TabOverview({ data, compareMode, prevData, canViewAnalytics = true }) {
+function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd = {}, wl = {} }) {
   const { t }  = useTranslation()
   const kpi    = data.kpi
   const sp     = data.sparklines || {}
-  const [lbData,    setLbData]    = useState(null)
-  const [lbLoading, setLbLoading] = useState(true)
-
-  useEffect(() => {
-    getLeaderboard({ limit: 5 })
-      .then(r => setLbData(r))
-      .catch(() => setLbData(null))
-      .finally(() => setLbLoading(false))
-  }, [])
+  const lbData    = wd.leaderboard ?? null
+  const lbLoading = wl.leaderboard ?? false
 
   // Dữ liệu chart gộp kỳ này + kỳ trước (index-based)
   const trendData = data.revenueByDay.map((d, i) => {
@@ -974,18 +967,11 @@ function TabSales({ data, compareMode, prevData, from, to }) {
 }
 
 // ── Tab: 3 — Multi-channel ────────────────────────────────────────────────────
-function TabMultiChannel({ data }) {
+function TabMultiChannel({ data, wd = {}, wl = {} }) {
   const { t } = useTranslation()
   const [showChannelDetailTable, setShowChannelDetailTable] = useState(false)
-  const [attrData,    setAttrData]    = useState(null)
-  const [attrLoading, setAttrLoading] = useState(true)
-
-  useEffect(() => {
-    getChannelAttribution()
-      .then(r => setAttrData(r))
-      .catch(() => setAttrData(null))
-      .finally(() => setAttrLoading(false))
-  }, [])
+  const attrData    = wd.attribution ?? null
+  const attrLoading = wl.attribution ?? false
 
   // Bảng so sánh chi tiết kênh
   const channelTableData = data.revenueByChannel.map(ch => ({
@@ -1151,27 +1137,16 @@ function TabMultiChannel({ data }) {
 }
 
 // ── Tab: 4 — Customer Analytics ───────────────────────────────────────────────
-function TabCustomer({ data }) {
+function TabCustomer({ data, wd = {}, wl = {} }) {
   const { t }        = useTranslation()
   const maxFunnel    = data.funnel[0].value
   const [drillSeg,      setDrillSeg]      = useState(null)
   const [drillCusts,    setDrillCusts]    = useState([])
   const [drillCustLoad, setDrillCustLoad] = useState(false)
-  const [geoData,     setGeoData]     = useState(null)
-  const [geoLoading,  setGeoLoading]  = useState(true)
-  const [sentData,    setSentData]    = useState(null)
-  const [sentLoading, setSentLoading] = useState(true)
-
-  useEffect(() => {
-    getGeoDistribution({ limit: 5 })
-      .then(r => setGeoData(r))
-      .catch(() => setGeoData(null))
-      .finally(() => setGeoLoading(false))
-    getFeedbackSummary()
-      .then(r => setSentData(r))
-      .catch(() => setSentData(null))
-      .finally(() => setSentLoading(false))
-  }, [])
+  const geoData    = wd.geo       ?? null
+  const geoLoading = wl.geo       ?? false
+  const sentData   = wd.sentiment ?? null
+  const sentLoading = wl.sentiment ?? false
 
   const handleDrillSeg = async (seg) => {
     setDrillSeg(seg)
@@ -1546,18 +1521,11 @@ function HeatmapGrid({ data }) {
 }
 
 // ── Tab: 5 — Marketing & ROI ──────────────────────────────────────────────────
-function TabMarketing({ data, fbAdsData }) {
+function TabMarketing({ data, fbAdsData, wd = {}, wl = {} }) {
   const { t } = useTranslation()
   const [showMarketingTable, setShowMarketingTable] = useState(false)
-  const [campData,    setCampData]    = useState(null)
-  const [campLoading, setCampLoading] = useState(true)
-
-  useEffect(() => {
-    getCampaignPlan()
-      .then(r => setCampData(r))
-      .catch(() => setCampData(null))
-      .finally(() => setCampLoading(false))
-  }, [])
+  const campData    = wd.campaign ?? null
+  const campLoading = wl.campaign ?? false
 
   const comboData = data.revenueByChannel.map(ch => ({
     name:       ch.channelName.split(' ')[0],
@@ -1981,24 +1949,13 @@ function TabWebsite({ from, to, webData }) {
 }
 
 // ── Tab: 6 — Inventory & Operations ──────────────────────────────────────────
-function TabInventory({ data }) {
+function TabInventory({ data, wd = {}, wl = {} }) {
   const { t } = useTranslation()
   const invKpi = data.inventoryKpi || { avgDIO: 0, overstockRate: '0.0', stockoutRate: '0.0' }
-  const [supplierData,    setSupplierData]    = useState(null)
-  const [supplierLoading, setSupplierLoading] = useState(true)
-  const [invAiData,       setInvAiData]       = useState(null)
-  const [invAiLoading,    setInvAiLoading]    = useState(true)
-
-  useEffect(() => {
-    getSupplierPerformance({ limit: 5 })
-      .then(r => setSupplierData(r))
-      .catch(() => setSupplierData(null))
-      .finally(() => setSupplierLoading(false))
-    getInventoryIntelligence({ limit: 5 })
-      .then(r => setInvAiData(r))
-      .catch(() => setInvAiData(null))
-      .finally(() => setInvAiLoading(false))
-  }, [])
+  const supplierData    = wd.supplier ?? null
+  const supplierLoading = wl.supplier ?? false
+  const invAiData       = wd.invAi   ?? null
+  const invAiLoading    = wl.invAi   ?? false
 
   const invKpis = [
     { label: 'Số ngày tồn kho (DIO)',    value: `${invKpi.avgDIO} ngày`, icon: 'hourglass_empty',   color: '#6366F1' },
@@ -2318,6 +2275,10 @@ export default function DashboardPage() {
   const [prevData,    setPrevData]    = useState(null)
   const [webData,     setWebData]     = useState(null)
   const [fbAdsData,   setFbAdsData]   = useState(null)
+  // ── Mini-widget state (lifted từ tab components để tránh loop khi tab unmount/remount) ──
+  const [widgetData,    setWidgetData]    = useState({})
+  const [widgetLoading, setWidgetLoading] = useState({})
+  const widgetGuard = useRef({}) // ngăn double-fetch kể cả trong StrictMode
 
   // Định nghĩa bên trong component để t() được gọi đúng context
   const QUICK_PRESETS = [
@@ -2437,6 +2398,34 @@ export default function DashboardPage() {
     getFbAds(from, to).then(setFbAdsData).catch(() => setFbAdsData(null))
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [presetKey, customFrom, customTo, canViewAnalytics])
+
+  // ── Load mini-widget data khi tab được kích hoạt (mỗi key chỉ fetch 1 lần/session) ──
+  const loadWidget = useCallback((key, fetchFn) => {
+    if (widgetGuard.current[key]) return  // đã fetch hoặc đang fetch
+    widgetGuard.current[key] = true
+    setWidgetLoading(p => ({ ...p, [key]: true }))
+    fetchFn()
+      .then(r  => setWidgetData(p => ({ ...p, [key]: r    })))
+      .catch(() => setWidgetData(p => ({ ...p, [key]: null })))
+      .finally(() => setWidgetLoading(p => ({ ...p, [key]: false })))
+  }, [])
+
+  useEffect(() => {
+    if (activeTab === 'overview')
+      loadWidget('leaderboard', () => getLeaderboard({ limit: 5 }))
+    if (activeTab === 'multichannel')
+      loadWidget('attribution', () => getChannelAttribution())
+    if (activeTab === 'customer') {
+      loadWidget('geo',       () => getGeoDistribution({ limit: 5 }))
+      loadWidget('sentiment', () => getFeedbackSummary())
+    }
+    if (activeTab === 'marketing')
+      loadWidget('campaign',  () => getCampaignPlan())
+    if (activeTab === 'inventory') {
+      loadWidget('supplier',  () => getSupplierPerformance({ limit: 5 }))
+      loadWidget('invAi',     () => getInventoryIntelligence({ limit: 5 }))
+    }
+  }, [activeTab, loadWidget])
 
   return (
     <div className="space-y-4">
@@ -2586,12 +2575,12 @@ export default function DashboardPage() {
         </div>
       ) : data && (
         <div className="page-enter">
-          {activeTab === 'overview'     && <TabOverview     data={data} compareMode={compareMode} prevData={prevData} canViewAnalytics={canViewAnalytics} />}
+          {activeTab === 'overview'     && <TabOverview     data={data} compareMode={compareMode} prevData={prevData} canViewAnalytics={canViewAnalytics} wd={widgetData} wl={widgetLoading} />}
           {activeTab === 'sales'        && <TabSales        data={data} compareMode={compareMode} prevData={prevData} from={getRange().from} to={getRange().to} />}
-          {activeTab === 'multichannel' && <TabMultiChannel data={data} />}
-          {activeTab === 'customer'     && <TabCustomer     data={data} />}
-          {activeTab === 'marketing'    && <TabMarketing    data={data} fbAdsData={fbAdsData} />}
-          {activeTab === 'inventory'    && <TabInventory    data={data} />}
+          {activeTab === 'multichannel' && <TabMultiChannel data={data} wd={widgetData} wl={widgetLoading} />}
+          {activeTab === 'customer'     && <TabCustomer     data={data} wd={widgetData} wl={widgetLoading} />}
+          {activeTab === 'marketing'    && <TabMarketing    data={data} fbAdsData={fbAdsData} wd={widgetData} wl={widgetLoading} />}
+          {activeTab === 'inventory'    && <TabInventory    data={data} wd={widgetData} wl={widgetLoading} />}
           {activeTab === 'website'      && <TabWebsite      from={getRange().from} to={getRange().to} webData={webData} />}
         </div>
       )}
