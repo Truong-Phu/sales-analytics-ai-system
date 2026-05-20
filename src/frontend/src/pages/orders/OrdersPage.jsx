@@ -18,12 +18,12 @@ const STATUS_COLOR = {
 }
 
 const CHANNEL_CFG = {
-  shopee:  { bg: 'rgba(238,77,45,0.12)',   text: '#EE4D2D', label: 'Shopee'   },
-  tiktok:  { bg: 'rgba(0,0,0,0.10)',       text: '#111111', label: 'TikTok'   },
-  lazada:  { bg: 'rgba(9,97,202,0.12)',    text: '#0961CA', label: 'Lazada'   },
-  offline: { bg: 'rgba(139,92,246,0.12)',  text: '#7C3AED', label: 'Offline'  },
-  facebook:{ bg: 'rgba(24,119,242,0.12)',  text: '#1877F2', label: 'Facebook' },
-  website: { bg: 'rgba(16,185,129,0.12)',  text: '#059669', label: 'Website'  },
+  shopee:  { bg: 'rgba(238,77,45,0.12)',    text: '#EE4D2D', label: 'Shopee'   },
+  tiktok:  { bg: 'rgba(45,212,191,0.15)',   text: '#0D9488', label: 'TikTok'   }, // teal — hoạt động cả light+dark
+  lazada:  { bg: 'rgba(15,61,209,0.12)',    text: '#0F3DD1', label: 'Lazada'   },
+  offline: { bg: 'rgba(139,92,246,0.12)',   text: '#7C3AED', label: 'Offline'  },
+  facebook:{ bg: 'rgba(24,119,242,0.12)',   text: '#1877F2', label: 'Facebook' },
+  website: { bg: 'rgba(99,102,241,0.12)',   text: '#6366F1', label: 'Website'  }, // brand indigo
 }
 
 function ChannelBadge({ name }) {
@@ -82,7 +82,7 @@ function UpdateOrderModal({ order, onClose, onSaved }) {
 
   const sel = (label, field, options) => (
     <div key={field}>
-      <label className="block text-xs mb-1" style={{ color: 'var(--text-tertiary)' }}>{label}</label>
+      <label className="block text-sm mb-1" style={{ color: 'var(--text-secondary)' }}>{label}</label>
       <select className="linput text-sm"
               value={form[field]}
               onChange={e => setForm(f => ({ ...f, [field]: e.target.value }))}>
@@ -96,7 +96,7 @@ function UpdateOrderModal({ order, onClose, onSaved }) {
          style={{ background: 'rgba(0,0,0,0.6)' }} onClick={onClose}>
       <div className="lcard w-full max-w-sm p-6 space-y-4 scale-in" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between">
-          <h2 className="font-bold text-sm" style={{ color: 'var(--text-primary)' }}>
+          <h2 className="font-bold text-base" style={{ color: 'var(--text-primary)' }}>
             Cập nhật đơn hàng #{order.externalOrderId}
           </h2>
           <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-lg"
@@ -254,7 +254,7 @@ function OrderDetailPanel({ order }) {
   return (
     <div className="space-y-4 mb-3">
       {/* Info grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
           { label: 'Mã đơn ngoài',  value: order.externalOrderId ?? '—' },
           { label: 'Phí vận chuyển',value: fmtVND(order.shippingFee) },
@@ -264,8 +264,8 @@ function OrderDetailPanel({ order }) {
           { label: 'TT thanh toán', value: order.paymentStatus ?? '—' },
         ].map(item => (
           <div key={item.label} className="p-2 rounded-lg" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
-            <div className="mb-0.5" style={{ color: 'var(--text-tertiary)' }}>{item.label}</div>
-            <div className="font-mono font-medium text-xs" style={{ color: 'var(--text-primary)' }}>{item.value}</div>
+            <div className="text-xs mb-0.5" style={{ color: 'var(--text-secondary)' }}>{item.label}</div>
+            <div className="font-mono font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>{item.value}</div>
           </div>
         ))}
       </div>
@@ -275,11 +275,11 @@ function OrderDetailPanel({ order }) {
         <div className="text-xs py-2" style={{ color: 'var(--text-tertiary)' }}>Đang tải sản phẩm...</div>
       ) : items.length > 0 ? (
         <div className="rounded-lg overflow-hidden" style={{ border: '1px solid var(--border)' }}>
-          <table className="w-full text-xs">
+          <table className="w-full text-sm">
             <thead>
               <tr style={{ background: 'var(--bg-surface)', borderBottom: '1px solid var(--border)' }}>
                 {['Sản phẩm', 'SKU', 'Đơn giá', 'SL', 'Thành tiền'].map(h => (
-                  <th key={h} className="text-left px-3 py-2 font-semibold" style={{ color: 'var(--text-tertiary)' }}>{h}</th>
+                  <th key={h} className="text-left px-3 py-2 font-semibold" style={{ color: 'var(--text-secondary)' }}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -431,8 +431,8 @@ export default function OrdersPage() {
                 <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-elevated)' }}>
                   {[t('orders.orderId'), 'Kênh', t('orders.customer'),
                     t('orders.amount'), 'Vận chuyển', t('common.status'), t('orders.date'), ''].map(h => (
-                    <th key={h} className="text-left px-4 py-3 text-xs font-semibold tracking-wide"
-                        style={{ color: 'var(--text-tertiary)', whiteSpace: 'nowrap' }}>
+                    <th key={h} className="text-left px-4 py-3 text-sm font-semibold tracking-wide"
+                        style={{ color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
                       {h}
                     </th>
                   ))}
@@ -448,7 +448,7 @@ export default function OrdersPage() {
                       onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
                       onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                     >
-                      <td className="px-4 py-3 font-mono text-xs" style={{ color: 'var(--primary-500)' }}>
+                      <td className="px-4 py-3 font-mono text-sm" style={{ color: 'var(--primary-500)' }}>
                         {order.externalOrderId ?? order.orderCode ?? order.orderId}
                       </td>
                       <td className="px-4 py-3">
@@ -457,19 +457,19 @@ export default function OrdersPage() {
                       <td className="px-4 py-3">
                         <div className="font-medium text-sm" style={{ color: 'var(--text-primary)' }}>{order.customerName}</div>
                         {order.customerPhone && (
-                          <div className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>{order.customerPhone}</div>
+                          <div className="text-sm mt-0.5" style={{ color: 'var(--text-secondary)' }}>{order.customerPhone}</div>
                         )}
                       </td>
                       <td className="px-4 py-3 font-mono font-semibold" style={{ color: 'var(--text-primary)' }}>
                         {fmtVND(order.totalAmount)}
                       </td>
-                      <td className="px-4 py-3 text-xs">
+                      <td className="px-4 py-3 text-sm">
                         <div style={{ color: 'var(--text-secondary)' }}>{order.shippingStatus?.replace(/_/g,' ')}</div>
                       </td>
                       <td className="px-4 py-3">
                         <StatusBadge status={order.status} label={t(`orders.status.${order.status}`, order.status)} />
                       </td>
-                      <td className="px-4 py-3 text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                      <td className="px-4 py-3 text-sm" style={{ color: 'var(--text-secondary)' }}>
                         {order.createdAt ? new Date(order.createdAt).toLocaleDateString('vi-VN') : '—'}
                       </td>
                       <td className="px-4 py-3">

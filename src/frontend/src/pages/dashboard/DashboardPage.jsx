@@ -266,6 +266,25 @@ function generateMockData(from, to) {
 const CHANNEL_KEYS  = ['all', 'shopee', 'lazada', 'tiktok', 'facebook', 'website']
 const CHART_COLORS  = ['#6366F1', '#10B981', '#F59E0B', '#3B82F6', '#EC4899', '#8B5CF6', '#14B8A6', '#F97316']
 
+// Màu brand chuẩn theo từng kênh — dùng nhất quán cho badge, chart, table
+const CHANNEL_COLOR = {
+  shopee:   '#EE4D2D', // Shopee cam-đỏ chính thức
+  lazada:   '#0F3DD1', // Lazada xanh dương chính thức
+  tiktok:   '#2DD4BF', // TikTok teal (đảm bảo dark mode)
+  facebook: '#1877F2', // Facebook xanh
+  website:  '#6366F1', // Brand indigo
+  other:    '#6B7280', // Fallback
+}
+function getChannelColor(name = '') {
+  const key = name.toLowerCase().replace(/\s+/g, '')
+  if (key.includes('shopee'))   return CHANNEL_COLOR.shopee
+  if (key.includes('lazada'))   return CHANNEL_COLOR.lazada
+  if (key.includes('tiktok'))   return CHANNEL_COLOR.tiktok
+  if (key.includes('facebook')) return CHANNEL_COLOR.facebook
+  if (key.includes('website'))  return CHANNEL_COLOR.website
+  return CHANNEL_COLOR.other
+}
+
 function resolvePreset(p) {
   return {
     from: typeof p.from === 'function' ? p.from() : p.from,
@@ -291,7 +310,7 @@ function Sparkline({ data, color = '#6366F1' }) {
   )
 }
 
-function KpiCard({ label, value, trend, trendLabel, icon, color = 'var(--primary-500)', sparkData, sparkColor }) {
+function KpiCard({ label, value, trend, trendLabel, icon, color = 'var(--primary-500)', valueColor, sparkData, sparkColor }) {
   const up = trend > 0
   return (
     <div className="lcard lcard-hover px-4 py-3 cursor-default w-full">
@@ -299,7 +318,7 @@ function KpiCard({ label, value, trend, trendLabel, icon, color = 'var(--primary
         <span className="icon" style={{ color, fontSize: 18 }}>{icon}</span>
         <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-secondary)', letterSpacing: '0.05em' }}>{label}</span>
       </div>
-      <div className="text-3xl font-bold font-mono mb-1 leading-none text-foreground">{value}</div>
+      <div className="text-3xl font-bold font-mono mb-1 leading-none" style={{ color: valueColor || 'var(--foreground)' }}>{value}</div>
       {trend !== undefined && (
         <div className="flex items-center gap-1 mb-1">
           <span className="icon" style={{ fontSize: 12, color: up ? 'var(--accent-500)' : 'var(--color-error)' }}>
@@ -568,6 +587,7 @@ function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd 
           trend={kpi.revenueGrowthPct}
           trendLabel={t('dashboard.compare')}
           icon="payments"
+          valueColor="var(--primary-500)"
           sparkData={sp.revenue}
           sparkColor="#6366F1"
         />
@@ -603,6 +623,7 @@ function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd 
           value={fmtM(kpi.avgOrderValue)}
           icon="receipt_long"
           color="var(--accent-500)"
+          valueColor="var(--accent-500)"
         />
         <KpiCard
           label={t('dashboard.kpi.conversionRate')}
@@ -619,6 +640,7 @@ function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd 
           trendLabel={t('dashboard.compare')}
           icon="percent"
           color="#8B5CF6"
+          valueColor={kpi.totalProfit >= 0 ? '#059669' : '#DC2626'}
           sparkData={sp.profit}
           sparkColor="#8B5CF6"
         />
@@ -627,6 +649,7 @@ function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd 
           value={`${kpi.roi}%`}
           icon="trending_up"
           color="#EC4899"
+          valueColor={kpi.roi >= 0 ? '#059669' : '#DC2626'}
         />
       </div>
 
@@ -703,7 +726,7 @@ function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd 
           <div className="space-y-1.5 mt-2">
             {data.revenueByChannel.map((ch, i) => (
               <div key={i} className="flex items-center gap-2 text-caption">
-                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: CHART_COLORS[i % CHART_COLORS.length] }} />
+                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: getChannelColor(ch.channelName) }} />
                 <span className="flex-1 truncate" style={{ color: 'var(--text-secondary)' }}>{ch.channelName}</span>
                 <span className="font-mono" style={{ color: 'var(--text-primary)' }}>{ch.revenuePct.toFixed(0)}%</span>
               </div>
@@ -836,7 +859,7 @@ function TabSales({ data, compareMode, prevData, from, to }) {
             <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11, color: 'var(--text-secondary)' }} />
             {data.revenueByChannel.map((ch, i) => (
               <Bar key={ch.channelName} dataKey={ch.channelName} stackId="a"
-                fill={CHART_COLORS[i % CHART_COLORS.length]}
+                fill={getChannelColor(ch.channelName)}
                 radius={i === data.revenueByChannel.length - 1 ? [4,4,0,0] : [0,0,0,0]} />
             ))}
             {compareMode && prevData && data.revenueByChannel.map((ch, i) => (
@@ -933,7 +956,7 @@ function TabSales({ data, compareMode, prevData, from, to }) {
                     <tr key={`${ci}-${pi}`} style={{ borderBottom: '1px solid var(--border)' }}>
                       {pi === 0 && (
                         <td className="py-2 px-2 font-semibold" rowSpan={ch.products.length}
-                          style={{ color: CHART_COLORS[ci % CHART_COLORS.length], verticalAlign: 'top', paddingTop: 10 }}>
+                          style={{ color: getChannelColor(ch.channelName), verticalAlign: 'top', paddingTop: 10 }}>
                           {ch.channelName}
                         </td>
                       )}
@@ -1037,7 +1060,7 @@ function TabMultiChannel({ data, wd = {}, wl = {} }) {
             <Tooltip content={<ChartTooltip />} />
             <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
             {data.revenueByChannel.map((ch, i) => (
-              <Bar key={ch.channelName} dataKey={ch.channelName} fill={CHART_COLORS[i]} radius={[3,3,0,0]} />
+              <Bar key={ch.channelName} dataKey={ch.channelName} fill={getChannelColor(ch.channelName)} radius={[3,3,0,0]} />
             ))}
             {/* Đường Total tổng tất cả kênh */}
             <Line type="monotone" dataKey="Total" name="Tổng"
@@ -1118,7 +1141,7 @@ function TabMultiChannel({ data, wd = {}, wl = {} }) {
               <tbody>
                 {channelTableData.map((ch, i) => (
                   <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
-                    <td className="py-2 px-3 font-semibold" style={{ color: CHART_COLORS[i % CHART_COLORS.length] }}>{ch.channelName}</td>
+                    <td className="py-2 px-3 font-semibold" style={{ color: getChannelColor(ch.channelName) }}>{ch.channelName}</td>
                     <td className="py-2 px-3 text-right font-mono" style={{ color: 'var(--text-primary)' }}>{fmtM(ch.revenue)}</td>
                     <td className="py-2 px-3 text-right font-mono"
                       style={{ color: parseFloat(ch.growth) >= 0 ? 'var(--accent-500)' : 'var(--color-error)' }}>
@@ -1143,15 +1166,17 @@ function TabMultiChannel({ data, wd = {}, wl = {} }) {
         {attrData ? (
           <div className="space-y-2">
             {(attrData.channels ?? attrData.attribution ?? []).slice(0, 5).map((ch, i) => {
-              const pct = Number(ch.pct ?? ch.contribution_pct ?? ch.attribution_pct ?? 0)
+              const pct      = Number(ch.pct ?? ch.contribution_pct ?? ch.attribution_pct ?? 0)
+              const chName   = ch.channel ?? ch.channelName ?? ch.name ?? '—'
+              const chColor  = getChannelColor(chName)
               return (
                 <div key={i}>
-                  <div className="flex justify-between text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>
-                    <span>{ch.channel ?? ch.channelName ?? ch.name ?? '—'}</span>
-                    <span className="font-semibold font-mono">{pct.toFixed(1)}%</span>
+                  <div className="flex justify-between text-xs mb-1">
+                    <span className="font-medium" style={{ color: chColor }}>{chName}</span>
+                    <span className="font-semibold font-mono" style={{ color: 'var(--text-primary)' }}>{pct.toFixed(1)}%</span>
                   </div>
                   <div className="h-2 rounded-full" style={{ background: 'var(--bg-elevated)' }}>
-                    <div className="h-full rounded-full" style={{ width: `${Math.min(pct, 100)}%`, background: CHART_COLORS[i % CHART_COLORS.length] }} />
+                    <div className="h-full rounded-full" style={{ width: `${Math.min(pct, 100)}%`, background: chColor }} />
                   </div>
                 </div>
               )
@@ -2213,8 +2238,8 @@ function TabInventory({ data, wd = {}, wl = {} }) {
           <div className="space-y-3">
             {(data.returnByChannel || []).map((ch, i) => (
               <div key={i}>
-                <div className="flex justify-between text-caption mb-1" style={{ color: 'var(--text-secondary)' }}>
-                  <span>{ch.channelName}</span>
+                <div className="flex justify-between text-caption mb-1">
+                  <span className="font-medium" style={{ color: getChannelColor(ch.channelName) }}>{ch.channelName}</span>
                   <span className="font-mono font-bold"
                     style={{ color: parseFloat(ch.returnRate) > 4 ? 'var(--color-error)' : parseFloat(ch.returnRate) > 2.5 ? '#F59E0B' : 'var(--accent-500)' }}>
                     {ch.returnRate}%
@@ -2590,6 +2615,7 @@ export default function DashboardPage() {
           {[
             {
               label: 'Doanh thu hôm nay',
+              type:  'revenue',
               value: fmtM(tvy.today.revenue),
               prev:  fmtM(tvy.yesterday.revenue),
               pct:   tvy.revenuePct,
@@ -2597,6 +2623,7 @@ export default function DashboardPage() {
             },
             {
               label: 'Đơn hàng hôm nay',
+              type:  'orders',
               value: tvy.today.orders.toLocaleString(),
               prev:  tvy.yesterday.orders.toLocaleString(),
               pct:   tvy.ordersPct,
@@ -2604,23 +2631,30 @@ export default function DashboardPage() {
             },
             {
               label: 'Lợi nhuận hôm nay',
+              type:  'profit',
               value: fmtM(tvy.today.profit),
               prev:  fmtM(tvy.yesterday.profit),
               pct:   tvy.today.revenue > 0 ? +((tvy.today.profit / tvy.today.revenue) * 100).toFixed(1) : 0,
               icon:  'trending_up',
               pctLabel: 'Biên LN',
+              rawValue: tvy.today.profit,
             },
           ].map(card => {
             const isUp = card.pct >= 0
+            // Màu semantic cho giá trị chính — revenue=brand, profit=lãi/lỗ, orders=neutral
+            const valueColor =
+              card.type === 'revenue' ? 'var(--primary-500)' :
+              card.type === 'profit'  ? (card.rawValue >= 0 ? '#059669' : '#DC2626') :
+              'var(--text-primary)'
             return (
               <div key={card.label} className="lcard p-4">
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{card.label}</span>
-                  <span className="icon text-base" style={{ color: isUp ? 'var(--accent-500)' : '#EF4444', fontSize: 18 }}>
+                  <span className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>{card.label}</span>
+                  <span className="icon text-base" style={{ color: card.type === 'revenue' ? 'var(--primary-400)' : isUp ? 'var(--accent-500)' : '#EF4444', fontSize: 18 }}>
                     {card.icon}
                   </span>
                 </div>
-                <div className="font-mono text-2xl font-bold text-foreground">
+                <div className="font-mono text-2xl font-bold" style={{ color: valueColor }}>
                   {card.value}
                 </div>
                 <div className="flex items-center gap-1.5 mt-1">
