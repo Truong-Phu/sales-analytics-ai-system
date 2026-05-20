@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import MockToast from '../../components/ui/MockToast'
 import { getCampaignPlan } from '../../api/aiApi'
 
@@ -13,6 +13,7 @@ export default function CampaignPage() {
   const [data,    setData]    = useState(null)
   const [loading, setLoading] = useState(true)
   const [isMock,  setIsMock]  = useState(false)
+  const fetchedRef = useRef(false)
 
   const load = async () => {
     setLoading(true)
@@ -55,7 +56,7 @@ export default function CampaignPage() {
     } finally { setLoading(false) }
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { if (fetchedRef.current) return; fetchedRef.current = true; load() }, [])
 
   const maxDow = Math.max(...(data?.seasonal_insight?.weekly_pattern?.map(d => d.avg) ?? [1]))
 

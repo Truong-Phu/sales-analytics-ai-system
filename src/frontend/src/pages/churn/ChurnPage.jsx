@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import MockToast from '../../components/ui/MockToast'
 import { getChurnPrediction } from '../../api/aiApi'
@@ -37,6 +37,7 @@ export default function ChurnPage() {
   const { t } = useTranslation()
   const [data,    setData]    = useState(null)
   const [loading, setLoading] = useState(true)
+  const fetchedRef = useRef(false)
   const [isMock,  setIsMock]  = useState(false)
   const [filter,  setFilter]  = useState('ALL')
 
@@ -63,7 +64,7 @@ export default function ChurnPage() {
     } finally { setLoading(false) }
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { if (fetchedRef.current) return; fetchedRef.current = true; load() }, [])
 
   const filtered = (data?.customers ?? []).filter(c => filter === 'ALL' || c.risk === filter)
 

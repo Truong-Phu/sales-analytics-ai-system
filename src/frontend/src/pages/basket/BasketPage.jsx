@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import MockToast from '../../components/ui/MockToast'
 import { getBasketAnalysis } from '../../api/aiApi'
 
@@ -8,6 +8,7 @@ export default function BasketPage() {
   const [isMock,  setIsMock]  = useState(false)
   const [minConf, setMinConf] = useState(0.3)
   const [minLift, setMinLift] = useState(1.0)
+  const fetchedRef = useRef(false)
 
   const load = async () => {
     setLoading(true)
@@ -30,7 +31,7 @@ export default function BasketPage() {
     } finally { setLoading(false) }
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { if (fetchedRef.current) return; fetchedRef.current = true; load() }, [])
 
   const liftColor = (lift) => lift >= 3 ? '#EF4444' : lift >= 2 ? '#F59E0B' : '#22C55E'
 

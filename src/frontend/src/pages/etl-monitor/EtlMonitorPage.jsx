@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import MockToast from '../../components/ui/MockToast'
 import { getEtlStatus, triggerEtl } from '../../api/syncApi'
@@ -46,6 +46,7 @@ export default function EtlMonitorPage() {
   const [triggering, setTriggering] = useState({})
   const [isMock,     setIsMock]     = useState(false)
   const [expanded,   setExpanded]   = useState(null)
+  const fetchedRef = useRef(false)
 
   const fetchData = async () => {
     setLoading(true)
@@ -60,7 +61,7 @@ export default function EtlMonitorPage() {
     }
   }
 
-  useEffect(() => { fetchData() }, [])
+  useEffect(() => { if (fetchedRef.current) return; fetchedRef.current = true; fetchData() }, [])
 
   const handleTrigger = async pipeline => {
     setTriggering(s => ({ ...s, [pipeline]: true }))

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import MockToast from '../../components/ui/MockToast'
 import { getFeedbackSummary } from '../../api/aiApi'
 
@@ -75,6 +75,7 @@ export default function SentimentPage() {
   const [data,    setData]    = useState(null)
   const [loading, setLoading] = useState(true)
   const [isMock,  setIsMock]  = useState(false)
+  const fetchedRef = useRef(false)
   const [filter,  setFilter]  = useState('all')
 
   const load = async () => {
@@ -89,7 +90,7 @@ export default function SentimentPage() {
     } finally { setLoading(false) }
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { if (fetchedRef.current) return; fetchedRef.current = true; load() }, [])
 
   const comments = (data?.recent_comments ?? []).filter(c => filter === 'all' || c.sentiment === filter)
   const total    = data ? (data.positive + data.negative + data.neutral) : 1
