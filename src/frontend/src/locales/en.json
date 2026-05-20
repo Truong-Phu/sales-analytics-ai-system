@@ -254,6 +254,8 @@
     "sentimentDesc": "Customer feedback analysis",
     "nlq": "Ask AI",
     "nlqDesc": "Natural language data queries",
+    "market": "Market",
+    "marketDesc": "Geo, campaigns, attribution, leaderboard",
     "pos": "Point of Sale",
     "posDesc": "POS – checkout, loyalty points, vouchers",
     "sectionSales": "Sales"

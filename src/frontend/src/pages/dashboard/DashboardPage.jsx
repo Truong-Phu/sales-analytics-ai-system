@@ -747,8 +747,8 @@ function TabSales({ data, compareMode, prevData, from, to }) {
   const [drillProduct,        setDrillProduct]        = useState(null)
   const [drillOrders,         setDrillOrders]         = useState([])
   const [drillLoading,        setDrillLoading]        = useState(false)
-  // Toggle ẩn/hiện bảng raw data — mặc định ẩn
   const [showChannelTopTable, setShowChannelTopTable] = useState(false)
+  const maxFunnel = data?.funnel?.[0]?.value ?? 1
 
   // Dữ liệu theo tháng gộp kỳ này + kỳ trước (cho tab Sales)
   const monthlyCompare = compareMode && prevData
@@ -944,6 +944,41 @@ function TabSales({ data, compareMode, prevData, from, to }) {
               </tbody>
             </table>
           </div>
+        </div>
+      </div>
+
+      {/* Phễu trạng thái đơn hàng (PENDING → DELIVERED) */}
+      <div className="lcard p-5">
+        <SectionTitle>{t('dashboard.chart.funnel')}</SectionTitle>
+        <p className="text-caption mb-3" style={{ color: 'var(--text-tertiary)' }}>
+          Luồng xử lý đơn hàng — tỷ lệ chuyển đổi và rơi rụng theo từng bước
+        </p>
+        <div className="space-y-2 max-w-xl">
+          {(data.funnel ?? []).map((stage, i) => {
+            const pct      = (stage.value / maxFunnel) * 100
+            const convRate = i === 0 ? 100 : (stage.value / (data.funnel[i - 1]?.value || 1) * 100).toFixed(1)
+            const dropPct  = i === 0 ? null : (100 - parseFloat(convRate)).toFixed(1)
+            return (
+              <div key={i}>
+                {dropPct !== null && (
+                  <div className="text-center text-caption py-0.5" style={{ color: '#FCA5A5' }}>
+                    ↓ {dropPct}% rơi rụng
+                  </div>
+                )}
+                <div className="flex justify-between text-caption mb-1" style={{ color: 'var(--text-secondary)' }}>
+                  <span>{stage.stage}</span>
+                  <span className="font-mono" style={{ color: 'var(--text-primary)' }}>
+                    {stage.value.toLocaleString('vi-VN')}
+                    {i > 0 && <span style={{ color: 'var(--text-tertiary)' }}> ({convRate}%)</span>}
+                  </span>
+                </div>
+                <div className="h-6 rounded-lg" style={{ background: 'var(--bg-elevated)' }}>
+                  <div className="h-full rounded-lg transition-all duration-700"
+                    style={{ width: `${pct}%`, background: CHART_COLORS[i], minWidth: 40 }} />
+                </div>
+              </div>
+            )
+          })}
         </div>
       </div>
 
@@ -1175,7 +1210,6 @@ function buildClvScatterFromRfm(rfm) {
 
 function TabCustomer({ data, wd = {}, wl = {} }) {
   const { t }        = useTranslation()
-  const maxFunnel    = data?.funnel?.[0]?.value ?? 1
   const [drillSeg,      setDrillSeg]      = useState(null)
   const [drillCusts,    setDrillCusts]    = useState([])
   const [drillCustLoad, setDrillCustLoad] = useState(false)
@@ -1234,41 +1268,7 @@ function TabCustomer({ data, wd = {}, wl = {} }) {
         })}
       </div>
 
-      <div className="grid grid-cols-12 gap-4">
-        {/* Phễu chuyển đổi với drop-off */}
-        <div className="lcard p-5 col-span-12 lg:col-span-6">
-          <SectionTitle>{t('dashboard.chart.funnel')}</SectionTitle>
-          <div className="space-y-2 mt-2">
-            {(data.funnel ?? []).map((stage, i) => {
-              const pct      = (stage.value / maxFunnel) * 100
-              const convRate = i === 0 ? 100 : (stage.value / (data.funnel[i - 1]?.value || 1) * 100).toFixed(1)
-              const dropPct  = i === 0 ? null : (100 - parseFloat(convRate)).toFixed(1)
-              return (
-                <div key={i}>
-                  {/* Drop-off text giữa các bước */}
-                  {dropPct !== null && (
-                    <div className="text-center text-caption py-0.5" style={{ color: '#FCA5A5' }}>
-                      ↓ {dropPct}% bỏ qua
-                    </div>
-                  )}
-                  <div className="flex justify-between text-caption mb-1" style={{ color: 'var(--text-secondary)' }}>
-                    <span>{stage.stage}</span>
-                    <span className="font-mono" style={{ color: 'var(--text-primary)' }}>
-                      {stage.value.toLocaleString('vi-VN')}
-                      {i > 0 && <span style={{ color: 'var(--text-tertiary)' }}> ({convRate}%)</span>}
-                    </span>
-                  </div>
-                  <div className="h-6 rounded-lg" style={{ background: 'var(--bg-elevated)' }}>
-                    <div className="h-full rounded-lg transition-all duration-700"
-                      style={{ width: `${pct}%`, background: CHART_COLORS[i], minWidth: 40 }} />
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-
-        <div className="lcard p-5 col-span-12 lg:col-span-6">
+      <div className="lcard p-5">
           <SectionTitle>{t('dashboard.chart.clv')}</SectionTitle>
           <p className="text-caption mb-2" style={{ color: 'var(--text-tertiary)' }}>
             X: tần suất mua · Y: CLV trung bình · Kích thước: số khách
@@ -1303,7 +1303,6 @@ function TabCustomer({ data, wd = {}, wl = {} }) {
               <Legend wrapperStyle={{ fontSize: 11 }} />
             </ScatterChart>
           </ResponsiveContainer>
-        </div>
       </div>
 
       <div className="lcard p-5">

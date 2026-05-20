@@ -254,6 +254,8 @@
     "sentimentDesc": "Phân tích phản hồi khách hàng",
     "nlq": "Hỏi AI",
     "nlqDesc": "Truy vấn dữ liệu bằng ngôn ngữ tự nhiên",
+    "market": "Thị trường",
+    "marketDesc": "Địa lý, chiến dịch, attribution, xếp hạng",
     "pos": "Bán hàng tại quầy",
     "posDesc": "POS – thanh toán, tích điểm, voucher",
     "sectionSales": "Bán hàng"
