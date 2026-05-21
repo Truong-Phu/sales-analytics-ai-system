@@ -304,20 +304,22 @@ def get_date_key(conn, dt: Optional[datetime]) -> Optional[int]:
 # ── dim_customer (SCD Type 2) ─────────────────────────────────────────────────
 
 def upsert_customer_scd2(conn, phone: Optional[str], name: str,
-                         province: str = "Khác") -> int:
+                         province: str = "Khác",
+                         address: Optional[str] = None,
+                         district: Optional[str] = None) -> int:
     """
     Upsert dim_customer theo SCD Type 2.
 
-    dim_customer schema: customer_key (PK), customer_id (natural MAX+1),
-    full_name, province, region, is_current, effective_from, effective_to.
-
-    Lưu ý: KHÔNG có cột customer_phone – dùng full_name + province làm business key.
+    Business key: full_name + province.
     Nếu tên thay đổi → đóng bản ghi cũ, tạo bản ghi mới (SCD2).
+    phone_number, address, district được UPDATE khi đã có bản ghi hiện tại.
 
     Args:
-        phone:    Không dùng (giữ tham số để tương thích với code cũ).
+        phone:    Số điện thoại khách hàng (có thể None).
         name:     Tên khách hàng (full_name).
         province: Tỉnh/thành của khách hàng.
+        address:  Địa chỉ chi tiết (số nhà, đường...).
+        district: Quận/huyện.
     """
     if not name:
         return _get_or_create_unknown_customer(conn)
@@ -325,7 +327,6 @@ def upsert_customer_scd2(conn, phone: Optional[str], name: str,
     today = _today_utc()
     region = _PROVINCE_REGION_MAP.get(province, "Khác")
 
-    # SQL sử dụng cột thực tế: full_name, province, effective_from/effective_to
     sql_current = """
         SELECT customer_key, full_name
         FROM dw.dim_customer
@@ -334,17 +335,24 @@ def upsert_customer_scd2(conn, phone: Optional[str], name: str,
     """
     sql_insert = """
         INSERT INTO dw.dim_customer
-            (customer_id, full_name, province, region,
+            (customer_id, full_name, province, region, phone_number, address, district,
              is_current, effective_from, effective_to)
         VALUES (
             (SELECT COALESCE(MAX(customer_id), 0) + 1 FROM dw.dim_customer),
-            %s, %s, %s, TRUE, %s, '9999-12-31'
+            %s, %s, %s, %s, %s, %s, TRUE, %s, '9999-12-31'
         )
         RETURNING customer_key
     """
     sql_expire = """
         UPDATE dw.dim_customer
         SET effective_to = %s, is_current = FALSE
+        WHERE customer_key = %s
+    """
+    sql_update_contact = """
+        UPDATE dw.dim_customer
+        SET phone_number = COALESCE(%s, phone_number),
+            address      = COALESCE(%s, address),
+            district     = COALESCE(%s, district)
         WHERE customer_key = %s
     """
 
@@ -354,15 +362,19 @@ def upsert_customer_scd2(conn, phone: Optional[str], name: str,
 
         if row is None:
             # Chưa có → insert phiên bản đầu tiên
-            cur.execute(sql_insert, (name, province, region, today))
+            cur.execute(sql_insert, (name, province, region, phone, address, district, today))
             return cur.fetchone()[0]
 
         customer_key, current_name = row
         if current_name != name:
             # Tên thay đổi → SCD Type 2: đóng bản ghi cũ, tạo mới
             cur.execute(sql_expire, (today, customer_key))
-            cur.execute(sql_insert, (name, province, region, today))
+            cur.execute(sql_insert, (name, province, region, phone, address, district, today))
             return cur.fetchone()[0]
+
+        # Bản ghi đã tồn tại → cập nhật thông tin liên hệ nếu có thêm dữ liệu
+        if any([phone, address, district]):
+            cur.execute(sql_update_contact, (phone, address, district, customer_key))
 
         return customer_key
 

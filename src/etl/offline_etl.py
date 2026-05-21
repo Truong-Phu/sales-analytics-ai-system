@@ -259,7 +259,8 @@ def _get_date_key(conn, dt: Optional[datetime]) -> Optional[int]:
         return inserted[0] if inserted else date_key
 
 
-def _get_or_create_customer(conn, customer_name: str, province: str, region: str) -> int:
+def _get_or_create_customer(conn, customer_name: str, province: str, region: str,
+                            phone: str = None, address: str = None, district: str = None) -> int:
     """Trả về customer_key từ dw.dim_customer (SCD1 đơn giản cho offline import)."""
     cache_key = f"{customer_name}|{province}"
     if cache_key in _customer_cache:
@@ -277,21 +278,33 @@ def _get_or_create_customer(conn, customer_name: str, province: str, region: str
         row = cur.fetchone()
         if row:
             ck = row[0]
+            # Cập nhật thông tin liên hệ nếu có
+            if any([phone, address, district]):
+                cur.execute(
+                    """
+                    UPDATE dw.dim_customer
+                    SET phone_number = COALESCE(%s, phone_number),
+                        address      = COALESCE(%s, address),
+                        district     = COALESCE(%s, district)
+                    WHERE customer_key = %s
+                    """,
+                    (phone, address, district, ck)
+                )
         else:
             today = date.today().isoformat()
             cur.execute(
                 """
                 INSERT INTO dw.dim_customer (
-                    customer_id, full_name, province, region,
+                    customer_id, full_name, province, region, phone_number, address, district,
                     is_current, effective_from, effective_to
                 )
                 VALUES (
                     (SELECT COALESCE(MAX(customer_id), 0) + 1 FROM dw.dim_customer),
-                    %s, %s, %s, TRUE, %s, '9999-12-31'
+                    %s, %s, %s, %s, %s, %s, TRUE, %s, '9999-12-31'
                 )
                 RETURNING customer_key
                 """,
-                (customer_name, province, region, today)
+                (customer_name, province, region, phone, address, district, today)
             )
             ck = cur.fetchone()[0]
 
