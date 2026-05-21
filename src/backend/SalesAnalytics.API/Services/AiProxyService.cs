@@ -95,6 +95,23 @@ public class AiProxyService
     public async Task<object?> GetConnectorHealthAsync()
         => await GetJsonAsync("/health/connectors");
 
+    /// <summary>
+    /// Kích hoạt retrain Prophet trên AI Service (chạy nền, không block).
+    /// Trả về { job_id, status, message } hoặc null nếu service không khả dụng.
+    /// </summary>
+    public async Task<object?> TriggerRetrainAsync()
+    {
+        try
+        {
+            var resp = await _http.PostAsync("/retrain", null);
+            if (!resp.IsSuccessStatusCode) return null;
+            var body = await resp.Content.ReadAsStringAsync();
+            return JsonSerializer.Deserialize<object>(body, _jsonOpts);
+        }
+        catch (HttpRequestException)  { return null; }
+        catch (TaskCanceledException) { return null; }
+    }
+
     /// <summary>Gọi FastAPI POST /cache/invalidate sau khi ETL xong.</summary>
     public async Task<object?> InvalidateCacheAsync()
     {

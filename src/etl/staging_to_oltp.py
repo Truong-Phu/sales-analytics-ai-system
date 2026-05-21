@@ -20,8 +20,12 @@ Chạy: python src/etl/staging_to_oltp.py
 import json
 import logging
 import os
+import subprocess
 import sys
+import urllib.request
+import urllib.error
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import psycopg2
@@ -750,6 +754,60 @@ def run_oltp_to_dw_full(company_id: Optional[str] = None) -> Dict:
     return run_oltp_to_dw(company_id=company_id)
 
 
+# ── Trigger retrain ────────────────────────────────────────────────────────────
+
+def _trigger_retrain() -> str:
+    """
+    Kích hoạt retrain Prophet sau khi ETL có data mới.
+
+    Ưu tiên theo thứ tự:
+      1. POST đến AI Service (nếu đang chạy) → fire-and-forget (background)
+      2. Gọi trực tiếp train_prophet.py qua subprocess (nếu AI service offline)
+
+    Trả về chuỗi mô tả kết quả.
+    """
+    ai_url = os.getenv("AI_SERVICE_URL", "http://localhost:8001")
+
+    # Thử gọi AI service endpoint /retrain
+    try:
+        req = urllib.request.Request(
+            f"{ai_url}/retrain",
+            method="POST",
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            body = json.loads(resp.read().decode())
+            status = body.get("status", "triggered")
+            return f"AI Service: retrain {status} (background)"
+    except urllib.error.URLError:
+        pass  # AI service offline → fallback
+    except Exception as e:
+        logger.warning("Không gọi được /retrain: %s", e)
+
+    # Fallback: chạy train_prophet.py trực tiếp (blocking ~3–5 phút)
+    train_script = Path(__file__).resolve().parents[1] / "ai-service" / "train_prophet.py"
+    if not train_script.exists():
+        return "Không tìm thấy train_prophet.py — bỏ qua retrain"
+
+    logger.info("AI Service offline — chạy train_prophet.py trực tiếp...")
+    try:
+        result = subprocess.run(
+            [sys.executable, str(train_script)],
+            capture_output=True,
+            text=True,
+            timeout=600,  # 10 phút tối đa
+        )
+        if result.returncode == 0:
+            return "train_prophet.py: retrain trực tiếp hoàn thành"
+        else:
+            logger.warning("train_prophet.py exit %d: %s", result.returncode, result.stderr[-300:])
+            return f"train_prophet.py: exit code {result.returncode}"
+    except subprocess.TimeoutExpired:
+        return "train_prophet.py: timeout (>10 phút)"
+    except Exception as e:
+        return f"train_prophet.py: lỗi — {e}"
+
+
 # ── Main ───────────────────────────────────────────────────────────────────────
 
 def main():
@@ -775,6 +833,14 @@ def main():
     except Exception as e:
         logger.error("OLTP→DW lỗi: %s", e, exc_info=True)
         print(f"      LOI: {e}")
+
+    # Bước 3: Trigger retrain AI nếu có data mới
+    if oltp_stats["total_inserted"] > 0:
+        print(f"\n[3/3] Trigger retrain AI model (+{oltp_stats['total_inserted']} records mới)...")
+        retrain_msg = _trigger_retrain()
+        print(f"      {retrain_msg}")
+    else:
+        print("\n[3/3] Không có data mới — bỏ qua retrain AI.")
 
     print("\n✅ ETL hoàn thành!")
 

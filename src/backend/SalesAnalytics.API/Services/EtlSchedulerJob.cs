@@ -83,11 +83,27 @@ public class EtlSchedulerJob : BackgroundService
                     "EtlSchedulerJob [{Type}]: hoàn thành — {Inserted} bản ghi vào DW",
                     syncType, inserted);
 
+                // Trigger retrain AI model nếu có data mới (fire-and-forget, không block)
+                var newRecords = int.TryParse(inserted, out var r) ? r : 0;
+                if (newRecords > 0)
+                {
+                    var retrainResult = await ai.TriggerRetrainAsync();
+                    if (retrainResult is not null)
+                        _logger.LogInformation(
+                            "EtlSchedulerJob [{Type}]: đã kích hoạt retrain AI (+{Records} records mới)",
+                            syncType, newRecords);
+                    else
+                        _logger.LogWarning(
+                            "EtlSchedulerJob [{Type}]: AI Service không phản hồi retrain — bỏ qua",
+                            syncType);
+                }
+
                 await WriteEtlLogAsync(
-                    phase:   syncType == "full" ? "FULL_SYNC" : "INCREMENTAL_SYNC",
-                    message: $"Auto {syncType} OK — inserted={inserted}",
+                    phase:   "LOAD",
+                    message: $"Auto {syncType} OK — inserted={inserted}" +
+                             (newRecords > 0 ? " | retrain triggered" : ""),
                     level:   "INFO",
-                    records: int.TryParse(inserted, out var r) ? r : 0);
+                    records: newRecords);
             }
             else
             {
@@ -96,9 +112,9 @@ public class EtlSchedulerJob : BackgroundService
                     syncType);
 
                 await WriteEtlLogAsync(
-                    phase:   "SCHEDULED_TRIGGER",
+                    phase:   "GENERAL",
                     message: $"Auto {syncType} — AI Service unavailable, skipped",
-                    level:   "WARNING",
+                    level:   "WARN",
                     records: 0);
             }
         }
@@ -107,7 +123,7 @@ public class EtlSchedulerJob : BackgroundService
             _logger.LogError(ex, "EtlSchedulerJob [{Type}]: lỗi không mong đợi", syncType);
 
             await WriteEtlLogAsync(
-                phase:   "ERROR",
+                phase:   "GENERAL",
                 message: $"Auto {syncType} FAILED: {ex.Message}",
                 level:   "ERROR",
                 records: 0);
