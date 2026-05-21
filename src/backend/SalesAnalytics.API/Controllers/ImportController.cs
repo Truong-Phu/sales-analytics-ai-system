@@ -123,15 +123,15 @@ public class ImportController(IConfiguration cfg, ITenantContext tenant, IAuditL
             return File(csvBytes, "text/csv", displayName);
         }
 
-        // Fallback header-only nếu file chưa tồn tại
+        // Fallback header-only (chuẩn template mới Open Platform 2026-05-21)
         var fallback = (src, type) switch
         {
-            ("shopee", "orders")   => "Mã đơn hàng,Trạng thái đơn hàng,Ngày đặt hàng,Tên người dùng (Tên đăng nhập),Tên người nhận,Số điện thoại,Tỉnh,Tên sản phẩm,SKU sản phẩm,Giá niêm yết (VND),Số lượng,Tổng thanh toán,Phương thức thanh toán,Mã vận đơn",
-            ("shopee", "products") => "Shopee ID,Tên sản phẩm,SKU,Danh mục,Giá bán,Giá gốc,Kho hàng,Trạng thái,Thương hiệu",
-            ("tiktok", "orders")   => "Order ID,Order Status,Buyer Username,Recipient,Phone #,Province,City,Product Name,Seller SKU,Original Price,After-discount Price,Quantity,Subtotal,Tracking ID,Shipping Provider,Order Creation Time,Order Amount,Payment Method",
-            ("tiktok", "products") => "Product ID,Product Name,Seller SKU,Category,Original Price,Sales Price,Warehouse Stock,Status,Brand",
-            ("lazada", "orders")   => "Order ID,Order Number,Created At,Updated At,Status,Customer Name,Customer Email,Shipping Name,Shipping Phone,Shipping Address,Shipping City,Payment Method,Item Name,SKU,Seller SKU,Unit Price,Paid Price,Quantity,Shipping Provider,Tracking Code,Shipping Fee,Order Value",
-            ("lazada", "products") => "Item ID,Name,SellerSKU,Category,Price,Special Price,Stock,Active Status,Brand",
+            ("shopee", "orders")   => "Mã đơn hàng,Trạng thái đơn hàng,Lý do hủy/hoàn,Ngày đặt hàng,Ngày cập nhật,Ngày thanh toán,Tên đăng nhập người mua,Tên người nhận,Số điện thoại,Địa chỉ giao hàng,Phường/Xã,Quận/Huyện,Tỉnh/Thành phố,Vùng,Mã bưu điện,Tên sản phẩm,Phân loại hàng,SKU phân loại,Mã sản phẩm Shopee,Giá gốc (VND),Giá bán (VND),Số lượng,Tổng tiền hàng (VND),Phí vận chuyển (VND),Phí ship gốc (VND),Giảm phí ship sàn (VND),Tổng thanh toán (VND),Phương thức thanh toán,Đơn vị vận chuyển,Mã vận đơn,Trạng thái vận chuyển,Loại thực hiện đơn,Ghi chú từ người mua",
+            ("shopee", "products") => "Mã sản phẩm Shopee,Tên sản phẩm,Mã SKU gốc,Danh mục,ID danh mục,Thương hiệu,Giá gốc (VND),Giá bán (VND),Tồn kho,Tồn kho đặt trước,Trạng thái,Tình trạng,Cân nặng (kg),Chiều dài (cm),Chiều rộng (cm),Chiều cao (cm),Mô tả,Ảnh chính,Có phân loại,Ngày tạo,Ngày cập nhật",
+            ("tiktok", "orders")   => "Order ID,Order Status,Create Time,Update Time,Paid Time,RTS SLA Time,Buyer User ID,Buyer Message,Payment Method,Is COD,Recipient Name,Recipient Phone,Full Address,Address Detail,Province,District,Ward,Postal Code,Region Code,Shipping Type,Shipping Provider,Tracking Number,Fulfillment Type,Currency,Sub Total (VND),Shipping Fee (VND),Original Shipping Fee (VND),Shipping Fee Platform Discount (VND),Seller Discount (VND),Platform Discount (VND),Total Amount (VND),Original Total Product Price (VND),Line Item ID,SKU ID,Product ID,Product Name,Seller SKU,SKU Name,Original Price (VND),Sale Price (VND),Platform Discount Item (VND),Seller Discount Item (VND),Package ID,Package Status,Item Tracking Number,Shipping Provider Name,Display Status",
+            ("tiktok", "products") => "Product ID,Title,Status,Create Time,Update Time,Category ID,Category Name,Brand ID,Brand Name,SKU ID,Seller SKU,SKU Name,Sale Price (VND),Currency,Warehouse ID,Quantity,Color,Size,Image URL,Package Weight (kg),Package Weight Unit,Package Length (cm),Package Width (cm),Package Height (cm),Description",
+            ("lazada", "orders")   => "Order ID,Order Number,Created At,Updated At,Status,Payment Method,Price (VND),Shipping Fee (VND),Shipping Fee Original (VND),Shipping Fee Discount Platform (VND),Voucher (VND),Voucher Platform (VND),Voucher Seller (VND),Customer First Name,Customer Last Name,Address Line 1,City,District (Address3),Ward (Address4),Country,Items Count,Warehouse Code,Order Item ID,Item Name,SKU,Shop SKU,Variation,Item Price (VND),Paid Price (VND),Shipping Amount (VND),Status Item,Shipment Provider,Tracking Code,Currency,Product ID,Product Main Image",
+            ("lazada", "products") => "Item ID,Name,Status,Created Time,Updated Time,Primary Category,Brand,Short Description,Seller SKU,Shop SKU,Price (VND),Special Price (VND),Special From,Special To,Quantity,Package Width (cm),Package Height (cm),Package Length (cm),Package Weight (kg),Images,Product URL,Warehouse Code",
             _                      => "",
         };
         return File(Encoding.UTF8.GetBytes(fallback + "\r\n"), "text/csv", displayName);
@@ -234,17 +234,19 @@ public class ImportController(IConfiguration cfg, ITenantContext tenant, IAuditL
     private static string? DetectPlatform(string[] headers)
     {
         var h = headers.Select(x => x.Trim().ToLower()).ToHashSet();
-        // Shopee: tiếng Việt — "mã đơn hàng" + ("tên người mua" hoặc "tên người dùng")
-        if (h.Contains("mã đơn hàng") && (h.Contains("tên người mua") || h.Any(x => x.Contains("tên người dùng"))))
+        // Shopee: tiếng Việt — "mã đơn hàng" + tiêu chí Shopee
+        if (h.Contains("mã đơn hàng") && (
+                h.Contains("tên đăng nhập người mua") ||
+                h.Contains("tên người mua") ||
+                h.Any(x => x.Contains("tên người dùng")) ||
+                h.Contains("phân loại hàng") ||
+                h.Contains("sku phân loại")))
             return "shopee";
-        // TikTok: "order id" + "buyer username"
-        if (h.Contains("order id") && h.Contains("buyer username"))
+        // TikTok: "order id" + ("buyer user id" hoặc "buyer username" hoặc "is cod")
+        if (h.Contains("order id") && (h.Contains("buyer user id") || h.Contains("buyer username") || h.Contains("is cod")))
             return "tiktok";
-        // Lazada (Prompt 2): "order id" + "customer first name"
-        if (h.Contains("order id") && h.Contains("customer first name"))
-            return "lazada";
-        // Lazada (cũ): "order id" + "order number" + "customer email"
-        if (h.Contains("order id") && h.Contains("order number"))
+        // Lazada: "order id" + "order number" (hoặc "customer first name")
+        if (h.Contains("order id") && (h.Contains("order number") || h.Contains("customer first name") || h.Contains("price (vnd)")))
             return "lazada";
         return null;
     }
@@ -252,12 +254,25 @@ public class ImportController(IConfiguration cfg, ITenantContext tenant, IAuditL
     // ── Field mappers ─────────────────────────────────────────────────────────
 
     private record MappedOrder(
-        string OrderCode, string CustomerUsername, string RecipientName,
-        string Phone, string Province, string District,
-        string ProductName, string Sku, decimal UnitPrice, decimal SalePrice,
+        string OrderCode, string PlatformOrderId, string CustomerUsername, string RecipientName,
+        string Phone, string Province, string District, string Ward,
+        string ShippingAddress, string ShippingFullAddress,
+        string ProductName, string Sku, string VariationName,
+        decimal UnitPrice, decimal SalePrice, decimal OriginalPrice,
         int Quantity, decimal TotalAmount, decimal ShippingFee,
-        string PaymentMethod, string TrackingNumber, string Status,
-        DateTime OrderDate, string Channel);
+        decimal OriginalShippingFee, decimal ShippingFeeDiscount,
+        decimal SellerDiscount, decimal PlatformDiscount,
+        string PaymentMethod, bool IsCod,
+        string TrackingNumber, string ShippingCarrier, string LogisticsStatus,
+        string FulfillmentType, string PlatformStatus,
+        // Status = MSAS normalized (PENDING/SHIPPING/DELIVERED/CANCELLED/RETURNED)
+        // được gán lại bởi NormalizeStatus() từ PlatformStatus raw
+        string Status,
+        DateTime OrderDate, string Channel,
+        // GHN fields (vận đơn GHN riêng)
+        string GhnOrderCode = "",
+        // Platform item IDs
+        long? ShopeeItemId = null, string TiktokProductId = "");
 
     private static int HeaderIndex(string[] headers, params string[] candidates)
     {
@@ -278,44 +293,67 @@ public class ImportController(IConfiguration cfg, ITenantContext tenant, IAuditL
         var code = ColVal(row, HeaderIndex(headers, "Mã đơn hàng"));
         if (string.IsNullOrEmpty(code)) return null;
 
-        var orderDate = DateTime.TryParse(
-            ColVal(row, HeaderIndex(headers, "Ngày đặt hàng")), out var od) ? od : DateTime.UtcNow;
-        // Prompt 2: "Tổng thanh toán (VND)" / cũ: "Tổng thanh toán"
+        var dateStr   = ColVal(row, HeaderIndex(headers, "Ngày đặt hàng"));
+        var orderDate = ParseViDate(dateStr);
+
         var totalStr  = ColVal(row, HeaderIndex(headers, "Tổng thanh toán (VND)", "Tổng thanh toán"));
-        decimal.TryParse(totalStr.Replace(",",""), NumberStyles.Any, CultureInfo.InvariantCulture, out var total);
-        // Prompt 2: "Giá bán (VND)" / cũ: "Giá niêm yết (VND)"
+        decimal.TryParse(totalStr.Replace(".","").Replace(",",""), NumberStyles.Any, CultureInfo.InvariantCulture, out var total);
         var priceStr  = ColVal(row, HeaderIndex(headers, "Giá bán (VND)", "Giá niêm yết (VND)"));
-        decimal.TryParse(priceStr.Replace(",",""), NumberStyles.Any, CultureInfo.InvariantCulture, out var salePrice);
+        decimal.TryParse(priceStr.Replace(".","").Replace(",",""), NumberStyles.Any, CultureInfo.InvariantCulture, out var salePrice);
         var origStr   = ColVal(row, HeaderIndex(headers, "Giá gốc (VND)"));
-        decimal.TryParse(origStr.Replace(",",""), NumberStyles.Any, CultureInfo.InvariantCulture, out var origPrice);
+        decimal.TryParse(origStr.Replace(".","").Replace(",",""), NumberStyles.Any, CultureInfo.InvariantCulture, out var origPrice);
+        var feeStr    = ColVal(row, HeaderIndex(headers, "Phí vận chuyển (VND)"));
+        decimal.TryParse(feeStr.Replace(".","").Replace(",",""), NumberStyles.Any, CultureInfo.InvariantCulture, out var shippingFee);
+        var origFeeStr = ColVal(row, HeaderIndex(headers, "Phí ship gốc (VND)"));
+        decimal.TryParse(origFeeStr.Replace(".","").Replace(",",""), NumberStyles.Any, CultureInfo.InvariantCulture, out var origFee);
+        var discFeeStr = ColVal(row, HeaderIndex(headers, "Giảm phí ship sàn (VND)"));
+        decimal.TryParse(discFeeStr.Replace(".","").Replace(",",""), NumberStyles.Any, CultureInfo.InvariantCulture, out var feeDiscount);
         var qtyStr    = ColVal(row, HeaderIndex(headers, "Số lượng"));
         int.TryParse(qtyStr, out var qty); if (qty <= 0) qty = 1;
-        // Prompt 2: "Phí vận chuyển (VND)" / cũ: "Phí vận chuyển (VND)"
-        var feeStr    = ColVal(row, HeaderIndex(headers, "Phí vận chuyển (VND)"));
-        decimal.TryParse(feeStr.Replace(",",""), NumberStyles.Any, CultureInfo.InvariantCulture, out var shippingFee);
+
+        var shopeeItemIdStr = ColVal(row, HeaderIndex(headers, "Mã sản phẩm Shopee"));
+        long.TryParse(shopeeItemIdStr, out var shopeeItemId);
 
         return new MappedOrder(
-            OrderCode:        code,
-            // Prompt 2: "Tên người mua" / cũ: "Tên người dùng (Tên đăng nhập)"
-            CustomerUsername: ColVal(row, HeaderIndex(headers, "Tên người mua", "Tên người dùng (Tên đăng nhập)")),
-            RecipientName:    ColVal(row, HeaderIndex(headers, "Tên người nhận")),
-            Phone:            ColVal(row, HeaderIndex(headers, "Số điện thoại")),
-            // Prompt 2: "Tỉnh/Thành" / cũ: "Tỉnh"
-            Province:         ColVal(row, HeaderIndex(headers, "Tỉnh/Thành", "Tỉnh")),
-            // Prompt 2: "Quận/Huyện" / cũ: "Thành phố"
-            District:         ColVal(row, HeaderIndex(headers, "Quận/Huyện", "Thành phố")),
-            ProductName:      ColVal(row, HeaderIndex(headers, "Tên sản phẩm")),
-            Sku:              ColVal(row, HeaderIndex(headers, "SKU sản phẩm")),
-            UnitPrice:        origPrice > 0 ? origPrice : salePrice,
-            SalePrice:        salePrice,
-            Quantity:         qty,
-            TotalAmount:      total,
-            ShippingFee:      shippingFee,
-            PaymentMethod:    ColVal(row, HeaderIndex(headers, "Phương thức thanh toán")),
-            TrackingNumber:   ColVal(row, HeaderIndex(headers, "Mã vận đơn")),
-            Status:           ColVal(row, HeaderIndex(headers, "Trạng thái đơn hàng")),
-            OrderDate:        orderDate,
-            Channel:          "shopee"
+            OrderCode:           code,
+            PlatformOrderId:     code,
+            CustomerUsername:    ColVal(row, HeaderIndex(headers, "Tên đăng nhập người mua", "Tên người mua", "Tên người dùng (Tên đăng nhập)")),
+            RecipientName:       ColVal(row, HeaderIndex(headers, "Tên người nhận")),
+            Phone:               ColVal(row, HeaderIndex(headers, "Số điện thoại")),
+            Province:            ColVal(row, HeaderIndex(headers, "Tỉnh/Thành phố", "Tỉnh/Thành", "Tỉnh")),
+            District:            ColVal(row, HeaderIndex(headers, "Quận/Huyện", "Thành phố")),
+            Ward:                ColVal(row, HeaderIndex(headers, "Phường/Xã")),
+            ShippingAddress:     ColVal(row, HeaderIndex(headers, "Địa chỉ giao hàng")),
+            ShippingFullAddress: string.Join(", ", new[] {
+                ColVal(row, HeaderIndex(headers, "Địa chỉ giao hàng")),
+                ColVal(row, HeaderIndex(headers, "Phường/Xã")),
+                ColVal(row, HeaderIndex(headers, "Quận/Huyện", "Thành phố")),
+                ColVal(row, HeaderIndex(headers, "Tỉnh/Thành phố", "Tỉnh/Thành", "Tỉnh")),
+            }.Where(s => !string.IsNullOrEmpty(s))),
+            ProductName:         ColVal(row, HeaderIndex(headers, "Tên sản phẩm")),
+            Sku:                 ColVal(row, HeaderIndex(headers, "SKU phân loại", "SKU sản phẩm")),
+            VariationName:       ColVal(row, HeaderIndex(headers, "Phân loại hàng")),
+            UnitPrice:           origPrice > 0 ? origPrice : salePrice,
+            SalePrice:           salePrice,
+            OriginalPrice:       origPrice,
+            Quantity:            qty,
+            TotalAmount:         total,
+            ShippingFee:         shippingFee,
+            OriginalShippingFee: origFee,
+            ShippingFeeDiscount: feeDiscount,
+            SellerDiscount:      0,
+            PlatformDiscount:    0,
+            PaymentMethod:       ColVal(row, HeaderIndex(headers, "Phương thức thanh toán")),
+            IsCod:               ColVal(row, HeaderIndex(headers, "Phương thức thanh toán")).Contains("Delivery", StringComparison.OrdinalIgnoreCase),
+            TrackingNumber:      ColVal(row, HeaderIndex(headers, "Mã vận đơn")),
+            ShippingCarrier:     ColVal(row, HeaderIndex(headers, "Đơn vị vận chuyển")),
+            LogisticsStatus:     ColVal(row, HeaderIndex(headers, "Trạng thái vận chuyển")),
+            FulfillmentType:     ColVal(row, HeaderIndex(headers, "Loại thực hiện đơn")),
+            PlatformStatus:      ColVal(row, HeaderIndex(headers, "Trạng thái đơn hàng")),
+            Status:              ColVal(row, HeaderIndex(headers, "Trạng thái đơn hàng")),
+            OrderDate:           orderDate,
+            Channel:             "shopee",
+            ShopeeItemId:        shopeeItemId > 0 ? shopeeItemId : null
         );
     }
 
@@ -324,104 +362,162 @@ public class ImportController(IConfiguration cfg, ITenantContext tenant, IAuditL
         var code = ColVal(row, HeaderIndex(headers, "Order ID"));
         if (string.IsNullOrEmpty(code)) return null;
 
-        // Prompt 2: "Create Time" / cũ: "Order Creation Time"
         var createTimeStr = ColVal(row, HeaderIndex(headers, "Create Time", "Order Creation Time"));
-        var orderDate = DateTime.TryParse(createTimeStr, out var od) ? od : DateTime.UtcNow;
-        // Prompt 2: "Total Amount (VND)" / cũ: "Order Amount"
+        DateTime orderDate;
+        // Create Time có thể là unix timestamp (số nguyên) hoặc ISO string
+        if (long.TryParse(createTimeStr, out var unixTs))
+            orderDate = DateTimeOffset.FromUnixTimeSeconds(unixTs).UtcDateTime;
+        else
+            orderDate = DateTime.TryParse(createTimeStr, out var od) ? od.ToUniversalTime() : DateTime.UtcNow;
+
         var totalStr = ColVal(row, HeaderIndex(headers, "Total Amount (VND)", "Order Amount"));
         decimal.TryParse(totalStr.Replace(",",""), NumberStyles.Any, CultureInfo.InvariantCulture, out var total);
-        // Prompt 2: "Sale Price (VND)" / cũ: "After-discount Price"
         var salePriceStr = ColVal(row, HeaderIndex(headers, "Sale Price (VND)", "After-discount Price"));
         decimal.TryParse(salePriceStr.Replace(",",""), NumberStyles.Any, CultureInfo.InvariantCulture, out var salePrice);
-        // Prompt 2: "Original Price (VND)" / cũ: "Original Price"
         var origStr = ColVal(row, HeaderIndex(headers, "Original Price (VND)", "Original Price"));
         decimal.TryParse(origStr.Replace(",",""), NumberStyles.Any, CultureInfo.InvariantCulture, out var origPrice);
-        // Prompt 2: "Sub Total (VND)" / cũ: "Subtotal"
         var subStr = ColVal(row, HeaderIndex(headers, "Sub Total (VND)", "Subtotal"));
         decimal.TryParse(subStr.Replace(",",""), NumberStyles.Any, CultureInfo.InvariantCulture, out var subtotal);
         var feeStr = ColVal(row, HeaderIndex(headers, "Shipping Fee (VND)"));
         decimal.TryParse(feeStr.Replace(",",""), NumberStyles.Any, CultureInfo.InvariantCulture, out var shippingFee);
+        var origFeeStr = ColVal(row, HeaderIndex(headers, "Original Shipping Fee (VND)"));
+        decimal.TryParse(origFeeStr.Replace(",",""), NumberStyles.Any, CultureInfo.InvariantCulture, out var origFee);
+        var feeDiscStr = ColVal(row, HeaderIndex(headers, "Shipping Fee Platform Discount (VND)"));
+        decimal.TryParse(feeDiscStr.Replace(",",""), NumberStyles.Any, CultureInfo.InvariantCulture, out var feeDiscount);
+        var sellerDiscStr = ColVal(row, HeaderIndex(headers, "Seller Discount (VND)"));
+        decimal.TryParse(sellerDiscStr.Replace(",",""), NumberStyles.Any, CultureInfo.InvariantCulture, out var sellerDiscount);
+        var platDiscStr = ColVal(row, HeaderIndex(headers, "Platform Discount (VND)"));
+        decimal.TryParse(platDiscStr.Replace(",",""), NumberStyles.Any, CultureInfo.InvariantCulture, out var platDiscount);
         var qtyStr = ColVal(row, HeaderIndex(headers, "Quantity"));
         int.TryParse(qtyStr, out var qty); if (qty <= 0) qty = 1;
+        var isCodStr = ColVal(row, HeaderIndex(headers, "Is COD")).ToLower();
+        var isCod = isCodStr is "true" or "1" or "yes" or "có";
 
         return new MappedOrder(
-            OrderCode:        code,
-            CustomerUsername: ColVal(row, HeaderIndex(headers, "Buyer Username")),
-            // Prompt 2: "Recipient Name" / cũ: "Recipient"
-            RecipientName:    ColVal(row, HeaderIndex(headers, "Recipient Name", "Recipient")),
-            // Prompt 2: "Phone" / cũ: "Phone #"
-            Phone:            ColVal(row, HeaderIndex(headers, "Phone", "Phone #")),
-            Province:         ColVal(row, HeaderIndex(headers, "Province")),
-            // Prompt 2: "District" / cũ: "City"
-            District:         ColVal(row, HeaderIndex(headers, "District", "City")),
-            ProductName:      ColVal(row, HeaderIndex(headers, "Product Name")),
-            Sku:              ColVal(row, HeaderIndex(headers, "Seller SKU")),
-            UnitPrice:        origPrice > 0 ? origPrice : salePrice,
-            SalePrice:        salePrice,
-            Quantity:         qty,
-            TotalAmount:      total > 0 ? total : subtotal,
-            ShippingFee:      shippingFee,
-            PaymentMethod:    ColVal(row, HeaderIndex(headers, "Payment Method")),
-            // Prompt 2: "Tracking Number" / cũ: "Tracking ID"
-            TrackingNumber:   ColVal(row, HeaderIndex(headers, "Tracking Number", "Tracking ID")),
-            Status:           ColVal(row, HeaderIndex(headers, "Order Status")),
-            OrderDate:        orderDate,
-            Channel:          "tiktok"
+            OrderCode:           code,
+            PlatformOrderId:     code,
+            CustomerUsername: ColVal(row, HeaderIndex(headers, "Buyer User ID", "Buyer Username")),
+            RecipientName:       ColVal(row, HeaderIndex(headers, "Recipient Name", "Recipient")),
+            Phone:               ColVal(row, HeaderIndex(headers, "Recipient Phone", "Phone", "Phone #")),
+            Province:            ColVal(row, HeaderIndex(headers, "Province")),
+            District:            ColVal(row, HeaderIndex(headers, "District", "City")),
+            Ward:                ColVal(row, HeaderIndex(headers, "Ward")),
+            ShippingAddress:     ColVal(row, HeaderIndex(headers, "Address Detail")),
+            ShippingFullAddress: ColVal(row, HeaderIndex(headers, "Full Address")),
+            ProductName:         ColVal(row, HeaderIndex(headers, "Product Name")),
+            Sku:                 ColVal(row, HeaderIndex(headers, "Seller SKU")),
+            VariationName:       ColVal(row, HeaderIndex(headers, "SKU Name")),
+            UnitPrice:           origPrice > 0 ? origPrice : salePrice,
+            SalePrice:           salePrice,
+            OriginalPrice:       origPrice,
+            Quantity:            qty,
+            TotalAmount:         total > 0 ? total : subtotal,
+            ShippingFee:         shippingFee,
+            OriginalShippingFee: origFee,
+            ShippingFeeDiscount: feeDiscount,
+            SellerDiscount:      sellerDiscount,
+            PlatformDiscount:    platDiscount,
+            PaymentMethod:       ColVal(row, HeaderIndex(headers, "Payment Method", "Payment Method Name")),
+            IsCod:               isCod,
+            TrackingNumber:      ColVal(row, HeaderIndex(headers, "Item Tracking Number", "Tracking Number", "Tracking ID")),
+            ShippingCarrier:     ColVal(row, HeaderIndex(headers, "Shipping Provider", "Shipping Provider Name")),
+            LogisticsStatus:     ColVal(row, HeaderIndex(headers, "Package Status")),
+            FulfillmentType:     ColVal(row, HeaderIndex(headers, "Fulfillment Type")),
+            PlatformStatus:      ColVal(row, HeaderIndex(headers, "Order Status")),
+            Status:              ColVal(row, HeaderIndex(headers, "Order Status")),
+            OrderDate:           orderDate,
+            Channel:             "tiktok",
+            TiktokProductId:     ColVal(row, HeaderIndex(headers, "Product ID"))
         );
     }
 
     private static MappedOrder? MapLazadaRow(string[] row, string[] headers)
     {
-        var code = ColVal(row, HeaderIndex(headers, "Order Number", "Order ID"));
+        // Lazada: Order Number là mã chính, Order ID là mã phụ
+        var orderNumber = ColVal(row, HeaderIndex(headers, "Order Number"));
+        var orderId     = ColVal(row, HeaderIndex(headers, "Order ID"));
+        var code = !string.IsNullOrEmpty(orderNumber) ? orderNumber : orderId;
         if (string.IsNullOrEmpty(code)) return null;
 
         var createdStr = ColVal(row, HeaderIndex(headers, "Created At"));
-        var orderDate = DateTime.TryParse(createdStr, out var od) ? od : DateTime.UtcNow;
-        // Prompt 2: "Order Value (VND)" / cũ: "Order Value"
-        var totalStr  = ColVal(row, HeaderIndex(headers, "Order Value (VND)", "Order Value"));
+        // Lazada trả về ISO 8601 với timezone +07:00
+        var orderDate = DateTime.TryParse(createdStr, null, System.Globalization.DateTimeStyles.RoundtripKind, out var od)
+            ? od.ToUniversalTime()
+            : DateTime.UtcNow;
+
+        // Price (VND) là tổng đơn hàng (STRING theo Lazada spec)
+        var totalStr  = ColVal(row, HeaderIndex(headers, "Price (VND)", "Order Value (VND)", "Order Value"));
         decimal.TryParse(totalStr.Replace(",",""), NumberStyles.Any, CultureInfo.InvariantCulture, out var total);
-        // Prompt 2: "Paid Price (VND)" / cũ: "Paid Price"
         var paidStr   = ColVal(row, HeaderIndex(headers, "Paid Price (VND)", "Paid Price"));
         decimal.TryParse(paidStr.Replace(",",""), NumberStyles.Any, CultureInfo.InvariantCulture, out var salePrice);
-        // Prompt 2: "Unit Price (VND)" / cũ: "Unit Price"
-        var unitStr   = ColVal(row, HeaderIndex(headers, "Unit Price (VND)", "Unit Price"));
+        var unitStr   = ColVal(row, HeaderIndex(headers, "Item Price (VND)", "Unit Price (VND)", "Unit Price"));
         decimal.TryParse(unitStr.Replace(",",""), NumberStyles.Any, CultureInfo.InvariantCulture, out var origPrice);
-        // Prompt 2: "Shipping Fee (VND)" / cũ: "Shipping Fee"
-        var feeStr    = ColVal(row, HeaderIndex(headers, "Shipping Fee (VND)", "Shipping Fee"));
+        var feeStr    = ColVal(row, HeaderIndex(headers, "Shipping Fee (VND)", "Shipping Fee", "Shipping Amount (VND)"));
         decimal.TryParse(feeStr.Replace(",",""), NumberStyles.Any, CultureInfo.InvariantCulture, out var shippingFee);
         var qtyStr    = ColVal(row, HeaderIndex(headers, "Quantity"));
         int.TryParse(qtyStr, out var qty); if (qty <= 0) qty = 1;
 
-        // Prompt 2: "Customer First Name" + "Customer Last Name" / cũ: "Customer Name"
-        var firstName  = ColVal(row, HeaderIndex(headers, "Customer First Name"));
-        var lastName   = ColVal(row, HeaderIndex(headers, "Customer Last Name"));
+        var firstName     = ColVal(row, HeaderIndex(headers, "Customer First Name"));
+        var lastName      = ColVal(row, HeaderIndex(headers, "Customer Last Name"));
         var recipientName = (firstName + " " + lastName).Trim();
         if (string.IsNullOrWhiteSpace(recipientName))
             recipientName = ColVal(row, HeaderIndex(headers, "Shipping Name", "Customer Name"));
 
+        // Lazada: City = quận/huyện, District (Address3) = tỉnh/thành phố
+        var city      = ColVal(row, HeaderIndex(headers, "City"));
+        var address3  = ColVal(row, HeaderIndex(headers, "District (Address3)", "Address3"));
+        var address4  = ColVal(row, HeaderIndex(headers, "Ward (Address4)", "Address4"));
+        var addrLine1 = ColVal(row, HeaderIndex(headers, "Address Line 1"));
+        var country   = ColVal(row, HeaderIndex(headers, "Country"));
+
         return new MappedOrder(
-            OrderCode:        code,
-            CustomerUsername: ColVal(row, HeaderIndex(headers, "Customer Email", "Customer First Name")),
-            RecipientName:    recipientName,
-            // Prompt 2: "Phone" / cũ: "Shipping Phone"
-            Phone:            ColVal(row, HeaderIndex(headers, "Phone", "Shipping Phone")),
-            // Prompt 2: "Province" / cũ: "Shipping Region", "Shipping City"
-            Province:         ColVal(row, HeaderIndex(headers, "Province", "Shipping Region", "Shipping City")),
-            // Prompt 2: "District" / cũ: "City"
-            District:         ColVal(row, HeaderIndex(headers, "District", "City", "Shipping City")),
-            ProductName:      ColVal(row, HeaderIndex(headers, "Item Name")),
-            Sku:              ColVal(row, HeaderIndex(headers, "Seller SKU", "SKU")),
-            UnitPrice:        origPrice > 0 ? origPrice : salePrice,
-            SalePrice:        salePrice,
-            Quantity:         qty,
-            TotalAmount:      total,
-            ShippingFee:      shippingFee,
-            PaymentMethod:    ColVal(row, HeaderIndex(headers, "Payment Method")),
-            TrackingNumber:   ColVal(row, HeaderIndex(headers, "Tracking Code")),
-            Status:           ColVal(row, HeaderIndex(headers, "Status")),
-            OrderDate:        orderDate,
-            Channel:          "lazada"
+            OrderCode:           code,
+            PlatformOrderId:     orderId,
+            CustomerUsername:    ColVal(row, HeaderIndex(headers, "Customer Email")),
+            RecipientName:       recipientName,
+            Phone:               ColVal(row, HeaderIndex(headers, "Phone", "Shipping Phone")),
+            Province:            address3,   // Lazada Address3 = tỉnh/thành
+            District:            city,       // Lazada City = quận/huyện
+            Ward:                address4,
+            ShippingAddress:     addrLine1,
+            ShippingFullAddress: string.Join(", ", new[] { addrLine1, address4, city, address3, country }
+                                     .Where(s => !string.IsNullOrEmpty(s))),
+            ProductName:         ColVal(row, HeaderIndex(headers, "Item Name")),
+            Sku:                 ColVal(row, HeaderIndex(headers, "SKU", "Seller SKU", "Shop SKU")),
+            VariationName:       ColVal(row, HeaderIndex(headers, "Variation")),
+            UnitPrice:           origPrice > 0 ? origPrice : salePrice,
+            SalePrice:           salePrice,
+            OriginalPrice:       origPrice,
+            Quantity:            qty,
+            TotalAmount:         total,
+            ShippingFee:         shippingFee,
+            OriginalShippingFee: 0,
+            ShippingFeeDiscount: 0,
+            SellerDiscount:      0,
+            PlatformDiscount:    0,
+            PaymentMethod:       ColVal(row, HeaderIndex(headers, "Payment Method")),
+            IsCod:               ColVal(row, HeaderIndex(headers, "Payment Method")).Equals("COD", StringComparison.OrdinalIgnoreCase),
+            TrackingNumber:      ColVal(row, HeaderIndex(headers, "Tracking Code")),
+            ShippingCarrier:     ColVal(row, HeaderIndex(headers, "Shipment Provider")),
+            LogisticsStatus:     ColVal(row, HeaderIndex(headers, "Status Item", "Status")),
+            FulfillmentType:     "FULFILLMENT_BY_SELLER",
+            PlatformStatus:      ColVal(row, HeaderIndex(headers, "Status")),
+            Status:              ColVal(row, HeaderIndex(headers, "Status")),
+            OrderDate:           orderDate,
+            Channel:             "lazada"
         );
+    }
+
+    // ── Parse date tiếng Việt dd/MM/yyyy HH:mm hoặc ISO ─────────────────────────
+    private static DateTime ParseViDate(string s)
+    {
+        if (string.IsNullOrWhiteSpace(s)) return DateTime.UtcNow;
+        if (DateTime.TryParseExact(s, new[] { "dd/MM/yyyy HH:mm", "dd/MM/yyyy", "d/M/yyyy HH:mm", "d/M/yyyy" },
+                CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var d1))
+            return d1.ToUniversalTime();
+        if (DateTime.TryParse(s, null, System.Globalization.DateTimeStyles.RoundtripKind, out var d2))
+            return d2.ToUniversalTime();
+        return DateTime.UtcNow;
     }
 
     // ── Normalize status → MSAS internal (UPPERCASE theo DB constraint) ────────
@@ -549,29 +645,73 @@ public class ImportController(IConfiguration cfg, ITenantContext tenant, IAuditL
 
         if (customerId <= 0 || productId <= 0) return 0;
 
-        // Insert order
+        // Insert order — bao gồm tất cả cột mới (Open Platform fields)
         var orderSql = """
             INSERT INTO public.orders
-                (order_code, customer_id, channel_id, order_date, status,
-                 total_amount, shipping_fee, payment_method, tracking_number,
+                (order_code, platform_order_id, customer_id, channel_id,
+                 order_date, platform_created_at, status, platform_status,
+                 total_amount, shipping_fee, original_shipping_fee,
+                 shipping_fee_platform_discount,
+                 seller_discount, platform_discount,
+                 payment_method, is_cod,
+                 customer_name, customer_phone,
+                 buyer_username,
+                 shipping_name, shipping_phone, shipping_address,
+                 shipping_ward, shipping_district, shipping_province,
+                 shipping_full_address,
+                 tracking_number, shipping_carrier, logistics_status,
+                 fulfillment_type,
                  company_id, created_at, updated_at)
             VALUES
-                (@code, @custId, @chanId, @date, @status,
-                 @total, @ship, @pay, @track,
+                (@code, @platOrderId, @custId, @chanId,
+                 @date, @platDate, @status, @platStatus,
+                 @total, @ship, @origShip,
+                 @shipDisc,
+                 @sellerDisc, @platDisc,
+                 @pay, @isCod,
+                 @custName, @custPhone,
+                 @buyerUser,
+                 @shipName, @shipPhone, @shipAddr,
+                 @shipWard, @shipDist, @shipProv,
+                 @shipFull,
+                 @track, @carrier, @logStatus,
+                 @fulfillType,
                  @cid::uuid, NOW(), NOW())
             ON CONFLICT (order_code) DO NOTHING
             """;
         await using var orCmd = new NpgsqlCommand(orderSql, conn);
-        orCmd.Parameters.AddWithValue("code",   o.OrderCode);
-        orCmd.Parameters.AddWithValue("custId", customerId);
-        orCmd.Parameters.AddWithValue("chanId", channelId);
-        orCmd.Parameters.AddWithValue("date",   o.OrderDate.ToUniversalTime());
-        orCmd.Parameters.AddWithValue("status", o.Status);
-        orCmd.Parameters.AddWithValue("total",  o.TotalAmount);
-        orCmd.Parameters.AddWithValue("ship",   o.ShippingFee);
-        orCmd.Parameters.AddWithValue("pay",    (object?)o.PaymentMethod ?? DBNull.Value);
-        orCmd.Parameters.AddWithValue("track",  (object?)(o.TrackingNumber.Length > 0 ? o.TrackingNumber : null) ?? DBNull.Value);
-        orCmd.Parameters.AddWithValue("cid",    tenant.CompanyId!.Value.ToString());
+        static object Nv(string? v) => string.IsNullOrEmpty(v) ? DBNull.Value : v;
+        orCmd.Parameters.AddWithValue("code",       o.OrderCode);
+        orCmd.Parameters.AddWithValue("platOrderId",(object?)(!string.IsNullOrEmpty(o.PlatformOrderId) ? o.PlatformOrderId : null) ?? DBNull.Value);
+        orCmd.Parameters.AddWithValue("custId",     customerId);
+        orCmd.Parameters.AddWithValue("chanId",     channelId);
+        orCmd.Parameters.AddWithValue("date",       o.OrderDate.ToUniversalTime());
+        orCmd.Parameters.AddWithValue("platDate",   o.OrderDate.ToUniversalTime());
+        orCmd.Parameters.AddWithValue("status",     o.Status);
+        orCmd.Parameters.AddWithValue("platStatus", Nv(o.PlatformStatus));
+        orCmd.Parameters.AddWithValue("total",      o.TotalAmount);
+        orCmd.Parameters.AddWithValue("ship",       o.ShippingFee);
+        orCmd.Parameters.AddWithValue("origShip",   o.OriginalShippingFee);
+        orCmd.Parameters.AddWithValue("shipDisc",   o.ShippingFeeDiscount);
+        orCmd.Parameters.AddWithValue("sellerDisc", o.SellerDiscount);
+        orCmd.Parameters.AddWithValue("platDisc",   o.PlatformDiscount);
+        orCmd.Parameters.AddWithValue("pay",        Nv(o.PaymentMethod));
+        orCmd.Parameters.AddWithValue("isCod",      o.IsCod);
+        orCmd.Parameters.AddWithValue("custName",   Nv(o.RecipientName));
+        orCmd.Parameters.AddWithValue("custPhone",  Nv(o.Phone));
+        orCmd.Parameters.AddWithValue("buyerUser",  Nv(o.CustomerUsername));
+        orCmd.Parameters.AddWithValue("shipName",   Nv(o.RecipientName));
+        orCmd.Parameters.AddWithValue("shipPhone",  Nv(o.Phone));
+        orCmd.Parameters.AddWithValue("shipAddr",   Nv(o.ShippingAddress));
+        orCmd.Parameters.AddWithValue("shipWard",   Nv(o.Ward));
+        orCmd.Parameters.AddWithValue("shipDist",   Nv(o.District));
+        orCmd.Parameters.AddWithValue("shipProv",   Nv(o.Province));
+        orCmd.Parameters.AddWithValue("shipFull",   Nv(o.ShippingFullAddress));
+        orCmd.Parameters.AddWithValue("track",      Nv(o.TrackingNumber));
+        orCmd.Parameters.AddWithValue("carrier",    Nv(o.ShippingCarrier));
+        orCmd.Parameters.AddWithValue("logStatus",  Nv(o.LogisticsStatus));
+        orCmd.Parameters.AddWithValue("fulfillType",Nv(o.FulfillmentType));
+        orCmd.Parameters.AddWithValue("cid",        tenant.CompanyId!.Value.ToString());
         var orderAff = await orCmd.ExecuteNonQueryAsync();
 
         if (orderAff > 0)
@@ -586,17 +726,33 @@ public class ImportController(IConfiguration cfg, ITenantContext tenant, IAuditL
             {
                 var itemSql = """
                     INSERT INTO public.order_items
-                        (order_id, product_id, quantity, unit_price, subtotal, created_at)
+                        (order_id, product_id, quantity, unit_price, sale_price,
+                         original_price, subtotal,
+                         product_name, sku, variation_name,
+                         seller_discount, platform_discount,
+                         created_at)
                     VALUES
-                        (@oid, @pid, @qty, @price, @sub, NOW())
+                        (@oid, @pid, @qty, @price, @saleP,
+                         @origP, @sub,
+                         @pname, @sku, @vname,
+                         @sellDisc, @platDisc,
+                         NOW())
                     ON CONFLICT DO NOTHING
                     """;
+                var effectiveSale = o.SalePrice > 0 ? o.SalePrice : o.UnitPrice;
                 await using var itmCmd = new NpgsqlCommand(itemSql, conn);
-                itmCmd.Parameters.AddWithValue("oid",   orderId);
-                itmCmd.Parameters.AddWithValue("pid",   productId);
-                itmCmd.Parameters.AddWithValue("qty",   o.Quantity);
-                itmCmd.Parameters.AddWithValue("price", o.SalePrice > 0 ? o.SalePrice : o.UnitPrice);
-                itmCmd.Parameters.AddWithValue("sub",   (o.SalePrice > 0 ? o.SalePrice : o.UnitPrice) * o.Quantity);
+                itmCmd.Parameters.AddWithValue("oid",      orderId);
+                itmCmd.Parameters.AddWithValue("pid",      productId);
+                itmCmd.Parameters.AddWithValue("qty",      o.Quantity);
+                itmCmd.Parameters.AddWithValue("price",    effectiveSale);
+                itmCmd.Parameters.AddWithValue("saleP",    effectiveSale);
+                itmCmd.Parameters.AddWithValue("origP",    o.OriginalPrice > 0 ? o.OriginalPrice : effectiveSale);
+                itmCmd.Parameters.AddWithValue("sub",      effectiveSale * o.Quantity);
+                itmCmd.Parameters.AddWithValue("pname",    (object?)(!string.IsNullOrEmpty(o.ProductName) ? o.ProductName : null) ?? DBNull.Value);
+                itmCmd.Parameters.AddWithValue("sku",      (object?)(!string.IsNullOrEmpty(o.Sku) ? o.Sku : null) ?? DBNull.Value);
+                itmCmd.Parameters.AddWithValue("vname",    (object?)(!string.IsNullOrEmpty(o.VariationName) ? o.VariationName : null) ?? DBNull.Value);
+                itmCmd.Parameters.AddWithValue("sellDisc", o.SellerDiscount);
+                itmCmd.Parameters.AddWithValue("platDisc", o.PlatformDiscount);
                 await itmCmd.ExecuteNonQueryAsync();
             }
         }

@@ -3,97 +3,214 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace SalesAnalytics.Core.Entities;
 
-/// <summary>Đơn hàng – ánh xạ bảng public.orders</summary>
+/// <summary>Đơn hàng – ánh xạ bảng public.orders (chuẩn hóa Open Platform 2026-05-21)</summary>
 [Table("orders", Schema = "public")]
 public class Order
 {
-    /// <summary>Mã đơn hàng – khóa chính tự tăng</summary>
-    [Key]
-    [Column("order_id")]
+    [Key] [Column("order_id")]
     public int OrderId { get; set; }
 
-    /// <summary>Mã đơn nội bộ (định dạng: ORD-YYYYMMDD-XXXX) – duy nhất</summary>
-    [Required]
-    [MaxLength(100)]
-    [Column("order_code")]
+    [Required] [MaxLength(100)] [Column("order_code")]
     public string OrderCode { get; set; } = string.Empty;
 
-    /// <summary>Mã khách hàng đặt đơn (FK → customers)</summary>
     [Column("customer_id")]
     public int CustomerId { get; set; }
 
-    /// <summary>Mã kênh bán hàng phát sinh đơn (FK → sales_channels)</summary>
     [Column("channel_id")]
     public int ChannelId { get; set; }
 
-    /// <summary>Trạng thái đơn: PENDING | CONFIRMED | SHIPPING | DELIVERED | CANCELLED | RETURNED</summary>
-    [Required]
-    [MaxLength(50)]
-    [Column("status")]
+    // ── Status ───────────────────────────────────────────────────────────────
+    [Required] [MaxLength(50)] [Column("status")]
     public string Status { get; set; } = "PENDING";
 
-    /// <summary>Tổng giá trị đơn hàng trước giảm giá (VND)</summary>
-    [Column("total_amount")]
-    public decimal TotalAmount { get; set; }
+    [MaxLength(50)] [Column("platform_status")]
+    public string? PlatformStatus { get; set; }
 
-    /// <summary>Tổng tiền giảm giá (VND)</summary>
-    [Column("discount_amount")]
-    public decimal DiscountAmount { get; set; } = 0;
+    // ── Platform identifiers ─────────────────────────────────────────────────
+    [MaxLength(100)] [Column("platform_order_id")]
+    public string? PlatformOrderId { get; set; }
 
-    /// <summary>Phí vận chuyển (VND)</summary>
-    [Column("shipping_fee")]
-    public decimal ShippingFee { get; set; } = 0;
+    [MaxLength(200)] [Column("external_order_id")]
+    public string? ExternalOrderId { get; set; }
 
-    /// <summary>Phương thức thanh toán (COD, MOMO, VNPAY...)</summary>
-    [MaxLength(50)]
-    [Column("payment_method")]
-    public string? PaymentMethod { get; set; }
-
-    /// <summary>Trạng thái thanh toán: UNPAID | PAID | REFUNDED</summary>
-    [MaxLength(50)]
-    [Column("payment_status")]
-    public string PaymentStatus { get; set; } = "UNPAID";
-
-    /// <summary>Trạng thái vận chuyển: NOT_SHIPPED | IN_TRANSIT | DELIVERED | FAILED</summary>
-    [MaxLength(50)]
-    [Column("shipping_status")]
-    public string ShippingStatus { get; set; } = "NOT_SHIPPED";
-
-    /// <summary>Ngày giờ đặt hàng</summary>
+    // ── Timestamps ───────────────────────────────────────────────────────────
     [Column("order_date")]
     public DateTime OrderDate { get; set; }
 
-    /// <summary>Ngày giờ giao hàng thành công (null nếu chưa giao)</summary>
+    [Column("platform_created_at")]
+    public DateTime? PlatformCreatedAt { get; set; }
+
+    [Column("platform_updated_at")]
+    public DateTime? PlatformUpdatedAt { get; set; }
+
+    [Column("paid_at")]
+    public DateTime? PaidAt { get; set; }
+
+    [Column("shipped_at")]
+    public DateTime? ShippedAt { get; set; }
+
     [Column("delivered_at")]
     public DateTime? DeliveredAt { get; set; }
 
-    /// <summary>Mã đơn hàng từ sàn TMĐT bên ngoài (Shopee order_sn, Lazada...)</summary>
-    [MaxLength(200)]
-    [Column("external_order_id")]
-    public string? ExternalOrderId { get; set; }
-
-    /// <summary>Thời điểm tạo bản ghi</summary>
     [Column("created_at")]
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
-    /// <summary>Thời điểm cập nhật gần nhất</summary>
     [Column("updated_at")]
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
-    /// <summary>Công ty sở hữu đơn hàng – multi-tenant isolation</summary>
+    // ── Khách hàng ───────────────────────────────────────────────────────────
+    [MaxLength(255)] [Column("buyer_username")]
+    public string? BuyerUsername { get; set; }
+
+    [MaxLength(255)] [Column("customer_name")]
+    public string? CustomerName { get; set; }
+
+    [MaxLength(30)] [Column("customer_phone")]
+    public string? CustomerPhone { get; set; }
+
+    [MaxLength(255)] [Column("customer_email")]
+    public string? CustomerEmail { get; set; }
+
+    // ── Địa chỉ giao hàng ────────────────────────────────────────────────────
+    [MaxLength(255)] [Column("shipping_name")]
+    public string? ShippingName { get; set; }
+
+    [MaxLength(30)] [Column("shipping_phone")]
+    public string? ShippingPhone { get; set; }
+
+    [Column("shipping_address")]
+    public string? ShippingAddress { get; set; }
+
+    [MaxLength(100)] [Column("shipping_ward")]
+    public string? ShippingWard { get; set; }
+
+    [MaxLength(100)] [Column("shipping_district")]
+    public string? ShippingDistrict { get; set; }
+
+    [MaxLength(100)] [Column("shipping_province")]
+    public string? ShippingProvince { get; set; }
+
+    [MaxLength(10)] [Column("shipping_country")]
+    public string? ShippingCountry { get; set; } = "VN";
+
+    [MaxLength(20)] [Column("shipping_zipcode")]
+    public string? ShippingZipcode { get; set; }
+
+    [Column("shipping_full_address")]
+    public string? ShippingFullAddress { get; set; }
+
+    // ── Tài chính ────────────────────────────────────────────────────────────
+    [Column("total_amount")]
+    public decimal TotalAmount { get; set; }
+
+    [Column("subtotal")]
+    public decimal? Subtotal { get; set; }
+
+    [Column("original_total")]
+    public decimal? OriginalTotal { get; set; }
+
+    [Column("discount_amount")]
+    public decimal DiscountAmount { get; set; } = 0;
+
+    [Column("seller_discount")]
+    public decimal SellerDiscount { get; set; } = 0;
+
+    [Column("platform_discount")]
+    public decimal PlatformDiscount { get; set; } = 0;
+
+    [Column("voucher_amount")]
+    public decimal VoucherAmount { get; set; } = 0;
+
+    [MaxLength(100)] [Column("voucher_code")]
+    public string? VoucherCode { get; set; }
+
+    [Column("tax_amount")]
+    public decimal TaxAmount { get; set; } = 0;
+
+    [Column("shipping_fee")]
+    public decimal ShippingFee { get; set; } = 0;
+
+    [Column("original_shipping_fee")]
+    public decimal? OriginalShippingFee { get; set; }
+
+    [Column("shipping_fee_seller_discount")]
+    public decimal ShippingFeeSellerDiscount { get; set; } = 0;
+
+    [Column("shipping_fee_platform_discount")]
+    public decimal ShippingFeePlatformDiscount { get; set; } = 0;
+
+    [MaxLength(10)] [Column("currency")]
+    public string Currency { get; set; } = "VND";
+
+    // ── Thanh toán ────────────────────────────────────────────────────────────
+    [MaxLength(100)] [Column("payment_method")]
+    public string? PaymentMethod { get; set; }
+
+    [MaxLength(50)] [Column("payment_status")]
+    public string PaymentStatus { get; set; } = "UNPAID";
+
+    [Column("is_cod")]
+    public bool IsCod { get; set; } = false;
+
+    // ── Vận chuyển ───────────────────────────────────────────────────────────
+    [MaxLength(50)] [Column("shipping_status")]
+    public string ShippingStatus { get; set; } = "NOT_SHIPPED";
+
+    [MaxLength(100)] [Column("shipping_carrier")]
+    public string? ShippingCarrier { get; set; }
+
+    [MaxLength(200)] [Column("tracking_number")]
+    public string? TrackingNumber { get; set; }
+
+    [MaxLength(50)] [Column("logistics_status")]
+    public string? LogisticsStatus { get; set; }
+
+    [MaxLength(50)] [Column("ghn_order_code")]
+    public string? GhnOrderCode { get; set; }
+
+    [Column("expected_delivery_at")]
+    public DateTime? ExpectedDeliveryAt { get; set; }
+
+    // ── Fulfillment & Channel ────────────────────────────────────────────────
+    [MaxLength(50)] [Column("fulfillment_type")]
+    public string? FulfillmentType { get; set; }
+
+    [MaxLength(20)] [Column("channel_type")]
+    public string ChannelType { get; set; } = "online";
+
+    // ── Offline POS ──────────────────────────────────────────────────────────
+    [Column("created_by_user_id")]
+    public int? CreatedByUserId { get; set; }
+
+    [Column("pos_note")]
+    public string? PosNote { get; set; }
+
+    // ── Metadata ─────────────────────────────────────────────────────────────
+    [Column("note")]
+    public string? Note { get; set; }
+
+    [Column("cancel_reason")]
+    public string? CancelReason { get; set; }
+
+    [MaxLength(50)] [Column("cancel_by")]
+    public string? CancelBy { get; set; }
+
+    [Column("days_to_ship")]
+    public int? DaysToShip { get; set; }
+
+    [Column("ship_by_date")]
+    public DateTime? ShipByDate { get; set; }
+
+    // ── Multi-tenant ─────────────────────────────────────────────────────────
     [Column("company_id")]
     public Guid? CompanyId { get; set; }
 
-    // ── Navigation properties ────────────────────────────────────────────────
-
-    /// <summary>Khách hàng đặt đơn</summary>
+    // ── Navigation ───────────────────────────────────────────────────────────
     [ForeignKey("CustomerId")]
     public Customer? Customer { get; set; }
 
-    /// <summary>Kênh bán hàng phát sinh đơn</summary>
     [ForeignKey("ChannelId")]
     public Channel? Channel { get; set; }
 
-    /// <summary>Danh sách sản phẩm trong đơn hàng</summary>
     public ICollection<OrderDetail> OrderDetails { get; set; } = [];
 }

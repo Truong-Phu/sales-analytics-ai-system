@@ -39,6 +39,9 @@ public class AppDbContext : DbContext
     // Super Admin: tài khoản thanh toán hệ thống
     public DbSet<SystemPaymentAccount> SystemPaymentAccounts => Set<SystemPaymentAccount>();
 
+    // Open Platform extensions (thêm 2026-05-21)
+    public DbSet<ProductVariation> ProductVariations => Set<ProductVariation>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         // ── User ─────────────────────────────────────────────────────────────
@@ -273,6 +276,39 @@ public class AppDbContext : DbContext
             e.Property(c => c.IsActive).HasDefaultValue(true);
             e.Property(c => c.CreatedAt).HasDefaultValueSql("NOW()");
             e.Property(c => c.UpdatedAt).HasDefaultValueSql("NOW()");
+        });
+
+        // ── ProductVariation ─────────────────────────────────────────────────
+        modelBuilder.Entity<ProductVariation>(e =>
+        {
+            e.ToTable("product_variations", "public");
+            e.HasKey(v => v.Id);
+            e.Property(v => v.Id).HasColumnName("id");
+            e.Property(v => v.CompanyId).HasColumnName("company_id");
+            e.Property(v => v.ProductId).HasColumnName("product_id");
+            e.Property(v => v.ShopeeModelId).HasColumnName("shopee_model_id");
+            e.Property(v => v.TiktokSkuId).HasColumnName("tiktok_sku_id").HasMaxLength(50);
+            e.Property(v => v.LazadaSkuId).HasColumnName("lazada_sku_id");
+            e.Property(v => v.Sku).HasColumnName("sku").HasMaxLength(100).IsRequired();
+            e.Property(v => v.VariationName).HasColumnName("variation_name").HasMaxLength(255);
+            e.Property(v => v.AttributeColor).HasColumnName("attribute_color").HasMaxLength(100);
+            e.Property(v => v.AttributeSize).HasColumnName("attribute_size").HasMaxLength(50);
+            e.Property(v => v.OriginalPrice).HasColumnName("original_price").HasColumnType("decimal(15,2)");
+            e.Property(v => v.SalePrice).HasColumnName("sale_price").HasColumnType("decimal(15,2)");
+            e.Property(v => v.Currency).HasColumnName("currency").HasMaxLength(10).HasDefaultValue("VND");
+            e.Property(v => v.StockQuantity).HasColumnName("stock_quantity").HasDefaultValue(0);
+            e.Property(v => v.WarehouseId).HasColumnName("warehouse_id").HasMaxLength(100);
+            e.Property(v => v.ImageUrl).HasColumnName("image_url");
+            e.Property(v => v.IsActive).HasColumnName("is_active").HasDefaultValue(true);
+            e.Property(v => v.PlatformStatus).HasColumnName("platform_status").HasMaxLength(50);
+            e.Property(v => v.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()");
+            e.Property(v => v.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("NOW()");
+            e.HasOne(v => v.Product)
+             .WithMany(p => p.Variations)
+             .HasForeignKey(v => v.ProductId)
+             .OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(v => new { v.ProductId, v.Sku }).IsUnique();
+            e.HasIndex(v => new { v.CompanyId, v.Sku });
         });
 
         // ── Product ──────────────────────────────────────────────────────────

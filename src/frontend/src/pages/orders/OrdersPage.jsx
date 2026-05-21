@@ -251,21 +251,54 @@ function OrderDetailPanel({ order }) {
 
   const items = detail?.details ?? order.details ?? []
 
+  // Đọc đúng field: ưu tiên camelCase từ API mới, fallback sang snake_case cũ
+  const orderCode     = order.orderCode     ?? order.externalOrderId ?? order.order_code   ?? '—'
+  const custName      = order.customerName  ?? order.customer_name   ?? order.recipientName ?? '—'
+  const custPhone     = order.customerPhone ?? order.customer_phone  ?? order.phone ?? '—'
+  const shipProv      = order.shippingProvince ?? order.shipping_province ?? order.province ?? ''
+  const shipDist      = order.shippingDistrict ?? order.shipping_district ?? order.district ?? ''
+  const shipFull      = order.shippingFullAddress ?? order.shipping_full_address ?? [shipDist, shipProv].filter(Boolean).join(', ') || '—'
+  const trackNum      = order.trackingNumber ?? order.tracking_number ?? '—'
+  const ghnCode       = order.ghnOrderCode  ?? order.ghn_order_code  ?? ''
+  const platStatus    = order.platformStatus ?? order.platform_status ?? ''
+  const paidAt        = order.paidAt        ?? order.paid_at
+  const deliveredAt   = order.deliveredAt   ?? order.delivered_at
+
   return (
     <div className="space-y-4 mb-3">
+      {/* Thông tin khách & địa chỉ */}
+      <div className="p-3 rounded-lg space-y-1.5" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
+        <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: 'var(--text-secondary)' }}>Khách hàng & Giao hàng</div>
+        <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-xs">
+          {[
+            ['Mã đơn hàng',   orderCode],
+            ['Tên khách',     custName],
+            ['Số điện thoại', custPhone],
+            ['Địa chỉ giao',  shipFull],
+          ].map(([label, val]) => (
+            <div key={label} className="flex items-start gap-1">
+              <span className="shrink-0 min-w-[90px]" style={{ color: 'var(--text-secondary)' }}>{label}:</span>
+              <span className="font-medium break-all" style={{ color: 'var(--text-primary)' }}>{val || '—'}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* Info grid */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
-          { label: 'Mã đơn ngoài',  value: order.externalOrderId ?? '—' },
-          { label: 'Phí vận chuyển',value: fmtVND(order.shippingFee) },
-          { label: 'Giảm giá',      value: fmtVND(order.discount) },
-          { label: 'Thanh toán',    value: order.paymentMethod ?? '—' },
-          { label: 'TT vận chuyển', value: order.shippingStatus?.replace(/_/g,' ') ?? '—' },
-          { label: 'TT thanh toán', value: order.paymentStatus ?? '—' },
+          { label: 'Phí vận chuyển', value: fmtVND(order.shippingFee ?? order.shipping_fee) },
+          { label: 'Thanh toán',     value: order.paymentMethod ?? order.payment_method ?? '—' },
+          { label: 'Mã vận đơn',     value: trackNum },
+          { label: 'Mã GHN',         value: ghnCode || '—' },
+          { label: 'TT sàn',         value: platStatus || '—' },
+          { label: 'TT giao hàng',   value: (order.shippingStatus ?? order.shipping_status ?? '—').replace(/_/g,' ') },
+          { label: 'Ngày thanh toán',value: paidAt ? new Date(paidAt).toLocaleDateString('vi-VN') : '—' },
+          { label: 'Ngày giao',      value: deliveredAt ? new Date(deliveredAt).toLocaleDateString('vi-VN') : '—' },
         ].map(item => (
           <div key={item.label} className="p-2 rounded-lg" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
             <div className="text-xs mb-0.5" style={{ color: 'var(--text-secondary)' }}>{item.label}</div>
-            <div className="font-mono font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>{item.value}</div>
+            <div className="font-mono font-semibold text-sm truncate" style={{ color: 'var(--text-primary)' }}>{item.value}</div>
           </div>
         ))}
       </div>
@@ -278,24 +311,40 @@ function OrderDetailPanel({ order }) {
           <table className="w-full text-sm">
             <thead>
               <tr style={{ background: 'var(--bg-surface)', borderBottom: '1px solid var(--border)' }}>
-                {['Sản phẩm', 'SKU', 'Đơn giá', 'SL', 'Thành tiền'].map(h => (
+                {['Ảnh', 'Sản phẩm', 'SKU', 'Giá gốc', 'Giá bán', 'SL', 'Thành tiền'].map(h => (
                   <th key={h} className="text-left px-3 py-2 font-semibold" style={{ color: 'var(--text-secondary)' }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {items.map((item, idx) => (
-                <tr key={idx} style={{ borderBottom: '1px solid var(--border)' }}>
-                  <td className="px-3 py-2 font-medium" style={{ color: 'var(--text-primary)' }}>
-                    {item.productName}
-                    {item.variation && <span className="ml-1" style={{ color: 'var(--text-tertiary)' }}>({item.variation})</span>}
-                  </td>
-                  <td className="px-3 py-2 font-mono" style={{ color: 'var(--text-secondary)' }}>{item.sku || '—'}</td>
-                  <td className="px-3 py-2 font-mono" style={{ color: 'var(--text-secondary)' }}>{fmtVND(item.unitPrice)}</td>
-                  <td className="px-3 py-2 text-center font-mono" style={{ color: 'var(--text-primary)' }}>{item.quantity}</td>
-                  <td className="px-3 py-2 font-mono font-semibold" style={{ color: 'var(--text-primary)' }}>{fmtVND(item.subtotal || item.unitPrice * item.quantity)}</td>
-                </tr>
-              ))}
+              {items.map((item, idx) => {
+                const imageUrl   = item.imageUrl ?? item.image_url
+                const salePrice  = item.salePrice  ?? item.sale_price  ?? item.unitPrice ?? item.unit_price ?? 0
+                const origPrice  = item.originalPrice ?? item.original_price ?? salePrice
+                const subtotal   = item.subtotal ?? (salePrice * (item.quantity ?? 1))
+                const variation  = item.variationName ?? item.variation_name ?? item.variation
+                return (
+                  <tr key={idx} style={{ borderBottom: '1px solid var(--border)' }}>
+                    <td className="px-3 py-2 w-10">
+                      {imageUrl
+                        ? <img src={imageUrl} alt="" className="w-9 h-9 rounded object-cover" onError={e => e.target.style.display='none'} />
+                        : <div className="w-9 h-9 rounded flex items-center justify-center" style={{ background: 'var(--bg-elevated)' }}>
+                            <span className="icon text-base" style={{ color: 'var(--text-tertiary)' }}>image</span>
+                          </div>
+                      }
+                    </td>
+                    <td className="px-3 py-2 font-medium" style={{ color: 'var(--text-primary)' }}>
+                      <div>{item.productName ?? item.product_name}</div>
+                      {variation && <div className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>{variation}</div>}
+                    </td>
+                    <td className="px-3 py-2 font-mono text-xs" style={{ color: 'var(--text-secondary)' }}>{item.sku || '—'}</td>
+                    <td className="px-3 py-2 font-mono text-xs" style={{ color: 'var(--text-tertiary)', textDecoration: origPrice > salePrice ? 'line-through' : 'none' }}>{fmtVND(origPrice)}</td>
+                    <td className="px-3 py-2 font-mono" style={{ color: 'var(--text-secondary)' }}>{fmtVND(salePrice)}</td>
+                    <td className="px-3 py-2 text-center font-mono" style={{ color: 'var(--text-primary)' }}>{item.quantity}</td>
+                    <td className="px-3 py-2 font-mono font-semibold" style={{ color: 'var(--text-primary)' }}>{fmtVND(subtotal)}</td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>
@@ -449,28 +498,44 @@ export default function OrdersPage() {
                       onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                     >
                       <td className="px-4 py-3 font-mono text-sm" style={{ color: 'var(--primary-500)' }}>
-                        {order.externalOrderId ?? order.orderCode ?? order.orderId}
+                        {order.orderCode ?? order.externalOrderId ?? order.order_code ?? order.orderId}
                       </td>
                       <td className="px-4 py-3">
-                        <ChannelBadge name={order.channelLabel} />
+                        <ChannelBadge name={order.channelLabel ?? order.channel} />
                       </td>
                       <td className="px-4 py-3">
-                        <div className="font-medium text-sm" style={{ color: 'var(--text-primary)' }}>{order.customerName}</div>
-                        {order.customerPhone && (
-                          <div className="text-sm mt-0.5" style={{ color: 'var(--text-secondary)' }}>{order.customerPhone}</div>
+                        <div className="font-medium text-sm" style={{ color: 'var(--text-primary)' }}>
+                          {order.customerName ?? order.customer_name ?? order.recipientName ?? '—'}
+                        </div>
+                        {(order.customerPhone ?? order.customer_phone) && (
+                          <div className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>
+                            {order.customerPhone ?? order.customer_phone}
+                          </div>
                         )}
                       </td>
                       <td className="px-4 py-3 font-mono font-semibold" style={{ color: 'var(--text-primary)' }}>
-                        {fmtVND(order.totalAmount)}
+                        {fmtVND(order.totalAmount ?? order.total_amount)}
                       </td>
-                      <td className="px-4 py-3 text-sm">
-                        <div style={{ color: 'var(--text-secondary)' }}>{order.shippingStatus?.replace(/_/g,' ')}</div>
+                      <td className="px-4 py-3 text-xs">
+                        {(order.trackingNumber ?? order.tracking_number) && (
+                          <div className="font-mono" style={{ color: 'var(--primary-500)' }}>
+                            {order.trackingNumber ?? order.tracking_number}
+                          </div>
+                        )}
+                        {(order.ghnOrderCode ?? order.ghn_order_code) && (
+                          <div className="font-mono" style={{ color: 'var(--text-tertiary)' }}>
+                            GHN: {order.ghnOrderCode ?? order.ghn_order_code}
+                          </div>
+                        )}
+                        {!(order.trackingNumber ?? order.ghnOrderCode) && (
+                          <span style={{ color: 'var(--text-tertiary)' }}>—</span>
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <StatusBadge status={order.status} label={t(`orders.status.${order.status}`, order.status)} />
                       </td>
                       <td className="px-4 py-3 text-sm" style={{ color: 'var(--text-secondary)' }}>
-                        {order.createdAt ? new Date(order.createdAt).toLocaleDateString('vi-VN') : '—'}
+                        {new Date(order.platformCreatedAt ?? order.platform_created_at ?? order.orderDate ?? order.createdAt ?? 0).toLocaleDateString('vi-VN')}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
