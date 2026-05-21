@@ -68,7 +68,10 @@ public class CustomersController(
                     COALESCE(SUM(fs.net_revenue),      0) AS total_revenue,
                     COALESCE(AVG(fs.net_revenue),      0) AS avg_order_value,
                     MAX(dd.full_date)                      AS last_order_date,
-                    COALESCE(lp.loyalty_balance, 0)        AS loyalty_points
+                    COALESCE(lp.loyalty_balance, 0)        AS loyalty_points,
+                    dc.phone,
+                    dc.address,
+                    dc.district
                 FROM dw.dim_customer dc
                 LEFT JOIN dw.fact_sales fs ON fs.customer_key = dc.customer_key
                 LEFT JOIN dw.dim_date   dd ON fs.date_key     = dd.date_key
@@ -89,7 +92,7 @@ public class CustomersController(
                   AND (@companyId IS NULL OR fs.company_id = @companyId::uuid OR fs.company_id IS NULL)
                 GROUP BY dc.customer_key, dc.customer_id, dc.customer_code, dc.full_name,
                          dc.email, dc.province, dc.region, dc.segment_label, dc.effective_from,
-                         lp.loyalty_balance
+                         lp.loyalty_balance, dc.phone, dc.address, dc.district
                 ORDER BY total_revenue DESC
                 LIMIT @limit OFFSET @offset
                 """;
@@ -132,19 +135,22 @@ public class CustomersController(
             {
                 customers.Add(new
                 {
-                    CustomerId     = reader.IsDBNull(0)  ? 0              : reader.GetInt32(0),
-                    CustomerCode   = reader.IsDBNull(1)  ? ""             : reader.GetString(1),
-                    FullName       = reader.IsDBNull(2)  ? ""             : reader.GetString(2),
-                    Email          = reader.IsDBNull(3)  ? ""             : reader.GetString(3),
-                    Province       = reader.IsDBNull(4)  ? ""             : reader.GetString(4),
-                    Region         = reader.IsDBNull(5)  ? ""             : reader.GetString(5),
-                    SegmentLabel   = reader.IsDBNull(6)  ? ""             : reader.GetString(6),
+                    CustomerId     = reader.IsDBNull(0)  ? 0               : reader.GetInt32(0),
+                    CustomerCode   = reader.IsDBNull(1)  ? ""              : reader.GetString(1),
+                    FullName       = reader.IsDBNull(2)  ? ""              : reader.GetString(2),
+                    Email          = reader.IsDBNull(3)  ? ""              : reader.GetString(3),
+                    Province       = reader.IsDBNull(4)  ? ""              : reader.GetString(4),
+                    Region         = reader.IsDBNull(5)  ? ""              : reader.GetString(5),
+                    SegmentLabel   = reader.IsDBNull(6)  ? ""              : reader.GetString(6),
                     FirstOrderDate = reader.IsDBNull(7)  ? (DateOnly?)null : DateOnly.FromDateTime(reader.GetDateTime(7)),
                     TotalOrders    = reader.GetInt64(8),
                     TotalRevenue   = reader.GetDecimal(9),
                     AvgOrderValue  = reader.GetDecimal(10),
                     LastOrderDate  = reader.IsDBNull(11) ? (DateTime?)null : reader.GetDateTime(11),
-                    LoyaltyPoints  = reader.IsDBNull(12) ? 0 : reader.GetDecimal(12),
+                    LoyaltyPoints  = reader.IsDBNull(12) ? 0               : reader.GetDecimal(12),
+                    Phone    = reader.IsDBNull(13) ? null             : reader.GetString(13),
+                    Address        = reader.IsDBNull(14) ? null             : reader.GetString(14),
+                    District       = reader.IsDBNull(15) ? null             : reader.GetString(15),
                 });
             }
 
@@ -189,7 +195,7 @@ public class CustomersController(
                 CustomerCode = c.CustomerCode,
                 FullName     = c.FullName,
                 Email        = c.Email,
-                PhoneNumber  = c.PhoneNumber,
+                Phone  = c.Phone,
                 Address      = c.Address,
                 Province     = c.Province,
                 TotalOrders  = c.TotalOrders,
@@ -228,7 +234,7 @@ public class CustomersController(
                 CustomerCode = customer.CustomerCode,
                 FullName     = customer.FullName,
                 Email        = customer.Email,
-                PhoneNumber  = customer.PhoneNumber,
+                Phone  = customer.Phone,
                 Address      = customer.Address,
                 Province     = customer.Province,
                 TotalOrders  = customer.TotalOrders,
@@ -268,7 +274,7 @@ public class CustomersController(
             {
                 FullName    = dto.FullName,
                 Email       = dto.Email,
-                PhoneNumber = dto.PhoneNumber,
+                Phone = dto.Phone,
                 Address     = dto.Address,
                 Province    = dto.Province,
                 District    = dto.District,
@@ -308,7 +314,7 @@ public class CustomersController(
 
             if (dto.FullName     is not null) customer.FullName     = dto.FullName;
             if (dto.Email        is not null) customer.Email        = dto.Email;
-            if (dto.PhoneNumber  is not null) customer.PhoneNumber  = dto.PhoneNumber;
+            if (dto.Phone  is not null) customer.Phone  = dto.Phone;
             if (dto.Address      is not null) customer.Address      = dto.Address;
             if (dto.Province     is not null) customer.Province     = dto.Province;
             if (dto.District     is not null) customer.District     = dto.District;

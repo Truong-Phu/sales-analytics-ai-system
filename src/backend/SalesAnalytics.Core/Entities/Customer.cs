@@ -39,9 +39,6 @@ public class Customer
     [MaxLength(255)] [Column("email")]
     public string? Email { get; set; }
 
-    [MaxLength(20)] [Column("phone_number")]
-    public string? PhoneNumber { get; set; }
-
     [MaxLength(30)] [Column("phone")]
     public string? Phone { get; set; }
 

@@ -9,7 +9,7 @@ public class CustomerResponseDto
     public string? CustomerCode { get; set; }
     public string  FullName     { get; set; } = string.Empty;
     public string? Email        { get; set; }
-    public string? PhoneNumber  { get; set; }
+    public string? Phone        { get; set; }
     public string? Address      { get; set; }
     public string? Province     { get; set; }
     public int     TotalOrders  { get; set; }
@@ -30,8 +30,8 @@ public class CreateCustomerDto
     [EmailAddress(ErrorMessage = "Định dạng email không hợp lệ")]
     public string? Email { get; set; }
 
-    [MaxLength(20)]
-    public string? PhoneNumber { get; set; }
+    [MaxLength(30)]
+    public string? Phone { get; set; }
 
     public string? Address  { get; set; }
     public string? Province { get; set; }
@@ -48,8 +48,8 @@ public class UpdateCustomerDto
     [EmailAddress]
     public string? Email { get; set; }
 
-    [MaxLength(20)]
-    public string? PhoneNumber { get; set; }
+    [MaxLength(30)]
+    public string? Phone { get; set; }
 
     public string? Address      { get; set; }
     public string? Province     { get; set; }

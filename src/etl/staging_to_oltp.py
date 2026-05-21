@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """
 staging_to_oltp.py
 ETL Pipeline: staging.raw_* → public.orders/order_items/customers/products → dw.fact_sales
@@ -6,7 +6,7 @@ ETL Pipeline: staging.raw_* → public.orders/order_items/customers/products →
 Luồng xử lý:
   1. Đọc staging.raw_shopee_orders / raw_tiktok_orders / raw_lazada_orders (processed=false)
   2. Parse JSONB → normalize thành dict chuẩn MSAS
-  3. Upsert public.customers (dedup theo phone_number + company_id)
+  3. Upsert public.customers (dedup theo phone + company_id)
   4. Upsert public.products  (dedup theo sku + company_id)
   5. Insert public.orders    (dedup theo external_order_id)
   6. Insert public.order_items
@@ -159,7 +159,7 @@ def _upsert_customer(conn, company_id: str, name: str, phone: str,
         if phone:
             cur.execute(
                 "SELECT customer_id FROM public.customers "
-                "WHERE company_id=%s AND phone_number=%s LIMIT 1",
+                "WHERE company_id=%s AND phone=%s LIMIT 1",
                 (company_id, phone)
             )
         else:
@@ -180,7 +180,7 @@ def _upsert_customer(conn, company_id: str, name: str, phone: str,
         # Insert mới
         cur.execute(
             """INSERT INTO public.customers
-               (full_name, phone_number, province, district, address,
+               (full_name, phone, province, district, address,
                 total_orders, total_spent, segment_label, is_active,
                 created_at, updated_at, company_id)
                VALUES (%s,%s,%s,%s,%s,0,0,'NEW',true,NOW(),NOW(),%s)
@@ -358,7 +358,7 @@ def _transform_tiktok(row: Dict) -> Dict:
             district = nm
 
     name    = addr.get("name", "")
-    phone   = addr.get("phone_number", "")
+    phone   = addr.get("phone", "")
     address = addr.get("full_address", "")
 
     order_items = []

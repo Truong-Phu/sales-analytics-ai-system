@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 import_common.py - Ham dung chung cho cac import script.
@@ -154,7 +154,7 @@ def upsert_customer(cur, full_name: str, phone: str, province: str,
     phone = (phone or "").strip() or f"09{abs(hash(full_name)) % 100000000:08d}"
     # 1. Tim customer cu theo phone
     cur.execute(
-        "SELECT customer_id FROM public.customers WHERE phone_number = %s",
+        "SELECT customer_id FROM public.customers WHERE phone = %s",
         (phone,)
     )
     row = cur.fetchone()
@@ -164,7 +164,7 @@ def upsert_customer(cur, full_name: str, phone: str, province: str,
     code = "KH-PT-" + phone[-8:]
     cur.execute("""
         INSERT INTO public.customers
-            (customer_code, full_name, email, phone_number,
+            (customer_code, full_name, email, phone,
              address, province, district, segment_label, company_id)
         VALUES (%s, %s, %s, %s, %s, %s, %s, 'NEW', %s)
         ON CONFLICT (customer_code) DO UPDATE SET

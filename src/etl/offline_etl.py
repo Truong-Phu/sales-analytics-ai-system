@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """
 OfflineETL & ExcelImporter – ETL Mức 3: Import thủ công từ CSV/Excel.
 
@@ -283,7 +283,7 @@ def _get_or_create_customer(conn, customer_name: str, province: str, region: str
                 cur.execute(
                     """
                     UPDATE dw.dim_customer
-                    SET phone_number = COALESCE(%s, phone_number),
+                    SET phone = COALESCE(%s, phone),
                         address      = COALESCE(%s, address),
                         district     = COALESCE(%s, district)
                     WHERE customer_key = %s
@@ -295,7 +295,7 @@ def _get_or_create_customer(conn, customer_name: str, province: str, region: str
             cur.execute(
                 """
                 INSERT INTO dw.dim_customer (
-                    customer_id, full_name, province, region, phone_number, address, district,
+                    customer_id, full_name, province, region, phone, address, district,
                     is_current, effective_from, effective_to
                 )
                 VALUES (

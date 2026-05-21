@@ -36,7 +36,7 @@ public class OrderRepositoryTests : IDisposable
         {
             CustomerCode = "C001",
             FullName     = "Nguyễn Văn A",
-            PhoneNumber  = "0901234567",
+            Phone        = "0901234567",
             Email        = "a@example.com",
             TotalSpent   = 500_000,
             IsActive     = true,

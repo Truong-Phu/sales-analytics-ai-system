@@ -57,9 +57,17 @@ public class OrderRepository(AppDbContext db)
         if (companyId.HasValue)
             query = query.Where(o => o.CompanyId == companyId.Value);
 
-        // Lọc theo trạng thái
+        // Lọc theo trạng thái — hỗ trợ nhiều giá trị phân cách bằng dấu phẩy, case-insensitive
+        // VD: status="PENDING,CONFIRMED" hoặc "pending,confirmed"
         if (!string.IsNullOrWhiteSpace(status))
-            query = query.Where(o => o.Status == status);
+        {
+            var statuses = status.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                                 .Select(s => s.ToUpper())
+                                 .ToArray();
+            query = statuses.Length == 1
+                ? query.Where(o => o.Status.ToUpper() == statuses[0])
+                : query.Where(o => statuses.Contains(o.Status.ToUpper()));
+        }
 
         // Lọc theo kênh
         if (channelId.HasValue)

@@ -13,7 +13,7 @@ public class CustomerRepository(AppDbContext db)
     public async Task<Customer?> SearchByPhoneAsync(string phone)
         => await _set
             .AsNoTracking()
-            .FirstOrDefaultAsync(c => c.PhoneNumber == phone && c.IsActive);
+            .FirstOrDefaultAsync(c => c.Phone == phone && c.IsActive);
 
     /// <inheritdoc/>
     public async Task<Customer?> GetByEmailAsync(string email)
@@ -46,7 +46,7 @@ public class CustomerRepository(AppDbContext db)
         if (!string.IsNullOrWhiteSpace(search))
             query = query.Where(c =>
                 EF.Functions.ILike(c.FullName, $"%{search}%") ||
-                (c.PhoneNumber != null && EF.Functions.ILike(c.PhoneNumber, $"%{search}%")) ||
+                (c.Phone != null && EF.Functions.ILike(c.Phone, $"%{search}%")) ||
                 (c.CustomerCode != null && EF.Functions.ILike(c.CustomerCode, $"%{search}%")));
 
         var total = await query.CountAsync();

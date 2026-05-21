@@ -32,7 +32,7 @@ public class PosController(IConfiguration cfg, ITenantContext tenant) : Controll
         await conn.OpenAsync();
 
         var sql = """
-            SELECT c.customer_id, c.full_name, c.phone_number, c.email,
+            SELECT c.customer_id, c.full_name, c.phone, c.email,
                    c.province, c.district,
                    COUNT(DISTINCT o.order_id)   AS total_orders,
                    COALESCE(SUM(o.total_amount), 0) AS total_spent,
@@ -46,7 +46,7 @@ public class PosController(IConfiguration cfg, ITenantContext tenant) : Controll
             LEFT JOIN public.orders o ON o.customer_id = c.customer_id
             WHERE c.company_id = @cid::uuid
               AND c.is_active = TRUE
-              AND (c.full_name ILIKE @q OR c.phone_number ILIKE @q OR c.email ILIKE @q)
+              AND (c.full_name ILIKE @q OR c.phone ILIKE @q OR c.email ILIKE @q)
             GROUP BY c.customer_id
             ORDER BY total_orders DESC
             LIMIT 10
@@ -296,12 +296,12 @@ public class PosController(IConfiguration cfg, ITenantContext tenant) : Controll
 
                 await using var cuCmd = new NpgsqlCommand("""
                     INSERT INTO public.customers
-                        (customer_code, full_name, phone_number, company_id,
+                        (customer_code, full_name, phone, company_id,
                          email, is_active, segment_label, created_at, updated_at)
                     VALUES
                         (@code, @name, @phone, @cid::uuid,
                          @email, TRUE, 'NEW', NOW(), NOW())
-                    ON CONFLICT (phone_number) DO UPDATE
+                    ON CONFLICT (customer_code) DO UPDATE
                         SET full_name  = EXCLUDED.full_name,
                             updated_at = NOW()
                     RETURNING customer_id
@@ -316,7 +316,7 @@ public class PosController(IConfiguration cfg, ITenantContext tenant) : Controll
                 if (cuObj is null or DBNull)
                 {
                     await using var getCmd = new NpgsqlCommand(
-                        "SELECT customer_id FROM public.customers WHERE phone_number=@p LIMIT 1", conn, tx);
+                        "SELECT customer_id FROM public.customers WHERE phone=@p LIMIT 1", conn, tx);
                     getCmd.Parameters.AddWithValue("p", phone);
                     customerId = Convert.ToInt32(await getCmd.ExecuteScalarAsync() ?? 0);
                 }

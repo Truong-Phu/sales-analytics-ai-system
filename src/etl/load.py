@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """
 Load – Nạp dữ liệu đã transform vào Data Warehouse (Star Schema).
 
@@ -312,7 +312,7 @@ def upsert_customer_scd2(conn, phone: Optional[str], name: str,
 
     Business key: full_name + province.
     Nếu tên thay đổi → đóng bản ghi cũ, tạo bản ghi mới (SCD2).
-    phone_number, address, district được UPDATE khi đã có bản ghi hiện tại.
+    phone, address, district được UPDATE khi đã có bản ghi hiện tại.
 
     Args:
         phone:    Số điện thoại khách hàng (có thể None).
@@ -335,7 +335,7 @@ def upsert_customer_scd2(conn, phone: Optional[str], name: str,
     """
     sql_insert = """
         INSERT INTO dw.dim_customer
-            (customer_id, full_name, province, region, phone_number, address, district,
+            (customer_id, full_name, province, region, phone, address, district,
              is_current, effective_from, effective_to)
         VALUES (
             (SELECT COALESCE(MAX(customer_id), 0) + 1 FROM dw.dim_customer),
@@ -350,7 +350,7 @@ def upsert_customer_scd2(conn, phone: Optional[str], name: str,
     """
     sql_update_contact = """
         UPDATE dw.dim_customer
-        SET phone_number = COALESCE(%s, phone_number),
+        SET phone = COALESCE(%s, phone),
             address      = COALESCE(%s, address),
             district     = COALESCE(%s, district)
         WHERE customer_key = %s
