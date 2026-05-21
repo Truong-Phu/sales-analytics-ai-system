@@ -21,13 +21,18 @@ public class OrderResponseDto
     public DateTime OrderDate       { get; set; }
     public DateTime? DeliveredAt    { get; set; }
     public string? ExternalOrderId  { get; set; }
-    public string? TrackingNumber   { get; set; }
-    public string? CustomerPhone    { get; set; }
-    public string? ShippingAddress  { get; set; }
-    public string? Province         { get; set; }
-    public string? PosNote          { get; set; }
-    public DateTime CreatedAt       { get; set; }
-    public List<OrderDetailDto> Details { get; set; } = [];
+    public string? TrackingNumber        { get; set; }
+    public string? GhnOrderCode          { get; set; }
+    public string? CustomerPhone         { get; set; }
+    public string? ShippingAddress       { get; set; }
+    public string? ShippingDistrict      { get; set; }
+    public string? ShippingProvince      { get; set; }
+    public string? ShippingFullAddress   { get; set; }
+    public string? PlatformStatus        { get; set; }
+    public DateTime? PaidAt              { get; set; }
+    public string? PosNote               { get; set; }
+    public DateTime CreatedAt            { get; set; }
+    public List<OrderDetailDto> Details  { get; set; } = [];
 }
 
 /// <summary>Chi tiết từng sản phẩm trong đơn hàng</summary>

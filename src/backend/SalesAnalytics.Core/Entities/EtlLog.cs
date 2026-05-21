@@ -15,9 +15,9 @@ public class EtlLog
     [Column("log_id")]
     public int LogId { get; set; }
 
-    /// <summary>Mã công việc ETL (FK → etl_jobs)</summary>
+    /// <summary>Mã công việc ETL (FK → etl_jobs, nullable khi ghi log từ scheduler)</summary>
     [Column("job_id")]
-    public int JobId { get; set; }
+    public int? JobId { get; set; }
 
     /// <summary>Giai đoạn ETL: EXTRACT | TRANSFORM | QUALITY_CHECK | LOAD | GENERAL</summary>
     [Required]

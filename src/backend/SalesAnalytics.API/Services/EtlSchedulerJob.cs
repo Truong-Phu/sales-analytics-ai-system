@@ -138,7 +138,7 @@ public class EtlSchedulerJob : BackgroundService
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             db.EtlLogs.Add(new EtlLog
             {
-                JobId        = 0,
+                JobId        = null,
                 Phase        = phase,
                 Message      = message,
                 Level        = level,

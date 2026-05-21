@@ -257,7 +257,7 @@ function OrderDetailPanel({ order }) {
   const custPhone     = order.customerPhone ?? order.customer_phone  ?? order.phone ?? '—'
   const shipProv      = order.shippingProvince ?? order.shipping_province ?? order.province ?? ''
   const shipDist      = order.shippingDistrict ?? order.shipping_district ?? order.district ?? ''
-  const shipFull      = order.shippingFullAddress ?? order.shipping_full_address ?? [shipDist, shipProv].filter(Boolean).join(', ') || '—'
+  const shipFull      = order.shippingFullAddress ?? order.shipping_full_address ?? ([shipDist, shipProv].filter(Boolean).join(', ') || '—')
   const trackNum      = order.trackingNumber ?? order.tracking_number ?? '—'
   const ghnCode       = order.ghnOrderCode  ?? order.ghn_order_code  ?? ''
   const platStatus    = order.platformStatus ?? order.platform_status ?? ''

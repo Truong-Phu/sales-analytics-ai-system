@@ -228,7 +228,7 @@ public class SmartAlertJob : BackgroundService
                       AND data       IS NOT NULL
                       AND data::text LIKE {pattern}
                       AND created_at > {cutoff}
-                )
+                ) AS "Value"
                 """)
             .SingleAsync();
     }
