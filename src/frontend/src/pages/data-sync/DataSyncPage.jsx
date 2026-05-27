@@ -61,7 +61,6 @@ function KeywordManager() {
   const [keywords, setKeywords] = useState([])
   const [loading,  setLoading]  = useState(true)
   const [input,    setInput]    = useState('')
-  const [srcType,  setSrcType]  = useState('google')
   const [busy,     setBusy]     = useState(false)
   const [error,    setError]    = useState('')
 
@@ -77,7 +76,7 @@ function KeywordManager() {
     if (!input.trim()) return
     setBusy(true); setError('')
     try {
-      await addKeyword(input.trim(), srcType)
+      await addKeyword(input.trim(), 'google')
       setInput('')
       await load()
     } catch (e) {
@@ -105,7 +104,7 @@ function KeywordManager() {
       <div className="flex items-center gap-2">
         <span className="icon" style={{ fontSize: 20, color: 'var(--primary-500)' }}>search</span>
         <h2 className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>
-          Từ khóa tìm kiếm Scraper
+          Từ khóa tìm kiếm Google
         </h2>
         <span className="text-xs ml-1 px-2 py-0.5 rounded-full"
               style={{ background: 'rgba(100,116,139,0.10)', color: 'var(--text-tertiary)' }}>
@@ -123,15 +122,6 @@ function KeywordManager() {
           className="lbtn flex-1 min-w-0 !h-9 !px-3 text-sm border"
           style={{ background: 'var(--bg-elevated)', borderColor: 'var(--border-default)' }}
         />
-        <select
-          value={srcType}
-          onChange={e => setSrcType(e.target.value)}
-          className="lbtn !h-9 !px-2 text-xs border"
-          style={{ background: 'var(--bg-elevated)', borderColor: 'var(--border-default)' }}
-        >
-          <option value="google">Google</option>
-          <option value="facebook">Facebook</option>
-        </select>
         <button
           onClick={handleAdd}
           disabled={busy || !input.trim()}
@@ -141,25 +131,6 @@ function KeywordManager() {
           Thêm
         </button>
       </div>
-
-      {/* Hướng dẫn cài đặt Facebook Scraper */}
-      {srcType === 'facebook' && (
-        <div className="text-xs px-3 py-2.5 rounded-lg space-y-1"
-             style={{ background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.20)', color: '#3B82F6' }}>
-          <div className="flex items-center gap-1.5 font-semibold mb-1">
-            <span className="icon" style={{ fontSize: 14 }}>info</span>
-            Để dùng Facebook Page scraper, cần cấu hình trước:
-          </div>
-          <div style={{ color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-            1. Tạo Facebook App tại <strong>developers.facebook.com</strong><br />
-            2. Thêm thông tin vào <code style={{ background: 'var(--bg-elevated)', padding: '0 3px', borderRadius: 3 }}>appsettings.Development.json</code>:<br />
-            <code style={{ background: 'var(--bg-elevated)', padding: '2px 6px', borderRadius: 3, display: 'inline-block', marginTop: 2 }}>
-              {'"Facebook": \{ "PageId": "YOUR_PAGE_ID", "PageAccessToken": "YOUR_TOKEN" \}'}
-            </code><br />
-            3. Restart backend server
-          </div>
-        </div>
-      )}
 
       {error && (
         <div className="text-xs px-3 py-2 rounded-lg"
@@ -1822,15 +1793,18 @@ function GoogleScraperCard() {
           Cách hoạt động
         </div>
         <ol className="space-y-0.5 list-decimal list-inside" style={{ color: 'var(--text-secondary)', lineHeight: 1.7 }}>
-          <li>Đọc từ khóa từ tab <strong>Từ khóa Scraper</strong> (source: Google)</li>
+          <li>Đọc danh sách từ khóa bên dưới (source: Google)</li>
           <li>Tìm kiếm Google với từng từ khóa (20 URL/keyword, tối đa 80 URL)</li>
           <li>Crawl nội dung: tên sản phẩm, giá, xu hướng, domain nguồn</li>
           <li>Lưu vào <code style={{ background: 'var(--bg-elevated)', padding: '0 3px', borderRadius: 3 }}>raw_google_data</code> — bỏ qua bản ghi trùng</li>
         </ol>
         <div className="mt-2 pt-2" style={{ borderTop: '1px solid rgba(66,133,244,0.20)', color: 'var(--text-tertiary)' }}>
-          Nếu Google giới hạn (429): thêm keywords vào tab <strong>Từ khóa</strong> và thử lại sau vài phút.
+          Nếu Google giới hạn (429): thêm thêm từ khóa bên dưới và thử lại sau vài phút.
         </div>
       </div>
+
+      {/* Quản lý từ khóa — nhúng trực tiếp vào card */}
+      <KeywordManager />
 
       {/* Kết quả scrape */}
       {result && (
@@ -2039,7 +2013,6 @@ export default function DataSyncPage() {
     { key: 'sync',    label: t('dataSync.title'),  icon: 'sync' },
     { key: 'connect', label: 'Kết nối kênh',        icon: 'link' },
     { key: 'import',  label: t('nav.import'),       icon: 'upload_file' },
-    { key: 'scraper', label: 'Từ khóa Scraper',     icon: 'search' },
   ]
 
   return (
@@ -2126,9 +2099,6 @@ export default function DataSyncPage() {
 
       {/* Tab: Import thủ công */}
       {activeTab === 'import' && <ImportTab />}
-
-      {/* Tab: Keywords Scraper */}
-      {activeTab === 'scraper' && <KeywordManager />}
     </div>
   )
 }
