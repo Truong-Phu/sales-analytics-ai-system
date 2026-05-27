@@ -92,3 +92,6 @@ docker/data/
 
 # Notebooks output
 notebooks/output/
+
+# Scraper output — CSV tự sinh mỗi lần chạy, data đã vào DB
+notebooks/sample_data/*.csv
