@@ -602,16 +602,24 @@ class GoogleScraper:
                     browser.close()
                     return []
 
-                # Giả lập dừng đọc trang (hành vi người dùng)
-                page.wait_for_timeout(random.randint(1200, 2500))
+                # Chờ thêm để trang render đầy đủ kết quả
+                page.wait_for_timeout(random.randint(2500, 4000))
 
                 current_url = page.url
                 content     = page.content()
 
-                # Kiểm tra CAPTCHA / /sorry/
-                if "/sorry/" in current_url or "captcha" in content.lower()[:3000]:
+                logger.info("[PW] Final URL='%s' | Content len=%d", current_url, len(content))
+                logger.info("[PW] Content preview (800 chars): %s",
+                            content[:800].replace("\n", " "))
+
+                # Kiểm tra CAPTCHA / /sorry/ / consent
+                blocked_signals = ("/sorry/", "captcha", "/httpservice/retry",
+                                   "enablecookies", "consent.google")
+                if any(sig in current_url or sig in content.lower()[:2000]
+                       for sig in blocked_signals):
                     logger.warning(
-                        "[PW] Google CAPTCHA/sorry cho '%s' (url=%s)", keyword, current_url
+                        "[PW] Google chặn/CAPTCHA/consent cho '%s' (url=%s)",
+                        keyword, current_url
                     )
                     browser.close()
                     return []
@@ -662,91 +670,107 @@ class GoogleScraper:
 
     def search_duckduckgo(self, keyword: str) -> list[str]:
         """
-        Fallback tìm kiếm qua DuckDuckGo HTML (không cần API key).
-        Dùng khi Google bị blocked.
-
-        Returns:
-            List[str]: Danh sách URL kết quả từ DDG.
+        Fallback tìm kiếm qua DuckDuckGo.
+        Thử 2 endpoint theo thứ tự:
+          1. lite.duckduckgo.com/lite/ (GET) — đơn giản hơn, ít bot-check hơn
+          2. html.duckduckgo.com/html/ (GET) — fallback, parse class="result__a"
         """
-        params  = {"q": keyword, "kl": "vn-vi"}
         headers = self._build_ddg_headers()
+        params  = urllib.parse.urlencode({"q": keyword, "kl": "vn-vi"})
 
-        search_url = "https://html.duckduckgo.com/html/?" + urllib.parse.urlencode(params)
-        logger.info("[DDG] Fallback request URL: %s", search_url)
-
+        # ── Endpoint 1: DDG Lite (GET) ────────────────────────────────────────
+        lite_url = f"https://lite.duckduckgo.com/lite/?{params}"
+        logger.info("[DDG] Thử DDG Lite: %s", lite_url)
         try:
-            resp = requests.post(
-                "https://html.duckduckgo.com/html/",
-                data={"q": keyword, "kl": "vn-vi"},
-                headers=headers,
-                timeout=_REQUEST_TIMEOUT,
-                allow_redirects=True,
-            )
-        except requests.Timeout:
-            logger.error("[DDG] Timeout khi search keyword: %s", keyword)
-            return []
-        except requests.ConnectionError as e:
-            logger.error("[DDG] Lỗi kết nối: %s", e)
-            return []
+            resp = requests.get(lite_url, headers=headers,
+                                timeout=_REQUEST_TIMEOUT, allow_redirects=True)
+            logger.info("[DDG-Lite] keyword='%s' | HTTP %d | url=%s",
+                        keyword, resp.status_code, resp.url)
+            if resp.status_code == 200 and "duckduckgo.com/l/?uddg=" in resp.text:
+                urls = self._parse_ddg_results(resp.text, lite=True)
+                if urls:
+                    logger.info("[DDG-Lite] Parse '%s': %d URL", keyword, len(urls))
+                    return urls
+                logger.warning("[DDG-Lite] Parse 0 URL cho '%s' — thử HTML endpoint", keyword)
+            else:
+                logger.warning("[DDG-Lite] HTTP %d hoặc không có kết quả — thử HTML endpoint",
+                               resp.status_code)
         except Exception as e:
-            logger.error("[DDG] Lỗi không xác định: %s", e, exc_info=True)
-            return []
+            logger.warning("[DDG-Lite] Lỗi '%s': %s — thử HTML endpoint", keyword, e)
 
-        logger.info(
-            "[DDG] keyword='%s' | HTTP %d | url=%s",
-            keyword, resp.status_code, resp.url,
-        )
-        body_preview = resp.text[:500].replace("\n", " ")
-        logger.info("[DDG] Response body (500 chars): %s", body_preview)
+        # ── Endpoint 2: DDG HTML (GET) ────────────────────────────────────────
+        html_url = f"https://html.duckduckgo.com/html/?{params}"
+        logger.info("[DDG] Thử DDG HTML: %s", html_url)
+        try:
+            resp = requests.get(html_url, headers=headers,
+                                timeout=_REQUEST_TIMEOUT, allow_redirects=True)
+            logger.info("[DDG-HTML] keyword='%s' | HTTP %d | url=%s",
+                        keyword, resp.status_code, resp.url)
+            if resp.status_code == 200:
+                urls = self._parse_ddg_results(resp.text, lite=False)
+                logger.info("[DDG-HTML] Parse '%s': %d URL", keyword, len(urls))
+                return urls
+            logger.warning("[DDG-HTML] HTTP %d — bỏ qua '%s'", resp.status_code, keyword)
+        except requests.Timeout:
+            logger.error("[DDG-HTML] Timeout khi search keyword: %s", keyword)
+        except requests.ConnectionError as e:
+            logger.error("[DDG-HTML] Lỗi kết nối: %s", e)
+        except Exception as e:
+            logger.error("[DDG-HTML] Lỗi không xác định: %s", e, exc_info=True)
 
-        if resp.status_code != 200:
-            logger.warning("[DDG] HTTP %d — bỏ qua keyword '%s'", resp.status_code, keyword)
-            return []
+        return []
 
-        urls = self._parse_ddg_results(resp.text)
-        logger.info("[DDG] Parse '%s': %d URL tìm thấy", keyword, len(urls))
-        return urls
-
-    def _parse_ddg_results(self, html: str) -> list[str]:
+    def _parse_ddg_results(self, html: str, lite: bool = False) -> list[str]:
         """
-        Parse HTML từ DuckDuckGo HTML search.
-        DDG HTML dùng class "result__a" cho organic result links.
+        Parse HTML từ DuckDuckGo.
+        - lite=True  → DDG Lite dùng /duckduckgo.com/l/?uddg= redirect links
+        - lite=False → DDG HTML dùng class="result__a"
         """
         soup = BeautifulSoup(html, "html.parser")
         urls: list[str] = []
         seen: set[str]  = set()
+        _SKIP = ("duckduckgo.com", "duck.com")
 
-        _SKIP_DOMAINS = ("duckduckgo.com", "duck.com")
-
-        def _skip(href: str) -> bool:
-            return any(d in href for d in _SKIP_DOMAINS)
-
-        # Selector chính: class="result__a" (DDG organic results)
-        for a in soup.find_all("a", class_="result__a"):
-            href = a.get("href", "")
-            # DDG dùng redirect /l/?uddg=URL
+        def _resolve(href: str) -> str:
+            """Giải mã DDG redirect /l/?uddg=URL hoặc trả nguyên href."""
             if "uddg=" in href:
-                qs   = urllib.parse.parse_qs(urllib.parse.urlparse(href).query)
-                href = urllib.parse.unquote(qs.get("uddg", [""])[0])
-            if href.startswith("http") and not _skip(href) and href not in seen:
-                seen.add(href)
-                urls.append(href)
+                qs = urllib.parse.parse_qs(urllib.parse.urlparse(href).query)
+                return urllib.parse.unquote(qs.get("uddg", [""])[0])
+            return href
+
+        def _accept(href: str) -> bool:
+            return href.startswith("http") and not any(d in href for d in _SKIP)
+
+        def _add(href: str) -> bool:
+            href = _resolve(href)
+            if _accept(href) and href not in seen:
+                seen.add(href); urls.append(href)
+                return True
+            return False
+
+        if lite:
+            # DDG Lite: mọi <a href="/l/?uddg=..."> đều là kết quả
+            for a in soup.find_all("a", href=lambda h: h and "uddg=" in h):
+                _add(a["href"])
+                if len(urls) >= _MAX_URLS_PER_KW:
+                    break
+        else:
+            # DDG HTML: class="result__a"
+            for a in soup.find_all("a", class_="result__a"):
+                _add(a.get("href", ""))
                 if len(urls) >= _MAX_URLS_PER_KW:
                     break
 
-        # Fallback: tất cả <a href="https://..."> ngoài DDG
+        # Generic fallback nếu cả hai selector đều 0
         if len(urls) < 3:
             for a in soup.find_all("a", href=lambda h: h and h.startswith("https://")):
-                href = a.get("href", "")
-                if not _skip(href) and href not in seen:
-                    seen.add(href)
-                    urls.append(href)
-                    if len(urls) >= _MAX_URLS_PER_KW:
-                        break
+                _add(a.get("href", ""))
+                if len(urls) >= _MAX_URLS_PER_KW:
+                    break
 
         if not urls:
-            logger.warning("[DDG] Parse 0 URL. HTML preview: %s", html[:300].replace("\n", " "))
-
+            logger.warning("[DDG] Parse 0 URL. HTML (300): %s",
+                           html[:300].replace("\n", " "))
         return urls
 
     # ── BƯỚC 2: Crawl từng URL ────────────────────────────────────────────────
@@ -878,109 +902,161 @@ class GoogleScraper:
             "crawled_at":        self._now_vn(),
         }
 
+    # ── Playwright với browser chia sẻ ──────────────────────────────────────────
+
+    def _search_playwright_shared(self, keyword: str, page) -> list[str]:
+        """
+        Tìm kiếm Google bằng Playwright page đã mở sẵn (browser dùng chung).
+        Tái dùng browser tránh overhead khởi tạo lại Chromium mỗi keyword.
+        """
+        search_url = (
+            "https://www.google.com/search?"
+            + urllib.parse.urlencode({"q": keyword, "num": _MAX_URLS_PER_KW, "hl": "vi", "gl": "vn"})
+        )
+        logger.info("[PW-SHARED] → %s", search_url)
+
+        try:
+            page.goto(search_url, wait_until="domcontentloaded", timeout=25_000)
+        except Exception as e:
+            logger.warning("[PW-SHARED] goto timeout/lỗi '%s': %s", keyword, e)
+            return []
+
+        page.wait_for_timeout(random.randint(2500, 4000))
+
+        current_url = page.url
+        content     = page.content()
+        logger.info("[PW-SHARED] URL='%s' | len=%d", current_url, len(content))
+
+        blocked_signals = ("/sorry/", "captcha", "/httpservice/retry",
+                           "enablecookies", "consent.google")
+        if any(sig in current_url or sig in content.lower()[:2000] for sig in blocked_signals):
+            logger.warning("[PW-SHARED] Google chặn/CAPTCHA '%s' url=%s", keyword, current_url)
+            return []
+
+        urls = self._parse_google_serp(content)
+
+        if not urls:
+            logger.debug("[PW-SHARED] BS4 0 URL — thử JS evaluate")
+            try:
+                js_urls: list[str] = page.evaluate(
+                    """() => {
+                        const skip=['google.com','gstatic','youtube.com','accounts.google'];
+                        const seen=new Set(); const out=[];
+                        for(const a of document.querySelectorAll('a[href]')){
+                            const h=a.href;
+                            if(!h.startsWith('http')) continue;
+                            if(skip.some(d=>h.includes(d))) continue;
+                            if(seen.has(h)) continue;
+                            seen.add(h); out.push(h);
+                            if(out.length>=20) break;
+                        }
+                        return out;
+                    }"""
+                )
+                if js_urls:
+                    urls = list(js_urls)
+                    logger.info("[PW-SHARED] JS evaluate: %d URL", len(urls))
+            except Exception as js_err:
+                logger.debug("[PW-SHARED] JS evaluate lỗi: %s", js_err)
+
+        logger.info("[PW-SHARED] '%s': %d URL", keyword, len(urls))
+        return urls
+
     # ── Luồng chính ───────────────────────────────────────────────────────────
 
     def scrape_all(self) -> tuple[list[dict], list[str]]:
         """
         Bước 1: Lấy URL qua cascade 3 chiến lược (mỗi keyword → 10-20 URL):
-                  S1 Google HTML → S2 Playwright → S3 DuckDuckGo
+                  S1 Playwright (shared browser) → S2 Google HTML → S3 DuckDuckGo
         Bước 2: Crawl từng URL thu được.
+
+        Playwright là S1 vì requests bị Google block ngay trên môi trường server,
+        còn Playwright headless với anti-detection pass được bot-check của Google.
+        Browser dùng chung cho tất cả keywords để tránh overhead khởi tạo lại.
 
         Returns:
             (records, blocked_keywords)
-            records          : Danh sách bản ghi đã crawl.
-            blocked_keywords : Danh sách keyword bị block ở cả 3 nguồn.
-
         Raises:
             GoogleBlockedError: Nếu TẤT CẢ keywords đều bị chặn ở cả 3 nguồn.
         """
-        all_urls        = []   # list of (url, keyword)
-        blocked_kw      = []   # keyword bị block cả 3 lớp
-        kw_source_map   = {}   # keyword → "google_html"|"google_playwright"|"duckduckgo"|"blocked"
+        all_urls        = []
+        blocked_kw      = []
+        kw_source_map   = {}
 
-        for i, keyword in enumerate(self.keywords):
-            logger.info(
-                "[SCRAPER] [%d/%d] Xử lý keyword: '%s'",
-                i + 1, len(self.keywords), keyword,
-            )
+        def _run_keywords_with_playwright(pw_page):
+            """Vòng lặp keyword với Playwright page đã khởi tạo."""
+            for i, keyword in enumerate(self.keywords):
+                _keyword_loop(i, keyword, pw_page)
+
+        def _run_keywords_no_playwright():
+            """Vòng lặp keyword khi Playwright không khả dụng."""
+            for i, keyword in enumerate(self.keywords):
+                _keyword_loop(i, keyword, None)
+
+        def _keyword_loop(i: int, keyword: str, pw_page):
+            """Xử lý một keyword qua cascade S1→S2→S3."""
+            logger.info("[SCRAPER] [%d/%d] Xử lý keyword: '%s'",
+                        i + 1, len(self.keywords), keyword)
             urls_found: list[str] = []
             source_used = "none"
 
-            # ── Chiến lược 1: Google HTML (requests + BeautifulSoup) ──────────
-            try:
-                urls_found = self.search_google(keyword)
-                if urls_found:
-                    source_used = "google_html"
-                    logger.info(
-                        "[SCRAPER] [S1-GoogleHTML] '%s': %d URL", keyword, len(urls_found)
-                    )
-            except GoogleBlockedError as e:
-                logger.warning(
-                    "[SCRAPER] [S1-GoogleHTML] Bị block '%s': %s", keyword, e
-                )
-                self._log_etl_blocked(keyword, f"S1 GoogleHTML: {e}")
-            except Exception as e:
-                logger.error(
-                    "[SCRAPER] [S1-GoogleHTML] Lỗi '%s': %s", keyword, e, exc_info=True
-                )
-
-            # ── Chiến lược 2: Playwright (headless Chromium) ─────────────────
-            if not urls_found:
-                logger.info("[SCRAPER] [S2-Playwright] Thử Playwright cho '%s'...", keyword)
+            # ── S1: Playwright (ưu tiên cao nhất — thực sự load JS) ────────────
+            if pw_page is not None:
+                logger.info("[SCRAPER] [S1-Playwright] Thử '%s'...", keyword)
                 try:
-                    urls_found = self._search_google_playwright(keyword)
+                    urls_found = self._search_playwright_shared(keyword, pw_page)
                     if urls_found:
                         source_used = "google_playwright"
-                        logger.info(
-                            "[SCRAPER] [S2-Playwright] OK '%s': %d URL", keyword, len(urls_found)
-                        )
+                        logger.info("[SCRAPER] [S1-Playwright] OK '%s': %d URL",
+                                    keyword, len(urls_found))
                     else:
-                        logger.warning(
-                            "[SCRAPER] [S2-Playwright] 0 URL cho '%s' — thử S3", keyword
-                        )
-                        self._log_etl_blocked(keyword, "S2 Playwright: 0 URL")
+                        logger.warning("[SCRAPER] [S1-Playwright] 0 URL '%s' — thử S2", keyword)
+                        self._log_etl_blocked(keyword, "S1 Playwright: 0 URL")
                 except Exception as e:
-                    logger.error(
-                        "[SCRAPER] [S2-Playwright] Lỗi '%s': %s", keyword, e, exc_info=True
-                    )
-                    self._log_etl_blocked(keyword, f"S2 Playwright error: {e}")
+                    logger.error("[SCRAPER] [S1-Playwright] Lỗi '%s': %s", keyword, e, exc_info=True)
+                    self._log_etl_blocked(keyword, f"S1 Playwright error: {e}")
 
-            # ── Chiến lược 3: DuckDuckGo HTML ────────────────────────────────
+            # ── S2: Google HTML requests ────────────────────────────────────────
             if not urls_found:
-                logger.info("[SCRAPER] [S3-DuckDuckGo] Thử DDG cho '%s'...", keyword)
+                logger.info("[SCRAPER] [S2-GoogleHTML] Thử '%s'...", keyword)
+                try:
+                    urls_found = self.search_google(keyword)
+                    if urls_found:
+                        source_used = "google_html"
+                        logger.info("[SCRAPER] [S2-GoogleHTML] OK '%s': %d URL",
+                                    keyword, len(urls_found))
+                except GoogleBlockedError as e:
+                    logger.warning("[SCRAPER] [S2-GoogleHTML] Bị block '%s': %s", keyword, e)
+                    self._log_etl_blocked(keyword, f"S2 GoogleHTML: {e}")
+                except Exception as e:
+                    logger.error("[SCRAPER] [S2-GoogleHTML] Lỗi '%s': %s", keyword, e, exc_info=True)
+
+            # ── S3: DuckDuckGo ──────────────────────────────────────────────────
+            if not urls_found:
+                logger.info("[SCRAPER] [S3-DuckDuckGo] Thử '%s'...", keyword)
                 try:
                     urls_found = self.search_duckduckgo(keyword)
                     if urls_found:
                         source_used = "duckduckgo"
-                        logger.info(
-                            "[SCRAPER] [S3-DuckDuckGo] OK '%s': %d URL", keyword, len(urls_found)
-                        )
+                        logger.info("[SCRAPER] [S3-DuckDuckGo] OK '%s': %d URL",
+                                    keyword, len(urls_found))
                     else:
                         source_used = "blocked"
                         blocked_kw.append(keyword)
-                        logger.warning(
-                            "[SCRAPER] [S3-DuckDuckGo] 0 URL '%s' — bỏ qua keyword này",
-                            keyword,
-                        )
+                        logger.warning("[SCRAPER] [S3-DuckDuckGo] 0 URL '%s' — bỏ qua", keyword)
                         self._log_etl_blocked(keyword, "S3 DDG: 0 URL — all strategies failed")
                 except Exception as ddg_exc:
                     source_used = "blocked"
                     blocked_kw.append(keyword)
-                    logger.error(
-                        "[SCRAPER] [S3-DuckDuckGo] Lỗi '%s': %s",
-                        keyword, ddg_exc, exc_info=True,
-                    )
+                    logger.error("[SCRAPER] [S3-DuckDuckGo] Lỗi '%s': %s",
+                                 keyword, ddg_exc, exc_info=True)
                     self._log_etl_blocked(keyword, f"S3 DDG error: {ddg_exc}")
 
             kw_source_map[keyword] = source_used
-
             for u in urls_found:
                 all_urls.append((u, keyword))
-
             if urls_found:
                 self.update_keyword_usage(keyword)
-
-            # Delay giữa các keyword (ít nhất MIN_DELAY_BETWEEN_KEYWORDS giây)
             if i < len(self.keywords) - 1:
                 delay = random.uniform(
                     max(self.delay_range[0], MIN_DELAY_BETWEEN_KEYWORDS),
@@ -989,10 +1065,48 @@ class GoogleScraper:
                 logger.info("[SCRAPER] Chờ %.1f giây trước keyword tiếp theo...", delay)
                 time.sleep(delay)
 
-        # Tất cả keyword đều bị block ở cả 3 nguồn
+        # Chạy Playwright trong thread riêng để tránh xung đột asyncio event loop
+        # (FastAPI endpoint là async def → loop đang chạy → sync_playwright() cần thread mới)
+        def _playwright_thread_target():
+            from playwright.sync_api import sync_playwright
+            with sync_playwright() as pw:
+                browser = pw.chromium.launch(
+                    headless=True,
+                    args=["--no-sandbox", "--disable-setuid-sandbox",
+                          "--disable-dev-shm-usage",
+                          "--disable-blink-features=AutomationControlled"],
+                )
+                ctx = browser.new_context(
+                    viewport={"width": random.randint(1280, 1920),
+                              "height": random.randint(800, 1080)},
+                    locale="vi-VN",
+                    user_agent=self._random_ua(),
+                    extra_http_headers={"Accept-Language": "vi-VN,vi;q=0.9,en-US;q=0.8"},
+                )
+                page = ctx.new_page()
+                page.add_init_script(
+                    "Object.defineProperty(navigator,'webdriver',{get:()=>undefined})"
+                )
+                logger.info("[SCRAPER] Playwright browser khởi tạo thành công (thread riêng)")
+                _run_keywords_with_playwright(page)
+
+        try:
+            import concurrent.futures
+            from playwright.sync_api import sync_playwright  # noqa: F401 — kiểm tra có playwright không
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(_playwright_thread_target)
+                future.result(timeout=300)  # timeout 5 phút cho tất cả keywords
+        except ImportError:
+            logger.warning("[SCRAPER] playwright chưa cài — chạy không có S1")
+            _run_keywords_no_playwright()
+        except Exception as pw_err:
+            logger.warning("[SCRAPER] Playwright lỗi, fallback sang requests: %s",
+                           pw_err, exc_info=True)
+            _run_keywords_no_playwright()
+
         if len(blocked_kw) == len(self.keywords):
             raise GoogleBlockedError(
-                "Tất cả keywords đều bị chặn ở cả 3 nguồn (Google HTML, Playwright, DuckDuckGo) — cần thử lại sau"
+                "Tất cả keywords đều bị chặn ở cả 3 nguồn (Playwright, Google HTML, DuckDuckGo)"
             )
 
         # Dedup URL, giữ mapping keyword
@@ -1108,7 +1222,11 @@ class GoogleScraper:
             unique_keywords = list({r.get("keyword", "") for r in records if r.get("keyword")})
             kw_id_map = self._fetch_keyword_id_map(cur, unique_keywords)
 
-            cid = self.company_id or None
+            # Chỉ dùng company_id nếu là UUID hợp lệ (tránh lỗi cast khi truyền integer string)
+            import re as _re
+            _uuid_re = _re.compile(
+                r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', _re.I)
+            cid = self.company_id if self.company_id and _uuid_re.match(str(self.company_id)) else None
 
             for r in records:
                 ch = r.get("content_hash")
@@ -1126,7 +1244,7 @@ class GoogleScraper:
                          title, snippet, url, position, content_hash,
                          product_name, category, price, sales_count,
                          trend_description, source_domain)
-                    VALUES (%s, %s, %s::uuid,
+                    VALUES (%s, %s, %s,
                             %s, %s, %s, %s, %s,
                             %s, %s, %s, %s,
                             %s, %s)
@@ -1218,21 +1336,41 @@ class GoogleScraper:
             try:
                 records, blocked_keywords = self.scrape_all()
             except GoogleBlockedError as e:
-                logger.error("Tất cả keywords bị block: %s", e)
-                return {
-                    "status":             "blocked",
-                    "keywords_processed": len(self.keywords),
-                    "results_found":      0,
-                    "results_new":        0,
-                    "results_skipped":    0,
-                    "blocked_keywords":   self.keywords,
-                    "error_detail":       str(e),
-                    "csv_path":           None,
-                    # Legacy keys cho backward-compat
-                    "total_scraped":      0,
-                    "inserted":           0,
-                    "skipped":            0,
-                }
+                logger.warning("Tất cả keywords bị block: %s", e)
+                # Auto-fallback sang CSV mẫu khi bị chặn (demo mode)
+                if _SAMPLE_CSV.exists():
+                    logger.info("AUTO-FALLBACK: Dùng CSV mẫu từ %s", _SAMPLE_CSV)
+                    records = self._load_offline_csv()
+                    blocked_keywords = self.keywords
+                    if not records:
+                        return {
+                            "status":             "blocked",
+                            "keywords_processed": len(self.keywords),
+                            "results_found":      0,
+                            "results_new":        0,
+                            "results_skipped":    0,
+                            "blocked_keywords":   self.keywords,
+                            "error_detail":       str(e),
+                            "csv_path":           None,
+                            "total_scraped":      0,
+                            "inserted":           0,
+                            "skipped":            0,
+                        }
+                    # tiếp tục xuống dưới để save_to_db với records từ CSV
+                else:
+                    return {
+                        "status":             "blocked",
+                        "keywords_processed": len(self.keywords),
+                        "results_found":      0,
+                        "results_new":        0,
+                        "results_skipped":    0,
+                        "blocked_keywords":   self.keywords,
+                        "error_detail":       str(e),
+                        "csv_path":           None,
+                        "total_scraped":      0,
+                        "inserted":           0,
+                        "skipped":            0,
+                    }
             except Exception as e:
                 logger.error("Lỗi không xác định trong run(): %s", e, exc_info=True)
                 return {
