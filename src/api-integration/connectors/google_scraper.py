@@ -1,19 +1,22 @@
 # -*- coding: utf-8 -*-
 """
-GoogleScraper – Thu thập xu hướng thị trường bằng Google Search / DuckDuckGo.
+GoogleScraper – Thu thập xu hướng thị trường bằng 3 chiến lược tìm kiếm.
 
 DISCLAIMER:
     Chỉ dùng cho mục đích nghiên cứu khóa luận tốt nghiệp.
     Dữ liệu thu thập ở mức thông tin công khai (kết quả tìm kiếm).
 
-CHIẾN LƯỢC TÌM KIẾM (theo thứ tự ưu tiên):
-    1. Google Search  → https://www.google.com/search?q=KEYWORD&num=20
-    2. DuckDuckGo HTML → https://html.duckduckgo.com/html/?q=KEYWORD  (fallback)
+CHIẾN LƯỢC TÌM KIẾM (3 lớp, theo thứ tự ưu tiên):
+    1. Google HTML   → requests + BeautifulSoup (nhanh, không cần browser)
+    2. Playwright    → headless Chromium thật (vượt JS-challenge / bot detection)
+                       Cài đặt: pip install playwright && playwright install chromium
+    3. DuckDuckGo    → https://html.duckduckgo.com/html/ (không cần API, ít bị chặn)
 
-XỬ LÝ BỊ CHẶN:
-    - Google 429 / CAPTCHA → thử DuckDuckGo tự động
-    - DuckDuckGo cũng fail → log rõ, bỏ keyword đó, tiếp tục
-    - Ghi blocked keywords vào response để caller biết
+XỬ LÝ BỊ CHẶN (cascade tự động):
+    Google HTML bị block  → thử Playwright
+    Playwright cũng fail  → thử DuckDuckGo
+    DuckDuckGo cũng fail  → log rõ, bỏ keyword đó, tiếp tục
+    Ghi blocked keywords vào response để caller biết
 
 RATE LIMIT CONFIG:
     MIN_DELAY_BETWEEN_KEYWORDS : 3 giây (tối thiểu)
@@ -332,7 +335,7 @@ class GoogleScraper:
             "Cache-Control":   "no-cache",
         }
 
-    # ── BƯỚC 1a: Lấy URL từ Google SERP ──────────────────────────────────────
+    # ── BƯỚC 1a: Lấy URL từ Google SERP (requests) ───────────────────────────
 
     def search_google(self, keyword: str, num: int = _MAX_URLS_PER_KW,
                       _retry: bool = False) -> list[str]:
@@ -535,7 +538,127 @@ class GoogleScraper:
 
         return urls
 
-    # ── BƯỚC 1b: DuckDuckGo Fallback ─────────────────────────────────────────
+    # ── BƯỚC 1b: Playwright (Chiến lược 2) ───────────────────────────────────
+
+    def _search_google_playwright(self, keyword: str, num: int = _MAX_URLS_PER_KW) -> list[str]:
+        """
+        Chiến lược 2: Mở Google Search bằng headless Chromium thật (Playwright).
+        Vượt qua JavaScript challenge / bot-detection nhẹ mà requests không làm được.
+
+        Cài đặt (1 lần):
+            pip install playwright
+            playwright install chromium
+
+        Returns:
+            list[str]: Danh sách URL kết quả, [] nếu playwright chưa cài hoặc bị chặn.
+        """
+        try:
+            from playwright.sync_api import sync_playwright, TimeoutError as PwTimeout
+        except ImportError:
+            logger.warning(
+                "[PW] playwright chưa cài — bỏ qua S2. "
+                "Cài: pip install playwright && playwright install chromium"
+            )
+            return []
+
+        search_url = (
+            "https://www.google.com/search?"
+            + urllib.parse.urlencode({"q": keyword, "num": num, "hl": "vi", "gl": "vn"})
+        )
+        logger.info("[PW] Playwright → %s", search_url)
+
+        try:
+            with sync_playwright() as pw:
+                browser = pw.chromium.launch(
+                    headless=True,
+                    args=[
+                        "--no-sandbox",
+                        "--disable-setuid-sandbox",
+                        "--disable-dev-shm-usage",
+                        "--disable-blink-features=AutomationControlled",
+                        "--disable-infobars",
+                    ],
+                )
+                ctx = browser.new_context(
+                    viewport={
+                        "width":  random.randint(1280, 1920),
+                        "height": random.randint(800, 1080),
+                    },
+                    locale="vi-VN",
+                    user_agent=self._random_ua(),
+                    extra_http_headers={"Accept-Language": "vi-VN,vi;q=0.9,en-US;q=0.8"},
+                )
+                page = ctx.new_page()
+
+                # Ẩn dấu hiệu automation (navigator.webdriver = undefined)
+                page.add_init_script(
+                    "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
+                )
+
+                try:
+                    page.goto(search_url, wait_until="domcontentloaded", timeout=25_000)
+                except PwTimeout:
+                    logger.warning("[PW] Timeout goto cho '%s'", keyword)
+                    browser.close()
+                    return []
+
+                # Giả lập dừng đọc trang (hành vi người dùng)
+                page.wait_for_timeout(random.randint(1200, 2500))
+
+                current_url = page.url
+                content     = page.content()
+
+                # Kiểm tra CAPTCHA / /sorry/
+                if "/sorry/" in current_url or "captcha" in content.lower()[:3000]:
+                    logger.warning(
+                        "[PW] Google CAPTCHA/sorry cho '%s' (url=%s)", keyword, current_url
+                    )
+                    browser.close()
+                    return []
+
+                # Dùng lại _parse_google_serp trên HTML đã render đầy đủ
+                urls = self._parse_google_serp(content)
+
+                # Nếu BeautifulSoup vẫn 0 kết quả → thử JS query trực tiếp trong DOM
+                if not urls:
+                    logger.debug("[PW] BS4 0 URL — thử JS evaluate trực tiếp")
+                    try:
+                        js_urls: list[str] = page.evaluate(
+                            """
+                            () => {
+                                const skip = ['google.com','googleapis.com','gstatic.com',
+                                              'youtube.com','accounts.google','support.google'];
+                                const seen = new Set();
+                                const out  = [];
+                                const sel  = 'a[jsname="UWckNb"], h3 a, .g a, [data-ved] a';
+                                for (const a of document.querySelectorAll(sel)) {
+                                    const h = a.href;
+                                    if (!h || !h.startsWith('http')) continue;
+                                    if (skip.some(d => h.includes(d)))  continue;
+                                    if (seen.has(h)) continue;
+                                    seen.add(h);
+                                    out.push(h);
+                                    if (out.length >= 20) break;
+                                }
+                                return out;
+                            }
+                            """
+                        )
+                        if js_urls:
+                            urls = list(js_urls)
+                            logger.info("[PW] JS evaluate: %d URL cho '%s'", len(urls), keyword)
+                    except Exception as js_err:
+                        logger.debug("[PW] JS evaluate lỗi: %s", js_err)
+
+                browser.close()
+                logger.info("[PW] Playwright kết quả '%s': %d URL", keyword, len(urls))
+                return urls
+
+        except Exception as e:
+            logger.error("[PW] Playwright lỗi chung cho '%s': %s", keyword, e, exc_info=True)
+            return []
+
+    # ── BƯỚC 1c: DuckDuckGo (Chiến lược 3) ───────────────────────────────────
 
     def search_duckduckgo(self, keyword: str) -> list[str]:
         """
@@ -759,76 +882,97 @@ class GoogleScraper:
 
     def scrape_all(self) -> tuple[list[dict], list[str]]:
         """
-        Bước 1: Lấy URL từ Google (mỗi keyword → 10-20 URL).
-                Nếu Google block → tự động thử DuckDuckGo.
+        Bước 1: Lấy URL qua cascade 3 chiến lược (mỗi keyword → 10-20 URL):
+                  S1 Google HTML → S2 Playwright → S3 DuckDuckGo
         Bước 2: Crawl từng URL thu được.
 
         Returns:
             (records, blocked_keywords)
             records          : Danh sách bản ghi đã crawl.
-            blocked_keywords : Danh sách keyword bị block ở cả Google lẫn DDG.
+            blocked_keywords : Danh sách keyword bị block ở cả 3 nguồn.
 
         Raises:
-            GoogleBlockedError: Nếu TẤT CẢ keywords đều bị chặn ở cả 2 nguồn.
+            GoogleBlockedError: Nếu TẤT CẢ keywords đều bị chặn ở cả 3 nguồn.
         """
         all_urls        = []   # list of (url, keyword)
-        blocked_kw      = []   # keyword bị block cả Google lẫn DDG
-        kw_source_map   = {}   # keyword → "google" | "duckduckgo" | "blocked"
+        blocked_kw      = []   # keyword bị block cả 3 lớp
+        kw_source_map   = {}   # keyword → "google_html"|"google_playwright"|"duckduckgo"|"blocked"
 
         for i, keyword in enumerate(self.keywords):
             logger.info(
                 "[SCRAPER] [%d/%d] Xử lý keyword: '%s'",
                 i + 1, len(self.keywords), keyword,
             )
-            urls_found = []
+            urls_found: list[str] = []
+            source_used = "none"
 
-            # Thử Google trước
+            # ── Chiến lược 1: Google HTML (requests + BeautifulSoup) ──────────
             try:
                 urls_found = self.search_google(keyword)
-                kw_source_map[keyword] = "google"
-                logger.info(
-                    "[SCRAPER] Google OK cho '%s': %d URL",
-                    keyword, len(urls_found),
-                )
+                if urls_found:
+                    source_used = "google_html"
+                    logger.info(
+                        "[SCRAPER] [S1-GoogleHTML] '%s': %d URL", keyword, len(urls_found)
+                    )
             except GoogleBlockedError as e:
                 logger.warning(
-                    "[SCRAPER] Google bị block cho '%s': %s — thử DuckDuckGo...",
-                    keyword, e,
+                    "[SCRAPER] [S1-GoogleHTML] Bị block '%s': %s", keyword, e
                 )
-                self._log_etl_blocked(keyword, str(e))
+                self._log_etl_blocked(keyword, f"S1 GoogleHTML: {e}")
+            except Exception as e:
+                logger.error(
+                    "[SCRAPER] [S1-GoogleHTML] Lỗi '%s': %s", keyword, e, exc_info=True
+                )
 
-                # Thử DuckDuckGo fallback
+            # ── Chiến lược 2: Playwright (headless Chromium) ─────────────────
+            if not urls_found:
+                logger.info("[SCRAPER] [S2-Playwright] Thử Playwright cho '%s'...", keyword)
+                try:
+                    urls_found = self._search_google_playwright(keyword)
+                    if urls_found:
+                        source_used = "google_playwright"
+                        logger.info(
+                            "[SCRAPER] [S2-Playwright] OK '%s': %d URL", keyword, len(urls_found)
+                        )
+                    else:
+                        logger.warning(
+                            "[SCRAPER] [S2-Playwright] 0 URL cho '%s' — thử S3", keyword
+                        )
+                        self._log_etl_blocked(keyword, "S2 Playwright: 0 URL")
+                except Exception as e:
+                    logger.error(
+                        "[SCRAPER] [S2-Playwright] Lỗi '%s': %s", keyword, e, exc_info=True
+                    )
+                    self._log_etl_blocked(keyword, f"S2 Playwright error: {e}")
+
+            # ── Chiến lược 3: DuckDuckGo HTML ────────────────────────────────
+            if not urls_found:
+                logger.info("[SCRAPER] [S3-DuckDuckGo] Thử DDG cho '%s'...", keyword)
                 try:
                     urls_found = self.search_duckduckgo(keyword)
                     if urls_found:
-                        kw_source_map[keyword] = "duckduckgo"
+                        source_used = "duckduckgo"
                         logger.info(
-                            "[SCRAPER] DuckDuckGo fallback thành công '%s': %d URL",
-                            keyword, len(urls_found),
+                            "[SCRAPER] [S3-DuckDuckGo] OK '%s': %d URL", keyword, len(urls_found)
                         )
                     else:
-                        kw_source_map[keyword] = "blocked"
+                        source_used = "blocked"
                         blocked_kw.append(keyword)
                         logger.warning(
-                            "[SCRAPER] DuckDuckGo cũng 0 URL cho '%s' — bỏ qua",
+                            "[SCRAPER] [S3-DuckDuckGo] 0 URL '%s' — bỏ qua keyword này",
                             keyword,
                         )
-                        self._log_etl_blocked(keyword, "DDG cũng 0 URL")
+                        self._log_etl_blocked(keyword, "S3 DDG: 0 URL — all strategies failed")
                 except Exception as ddg_exc:
-                    kw_source_map[keyword] = "blocked"
+                    source_used = "blocked"
                     blocked_kw.append(keyword)
                     logger.error(
-                        "[SCRAPER] DuckDuckGo lỗi cho '%s': %s",
+                        "[SCRAPER] [S3-DuckDuckGo] Lỗi '%s': %s",
                         keyword, ddg_exc, exc_info=True,
                     )
-                    self._log_etl_blocked(keyword, f"DDG error: {ddg_exc}")
+                    self._log_etl_blocked(keyword, f"S3 DDG error: {ddg_exc}")
 
-            except Exception as e:
-                logger.error(
-                    "[SCRAPER] Lỗi không xác định tìm kiếm '%s': %s",
-                    keyword, e, exc_info=True,
-                )
-                blocked_kw.append(keyword)
+            kw_source_map[keyword] = source_used
 
             for u in urls_found:
                 all_urls.append((u, keyword))
@@ -845,10 +989,10 @@ class GoogleScraper:
                 logger.info("[SCRAPER] Chờ %.1f giây trước keyword tiếp theo...", delay)
                 time.sleep(delay)
 
-        # Tất cả keyword đều bị block
+        # Tất cả keyword đều bị block ở cả 3 nguồn
         if len(blocked_kw) == len(self.keywords):
             raise GoogleBlockedError(
-                "Tất cả keywords đều bị chặn ở cả Google lẫn DuckDuckGo — cần thử lại sau"
+                "Tất cả keywords đều bị chặn ở cả 3 nguồn (Google HTML, Playwright, DuckDuckGo) — cần thử lại sau"
             )
 
         # Dedup URL, giữ mapping keyword

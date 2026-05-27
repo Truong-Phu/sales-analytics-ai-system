@@ -3,6 +3,8 @@ requests==2.31.0          # HTTP client cho tất cả API connectors
 urllib3==2.1.0            # Dependency của requests
 beautifulsoup4==4.12.3    # HTML parser dùng bởi google_scraper.py
 lxml==5.2.1               # HTML parser backend cho BeautifulSoup (nhanh hơn html.parser)
+playwright>=1.44.0        # Browser automation (S2 fallback cho google_scraper)
+                          # Sau khi pip install: chạy thêm `playwright install chromium`
 
 # ── Database ──────────────────────────────────────────────────────────────────
 psycopg2-binary==2.9.9    # PostgreSQL adapter (binary = không cần build từ source)
