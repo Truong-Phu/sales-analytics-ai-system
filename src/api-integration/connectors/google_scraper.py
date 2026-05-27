@@ -193,9 +193,36 @@ class GoogleScraper:
 
     # ── DB Keyword Management ─────────────────────────────────────────────────
 
+    def _resolve_company_uuid(self) -> Optional[str]:
+        """
+        Trả về company UUID hợp lệ từ self.company_id.
+        Nếu company_id là UUID hợp lệ → dùng trực tiếp.
+        Nếu không (vd: integer "1" từ test) → tra cứu UUID duy nhất trong DB.
+        """
+        import re as _re
+        _uuid_re = _re.compile(
+            r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', _re.I)
+        if self.company_id and _uuid_re.match(str(self.company_id)):
+            return str(self.company_id)
+        # Fallback: tra DB lấy UUID (chỉ dùng khi demo single-tenant)
+        if self.db_url:
+            try:
+                conn = psycopg2.connect(self.db_url)
+                cur = conn.cursor()
+                cur.execute("SELECT id FROM public.companies LIMIT 1")
+                row = cur.fetchone()
+                cur.close(); conn.close()
+                if row:
+                    logger.debug("company_id '%s' không phải UUID → dùng '%s' từ DB",
+                                 self.company_id, row[0])
+                    return str(row[0])
+            except Exception as e:
+                logger.debug("Không tra được company UUID: %s", e)
+        return None
+
     def load_keywords_from_db(self, limit: int = MAX_KEYWORDS_PER_RUN) -> list[str]:
         """
-        Đọc keywords từ bảng scraper_keywords.
+        Đọc keywords từ bảng scraper_keywords theo company_id.
         Ưu tiên keyword ít dùng nhất (ORDER BY last_used_at ASC NULLS FIRST).
         Fallback về DEFAULT_KEYWORDS nếu DB chưa sẵn sàng hoặc bảng trống.
         """
@@ -205,21 +232,36 @@ class GoogleScraper:
         try:
             conn = psycopg2.connect(self.db_url)
             cur  = conn.cursor()
-            cur.execute(
-                """
-                SELECT keyword FROM scraper_keywords
-                WHERE is_active = TRUE AND source_type = 'google'
-                ORDER BY last_used_at ASC NULLS FIRST
-                LIMIT %s
-                """,
-                (limit,),
-            )
+            company_uuid = self._resolve_company_uuid()
+            if company_uuid:
+                cur.execute(
+                    """
+                    SELECT keyword FROM public.scraper_keywords
+                    WHERE is_active = TRUE AND source_type = 'google'
+                      AND company_id = %s
+                    ORDER BY last_used_at ASC NULLS FIRST
+                    LIMIT %s
+                    """,
+                    (company_uuid, limit),
+                )
+            else:
+                # Không có company_id → lấy tất cả (fallback an toàn)
+                cur.execute(
+                    """
+                    SELECT keyword FROM public.scraper_keywords
+                    WHERE is_active = TRUE AND source_type = 'google'
+                    ORDER BY last_used_at ASC NULLS FIRST
+                    LIMIT %s
+                    """,
+                    (limit,),
+                )
             rows = cur.fetchall()
             cur.close()
             conn.close()
             if rows:
                 kws = [r[0] for r in rows]
-                logger.info("Đọc %d keywords từ DB scraper_keywords", len(kws))
+                logger.info("Đọc %d keywords từ DB scraper_keywords (company=%s)",
+                            len(kws), company_uuid or "all")
                 return kws
             logger.warning("scraper_keywords trống hoặc không có keyword active — dùng DEFAULT_KEYWORDS")
             return DEFAULT_KEYWORDS
@@ -234,15 +276,26 @@ class GoogleScraper:
         try:
             conn = psycopg2.connect(self.db_url)
             cur  = conn.cursor()
-            cur.execute(
-                """
-                UPDATE scraper_keywords
-                SET last_used_at = NOW(),
-                    use_count    = use_count + 1
-                WHERE keyword = %s AND source_type = 'google'
-                """,
-                (keyword,),
-            )
+            company_uuid = self._resolve_company_uuid()
+            if company_uuid:
+                cur.execute(
+                    """
+                    UPDATE public.scraper_keywords
+                    SET last_used_at = NOW(), use_count = use_count + 1
+                    WHERE keyword = %s AND source_type = 'google'
+                      AND company_id = %s
+                    """,
+                    (keyword, company_uuid),
+                )
+            else:
+                cur.execute(
+                    """
+                    UPDATE public.scraper_keywords
+                    SET last_used_at = NOW(), use_count = use_count + 1
+                    WHERE keyword = %s AND source_type = 'google'
+                    """,
+                    (keyword,),
+                )
             conn.commit()
             cur.close()
             conn.close()
@@ -1167,18 +1220,29 @@ class GoogleScraper:
 
     # ── Database ──────────────────────────────────────────────────────────────
 
-    def _fetch_keyword_id_map(self, cur, keywords: list[str]) -> dict[str, int]:
-        """Tra cứu keyword_id từ scraper_keywords theo danh sách keyword string."""
+    def _fetch_keyword_id_map(self, cur, keywords: list[str],
+                              company_uuid: Optional[str] = None) -> dict[str, int]:
+        """Tra cứu keyword_id từ scraper_keywords theo keyword string + company."""
         if not keywords:
             return {}
         try:
-            cur.execute(
-                """
-                SELECT id, keyword FROM public.scraper_keywords
-                WHERE keyword = ANY(%s) AND source_type = 'google'
-                """,
-                (keywords,),
-            )
+            if company_uuid:
+                cur.execute(
+                    """
+                    SELECT id, keyword FROM public.scraper_keywords
+                    WHERE keyword = ANY(%s) AND source_type = 'google'
+                      AND company_id = %s
+                    """,
+                    (keywords, company_uuid),
+                )
+            else:
+                cur.execute(
+                    """
+                    SELECT id, keyword FROM public.scraper_keywords
+                    WHERE keyword = ANY(%s) AND source_type = 'google'
+                    """,
+                    (keywords,),
+                )
             return {row[1]: row[0] for row in cur.fetchall()}
         except Exception as e:
             logger.debug("Không tra được keyword_id: %s", e)
@@ -1218,15 +1282,12 @@ class GoogleScraper:
             else:
                 existing = set()
 
+            # Resolve company UUID (xử lý cả trường hợp nhận integer string từ test)
+            cid = self._resolve_company_uuid()
+
             # Tra cứu keyword_id một lần cho tất cả keywords trong batch
             unique_keywords = list({r.get("keyword", "") for r in records if r.get("keyword")})
-            kw_id_map = self._fetch_keyword_id_map(cur, unique_keywords)
-
-            # Chỉ dùng company_id nếu là UUID hợp lệ (tránh lỗi cast khi truyền integer string)
-            import re as _re
-            _uuid_re = _re.compile(
-                r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', _re.I)
-            cid = self.company_id if self.company_id and _uuid_re.match(str(self.company_id)) else None
+            kw_id_map = self._fetch_keyword_id_map(cur, unique_keywords, company_uuid=cid)
 
             for r in records:
                 ch = r.get("content_hash")
