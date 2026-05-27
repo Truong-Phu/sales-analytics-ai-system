@@ -905,7 +905,7 @@ function GuideSection() {
             <p>Tại trang đăng nhập, chọn <b>Quên mật khẩu</b>, nhập email đã đăng ký. Hệ thống gửi link đặt lại mật khẩu vào email trong vòng 5 phút.</p>
           </AccordionItem>
           <AccordionItem title="Hệ thống hỗ trợ bao nhiêu kênh bán hàng?">
-            <p>Hiện hỗ trợ: Shopee, Lazada, TikTok Shop (TMĐT); Facebook, Zalo OA (mạng xã hội); Google Analytics (website); GHN, GHTK (vận chuyển); MoMo, VNPay, ZaloPay (thanh toán). Sẽ bổ sung thêm theo lộ trình phát triển.</p>
+            <p>Hiện hỗ trợ: Shopee, Lazada, TikTok Shop (TMĐT); Facebook, Zalo OA (mạng xã hội); GHN, GHTK (vận chuyển); MoMo, VNPay, ZaloPay (thanh toán). Sẽ bổ sung thêm theo lộ trình phát triển.</p>
           </AccordionItem>
           <AccordionItem title="Nâng cấp hoặc hủy gói dịch vụ như thế nào?">
             <p>Vào <b>Cài đặt → Gói dịch vụ</b> (chỉ Owner). Chọn <b>Nâng cấp</b> để đổi gói hoặc <b>Hủy gia hạn</b> để không gia hạn sau kỳ hiện tại.</p>

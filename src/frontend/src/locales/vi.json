@@ -69,7 +69,14 @@
     "export_csv": "Xuất CSV",
     "import": "Nhập dữ liệu",
     "preview": "Xem trước",
-    "reset": "Đặt lại"
+    "reset": "Đặt lại",
+    "total": "Tổng",
+    "displayName": "Tên hiển thị",
+    "changeDisplayName": "Đổi tên hiển thị",
+    "currentName": "Tên hiện tại",
+    "newName": "Tên mới",
+    "namePlaceholder": "Nhập tên hiển thị...",
+    "nameUpdated": "Đã cập nhật tên hiển thị"
   },
   "pro": {
     "title": "Tính năng Pro",
@@ -317,8 +324,7 @@
       "multichannel": "Đa kênh",
       "customer": "Khách hàng",
       "marketing": "Marketing & ROI",
-      "inventory": "Tồn kho & Vận hành",
-      "website":   "Website (GA4)"
+      "inventory": "Tồn kho & Vận hành"
     },
     "preset": {
       "year2025": "2025",
@@ -327,6 +333,7 @@
       "month": "30 ngày",
       "30d": "30 ngày",
       "90d": "90 ngày",
+      "all": "Tất cả",
       "custom": "Tùy chọn"
     },
     "chart": {
@@ -357,18 +364,37 @@
       "bounceRate": "Tỷ lệ thoát",
       "avgDuration": "Thời gian TB"
     },
+    "today": {
+      "revenue":      "Doanh thu hôm nay",
+      "orders":       "Đơn hàng hôm nay",
+      "profit":       "Lợi nhuận hôm nay",
+      "margin":       "Biên LN",
+      "vsYesterday":  "vs hôm qua",
+      "comparePrev":  "So sánh kỳ trước",
+      "compareNote":  "gạch ngang = kỳ trước"
+    },
     "series": {
-      "revenue": "Doanh thu",
-      "profit": "Lợi nhuận",
-      "stock": "Tồn kho hiện tại",
-      "forecast": "Dự báo nhu cầu",
-      "adCost": "Chi phí QC",
-      "revenueM": "Doanh thu (M₫)",
-      "adCostM": "Chi phí QC (M₫)",
-      "radarCost": "Chi phí",
-      "radarEngage": "Tương tác",
-      "radarConv": "Tỷ lệ chuyển đổi",
-      "radarRevenue": "Doanh thu"
+      "revenue":      "Doanh thu",
+      "profit":       "Lợi nhuận",
+      "stock":        "Tồn kho hiện tại",
+      "forecast":     "Dự báo nhu cầu",
+      "adCost":       "Chi phí QC",
+      "adSpend":      "Chi phí",
+      "revenueM":     "Doanh thu (M₫)",
+      "adCostM":      "Chi phí QC (M₫)",
+      "radarCost":    "Chi phí",
+      "radarEngage":  "Tương tác",
+      "radarConv":    "Tỷ lệ chuyển đổi",
+      "radarRevenue": "Doanh thu",
+      "prevRevenue":  "DT kỳ trước",
+      "prevProfit":   "LN kỳ trước",
+      "prevPeriod":   "kỳ trước",
+      "total":        "Tổng",
+      "roasNote":     "Số ROAS hiển thị trực tiếp trên cột doanh thu"
+    },
+    "fbKpi": {
+      "totalSpend":  "Tổng chi phí",
+      "totalClicks": "Tổng lượt nhấp"
     },
     "invKpi": {
       "returnRate": "Tỷ lệ hoàn đơn TB",
@@ -690,8 +716,11 @@
     "historyNote": "Lịch sử đơn hàng chi tiết sẽ hiển thị khi kết nối với backend.",
     "segment": {
       "VIP": "VIP (> 10tr)",
-      "REGULAR": "Thân thiết",
+      "LOYAL": "Thân thiết",
+      "REGULAR": "Thường xuyên",
       "NEW": "Mới",
+      "AT_RISK": "Có nguy cơ mất",
+      "LOST": "Đã mất",
       "INACTIVE": "Không hoạt động"
     }
   },

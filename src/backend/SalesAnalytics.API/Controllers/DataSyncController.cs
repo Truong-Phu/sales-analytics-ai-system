@@ -37,18 +37,17 @@ public class DataSyncController(
         // EtlLog không có company_id column, nên dùng Join với JobId nếu có, hoặc lọc bằng Message
         var recentLogs = await query.Take(200).ToListAsync();
 
-        var sources = new[] { "shopee", "lazada", "tiktok", "facebook", "ghn", "vnpay", "google_analytics" };
+        var sources = new[] { "shopee", "lazada", "tiktok", "facebook", "ghn", "vnpay" };
 
         // Map source key → platform name trong bảng integrations
         var platformMap = new Dictionary<string, string>
         {
-            ["shopee"]           = "shopee",
-            ["lazada"]           = "lazada",
-            ["tiktok"]           = "tiktok",
-            ["facebook"]         = "facebook",
-            ["ghn"]              = "ghn",
-            ["vnpay"]            = "vnpay",
-            ["google_analytics"] = "google",
+            ["shopee"]   = "shopee",
+            ["lazada"]   = "lazada",
+            ["tiktok"]   = "tiktok",
+            ["facebook"] = "facebook",
+            ["ghn"]      = "ghn",
+            ["vnpay"]    = "vnpay",
         };
 
         // Lấy trạng thái is_active + id từ bảng integrations
@@ -685,10 +684,9 @@ public class DataSyncController(
         "lazada"           => "Lazada",
         "tiktok"           => "TikTok Shop",
         "facebook"         => "Facebook",
-        "ghn"              => "GHN",
-        "vnpay"            => "VNPay",
-        "google_analytics" => "Google Analytics",
-        _                  => key,
+        "ghn"   => "GHN",
+        "vnpay" => "VNPay",
+        _       => key,
     };
 }
 

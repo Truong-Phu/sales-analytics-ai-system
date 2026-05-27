@@ -91,7 +91,10 @@ const normalizeCustomer = (c) => ({
   customer_code:  c.customerCode  ?? c.customer_code ?? '',
   full_name:      c.fullName      ?? c.full_name     ?? '',
   email:          c.email         ?? '—',
+  phone:          c.phoneNumber   ?? c.phone         ?? null,
   province:       c.province      ?? '—',
+  district:       c.district      ?? null,
+  address:        c.address       ?? null,
   region:         c.region        ?? '',
   segment_label:  c.segmentLabel  ?? c.segment_label ?? 'NEW',
   total_orders:   Number(c.totalOrders   ?? c.total_orders   ?? 0),
@@ -102,7 +105,11 @@ const normalizeCustomer = (c) => ({
 })
 
 export const getCustomers = async (params = {}) => {
-  const res = await api.get('/api/customers', { params }).then(r => r.data)
+  // Loại bỏ các param rỗng để tránh gửi ?segment= thay vì bỏ qua
+  const cleanParams = Object.fromEntries(
+    Object.entries(params).filter(([, v]) => v !== '' && v != null)
+  )
+  const res = await api.get('/api/customers', { params: cleanParams }).then(r => r.data)
   return {
     items:      (res.data ?? res.items ?? []).map(normalizeCustomer),
     total:      res.total ?? 0,
@@ -186,6 +193,9 @@ export const getOltpCustomers = async (params = {}) => {
   }
 }
 
+export const getOltpCustomer = (id) =>
+  api.get(`/api/customers/oltp/${id}`).then(r => r.data)
+
 export const createCustomer = (dto) =>
   api.post('/api/customers/oltp', dto).then(r => r.data)
 
@@ -252,10 +262,6 @@ export const saveChannelPrice = (productId, dto) =>
 export const getOrderNotes   = (orderId)        => api.get(`/api/orders/oltp/${orderId}/notes`).then(r => r.data)
 export const addOrderNote    = (orderId, note)   => api.post(`/api/orders/oltp/${orderId}/notes`, { note }).then(r => r.data)
 export const deleteOrderNote = (orderId, noteId) => api.delete(`/api/orders/oltp/${orderId}/notes/${noteId}`).then(r => r.data)
-
-// ── Website Analytics (GA4) ───────────────────────────────────────────────────
-export const getWebsiteAnalytics = (from, to) =>
-  api.get('/api/dashboard/website-analytics', { params: { from, to } }).then(r => r.data)
 
 // ── Facebook Ads Performance ──────────────────────────────────────────────────
 export const getFbAds = (from, to) =>

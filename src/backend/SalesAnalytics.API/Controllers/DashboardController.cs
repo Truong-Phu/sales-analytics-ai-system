@@ -76,73 +76,6 @@ public class DashboardController(DashboardService service, ITenantContext tenant
         }
     }
 
-    /// <summary>GA4 website traffic analytics — mock khi chưa cấu hình Service Account</summary>
-    [HttpGet("website-analytics")]
-    [Authorize(Roles = "Owner,Manager,DataIT,SuperAdmin")]
-    public IActionResult GetWebsiteAnalytics(
-        [FromQuery] DateOnly? from = null,
-        [FromQuery] DateOnly? to   = null)
-    {
-        var dateFrom = from ?? DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-30));
-        var dateTo   = to   ?? DateOnly.FromDateTime(DateTime.UtcNow);
-        int days     = Math.Max(1, dateTo.DayNumber - dateFrom.DayNumber + 1);
-        var rng      = new Random(dateFrom.DayNumber);
-
-        int totSessions = 0, totUsers = 0;
-        double totBounce = 0, totDur = 0;
-        var daily = new List<object>(days);
-        for (int i = 0; i < days; i++)
-        {
-            var    d        = dateFrom.AddDays(i);
-            int    sessions = 1100 + rng.Next(-200, 400);
-            int    users    = (int)(sessions * (0.72 + rng.NextDouble() * 0.12));
-            double bounce   = Math.Round(36.0 + rng.NextDouble() * 18, 1);
-            double dur      = Math.Round(110.0 + rng.NextDouble() * 80, 0);
-            daily.Add(new { date = d.ToString("yyyy-MM-dd"), sessions, users,
-                            pageViews = sessions * 3 + rng.Next(-100, 300),
-                            bounceRate = bounce, avgDuration = dur });
-            totSessions += sessions; totUsers += users;
-            totBounce   += bounce;   totDur   += dur;
-        }
-
-        return Ok(new
-        {
-            isMock  = true,
-            summary = new
-            {
-                totalSessions   = totSessions,
-                totalUsers      = totUsers,
-                avgBounceRate   = Math.Round(totBounce / days, 1),
-                avgDurationSec  = (int)(totDur / days),
-                newUsersPct     = 61.8,
-                pagesPerSession = 3.1,
-            },
-            daily,
-            topSources = new object[]
-            {
-                new { source = "google / organic",   sessions = (int)(totSessions * 0.38) },
-                new { source = "direct / none",       sessions = (int)(totSessions * 0.24) },
-                new { source = "facebook / referral", sessions = (int)(totSessions * 0.19) },
-                new { source = "tiktok / social",     sessions = (int)(totSessions * 0.12) },
-                new { source = "(other)",             sessions = (int)(totSessions * 0.07) },
-            },
-            topPages = new object[]
-            {
-                new { page = "/san-pham",   views = (int)(totSessions * 0.62) },
-                new { page = "/",           views = (int)(totSessions * 0.52) },
-                new { page = "/gio-hang",   views = (int)(totSessions * 0.38) },
-                new { page = "/thanh-toan", views = (int)(totSessions * 0.24) },
-                new { page = "/lien-he",    views = (int)(totSessions * 0.16) },
-            },
-            deviceShare = new object[]
-            {
-                new { device = "Mobile",  pct = 68.4 },
-                new { device = "Desktop", pct = 26.1 },
-                new { device = "Tablet",  pct =  5.5 },
-            },
-        });
-    }
-
     /// <summary>Facebook Ads performance — mock khi chưa cấu hình Ad Account</summary>
     [HttpGet("fb-ads")]
     [Authorize(Roles = "Owner,Manager,DataIT,SuperAdmin")]
@@ -341,12 +274,17 @@ public class DashboardController(DashboardService service, ITenantContext tenant
             ? Math.Round((t.Kpi.TotalOrders - y.Kpi.TotalOrders) / (decimal)y.Kpi.TotalOrders * 100, 1)
             : 0;
 
+        decimal custPct = y.Kpi.NewCustomers > 0
+            ? Math.Round((t.Kpi.NewCustomers - y.Kpi.NewCustomers) / (decimal)y.Kpi.NewCustomers * 100, 1)
+            : 0;
+
         return Ok(new
         {
-            today     = new { revenue = t.Kpi.TotalRevenue, orders = t.Kpi.TotalOrders, profit = t.Kpi.TotalProfit },
-            yesterday = new { revenue = y.Kpi.TotalRevenue, orders = y.Kpi.TotalOrders, profit = y.Kpi.TotalProfit },
-            revenuePct = revPct,
-            ordersPct  = ordPct,
+            today     = new { revenue = t.Kpi.TotalRevenue, orders = t.Kpi.TotalOrders, profit = t.Kpi.TotalProfit, newCustomers = t.Kpi.NewCustomers },
+            yesterday = new { revenue = y.Kpi.TotalRevenue, orders = y.Kpi.TotalOrders, profit = y.Kpi.TotalProfit, newCustomers = y.Kpi.NewCustomers },
+            revenuePct   = revPct,
+            ordersPct    = ordPct,
+            customersPct = custPct,
         });
     }
 }

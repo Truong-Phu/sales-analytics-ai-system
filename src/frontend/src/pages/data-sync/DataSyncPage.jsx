@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+﻿import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import MockToast from '../../components/ui/MockToast'
 import { getSyncStatus, triggerSync } from '../../api/syncApi'
@@ -231,7 +231,6 @@ function KeywordManager() {
 const SOURCE_ICON = {
   shopee: 'storefront', lazada: 'store', tiktok: 'play_circle',
   facebook: 'thumb_up', ghn: 'local_shipping', vnpay: 'payments',
-  google_analytics: 'analytics',
 }
 
 const STATUS_CFG = {
@@ -574,7 +573,7 @@ function TemplateDownloadSection() {
 
       {/* Chọn nền tảng */}
       <div>
-        <p className="text-xs mb-2" style={{ color: 'var(--text-tertiary)' }}>Chọn nền tảng:</p>
+        <p className="text-sm mb-2" style={{ color: 'var(--text-secondary)' }}>Chọn nền tảng:</p>
         <div className="flex flex-wrap gap-2">
           {TEMPLATE_PLATFORMS.map(p => (
             <button
@@ -597,7 +596,7 @@ function TemplateDownloadSection() {
       {/* Chọn loại dữ liệu */}
       {tplPlatform !== 'ghn' && (
         <div>
-          <p className="text-xs mb-2" style={{ color: 'var(--text-tertiary)' }}>Chọn loại dữ liệu:</p>
+          <p className="text-sm mb-2" style={{ color: 'var(--text-secondary)' }}>Chọn loại dữ liệu:</p>
           <div className="flex gap-2">
             {[
               { key: 'orders',   label: 'Đơn hàng', icon: 'package_2' },

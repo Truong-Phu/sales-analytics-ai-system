@@ -69,7 +69,14 @@
     "export_csv": "Export CSV",
     "import": "Import Data",
     "preview": "Preview",
-    "reset": "Reset"
+    "reset": "Reset",
+    "total": "Total",
+    "displayName": "Display Name",
+    "changeDisplayName": "Change Display Name",
+    "currentName": "Current Name",
+    "newName": "New Name",
+    "namePlaceholder": "Enter display name...",
+    "nameUpdated": "Display name updated"
   },
   "pro": {
     "title": "Pro Feature",
@@ -317,8 +324,7 @@
       "multichannel": "Multi-channel",
       "customer": "Customers",
       "marketing": "Marketing & ROI",
-      "inventory": "Inventory & Ops",
-      "website":   "Website (GA4)"
+      "inventory": "Inventory & Ops"
     },
     "preset": {
       "year2025": "2025",
@@ -327,6 +333,7 @@
       "month": "30 days",
       "30d": "30 days",
       "90d": "90 days",
+      "all": "All time",
       "custom": "Custom"
     },
     "chart": {
@@ -357,18 +364,37 @@
       "bounceRate": "Bounce Rate",
       "avgDuration": "Avg. Duration"
     },
+    "today": {
+      "revenue":      "Today's Revenue",
+      "orders":       "Today's Orders",
+      "profit":       "Today's Profit",
+      "margin":       "Margin",
+      "vsYesterday":  "vs yesterday",
+      "comparePrev":  "Compare prev. period",
+      "compareNote":  "dashed = prev. period"
+    },
     "series": {
-      "revenue": "Revenue",
-      "profit": "Profit",
-      "stock": "Current Stock",
-      "forecast": "Demand Forecast",
-      "adCost": "Ad Cost",
-      "revenueM": "Revenue (M₫)",
-      "adCostM": "Ad Cost (M₫)",
-      "radarCost": "Ad Cost",
-      "radarEngage": "Engagement",
-      "radarConv": "Conversion Rate",
-      "radarRevenue": "Revenue"
+      "revenue":      "Revenue",
+      "profit":       "Profit",
+      "stock":        "Current Stock",
+      "forecast":     "Demand Forecast",
+      "adCost":       "Ad Cost",
+      "adSpend":      "Ad Spend",
+      "revenueM":     "Revenue (M₫)",
+      "adCostM":      "Ad Cost (M₫)",
+      "radarCost":    "Ad Cost",
+      "radarEngage":  "Engagement",
+      "radarConv":    "Conversion Rate",
+      "radarRevenue": "Revenue",
+      "prevRevenue":  "Prev. Revenue",
+      "prevProfit":   "Prev. Profit",
+      "prevPeriod":   "prev.",
+      "total":        "Total",
+      "roasNote":     "ROAS shown directly on revenue bars"
+    },
+    "fbKpi": {
+      "totalSpend":  "Total Ad Spend",
+      "totalClicks": "Total Clicks"
     },
     "invKpi": {
       "returnRate": "Avg. Return Rate",
@@ -690,8 +716,11 @@
     "historyNote": "Detailed order history will show when backend is connected.",
     "segment": {
       "VIP": "VIP (> 10M)",
+      "LOYAL": "Loyal",
       "REGULAR": "Regular",
       "NEW": "New",
+      "AT_RISK": "At Risk",
+      "LOST": "Lost",
       "INACTIVE": "Inactive"
     }
   },

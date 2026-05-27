@@ -1,6 +1,6 @@
 # API Integration Layer – MSAS
 
-Thu thập dữ liệu bán hàng từ các API đa kênh: Shopee, Lazada, TikTok Shop, Facebook, Google Analytics, GHN, VNPay.
+Thu thập dữ liệu bán hàng từ các API đa kênh: Shopee, Lazada, TikTok Shop, Facebook, GHN, VNPay.
 
 ## Cấu trúc thư mục
 
@@ -13,7 +13,6 @@ api-integration/
 │   ├── lazada.py            # Lazada Open Platform (HMAC-SHA256)
 │   ├── tiktok_shop.py       # TikTok Shop Partner API (OAuth2)
 │   ├── facebook.py          # Facebook Graph API + Ads API (OAuth2)
-│   ├── google_analytics.py  # GA4 Data API (Service Account)
 │   ├── ghn.py               # GHN Shipping API (Token)
 │   └── vnpay.py             # VNPay Payment API (HMAC-SHA512)
 ├── importers/
@@ -139,7 +138,6 @@ pytest tests/ -v --no-cov
 | Lazada | HMAC-SHA256 + OAuth2 | Đăng ký App → Authorize Seller → Lấy access_token |
 | TikTok Shop | HMAC-SHA256 + OAuth2 | Đăng ký Partner → Authorize Shop |
 | Facebook | OAuth2 Long-lived Token | Tạo App → Generate Page Access Token (60 ngày) |
-| Google Analytics | Service Account JSON | Tạo Service Account → Cấp Viewer access → Download JSON key |
 | GHN | API Token Header | Đăng ký GHN API → Copy token từ dashboard |
 | VNPay | HMAC-SHA512 | Đăng ký Merchant → Lấy TmnCode + SecretKey |
 

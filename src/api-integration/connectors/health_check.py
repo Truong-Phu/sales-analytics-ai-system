@@ -211,31 +211,6 @@ def check_google_scraper() -> dict:
         return {"connected": False, "message": str(e), "records": 0}
 
 
-def check_google_analytics() -> dict:
-    """
-    Google Analytics 4 API
-    URL: https://analyticsdata.googleapis.com/
-    Cần: GA4_PROPERTY_ID, GA4_SERVICE_ACCOUNT_JSON
-    """
-    missing = _missing_env("GA4_PROPERTY_ID", "GA4_SERVICE_ACCOUNT_JSON")
-    if missing:
-        return {"connected": False, "message": f"Thiếu {missing} trong .env",
-                "api_url": "https://analyticsdata.googleapis.com/"}
-
-    # Thử import thư viện GA4
-    try:
-        from google.analytics.data_v1beta import BetaAnalyticsDataClient  # noqa
-        return {"connected": True, "message": "GA4 credentials đầy đủ",
-                "api_url": "https://analyticsdata.googleapis.com/"}
-    except ImportError:
-        return {"connected": False,
-                "message": "Thiếu thư viện google-analytics-data (pip install google-analytics-data)",
-                "api_url": "https://analyticsdata.googleapis.com/"}
-    except Exception as e:
-        return {"connected": False, "message": str(e),
-                "api_url": "https://analyticsdata.googleapis.com/"}
-
-
 # ── Hàm tổng hợp ─────────────────────────────────────────────────────────────
 
 def check_all_connectors() -> dict:
@@ -244,26 +219,24 @@ def check_all_connectors() -> dict:
 
     Returns:
         {
-            "shopee":           {"connected": bool, "message": str, "api_url": str},
-            "lazada":           {...},
-            "tiktok_shop":      {...},
-            "ghn":              {...},
-            "vnpay":            {...},
-            "facebook":         {...},
-            "google_scraper":   {"connected": bool, "message": str, "records": int},
-            "google_analytics": {...},
-            "checked_at":       "2026-04-26T17:05:00+07:00"
+            "shopee":         {"connected": bool, "message": str, "api_url": str},
+            "lazada":         {...},
+            "tiktok_shop":    {...},
+            "ghn":            {...},
+            "vnpay":          {...},
+            "facebook":       {...},
+            "google_scraper": {"connected": bool, "message": str, "records": int},
+            "checked_at":     "2026-04-26T17:05:00+07:00"
         }
     """
     checks = {
-        "shopee":           check_shopee,
-        "lazada":           check_lazada,
-        "tiktok_shop":      check_tiktok_shop,
-        "ghn":              check_ghn,
-        "vnpay":            check_vnpay,
-        "facebook":         check_facebook,
-        "google_scraper":   check_google_scraper,
-        "google_analytics": check_google_analytics,
+        "shopee":         check_shopee,
+        "lazada":         check_lazada,
+        "tiktok_shop":    check_tiktok_shop,
+        "ghn":            check_ghn,
+        "vnpay":          check_vnpay,
+        "facebook":       check_facebook,
+        "google_scraper": check_google_scraper,
     }
 
     results = {}

@@ -10,7 +10,6 @@ const CHANNELS = [
   { id: 'tiktok',  name: 'TikTok Shop',     icon: '🎵',  color: '#000000', platform: 'tiktok' },
   { id: 'lazada',  name: 'Lazada',          icon: '📦',  color: '#0F146D', platform: 'lazada' },
   { id: 'facebook',name: 'Facebook',        icon: '📘',  color: '#1877F2', platform: 'facebook' },
-  { id: 'google',  name: 'Google Analytics',icon: '📊',  color: '#4285F4', platform: 'google' },
 ]
 
 const TOUR_SLIDES = [
@@ -70,12 +69,6 @@ function ChannelGuideModal({ channel, onClose }) {
       'Kích hoạt Pages API và Marketing API',
       'Lấy Long-lived Page Access Token cho Page của bạn',
       'Nhập vào Settings → Kênh bán hàng → Facebook',
-    ],
-    google: [
-      'Tạo Service Account trong Google Cloud Console',
-      'Cấp quyền Viewer cho Property GA4 của bạn',
-      'Tải JSON key của Service Account',
-      'Upload vào Settings → Kênh bán hàng → Google Analytics',
     ],
   }
   const steps = guides[channel.id] || []

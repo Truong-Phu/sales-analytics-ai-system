@@ -25,8 +25,6 @@ _PLATFORM_MAP = {
     "tiktok":            ("connectors.tiktok_shop",       "TikTokShopConnector"),
     "tiktok_shop":       ("connectors.tiktok_shop",       "TikTokShopConnector"),
     "facebook":          ("connectors.facebook",          "FacebookConnector"),
-    "google":            ("connectors.google_analytics",  "GoogleAnalyticsConnector"),
-    "google_analytics":  ("connectors.google_analytics",  "GoogleAnalyticsConnector"),
     "vnpay":             ("connectors.vnpay",             "VNPayConnector"),
     "ghn":               ("connectors.ghn",               "GHNConnector"),
     "facebook_scraper":  ("connectors.facebook_scraper",  "FacebookScraper"),
