@@ -4,7 +4,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs'
 import { createStackNavigator }     from '@react-navigation/stack'
 import { Text, View }               from 'react-native'
 import { useAuth }                  from '../context/AuthContext'
-import { colors }                   from '../components/theme'
+import { useTheme }                 from '../context/ThemeContext'
 import api                          from '../api/axios'
 
 // Screens – Auth
@@ -32,12 +32,14 @@ const Tab       = createBottomTabNavigator()
 const Stack     = createStackNavigator()
 const AuthStack = createStackNavigator()
 
-// Cấu hình chung cho Stack headers
-const STACK_SCREEN_OPTIONS = {
-  headerStyle:      { backgroundColor: colors.surfaceContainerLow },
-  headerTintColor:  colors.onSurface,
-  headerTitleStyle: { fontWeight: '700', color: colors.onSurface },
-  cardStyle:        { backgroundColor: colors.surface },
+// Dynamic stack options — generated per-render based on theme
+function getStackOptions(colors) {
+  return {
+    headerStyle:      { backgroundColor: colors.surfaceContainerLow },
+    headerTintColor:  colors.onSurface,
+    headerTitleStyle: { fontWeight: '700', color: colors.onSurface },
+    cardStyle:        { backgroundColor: colors.surface },
+  }
 }
 
 // Icon text đơn giản (emoji thay Material Icons để tránh native dependency)
@@ -87,8 +89,9 @@ function TabIconPOS({ focused }) {
 // Dashboard Stack – bao gồm AlertsScreen để "Xem tất cả cảnh báo" hoạt động
 // Dùng cho Staff/Owner/Manager (những role có Alerts trong DashboardStack thay vì tab riêng)
 function DashboardWithAlertsStack() {
+  const { colors } = useTheme()
   return (
-    <Stack.Navigator screenOptions={STACK_SCREEN_OPTIONS}>
+    <Stack.Navigator screenOptions={getStackOptions(colors)}>
       <Stack.Screen name="DashboardMain" component={DashboardScreen} options={{ headerShown: false }} />
       <Stack.Screen name="Alerts" component={AlertsScreen} options={{ title: 'Cảnh báo & Thông báo' }} />
       <Stack.Screen name="KhachHang"     component={KhachHangScreen}   options={{ title: 'Khách hàng'       }} />
@@ -100,8 +103,9 @@ function DashboardWithAlertsStack() {
 
 // Dashboard Stack đơn giản (không có Alerts con – dùng cho DataIT/Viewer có tab Alerts riêng)
 function DashboardSimpleStack() {
+  const { colors } = useTheme()
   return (
-    <Stack.Navigator screenOptions={STACK_SCREEN_OPTIONS}>
+    <Stack.Navigator screenOptions={getStackOptions(colors)}>
       <Stack.Screen name="DashboardMain" component={DashboardScreen} options={{ headerShown: false }} />
       <Stack.Screen name="KhachHang"     component={KhachHangScreen}   options={{ title: 'Khách hàng'       }} />
       <Stack.Screen name="TonKho"        component={TonKhoScreen}       options={{ title: 'Tồn kho'          }} />
@@ -112,8 +116,9 @@ function DashboardSimpleStack() {
 
 // Orders Stack (Orders list + OrderDetail + AddOrder)
 function OrdersStack() {
+  const { colors } = useTheme()
   return (
-    <Stack.Navigator screenOptions={STACK_SCREEN_OPTIONS}>
+    <Stack.Navigator screenOptions={getStackOptions(colors)}>
       <Stack.Screen name="OrdersList"   component={OrdersScreen}      options={{ title: 'Đơn hàng'      }} />
       <Stack.Screen name="OrderDetail"  component={OrderDetailScreen} options={{ title: 'Chi tiết đơn'   }} />
       <Stack.Screen name="AddOrder"     component={AddOrderScreen}    options={{ title: 'Thêm đơn hàng' }} />
@@ -123,8 +128,9 @@ function OrdersStack() {
 
 // POS Stack
 function POSStack() {
+  const { colors } = useTheme()
   return (
-    <Stack.Navigator screenOptions={STACK_SCREEN_OPTIONS}>
+    <Stack.Navigator screenOptions={getStackOptions(colors)}>
       <Stack.Screen name="POSMain" component={POSScreen} options={{ title: 'Bán hàng (POS)' }} />
     </Stack.Navigator>
   )
@@ -132,8 +138,9 @@ function POSStack() {
 
 // Products Stack
 function ProductsStack() {
+  const { colors } = useTheme()
   return (
-    <Stack.Navigator screenOptions={STACK_SCREEN_OPTIONS}>
+    <Stack.Navigator screenOptions={getStackOptions(colors)}>
       <Stack.Screen name="ProductsList" component={ProductsScreen} options={{ title: 'Sản phẩm' }} />
     </Stack.Navigator>
   )
@@ -141,8 +148,9 @@ function ProductsStack() {
 
 // Notifications Stack (Tab Thông báo)
 function NotificationsStack() {
+  const { colors } = useTheme()
   return (
-    <Stack.Navigator screenOptions={STACK_SCREEN_OPTIONS}>
+    <Stack.Navigator screenOptions={getStackOptions(colors)}>
       <Stack.Screen name="AlertsMain" component={AlertsScreen} options={{ title: 'Thông báo' }} />
     </Stack.Navigator>
   )
@@ -150,8 +158,9 @@ function NotificationsStack() {
 
 // Reports + Customers Stack (Owner/Manager)
 function ReportsStack() {
+  const { colors } = useTheme()
   return (
-    <Stack.Navigator screenOptions={STACK_SCREEN_OPTIONS}>
+    <Stack.Navigator screenOptions={getStackOptions(colors)}>
       <Stack.Screen name="QuickReport" component={QuickReportScreen} options={{ title: 'Báo cáo nhanh' }} />
       <Stack.Screen name="Customers"   component={CustomersScreen}   options={{ title: 'Khách hàng'   }} />
     </Stack.Navigator>
@@ -160,8 +169,9 @@ function ReportsStack() {
 
 // Profile Stack (Profile + ChangePassword + KPI + TonKho)
 function ProfileStack() {
+  const { colors } = useTheme()
   return (
-    <Stack.Navigator screenOptions={STACK_SCREEN_OPTIONS}>
+    <Stack.Navigator screenOptions={getStackOptions(colors)}>
       <Stack.Screen name="ProfileMain"    component={ProfileScreen}       options={{ title: 'Tài khoản'    }} />
       <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} options={{ title: 'Đổi mật khẩu' }} />
       <Stack.Screen name="KPINhanVien"    component={KPINhanVienScreen}   options={{ title: 'KPI của tôi'  }} />
@@ -196,21 +206,23 @@ function useUnreadCount() {
   return count
 }
 
-// ─── Tab cấu hình chuẩn ──────────────────────────────────────────────────────
-const TAB_SCREEN_OPTIONS = {
-  tabBarStyle: {
-    backgroundColor: colors.surfaceContainerLow,
-    borderTopColor:  colors.outlineVariant,
-    borderTopWidth:  1,
-    paddingBottom:   4,
-    height:          60,
-  },
-  tabBarActiveTintColor:   colors.primary,
-  tabBarInactiveTintColor: colors.outline,
-  tabBarLabelStyle: { fontSize: 11, fontWeight: '600', marginBottom: 2 },
-  headerStyle:      { backgroundColor: colors.surfaceContainerLow },
-  headerTintColor:  colors.onSurface,
-  headerTitleStyle: { fontWeight: '700', fontSize: 16, color: colors.onSurface },
+// Dynamic tab options — generated per-render based on theme
+function getTabOptions(colors) {
+  return {
+    tabBarStyle: {
+      backgroundColor: colors.surfaceContainerLow,
+      borderTopColor:  colors.outlineVariant,
+      borderTopWidth:  1,
+      paddingBottom:   4,
+      height:          60,
+    },
+    tabBarActiveTintColor:   colors.primary,
+    tabBarInactiveTintColor: colors.outline,
+    tabBarLabelStyle: { fontSize: 11, fontWeight: '600', marginBottom: 2 },
+    headerStyle:      { backgroundColor: colors.surfaceContainerLow },
+    headerTintColor:  colors.onSurface,
+    headerTitleStyle: { fontWeight: '700', fontSize: 16, color: colors.onSurface },
+  }
 }
 
 // ─── Main Tabs theo role ──────────────────────────────────────────────────────
@@ -220,8 +232,9 @@ const TAB_SCREEN_OPTIONS = {
 // Staff: Tổng quan(+Alerts) | Đơn hàng(+Add) | POS | Sản phẩm | Tôi
 function StaffTabs() {
   const unread = useUnreadCount()
+  const { colors } = useTheme()
   return (
-    <Tab.Navigator screenOptions={TAB_SCREEN_OPTIONS}>
+    <Tab.Navigator screenOptions={getTabOptions(colors)}>
       <Tab.Screen
         name="Dashboard"
         component={DashboardWithAlertsStack}
@@ -257,8 +270,9 @@ function StaffTabs() {
 // Owner / Manager: Tổng quan | Đơn hàng | POS | Thông báo | Tôi
 function OwnerManagerTabs() {
   const unread = useUnreadCount()
+  const { colors } = useTheme()
   return (
-    <Tab.Navigator screenOptions={TAB_SCREEN_OPTIONS}>
+    <Tab.Navigator screenOptions={getTabOptions(colors)}>
       <Tab.Screen
         name="Dashboard"
         component={DashboardWithAlertsStack}
@@ -294,8 +308,9 @@ function OwnerManagerTabs() {
 // DataIT: Tổng quan | Đơn hàng | POS | Thông báo | Tôi
 function DataITTabs() {
   const unread = useUnreadCount()
+  const { colors } = useTheme()
   return (
-    <Tab.Navigator screenOptions={TAB_SCREEN_OPTIONS}>
+    <Tab.Navigator screenOptions={getTabOptions(colors)}>
       <Tab.Screen
         name="Dashboard"
         component={DashboardSimpleStack}
@@ -331,8 +346,9 @@ function DataITTabs() {
 // Viewer: Tổng quan | Đơn hàng | Thông báo | Tôi (không có POS)
 function ViewerTabs() {
   const unread = useUnreadCount()
+  const { colors } = useTheme()
   return (
-    <Tab.Navigator screenOptions={TAB_SCREEN_OPTIONS}>
+    <Tab.Navigator screenOptions={getTabOptions(colors)}>
       <Tab.Screen
         name="Dashboard"
         component={DashboardSimpleStack}
@@ -360,8 +376,9 @@ function ViewerTabs() {
 // Fallback tabs – dùng nếu role không xác định
 function DefaultTabs() {
   const unread = useUnreadCount()
+  const { colors } = useTheme()
   return (
-    <Tab.Navigator screenOptions={TAB_SCREEN_OPTIONS}>
+    <Tab.Navigator screenOptions={getTabOptions(colors)}>
       <Tab.Screen
         name="Dashboard"
         component={DashboardSimpleStack}
@@ -400,11 +417,12 @@ function MainTabs({ role }) {
 
 // ─── Auth Stack (chưa login) ──────────────────────────────────────────────────
 function AuthNavigator() {
+  const { colors } = useTheme()
   return (
     <AuthStack.Navigator
       screenOptions={{
         headerShown: true,
-        ...STACK_SCREEN_OPTIONS,
+        ...getStackOptions(colors),
         headerTintColor: colors.primary,
       }}
     >
@@ -418,6 +436,7 @@ function AuthNavigator() {
 // ─── Root Navigator ───────────────────────────────────────────────────────────
 export default function AppNavigator() {
   const { user, loading } = useAuth()
+  const { colors } = useTheme()
 
   if (loading) {
     return (

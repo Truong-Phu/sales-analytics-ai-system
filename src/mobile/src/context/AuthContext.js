@@ -8,7 +8,11 @@ const AuthContext = createContext(null)
 function parseJwt(token) {
   try {
     const base64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')
-    const json = globalThis.atob(base64)
+    // atob chỉ decode Latin-1 → cần escape từng byte rồi decodeURIComponent để xử lý UTF-8 (tiếng Việt)
+    const bytes = globalThis.atob(base64)
+    const json  = decodeURIComponent(
+      bytes.split('').map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join('')
+    )
     return JSON.parse(json)
   } catch { return null }
 }
@@ -38,19 +42,47 @@ export function AuthProvider({ children }) {
     }
   }, [])
 
+  // Fetch profile mới nhất từ /api/users/me để sync fullName, avatarUrl sau khi đổi trên web
+  const fetchUserProfile = useCallback(async () => {
+    try {
+      const res = await api.get('/api/users/me')
+      const d   = res.data?.data ?? res.data
+      if (!d) return
+      setUser(prev => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          fullName:  d.fullName  ?? d.full_name  ?? prev.fullName,
+          name:      d.fullName  ?? d.full_name  ?? prev.name,
+          avatarUrl: d.avatarUrl ?? d.avatar_url ?? prev.avatarUrl,
+          email:     d.email     ?? prev.email,
+          phone:     d.phone     ?? prev.phone,
+        }
+      })
+    } catch {
+      // Giữ nguyên dữ liệu JWT nếu API lỗi
+    }
+  }, [])
+
   useEffect(() => {
     storage.getItem('access_token')
       .then(token => {
         if (token) {
           const p = parseJwt(token)
           if (p && p.exp * 1000 > Date.now()) {
+            const username = p['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name'] ?? p.name ?? ''
             setUser({
-              id:    p.sub,
-              name:  p['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name'] ?? p.name,
-              email: p['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress'] ?? p.email,
-              role:  p['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'] ?? p.role,
+              id:          p.sub,
+              username,
+              name:        p.fullName || username,
+              fullName:    p.fullName || '',
+              email:       p['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress'] ?? p.email,
+              role:        p['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'] ?? p.role,
+              companyName: p.company_name ?? p.companyName ?? null,
+              lang:        p.lang ?? 'vi',
             })
-            // Fetch plan sau khi xác nhận token còn hạn
+            // Fetch profile mới nhất + plan sau khi xác nhận token còn hạn
+            fetchUserProfile()
             fetchPlan()
           } else {
             storage.removeItem('access_token')
@@ -71,18 +103,24 @@ export function AuthProvider({ children }) {
     await storage.setItem('access_token', tokenData.accessToken)
     await storage.setItem('refresh_token', tokenData.refreshToken)
     const p = parseJwt(tokenData.accessToken)
+    const username = p['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name'] ?? p.name ?? ''
     const u = {
-      id:    p.sub,
-      name:  p['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name'] ?? p.name,
-      email: p['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress'] ?? p.email,
-      role:  p['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'] ?? p.role,
+      id:          p.sub,
+      username,
+      name:        p.fullName || username,
+      fullName:    p.fullName || '',
+      email:       p['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress'] ?? p.email,
+      role:        p['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'] ?? p.role,
+      companyName: p.company_name ?? p.companyName ?? null,
+      lang:        p.lang ?? 'vi',
     }
     setUser(u)
     registerForPushNotifications().catch(() => {})
-    // Fetch plan sau khi login (background, không await)
+    // Fetch profile mới nhất + plan sau khi login (background, không await)
+    fetchUserProfile()
     fetchPlan()
     return u
-  }, [fetchPlan])
+  }, [fetchPlan, fetchUserProfile])
 
   const logout = useCallback(async () => {
     await storage.multiRemove(['access_token', 'refresh_token'])
@@ -91,7 +129,7 @@ export function AuthProvider({ children }) {
   }, [])
 
   return (
-    <AuthContext.Provider value={{ user, plan, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, plan, loading, login, logout, refreshProfile: fetchUserProfile }}>
       {children}
     </AuthContext.Provider>
   )
