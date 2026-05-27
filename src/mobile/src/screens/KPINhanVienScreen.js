@@ -1,11 +1,12 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity,
   ActivityIndicator, RefreshControl,
 } from 'react-native'
 import api from '../api/axios'
 import { useAuth } from '../context/AuthContext'
-import { colors, radius } from '../components/theme'
+import { useTheme } from '../context/ThemeContext'
+import { radius } from '../components/theme'
 
 function formatMoney(v) {
   if (v == null || !Number.isFinite(Number(v))) return '0'
@@ -42,7 +43,7 @@ const MOCK_KPI = {
 }
 
 // ─── Progress bar ─────────────────────────────────────────────────────────────
-function ProgressBar({ current, target, color }) {
+function ProgressBar({ current, target, color, s }) {
   const pct = target > 0 ? Math.min((current / target) * 100, 100) : 0
   return (
     <View style={s.progressBg}>
@@ -51,8 +52,7 @@ function ProgressBar({ current, target, color }) {
   )
 }
 
-// ─── KPI Row item ─────────────────────────────────────────────────────────────
-function KpiRow({ emoji, label, current, target, formatVal, color }) {
+function KpiRow({ emoji, label, current, target, formatVal, color, s, primaryColor }) {
   const pct = target > 0 ? ((current / target) * 100).toFixed(0) : 0
   const barColor = pct >= 80 ? '#4AE176' : pct >= 50 ? '#F59E0B' : '#EF4444'
   return (
@@ -62,7 +62,7 @@ function KpiRow({ emoji, label, current, target, formatVal, color }) {
         <View>
           <Text style={s.kpiRowLabel}>{label}</Text>
           <View style={s.kpiRowNums}>
-            <Text style={[s.kpiRowCurrent, { color: color ?? colors.primary }]}>
+            <Text style={[s.kpiRowCurrent, { color: color ?? primaryColor }]}>
               {formatVal(current)}
             </Text>
             <Text style={s.kpiRowSep}>/</Text>
@@ -77,7 +77,9 @@ function KpiRow({ emoji, label, current, target, formatVal, color }) {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function KPINhanVienScreen() {
-  const { user } = useAuth()
+  const { user }   = useAuth()
+  const { colors } = useTheme()
+  const s          = useMemo(() => makeStyles(colors), [colors])
 
   const [kpi,        setKpi]        = useState(null)
   const [loading,    setLoading]    = useState(true)
@@ -183,7 +185,7 @@ export default function KPINhanVienScreen() {
             <Text style={[s.overallPct, { color: overallColor }]}>
               {revenueCompletion.toFixed(0)}%
             </Text>
-            <ProgressBar current={data.revenue} target={data.revenueTarget} color={overallColor} />
+            <ProgressBar current={data.revenue} target={data.revenueTarget} color={overallColor} s={s} />
             <Text style={s.overallDetail}>
               ₫{formatMoney(data.revenue)} / ₫{formatMoney(data.revenueTarget)}
             </Text>
@@ -205,10 +207,10 @@ export default function KPINhanVienScreen() {
               emoji="💰" label="Doanh thu"
               current={data.revenue} target={data.revenueTarget}
               formatVal={(v) => `₫${formatMoney(v)}`}
-              color={colors.primary}
+              color={colors.primary} s={s} primaryColor={colors.primary}
             />
             <ProgressBar current={data.revenue} target={data.revenueTarget}
-              color={revenueCompletion >= 80 ? '#4AE176' : revenueCompletion >= 50 ? '#F59E0B' : '#EF4444'} />
+              color={revenueCompletion >= 80 ? '#4AE176' : revenueCompletion >= 50 ? '#F59E0B' : '#EF4444'} s={s} />
 
             <View style={{ height: 14 }} />
 
@@ -216,10 +218,11 @@ export default function KPINhanVienScreen() {
               emoji="🛒" label="Đơn hàng"
               current={data.orders} target={data.ordersTarget}
               formatVal={(v) => `${v} đơn`}
+              s={s} primaryColor={colors.primary}
             />
             <ProgressBar
               current={data.orders} target={data.ordersTarget}
-              color={data.ordersTarget > 0 && (data.orders / data.ordersTarget) >= 0.8 ? '#4AE176' : '#F59E0B'}
+              color={data.ordersTarget > 0 && (data.orders / data.ordersTarget) >= 0.8 ? '#4AE176' : '#F59E0B'} s={s}
             />
 
             <View style={{ height: 14 }} />
@@ -228,10 +231,11 @@ export default function KPINhanVienScreen() {
               emoji="👤" label="KH mới"
               current={data.customers} target={data.customersTarget}
               formatVal={(v) => `${v} KH`}
+              s={s} primaryColor={colors.primary}
             />
             <ProgressBar
               current={data.customers} target={data.customersTarget}
-              color={data.customersTarget > 0 && (data.customers / data.customersTarget) >= 0.8 ? '#4AE176' : '#F59E0B'}
+              color={data.customersTarget > 0 && (data.customers / data.customersTarget) >= 0.8 ? '#4AE176' : '#F59E0B'} s={s}
             />
           </View>
 
@@ -262,80 +266,55 @@ export default function KPINhanVienScreen() {
 }
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
-const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.surface },
+const makeStyles = (c) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.surface },
   center:    { paddingVertical: 60, alignItems: 'center' },
 
   greetingBox: {
     paddingHorizontal: 16, paddingTop: 20, paddingBottom: 12,
-    backgroundColor: colors.surfaceContainerLow,
-    borderBottomWidth: 1, borderBottomColor: colors.outlineVariant,
+    backgroundColor: c.surfaceContainerLow,
+    borderBottomWidth: 1, borderBottomColor: c.outlineVariant,
   },
-  greetingHello: { fontSize: 17, fontWeight: '700', color: colors.onSurface },
-  greetingRole:  { fontSize: 12, color: colors.outline, marginTop: 3 },
+  greetingHello: { fontSize: 17, fontWeight: '700', color: c.onSurface },
+  greetingRole:  { fontSize: 12, color: c.outline, marginTop: 3 },
 
   periodRow: { flexDirection: 'row', padding: 12, paddingBottom: 6, gap: 8 },
-  periodBtn: {
-    flex: 1, paddingVertical: 8, borderRadius: radius.md,
-    borderWidth: 1, borderColor: colors.outlineVariant,
-    alignItems: 'center',
-  },
-  periodBtnActive:     { backgroundColor: colors.primaryContainer, borderColor: colors.primary },
-  periodBtnText:       { fontSize: 12, color: colors.outline },
-  periodBtnTextActive: { color: colors.surface, fontWeight: '700' },
+  periodBtn: { flex: 1, paddingVertical: 8, borderRadius: radius.md, borderWidth: 1, borderColor: c.outlineVariant, alignItems: 'center' },
+  periodBtnActive:     { backgroundColor: c.primaryContainer, borderColor: c.primary },
+  periodBtnText:       { fontSize: 12, color: c.outline },
+  periodBtnTextActive: { color: c.surface, fontWeight: '700' },
 
-  mockBanner: {
-    marginHorizontal: 12, marginBottom: 4,
-    backgroundColor: 'rgba(255,180,0,0.1)',
-    borderWidth: 1, borderColor: 'rgba(255,180,0,0.3)',
-    borderRadius: radius.sm, padding: 8,
-  },
+  mockBanner:     { marginHorizontal: 12, marginBottom: 4, backgroundColor: 'rgba(255,180,0,0.1)', borderWidth: 1, borderColor: 'rgba(255,180,0,0.3)', borderRadius: radius.sm, padding: 8 },
   mockBannerText: { color: '#ffb400', fontSize: 11, textAlign: 'center' },
 
-  // Overall card
-  overallCard: {
-    backgroundColor: '#1F2937',
-    borderRadius: radius.md, margin: 12, padding: 16,
-  },
-  overallLabel:  { fontSize: 12, color: '#9CA3AF', marginBottom: 4 },
+  overallCard:   { backgroundColor: c.card, borderRadius: radius.md, margin: 12, padding: 16 },
+  overallLabel:  { fontSize: 12, color: c.textSecondary, marginBottom: 4 },
   overallPct:    { fontSize: 36, fontWeight: '700', marginBottom: 8 },
-  overallDetail: { fontSize: 12, color: '#9CA3AF', marginTop: 6 },
+  overallDetail: { fontSize: 12, color: c.textSecondary, marginTop: 6 },
   rankRow:       { flexDirection: 'row', justifyContent: 'space-between', marginTop: 12 },
-  rankLabel:     { fontSize: 13, color: '#9CA3AF' },
+  rankLabel:     { fontSize: 13, color: c.textSecondary },
   rankValue:     { fontSize: 14, fontWeight: '700', color: '#FFD700' },
 
-  // KPI card
-  kpiCard: {
-    backgroundColor: '#1F2937',
-    borderRadius: radius.md, marginHorizontal: 12, marginBottom: 12, padding: 16,
-  },
-  cardLabel: {
-    fontSize: 11, fontWeight: '700', color: '#9CA3AF',
-    letterSpacing: 1, textTransform: 'uppercase', marginBottom: 14,
-  },
+  kpiCard:   { backgroundColor: c.card, borderRadius: radius.md, marginHorizontal: 12, marginBottom: 12, padding: 16 },
+  cardLabel: { fontSize: 11, fontWeight: '700', color: c.textSecondary, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 14 },
 
-  // KPI row
-  kpiRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8,
-  },
+  kpiRow:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
   kpiRowLeft:    { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
   kpiRowEmoji:   { fontSize: 20 },
-  kpiRowLabel:   { fontSize: 12, color: '#9CA3AF', marginBottom: 2 },
+  kpiRowLabel:   { fontSize: 12, color: c.textSecondary, marginBottom: 2 },
   kpiRowNums:    { flexDirection: 'row', alignItems: 'center', gap: 4 },
   kpiRowCurrent: { fontSize: 15, fontWeight: '700' },
-  kpiRowSep:     { fontSize: 13, color: '#374151' },
-  kpiRowTarget:  { fontSize: 13, color: '#6B7280' },
+  kpiRowSep:     { fontSize: 13, color: c.cardBorder },
+  kpiRowTarget:  { fontSize: 13, color: c.outline },
   kpiPct:        { fontSize: 16, fontWeight: '700', minWidth: 44, textAlign: 'right' },
 
-  // Progress bar
-  progressBg:   { height: 8, backgroundColor: '#374151', borderRadius: 4 },
+  progressBg:   { height: 8, backgroundColor: c.cardBorder, borderRadius: 4 },
   progressFill: { height: 8, borderRadius: 4 },
 
-  // Products
-  productRow:    { flexDirection: 'row', alignItems: 'center', paddingVertical: 10 },
-  productBorder: { borderTopWidth: 1, borderTopColor: '#374151' },
-  productRank:   { fontSize: 18, width: 30 },
-  productName:   { fontSize: 13, color: '#F9FAFB', fontWeight: '600' },
-  productOrders: { fontSize: 11, color: '#9CA3AF', marginTop: 2 },
-  productRevenue:{ fontSize: 13, color: colors.primary, fontWeight: '700' },
+  productRow:     { flexDirection: 'row', alignItems: 'center', paddingVertical: 10 },
+  productBorder:  { borderTopWidth: 1, borderTopColor: c.cardBorder },
+  productRank:    { fontSize: 18, width: 30 },
+  productName:    { fontSize: 13, color: c.textPrimary, fontWeight: '600' },
+  productOrders:  { fontSize: 11, color: c.textSecondary, marginTop: 2 },
+  productRevenue: { fontSize: 13, color: c.primary, fontWeight: '700' },
 })

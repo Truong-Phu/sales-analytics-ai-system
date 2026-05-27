@@ -1,11 +1,12 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity,
   ActivityIndicator, RefreshControl, Alert,
 } from 'react-native'
 import api from '../api/axios'
 import { usePlan } from '../hooks/usePermission'
-import { colors, radius } from '../components/theme'
+import { useTheme } from '../context/ThemeContext'
+import { radius } from '../components/theme'
 
 function formatMoney(v) {
   if (v == null || !Number.isFinite(Number(v))) return '0'
@@ -23,11 +24,11 @@ const PERIODS = [
 ]
 
 const MOCK_REPORT = {
-  totalRevenue:  845_200_000,
-  totalOrders:   312,
+  totalRevenue:   845_200_000,
+  totalOrders:    312,
   totalCustomers: 89,
-  totalProfit:   253_560_000,
-  revenueTrend:  3.2,
+  totalProfit:    253_560_000,
+  revenueTrend:   3.2,
   channels: [
     { name: 'Shopee',   revenue: 310_000_000, orders: 115, color: '#EE4D2D' },
     { name: 'TikTok',   revenue: 245_000_000, orders: 87,  color: '#69C9D0' },
@@ -36,16 +37,15 @@ const MOCK_REPORT = {
     { name: 'Website',  revenue: 20_200_000,  orders: 13,  color: '#4AE176' },
   ],
   topProducts: [
-    { name: 'Áo thun Unisex oversize',    revenue: 125_000_000, orders: 48 },
-    { name: 'Quần jogger cotton',          revenue: 98_000_000,  orders: 37 },
-    { name: 'Váy hoa midi',               revenue: 76_000_000,  orders: 29 },
-    { name: 'Áo khoác dù',               revenue: 65_000_000,  orders: 24 },
-    { name: 'Giày sneaker trắng',          revenue: 52_000_000,  orders: 19 },
+    { name: 'Áo thun Unisex oversize',  revenue: 125_000_000, orders: 48 },
+    { name: 'Quần jogger cotton',        revenue: 98_000_000,  orders: 37 },
+    { name: 'Váy hoa midi',             revenue: 76_000_000,  orders: 29 },
+    { name: 'Áo khoác dù',             revenue: 65_000_000,  orders: 24 },
+    { name: 'Giày sneaker trắng',        revenue: 52_000_000,  orders: 19 },
   ],
 }
 
-// Màn hình yêu cầu nâng cấp Pro
-function ProGateView() {
+function ProGateView({ s, colors }) {
   return (
     <View style={s.proGate}>
       <Text style={s.proGateIcon}>📊</Text>
@@ -82,8 +82,11 @@ function ProGateView() {
 }
 
 export default function QuickReportScreen({ navigation }) {
-  const { isFree } = usePlan()
-  const [selectedPeriod, setSelectedPeriod] = useState(1) // index of PERIODS
+  const { isFree }  = usePlan()
+  const { colors }  = useTheme()
+  const s           = useMemo(() => makeStyles(colors), [colors])
+
+  const [selectedPeriod, setSelectedPeriod] = useState(1)
   const [report,    setReport]    = useState(null)
   const [loading,   setLoading]   = useState(true)
   const [refreshing,setRefreshing]= useState(false)
@@ -101,7 +104,6 @@ export default function QuickReportScreen({ navigation }) {
         },
       })
       const raw = res.data?.data ?? res.data
-      // Chuẩn hóa dữ liệu từ nhiều format backend
       const r = {
         totalRevenue:   raw?.kpi?.totalRevenue   ?? raw?.totalRevenue   ?? MOCK_REPORT.totalRevenue,
         totalOrders:    raw?.kpi?.totalOrders    ?? raw?.totalOrders    ?? MOCK_REPORT.totalOrders,
@@ -138,7 +140,7 @@ export default function QuickReportScreen({ navigation }) {
     fetchReport(PERIODS[idx].days).finally(() => setLoading(false))
   }
 
-  if (isFree) return <ProGateView />
+  if (isFree) return <ProGateView s={s} colors={colors} />
 
   const r = report ?? MOCK_REPORT
   const maxChannelRevenue = Math.max(...(r.channels ?? []).map(c => c.revenue), 1)
@@ -181,10 +183,10 @@ export default function QuickReportScreen({ navigation }) {
           {/* ── KPI Cards ─────────────────────────────────────────────────── */}
           <View style={s.kpiGrid}>
             {[
-              { label: 'Doanh thu',  value: `₫${formatMoney(r.totalRevenue)}`, emoji: '💰', sub: r.revenueTrend !== 0 ? `${r.revenueTrend > 0 ? '▲' : '▼'} ${Math.abs(r.revenueTrend).toFixed(1)}%` : null },
-              { label: 'Đơn hàng',  value: String(r.totalOrders),   emoji: '🛒'  },
-              { label: 'Khách hàng',value: String(r.totalCustomers), emoji: '👤'  },
-              { label: 'Lợi nhuận', value: `₫${formatMoney(r.totalProfit)}`,  emoji: '📈'  },
+              { label: 'Doanh thu',   value: `₫${formatMoney(r.totalRevenue)}`,  emoji: '💰', sub: r.revenueTrend !== 0 ? `${r.revenueTrend > 0 ? '▲' : '▼'} ${Math.abs(r.revenueTrend).toFixed(1)}%` : null },
+              { label: 'Đơn hàng',   value: String(r.totalOrders),               emoji: '🛒' },
+              { label: 'Khách hàng', value: String(r.totalCustomers),             emoji: '👤' },
+              { label: 'Lợi nhuận',  value: `₫${formatMoney(r.totalProfit)}`,    emoji: '📈' },
             ].map((kpi, i) => (
               <View key={i} style={s.kpiCard}>
                 <Text style={s.kpiEmoji}>{kpi.emoji}</Text>
@@ -203,13 +205,13 @@ export default function QuickReportScreen({ navigation }) {
           {r.channels?.length > 0 && (
             <View style={s.section}>
               <Text style={s.sectionLabel}>DOANH THU THEO KÊNH</Text>
-              {r.channels.map((c, i) => (
+              {r.channels.map((ch, i) => (
                 <View key={i} style={{ marginBottom: i < r.channels.length - 1 ? 14 : 0 }}>
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 5 }}>
-                    <Text style={s.channelName}>{c.name}</Text>
+                    <Text style={s.channelName}>{ch.name}</Text>
                     <View style={{ alignItems: 'flex-end' }}>
-                      <Text style={s.channelRevenue}>₫{formatMoney(c.revenue)}</Text>
-                      <Text style={s.channelOrders}>{c.orders} đơn</Text>
+                      <Text style={s.channelRevenue}>₫{formatMoney(ch.revenue)}</Text>
+                      <Text style={s.channelOrders}>{ch.orders} đơn</Text>
                     </View>
                   </View>
                   <View style={s.barBg}>
@@ -217,8 +219,8 @@ export default function QuickReportScreen({ navigation }) {
                       style={[
                         s.barFill,
                         {
-                          width: `${Math.round((c.revenue / maxChannelRevenue) * 100)}%`,
-                          backgroundColor: c.color ?? colors.primary,
+                          width: `${Math.round((ch.revenue / maxChannelRevenue) * 100)}%`,
+                          backgroundColor: ch.color ?? colors.primary,
                         },
                       ]}
                     />
@@ -263,22 +265,18 @@ export default function QuickReportScreen({ navigation }) {
   )
 }
 
-const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.surface },
+const makeStyles = (c) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.surface },
   center:    { paddingVertical: 60, alignItems: 'center' },
 
-  // Period selector
-  periodRow: {
-    flexDirection: 'row', padding: 12, paddingBottom: 6, gap: 8,
-  },
+  periodRow: { flexDirection: 'row', padding: 12, paddingBottom: 6, gap: 8 },
   periodBtn: {
     flex: 1, paddingVertical: 8, borderRadius: radius.md,
-    borderWidth: 1, borderColor: colors.outlineVariant,
-    alignItems: 'center',
+    borderWidth: 1, borderColor: c.outlineVariant, alignItems: 'center',
   },
-  periodBtnActive:     { backgroundColor: colors.primaryContainer, borderColor: colors.primary },
-  periodBtnText:       { fontSize: 13, color: colors.outline },
-  periodBtnTextActive: { color: colors.surface, fontWeight: '700' },
+  periodBtnActive:     { backgroundColor: c.primaryContainer, borderColor: c.primary },
+  periodBtnText:       { fontSize: 13, color: c.outline },
+  periodBtnTextActive: { color: c.surface, fontWeight: '700' },
 
   mockBanner: {
     marginHorizontal: 12, marginBottom: 4,
@@ -288,63 +286,58 @@ const s = StyleSheet.create({
   },
   mockBannerText: { color: '#ffb400', fontSize: 11, textAlign: 'center' },
 
-  // KPI grid
   kpiGrid: { flexDirection: 'row', flexWrap: 'wrap', padding: 8 },
   kpiCard: {
     width: '47%', margin: '1.5%',
-    backgroundColor: colors.surfaceContainerLow,
+    backgroundColor: c.surfaceContainerLow,
     borderRadius: radius.md, padding: 14,
-    borderWidth: 1, borderColor: colors.outlineVariant,
+    borderWidth: 1, borderColor: c.outlineVariant,
   },
   kpiEmoji: { fontSize: 22, marginBottom: 8 },
-  kpiLabel: { fontSize: 11, color: colors.outline },
-  kpiValue: { fontSize: 17, fontWeight: '700', color: colors.onSurface, marginTop: 2 },
+  kpiLabel: { fontSize: 11, color: c.outline },
+  kpiValue: { fontSize: 17, fontWeight: '700', color: c.onSurface, marginTop: 2 },
   kpiSub:   { fontSize: 11, marginTop: 4, fontWeight: '600' },
 
-  // Sections
   section: {
-    backgroundColor: '#1F2937',
+    backgroundColor: c.card,
     borderRadius: radius.md, margin: 12, marginTop: 0, padding: 16,
   },
   sectionLabel: {
-    fontSize: 11, fontWeight: '700', color: '#9CA3AF',
+    fontSize: 11, fontWeight: '700', color: c.textSecondary,
     letterSpacing: 1, textTransform: 'uppercase', marginBottom: 14,
   },
-  channelName:    { fontSize: 13, color: '#F9FAFB', fontWeight: '600' },
-  channelRevenue: { fontSize: 13, color: colors.primary, fontWeight: '700' },
-  channelOrders:  { fontSize: 11, color: '#9CA3AF' },
-  barBg:   { height: 6, backgroundColor: '#374151', borderRadius: 3 },
+  channelName:    { fontSize: 13, color: c.textPrimary, fontWeight: '600' },
+  channelRevenue: { fontSize: 13, color: c.primary, fontWeight: '700' },
+  channelOrders:  { fontSize: 11, color: c.textSecondary },
+  barBg:   { height: 6, backgroundColor: c.cardBorder, borderRadius: 3 },
   barFill: { height: 6, borderRadius: 3 },
 
-  // Top products
   productRow:       { flexDirection: 'row', alignItems: 'center', paddingVertical: 10 },
-  productRowBorder: { borderTopWidth: 1, borderTopColor: '#374151' },
+  productRowBorder: { borderTopWidth: 1, borderTopColor: c.cardBorder },
   productRank:      { fontSize: 18, width: 30 },
-  productName:      { fontSize: 13, color: '#F9FAFB', fontWeight: '600' },
-  productOrders:    { fontSize: 11, color: '#9CA3AF', marginTop: 2 },
-  productRevenue:   { fontSize: 13, color: colors.primary, fontWeight: '700' },
+  productName:      { fontSize: 13, color: c.textPrimary, fontWeight: '600' },
+  productOrders:    { fontSize: 11, color: c.textSecondary, marginTop: 2 },
+  productRevenue:   { fontSize: 13, color: c.primary, fontWeight: '700' },
 
-  // Customers link card
   customerLink: {
-    backgroundColor: colors.surfaceContainerLow,
+    backgroundColor: c.surfaceContainerLow,
     borderRadius: radius.md, margin: 12, marginTop: 0,
-    padding: 14, borderWidth: 1, borderColor: colors.outlineVariant,
+    padding: 14, borderWidth: 1, borderColor: c.outlineVariant,
     alignItems: 'center',
   },
-  customerLinkText: { fontSize: 14, color: colors.primary, fontWeight: '600' },
+  customerLinkText: { fontSize: 14, color: c.primary, fontWeight: '600' },
 
-  // Pro gate
   proGate: {
     flex: 1, alignItems: 'center', justifyContent: 'center',
-    padding: 32, backgroundColor: colors.surface,
+    padding: 32, backgroundColor: c.surface,
   },
-  proGateIcon:  { fontSize: 56, marginBottom: 20 },
-  proGateTitle: { fontSize: 18, fontWeight: '700', color: colors.onSurface, marginBottom: 12, textAlign: 'center' },
-  proGateDesc:  { fontSize: 14, color: colors.outline, textAlign: 'center', lineHeight: 22, marginBottom: 24 },
+  proGateIcon:    { fontSize: 56, marginBottom: 20 },
+  proGateTitle:   { fontSize: 18, fontWeight: '700', color: c.onSurface, marginBottom: 12, textAlign: 'center' },
+  proGateDesc:    { fontSize: 14, color: c.outline, textAlign: 'center', lineHeight: 22, marginBottom: 24 },
   proFeatureList: { alignSelf: 'stretch', marginBottom: 28 },
   proFeatureItem: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
   proFeatureCheck:{ fontSize: 15, color: '#4ae176', marginRight: 10, fontWeight: '700' },
-  proFeatureText: { fontSize: 14, color: colors.onSurface },
+  proFeatureText: { fontSize: 14, color: c.onSurface },
   upgradeBtn: {
     backgroundColor: '#4ae176',
     borderRadius: radius.md, paddingVertical: 14, paddingHorizontal: 24,

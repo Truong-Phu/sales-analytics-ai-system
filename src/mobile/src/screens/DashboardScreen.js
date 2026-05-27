@@ -1,12 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react'
 import {
-  View, Text, ScrollView, StyleSheet, Animated,
+  View, Text, ScrollView, StyleSheet, Animated, Image,
   TouchableOpacity, ActivityIndicator, RefreshControl,
   Dimensions,
 } from 'react-native'
 import { useAuth } from '../context/AuthContext'
+import { useTheme } from '../context/ThemeContext'
 import api from '../api/axios'
-import { colors, radius } from '../components/theme'
+import { radius } from '../components/theme'
+
+const BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://192.168.1.10:5136'
 
 // ─── react-native-svg KHÔNG có trong package.json → dùng bảng fallback ───────
 // TODO: cài react-native-svg nếu muốn dùng line chart SVG thật
@@ -64,6 +67,28 @@ const MOCK_ALERTS = [
   { title: 'Doanh thu giảm bất thường', body: 'Kênh Lazada giảm 23% hôm nay',        type: 'error'   },
 ]
 
+// ─── Quick period presets cho date filter ────────────────────────────────────
+const PERIOD_PRESETS = [
+  { key: 'today', label: 'Hôm nay', offsetDays: 0,    trendDays: 7  },
+  { key: '7d',    label: '7 ngày',  offsetDays: 6,    trendDays: 7  },
+  { key: '30d',   label: '30 ngày', offsetDays: 29,   trendDays: 30 },
+  { key: '90d',   label: '90 ngày', offsetDays: 89,   trendDays: 90 },
+  { key: 'all',   label: 'Tất cả',  offsetDays: null, trendDays: 90 },
+]
+
+function isoDate(d) { return d.toISOString().slice(0, 10) }
+function todayStr()  { return isoDate(new Date()) }
+function getPeriodRange(periodKey) {
+  const today = new Date()
+  const todayS = isoDate(today)
+  const preset = PERIOD_PRESETS.find(p => p.key === periodKey) ?? PERIOD_PRESETS[0]
+  if (preset.offsetDays === null) return { from: '2020-01-01', to: todayS }
+  if (preset.offsetDays === 0)   return { from: todayS, to: todayS }
+  const fromD = new Date(today)
+  fromD.setDate(today.getDate() - preset.offsetDays)
+  return { from: isoDate(fromD), to: todayS }
+}
+
 // ─── Màu brand chuẩn theo kênh (nhất quán với web) ──────────────────────────
 // Quy tắc: dùng màu chính thức của từng sàn, đủ sáng để đọc được trên nền tối
 const CHANNEL_COLORS = {
@@ -75,16 +100,11 @@ const CHANNEL_COLORS = {
   Zalo:     '#0068FF', // xanh Zalo
 }
 function channelColor(ch = '') {
-  return CHANNEL_COLORS[ch] ?? colors.secondary
+  return CHANNEL_COLORS[ch] ?? '#adc6ff'
 }
 
-// ─── Màu semantic cho lợi nhuận / ROI (dương=xanh, âm=đỏ) ──────────────────
-// Quy tắc: CHỈ áp dụng cho metric có chiều hướng lãi/lỗ
-const PROFIT_POSITIVE = '#34D399' // emerald-400, đủ contrast trên nền tối
-const PROFIT_NEGATIVE = '#F87171' // red-400,     đủ contrast trên nền tối
-
 // ─── Skeleton placeholder ─────────────────────────────────────────────────────
-function Skeleton({ width = '100%', height = 16, style }) {
+function Skeleton({ width = '100%', height = 16, style, bgColor }) {
   const anim = useRef(new Animated.Value(0.4)).current
   useEffect(() => {
     const loop = Animated.loop(
@@ -101,7 +121,7 @@ function Skeleton({ width = '100%', height = 16, style }) {
       style={[
         {
           width, height,
-          backgroundColor: colors.surfaceContainerHigh,
+          backgroundColor: bgColor ?? '#1c2b3c',
           borderRadius: radius.sm,
           opacity: anim,
         },
@@ -111,19 +131,33 @@ function Skeleton({ width = '100%', height = 16, style }) {
   )
 }
 
+// ─── Tách chuỗi tiền tệ thành số và đơn vị để render khác kích thước ─────────
+// "125.4 triệu" → { num: "125.4", unit: "triệu" }
+// "1.2 tỷ"      → { num: "1.2",   unit: "tỷ"    }
+// "500K"         → { num: "500",   unit: "K"     }
+// "125"          → { num: "125",   unit: ""      }
+function splitMoneyStr(str) {
+  const s = String(str ?? '').trim()
+  const m = s.match(/^([\d,\.]+)\s*(triệu|tỷ|K|ng)?$/)
+  if (!m) return { num: s, unit: '' }
+  return { num: m[1], unit: m[2] ?? '' }
+}
+
 // ─── KPI Card ─────────────────────────────────────────────────────────────────
-// valueColor: truyền vào khi metric có chiều hướng lãi/lỗ (profit, ROI)
-// Còn lại (doanh thu, đơn hàng) dùng màu neutral mặc định
-function KpiCard({ label, value, pct, emoji, valueColor }) {
+function KpiCard({ label, value, pct, emoji, valueColor, colors }) {
   const isUp   = pct > 0
   const isDown = pct < 0
+  const { num, unit } = splitMoneyStr(value)
   return (
-    <View style={s.kpiCard}>
+    <View style={[s.kpiCard, { backgroundColor: colors.surfaceContainerLow, borderColor: colors.outlineVariant }]}>
       <Text style={s.kpiEmoji}>{emoji}</Text>
-      <Text style={s.kpiLabel}>{label}</Text>
-      <Text style={[s.kpiValue, valueColor ? { color: valueColor } : null]}>₫{value}</Text>
+      <Text style={[s.kpiLabel, { color: colors.onSurfaceVariant }]}>{label}</Text>
+      <Text style={[s.kpiValue, { color: valueColor ?? colors.onSurface }]}>
+        ₫{num}
+        {unit ? <Text style={[s.kpiUnit, { color: colors.onSurfaceVariant }]}> {unit}</Text> : null}
+      </Text>
       {pct !== undefined && pct !== null && (
-        <Text style={[s.kpiTrend, isUp ? s.up : isDown ? s.down : s.flat]}>
+        <Text style={[s.kpiTrend, isUp ? { color: colors.success } : isDown ? { color: colors.danger } : { color: colors.outline }]}>
           {isUp ? '▲' : isDown ? '▼' : '–'} {Math.abs(pct).toFixed(1)}%
         </Text>
       )}
@@ -131,16 +165,16 @@ function KpiCard({ label, value, pct, emoji, valueColor }) {
   )
 }
 
-function KpiCardCount({ label, value, pct, emoji }) {
+function KpiCardCount({ label, value, pct, emoji, colors }) {
   const isUp   = pct > 0
   const isDown = pct < 0
   return (
-    <View style={s.kpiCard}>
+    <View style={[s.kpiCard, { backgroundColor: colors.surfaceContainerLow, borderColor: colors.outlineVariant }]}>
       <Text style={s.kpiEmoji}>{emoji}</Text>
-      <Text style={s.kpiLabel}>{label}</Text>
-      <Text style={s.kpiValue}>{String(value ?? 0)}</Text>
+      <Text style={[s.kpiLabel, { color: colors.onSurfaceVariant }]}>{label}</Text>
+      <Text style={[s.kpiValue, { color: colors.onSurface }]}>{String(value ?? 0)}</Text>
       {pct !== undefined && pct !== null && (
-        <Text style={[s.kpiTrend, isUp ? s.up : isDown ? s.down : s.flat]}>
+        <Text style={[s.kpiTrend, isUp ? { color: colors.success } : isDown ? { color: colors.danger } : { color: colors.outline }]}>
           {isUp ? '▲' : isDown ? '▼' : '–'} {Math.abs(pct).toFixed(1)}%
         </Text>
       )}
@@ -150,44 +184,44 @@ function KpiCardCount({ label, value, pct, emoji }) {
 
 // ─── Skeleton Dashboard ───────────────────────────────────────────────────────
 function DashboardSkeleton() {
+  const { colors } = useTheme()
   return (
-    <ScrollView style={s.container} scrollEnabled={false}>
+    <ScrollView style={{ flex: 1, backgroundColor: colors.surface }} scrollEnabled={false}>
       {/* Skeleton header */}
-      <View style={{ padding: 16, paddingTop: 52, paddingBottom: 14, backgroundColor: '#0d1c2d', flexDirection: 'row', alignItems: 'center' }}>
-        <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#1c2b3c', marginRight: 10 }} />
+      <View style={{ padding: 16, paddingTop: 52, paddingBottom: 14, backgroundColor: colors.surfaceContainerLow, flexDirection: 'row', alignItems: 'center' }}>
+        <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: colors.surfaceContainerHigh, marginRight: 10 }} />
         <View>
-          <Skeleton width={100} height={12} style={{ marginBottom: 6 }} />
-          <Skeleton width={160} height={18} style={{ marginBottom: 4 }} />
-          <Skeleton width={120} height={11} />
+          <Skeleton width={100} height={12} bgColor={colors.surfaceContainerHigh} style={{ marginBottom: 6 }} />
+          <Skeleton width={160} height={18} bgColor={colors.surfaceContainerHigh} style={{ marginBottom: 4 }} />
+          <Skeleton width={120} height={11} bgColor={colors.surfaceContainerHigh} />
         </View>
       </View>
-      {/* Mock banner placeholder */}
-      <View style={{ marginHorizontal: 16, height: 32 }} />
+      <View style={{ marginHorizontal: 16, height: 8 }} />
       {/* KPI grid skeleton */}
       <View style={s.kpiGrid}>
         {[0, 1, 2, 3].map(i => (
-          <View key={i} style={[s.kpiCard, { gap: 8 }]}>
-            <Skeleton width={28} height={28} style={{ borderRadius: 14 }} />
-            <Skeleton width={70} height={12} />
-            <Skeleton width={90} height={22} />
-            <Skeleton width={50} height={12} />
+          <View key={i} style={[s.kpiCard, { backgroundColor: colors.surfaceContainerLow, borderColor: colors.outlineVariant, gap: 8 }]}>
+            <Skeleton width={28} height={28} bgColor={colors.surfaceContainerHigh} style={{ borderRadius: 14 }} />
+            <Skeleton width={70} height={12} bgColor={colors.surfaceContainerHigh} />
+            <Skeleton width={90} height={22} bgColor={colors.surfaceContainerHigh} />
+            <Skeleton width={50} height={12} bgColor={colors.surfaceContainerHigh} />
           </View>
         ))}
       </View>
       {/* Trend skeleton */}
-      <Skeleton width='92%' height={13} style={{ marginHorizontal: 16, marginTop: 20, marginBottom: 10 }} />
-      <View style={[s.darkCard, { height: 110, marginHorizontal: 16 }]} />
+      <Skeleton width='92%' height={13} bgColor={colors.surfaceContainerHigh} style={{ marginHorizontal: 16, marginTop: 20, marginBottom: 10 }} />
+      <View style={{ height: 110, marginHorizontal: 16, borderRadius: 12, backgroundColor: colors.surfaceContainerLow }} />
       {/* Top products skeleton */}
-      <Skeleton width='92%' height={13} style={{ marginHorizontal: 16, marginTop: 20, marginBottom: 10 }} />
-      <View style={[s.darkCard, { marginHorizontal: 16 }]}>
+      <Skeleton width='92%' height={13} bgColor={colors.surfaceContainerHigh} style={{ marginHorizontal: 16, marginTop: 20, marginBottom: 10 }} />
+      <View style={{ marginHorizontal: 16, borderRadius: 12, backgroundColor: colors.surfaceContainerLow, padding: 12 }}>
         {[0,1,2,3,4].map(i => (
-          <View key={i} style={[s.productRow, i > 0 && s.borderTop]}>
-            <Skeleton width={20} height={14} />
+          <View key={i} style={{ flexDirection: 'row', alignItems: 'center', padding: 10, borderTopWidth: i > 0 ? 1 : 0, borderTopColor: colors.outlineVariant }}>
+            <Skeleton width={20} height={14} bgColor={colors.surfaceContainerHigh} />
             <View style={{ flex: 1, marginHorizontal: 10, gap: 6 }}>
-              <Skeleton width='80%' height={14} />
-              <Skeleton width={60} height={11} />
+              <Skeleton width='80%' height={14} bgColor={colors.surfaceContainerHigh} />
+              <Skeleton width={60} height={11} bgColor={colors.surfaceContainerHigh} />
             </View>
-            <Skeleton width={60} height={14} />
+            <Skeleton width={60} height={14} bgColor={colors.surfaceContainerHigh} />
           </View>
         ))}
       </View>
@@ -230,6 +264,7 @@ const ROLE_COLORS = {
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function DashboardScreen({ navigation }) {
   const { user, logout } = useAuth()
+  const { colors, isDark } = useTheme()
 
   // ── State riêng cho từng section ──────────────────────────────────────────
   const [kpi,            setKpi]            = useState(null)
@@ -239,68 +274,65 @@ export default function DashboardScreen({ navigation }) {
   const [alerts,         setAlerts]         = useState([])
   const [aiInsights,     setAiInsights]     = useState([])
 
-  const [loading,    setLoading]    = useState(true)
-  const [refreshing, setRefreshing] = useState(false)
-  const [isMock,     setIsMock]     = useState(false)
+  const [loading,        setLoading]        = useState(true)
+  const [refreshing,     setRefreshing]     = useState(false)
+  const [isMock,         setIsMock]         = useState(false)
+  const [selectedPeriod, setSelectedPeriod] = useState('today')
+  const [avatarUrl,      setAvatarUrl]      = useState(null)
+  const [avatarError,    setAvatarError]    = useState(false)
 
-  // ── Chuẩn hóa KPI từ nhiều format backend ──────────────────────────────────
-  const normalizeKpi = (raw) => ({
-    todayRevenue:
-      raw?.kpi?.todayRevenue   ?? raw?.kpi?.totalRevenue   ??
-      raw?.todayRevenue        ?? raw?.totalRevenue        ??
-      raw?.revenue             ?? 0,
-    todayRevenueVsYesterday:
-      raw?.kpi?.todayRevenueVsYesterday ?? raw?.kpi?.revenueTrend ??
-      raw?.todayRevenueVsYesterday      ?? raw?.revenueTrend      ?? 0,
-    todayOrders:
-      raw?.kpi?.todayOrders ?? raw?.kpi?.totalOrders ??
-      raw?.todayOrders      ?? raw?.totalOrders      ?? 0,
-    todayOrdersVsYesterday:
-      raw?.kpi?.todayOrdersVsYesterday ?? raw?.kpi?.ordersTrend ??
-      raw?.todayOrdersVsYesterday      ?? raw?.ordersTrend      ?? 0,
-    newCustomers:
-      raw?.kpi?.newCustomers ?? raw?.newCustomers ?? 0,
-    newCustomersVsYesterday:
-      raw?.kpi?.newCustomersVsYesterday ?? raw?.kpi?.customersTrend ??
-      raw?.newCustomersVsYesterday      ?? raw?.customersTrend      ?? 0,
-    todayProfit:
-      raw?.kpi?.todayProfit ?? raw?.kpi?.totalProfit ??
-      raw?.todayProfit      ?? raw?.totalProfit      ??
-      (raw?.kpi?.totalRevenue ?? raw?.totalRevenue ?? 0) * 0.3,
-    todayProfitVsYesterday:
-      raw?.kpi?.todayProfitVsYesterday ?? raw?.kpi?.revenueTrend ??
-      raw?.todayProfitVsYesterday      ?? raw?.revenueTrend      ?? 0,
-  })
-
-  // ── Fetch KPI từ /api/dashboard/summary (hoặc /api/dashboard) ─────────────
-  const fetchKpi = async () => {
-    try {
-      const res = await api.get('/api/dashboard/summary')
-      const raw = res.data?.data ?? res.data
-      return { data: normalizeKpi(raw), mock: false }
-    } catch {
+  // ── Fetch KPI theo khoảng thời gian ──────────────────────────────────────────
+  // isToday=true → dùng today-vs-yesterday để hiện % so hôm qua
+  // isToday=false → dùng /api/dashboard với {from, to} → hiện % so kỳ trước từ backend
+  const fetchKpi = async (from, to, isToday) => {
+    if (isToday) {
+      // Attempt 1: endpoint so sánh hôm nay vs hôm qua
       try {
-        const to   = new Date()
-        const from = new Date(Date.now() - 7 * 86_400_000)
-        const res  = await api.get('/api/dashboard', {
-          params: {
-            from: from.toISOString().slice(0, 10),
-            to:   to.toISOString().slice(0, 10),
-            channel: 'all',
-          },
-        })
+        const res = await api.get('/api/dashboard/today-vs-yesterday')
         const raw = res.data?.data ?? res.data
-        return { data: normalizeKpi(raw), mock: false }
-      } catch {
-        return { data: MOCK_KPI, mock: true }
+        return {
+          data: {
+            todayRevenue:            raw?.today?.revenue       ?? 0,
+            todayRevenueVsYesterday: raw?.revenuePct           ?? 0,
+            todayOrders:             raw?.today?.orders        ?? 0,
+            todayOrdersVsYesterday:  raw?.ordersPct            ?? 0,
+            newCustomers:            raw?.today?.newCustomers  ?? 0,
+            newCustomersVsYesterday: raw?.customersPct         ?? 0,
+            todayProfit:             raw?.today?.profit        ?? 0,
+            todayProfitVsYesterday:  raw?.revenuePct           ?? 0,
+          },
+          mock: false,
+        }
+      } catch { /* tiếp tục fallback */ }
+    }
+
+    // Fallback / non-today: /api/dashboard với date range
+    try {
+      const res = await api.get('/api/dashboard', { params: { from, to } })
+      const raw = res.data?.data ?? res.data
+      const kpi = raw?.kpi ?? raw
+      return {
+        data: {
+          todayRevenue:            kpi?.totalRevenue       ?? 0,
+          todayRevenueVsYesterday: kpi?.revenueGrowthPct   ?? 0,
+          todayOrders:             kpi?.totalOrders         ?? 0,
+          todayOrdersVsYesterday:  kpi?.ordersGrowthPct     ?? 0,
+          newCustomers:            kpi?.newCustomers         ?? 0,
+          newCustomersVsYesterday: kpi?.customersGrowthPct  ?? 0,
+          todayProfit:             kpi?.totalProfit          ?? 0,
+          todayProfitVsYesterday:  kpi?.revenueGrowthPct    ?? 0,
+        },
+        mock: false,
       }
+    } catch {
+      return { data: MOCK_KPI, mock: true }
     }
   }
 
-  // ── Fetch xu hướng doanh thu 7 ngày ──────────────────────────────────────
-  const fetchRevenueTrend = async () => {
+  // ── Fetch xu hướng doanh thu theo số ngày chọn ───────────────────────────
+  const fetchRevenueTrend = async (trendDays = 7) => {
     try {
-      const res  = await api.get('/api/dashboard/revenue-trend', { params: { days: 7 } })
+      const res  = await api.get('/api/dashboard/revenue-trend', { params: { days: trendDays } })
       const raw  = res.data?.data ?? res.data
       const list = Array.isArray(raw) ? raw : (raw?.trend ?? raw?.data ?? [])
       // Chuẩn hóa sang {label, value}
@@ -319,9 +351,9 @@ export default function DashboardScreen({ navigation }) {
   }
 
   // ── Fetch top 5 sản phẩm bán chạy ────────────────────────────────────────
-  const fetchTopProducts = async () => {
+  const fetchTopProducts = async (from, to) => {
     try {
-      const res  = await api.get('/api/dashboard/top-products', { params: { limit: 5 } })
+      const res  = await api.get('/api/dashboard/top-products', { params: { limit: 5, from, to } })
       const raw  = res.data?.data ?? res.data
       const list = Array.isArray(raw) ? raw : (raw?.products ?? raw?.items ?? [])
       const normalized = list.slice(0, 5).map(p => ({
@@ -337,9 +369,9 @@ export default function DashboardScreen({ navigation }) {
   }
 
   // ── Fetch doanh thu theo kênh ─────────────────────────────────────────────
-  const fetchChannelRevenue = async () => {
+  const fetchChannelRevenue = async (from, to) => {
     try {
-      const res  = await api.get('/api/dashboard/channel-revenue')
+      const res  = await api.get('/api/dashboard/channel-revenue', { params: { from, to } })
       const raw  = res.data?.data ?? res.data
       const list = Array.isArray(raw) ? raw : (raw?.channels ?? raw?.items ?? [])
       const normalized = list.map(c => ({
@@ -376,24 +408,33 @@ export default function DashboardScreen({ navigation }) {
     try {
       const res  = await api.get('/api/ai/insights')
       const raw  = res.data?.data ?? res.data
-      const list = Array.isArray(raw) ? raw : (raw?.insights ?? raw?.items ?? [])
-      return list.slice(0, 4).map(ins => ({
-        type:  ins.type   ?? 'info',
-        level: ins.level  ?? ins.severity ?? 'info',
-        text:  ins.text   ?? ins.message  ?? ins.description ?? '',
-      }))
+      // Thử nhiều cấu trúc dữ liệu khác nhau từ AI service
+      const list = Array.isArray(raw)
+        ? raw
+        : (raw?.insights ?? raw?.items ?? raw?.recommendations ?? raw?.anomalies ?? [])
+      const result = list.slice(0, 4).map(ins => ({
+        type:  ins.type   ?? ins.category ?? 'info',
+        level: ins.level  ?? ins.severity ?? ins.priority ?? 'info',
+        text:  ins.text   ?? ins.message  ?? ins.description ?? ins.content ?? '',
+      })).filter(ins => ins.text.trim())
+      // Nếu API không trả về gì hữu ích → dùng mock để màn hình không trống
+      return result.length ? result : MOCK_INSIGHTS
     } catch {
       return MOCK_INSIGHTS
     }
   }
 
   // ── Tải song song tất cả sections bằng Promise.all ────────────────────────
-  const loadData = async () => {
+  const loadData = async (periodKey = 'today') => {
+    const { from, to } = getPeriodRange(periodKey)
+    const isToday = periodKey === 'today'
+    const preset  = PERIOD_PRESETS.find(p => p.key === periodKey) ?? PERIOD_PRESETS[0]
+
     const [kpiResult, trend, products, channels, alertList, insightList] = await Promise.all([
-      fetchKpi(),
-      fetchRevenueTrend(),
-      fetchTopProducts(),
-      fetchChannelRevenue(),
+      fetchKpi(from, to, isToday),
+      fetchRevenueTrend(preset.trendDays),
+      fetchTopProducts(from, to),
+      fetchChannelRevenue(from, to),
       fetchAlerts(),
       fetchInsights(),
     ])
@@ -407,12 +448,23 @@ export default function DashboardScreen({ navigation }) {
   }
 
   useEffect(() => {
-    loadData().finally(() => setLoading(false))
+    setLoading(true)
+    loadData(selectedPeriod).finally(() => setLoading(false))
+  }, [selectedPeriod])
+
+  // Fetch avatar từ profile (fire-and-forget, không block UI)
+  useEffect(() => {
+    api.get('/api/users/me')
+      .then(res => {
+        const raw = res.data?.data ?? res.data
+        if (raw?.avatarUrl) setAvatarUrl(raw.avatarUrl)
+      })
+      .catch(() => {})
   }, [])
 
   const onRefresh = async () => {
     setRefreshing(true)
-    await loadData()
+    await loadData(selectedPeriod)
     setRefreshing(false)
   }
 
@@ -422,31 +474,49 @@ export default function DashboardScreen({ navigation }) {
   const kpiData     = kpi ?? MOCK_KPI
   const maxChannel  = Math.max(...channelRevenue.map(c => c.revenue), 1)
 
+  const cardBg     = isDark ? '#1F2937' : colors.surfaceContainerLow
+  const cardBorder = isDark ? '#374151' : colors.outlineVariant
+  const textMuted  = isDark ? '#9CA3AF' : colors.outline
+  const textBright = isDark ? '#F9FAFB' : colors.onSurface
+
   return (
     <ScrollView
-      style={s.container}
+      style={[s.container, { backgroundColor: colors.surface }]}
       refreshControl={
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
       }
     >
       {/* ── Header ──────────────────────────────────────────────────────── */}
       {(() => {
-        const roleCfg = ROLE_COLORS[user?.role] ?? { color: colors.secondary, bg: 'rgba(173,198,255,0.15)', label: user?.role ?? 'User' }
+        const roleCfg     = ROLE_COLORS[user?.role] ?? { color: colors.secondary, bg: 'rgba(173,198,255,0.15)', label: user?.role ?? 'User' }
         const companyName = user?.companyName ?? user?.company ?? null
-        const companyInitial = companyName ? companyName.charAt(0).toUpperCase() : 'S'
+        const displayName = user?.fullName || user?.name || user?.username || 'Người dùng'
+        const initials    = displayName.split(' ').filter(Boolean).slice(-2).map(w => w[0].toUpperCase()).join('')
+        const avatarUri   = avatarUrl
+          ? (avatarUrl.startsWith('http') ? avatarUrl : `${BASE_URL}${avatarUrl.startsWith('/') ? '' : '/'}${avatarUrl}`)
+          : null
         return (
-          <View style={s.header}>
-            {/* Logo chữ cái đầu + thông tin */}
+          <View style={[s.header, { backgroundColor: colors.surfaceContainerLow, borderBottomColor: colors.outlineVariant }]}>
+            {/* Avatar người dùng + thông tin */}
             <View style={s.headerLeft}>
-              <View style={s.companyLogo}>
-                <Text style={s.companyLogoText}>{companyInitial}</Text>
-              </View>
+              {/* Avatar: ảnh thật nếu có, fallback chữ cái */}
+              {avatarUri && !avatarError ? (
+                <Image
+                  source={{ uri: avatarUri }}
+                  style={s.userAvatar}
+                  onError={() => setAvatarError(true)}
+                />
+              ) : (
+                <View style={[s.userAvatarFallback, { backgroundColor: colors.primaryContainer }]}>
+                  <Text style={s.userAvatarText}>{initials}</Text>
+                </View>
+              )}
               <View>
                 {companyName && (
-                  <Text style={s.companyName} numberOfLines={1}>{companyName}</Text>
+                  <Text style={[s.companyName, { color: colors.outline }]} numberOfLines={1}>{companyName}</Text>
                 )}
-                <Text style={s.greeting}>Xin chào, {user?.name?.split(' ').pop()} 👋</Text>
-                <Text style={s.dateText}>
+                <Text style={[s.greeting, { color: colors.onSurface }]} numberOfLines={1}>{displayName}</Text>
+                <Text style={[s.dateText, { color: colors.outline }]}>
                   {new Date().toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })}
                 </Text>
               </View>
@@ -477,35 +547,71 @@ export default function DashboardScreen({ navigation }) {
         </View>
       )}
 
+      {/* ── Date range filter chips ──────────────────────────────────────── */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={s.periodBar}
+        contentContainerStyle={s.periodBarContent}
+      >
+        {PERIOD_PRESETS.map(p => {
+          const active = selectedPeriod === p.key
+          return (
+            <TouchableOpacity
+              key={p.key}
+              onPress={() => setSelectedPeriod(p.key)}
+              style={[
+                s.periodChip,
+                {
+                  backgroundColor: active ? colors.primaryContainer : colors.surfaceContainerLow,
+                  borderColor: active ? colors.primary : colors.outlineVariant,
+                },
+              ]}
+            >
+              <Text style={[s.periodChipText, { color: active ? colors.primary : colors.onSurfaceVariant }]}>
+                {p.label}
+              </Text>
+            </TouchableOpacity>
+          )
+        })}
+      </ScrollView>
+
       {/* ════════════════════════════════════════════════════════════════════
           SECTION 1 — KPI Cards (4 card: Doanh thu, Đơn hàng, Khách mới, Lợi nhuận)
           ════════════════════════════════════════════════════════════════════ */}
-      <Text style={s.sectionLabel}>KPI HÔM NAY</Text>
+      <Text style={[s.sectionLabel, { color: textMuted }]}>
+        {selectedPeriod === 'today' ? 'KPI HÔM NAY'
+          : `KPI ${PERIOD_PRESETS.find(p => p.key === selectedPeriod)?.label?.toUpperCase() ?? ''}`}
+      </Text>
       <View style={s.kpiGrid}>
         <KpiCard
           label="Doanh thu"
           value={formatMoney(kpiData.todayRevenue)}
           pct={kpiData.todayRevenueVsYesterday}
           emoji="💰"
+          colors={colors}
         />
         <KpiCardCount
           label="Đơn hàng"
           value={kpiData.todayOrders}
           pct={kpiData.todayOrdersVsYesterday}
           emoji="🛒"
+          colors={colors}
         />
         <KpiCardCount
           label="Khách mới"
           value={kpiData.newCustomers}
           pct={kpiData.newCustomersVsYesterday}
           emoji="👤"
+          colors={colors}
         />
         <KpiCard
           label="Lợi nhuận"
           value={formatMoney(kpiData.todayProfit)}
           pct={kpiData.todayProfitVsYesterday}
           emoji="📈"
-          valueColor={kpiData.todayProfit >= 0 ? PROFIT_POSITIVE : PROFIT_NEGATIVE}
+          valueColor={kpiData.todayProfit >= 0 ? colors.success : colors.danger}
+          colors={colors}
         />
       </View>
 
@@ -514,8 +620,10 @@ export default function DashboardScreen({ navigation }) {
           react-native-svg chưa cài → hiện bảng 7 dòng thay cho line chart
           ════════════════════════════════════════════════════════════════════ */}
       {revenueTrend.length > 0 && (
-        <View style={s.darkCard}>
-          <Text style={s.darkCardLabel}>XU HƯỚNG DOANH THU 7 NGÀY</Text>
+        <View style={[s.darkCard, { backgroundColor: cardBg, borderColor: cardBorder, borderWidth: 1 }]}>
+          <Text style={[s.darkCardLabel, { color: textMuted }]}>
+            {`XU HƯỚNG DOANH THU ${(PERIOD_PRESETS.find(p => p.key === selectedPeriod)?.trendDays ?? 7)} NGÀY`}
+          </Text>
           {/* Bảng fallback (thay cho SVG line chart — cài react-native-svg để nâng cấp) */}
           {revenueTrend.map((d, i) => (
             <View
@@ -528,21 +636,20 @@ export default function DashboardScreen({ navigation }) {
                 borderBottomColor: '#374151',
               }}
             >
-              <Text style={{ color: '#9CA3AF', fontSize: 13, width: 36 }}>{d.label}</Text>
-              {/* Mini bar trực quan */}
+              <Text style={{ color: textMuted, fontSize: 13, width: 36 }}>{d.label}</Text>
               <View style={{ flex: 1, justifyContent: 'center', marginHorizontal: 10 }}>
-                <View style={{ height: 6, backgroundColor: '#374151', borderRadius: 3 }}>
+                <View style={{ height: 6, backgroundColor: cardBorder, borderRadius: 3 }}>
                   <View
                     style={{
                       height: 6,
                       width: `${Math.round((d.value / Math.max(...revenueTrend.map(x => x.value), 1)) * 100)}%`,
-                      backgroundColor: i === revenueTrend.length - 1 ? '#6366F1' : '#4F46E5' + '88',
+                      backgroundColor: i === revenueTrend.length - 1 ? colors.interactive : colors.interactive + '88',
                       borderRadius: 3,
                     }}
                   />
                 </View>
               </View>
-              <Text style={{ color: '#F9FAFB', fontSize: 13, textAlign: 'right', minWidth: 72 }}>
+              <Text style={{ color: textBright, fontSize: 13, textAlign: 'right', minWidth: 72 }}>
                 ₫{formatMoney(d.value)}
               </Text>
             </View>
@@ -554,8 +661,8 @@ export default function DashboardScreen({ navigation }) {
           SECTION 3 — Top 5 sản phẩm bán chạy
           ════════════════════════════════════════════════════════════════════ */}
       {topProducts.length > 0 && (
-        <View style={s.darkCard}>
-          <Text style={s.darkCardLabel}>TOP 5 SẢN PHẨM</Text>
+        <View style={[s.darkCard, { backgroundColor: cardBg, borderColor: cardBorder, borderWidth: 1 }]}>
+          <Text style={[s.darkCardLabel, { color: textMuted }]}>TOP 5 SẢN PHẨM</Text>
           {topProducts.map((p, i) => (
             <View
               key={i}
@@ -564,23 +671,19 @@ export default function DashboardScreen({ navigation }) {
                 alignItems: 'center',
                 paddingVertical: 10,
                 borderBottomWidth: i < 4 ? 1 : 0,
-                borderBottomColor: '#374151',
+                borderBottomColor: cardBorder,
               }}
             >
-              {/* Huy chương cho top 3, số thứ tự cho 4-5 */}
               <Text style={{ fontSize: 18, width: 30 }}>
                 {i === 0 ? '🏆' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`}
               </Text>
               <View style={{ flex: 1, marginLeft: 8 }}>
-                <Text
-                  style={{ color: '#F9FAFB', fontWeight: '600', fontSize: 14 }}
-                  numberOfLines={1}
-                >
+                <Text style={{ color: textBright, fontWeight: '600', fontSize: 14 }} numberOfLines={1}>
                   {p.name}
                 </Text>
-                <Text style={{ color: '#9CA3AF', fontSize: 12 }}>{p.channel}</Text>
+                <Text style={{ color: textMuted, fontSize: 12 }}>{p.channel}</Text>
               </View>
-              <Text style={{ color: '#6366F1', fontWeight: '700', fontSize: 13 }}>
+              <Text style={{ color: colors.interactive, fontWeight: '700', fontSize: 13 }}>
                 ₫{formatMoney(p.revenue)}
               </Text>
             </View>
@@ -592,15 +695,15 @@ export default function DashboardScreen({ navigation }) {
           SECTION 4 — Doanh thu theo kênh (progress bar ngang)
           ════════════════════════════════════════════════════════════════════ */}
       {channelRevenue.length > 0 && (
-        <View style={s.darkCard}>
-          <Text style={s.darkCardLabel}>DOANH THU THEO KÊNH</Text>
+        <View style={[s.darkCard, { backgroundColor: cardBg, borderColor: cardBorder, borderWidth: 1 }]}>
+          <Text style={[s.darkCardLabel, { color: textMuted }]}>DOANH THU THEO KÊNH</Text>
           {channelRevenue.map((c, i) => (
             <View key={i} style={{ marginBottom: i < channelRevenue.length - 1 ? 12 : 0 }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
-                <Text style={{ color: '#F9FAFB', fontSize: 13 }}>{c.channel}</Text>
-                <Text style={{ color: '#9CA3AF', fontSize: 13 }}>₫{formatMoney(c.revenue)}</Text>
+                <Text style={{ color: textBright, fontSize: 13 }}>{c.channel}</Text>
+                <Text style={{ color: textMuted,  fontSize: 13 }}>₫{formatMoney(c.revenue)}</Text>
               </View>
-              <View style={{ height: 6, backgroundColor: '#374151', borderRadius: 3 }}>
+              <View style={{ height: 6, backgroundColor: cardBorder, borderRadius: 3 }}>
                 <View
                   style={{
                     height: 6,
@@ -619,8 +722,8 @@ export default function DashboardScreen({ navigation }) {
           SECTION 4B — AI Insights (tối đa 4 items)
           ════════════════════════════════════════════════════════════════════ */}
       {aiInsights.length > 0 && (
-        <View style={s.darkCard}>
-          <Text style={s.darkCardLabel}>AI INSIGHTS</Text>
+        <View style={[s.darkCard, { backgroundColor: cardBg, borderColor: cardBorder, borderWidth: 1 }]}>
+          <Text style={[s.darkCardLabel, { color: textMuted }]}>AI INSIGHTS</Text>
           {aiInsights.map((ins, i) => {
             const cfg  = INSIGHT_CONFIG[ins.type] ?? INSIGHT_CONFIG.info
             const lvl  = LEVEL_BADGE[ins.level]   ?? LEVEL_BADGE.info
@@ -639,7 +742,7 @@ export default function DashboardScreen({ navigation }) {
               >
                 <Text style={{ fontSize: 18, marginRight: 10 }}>{cfg.emoji}</Text>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ color: '#F9FAFB', fontSize: 13, lineHeight: 18 }}>
+                  <Text style={{ color: textBright, fontSize: 13, lineHeight: 18 }}>
                     {ins.text}
                   </Text>
                 </View>
@@ -656,8 +759,8 @@ export default function DashboardScreen({ navigation }) {
           SECTION 5 — Cảnh báo nhanh (chỉ hiện nếu có alerts)
           ════════════════════════════════════════════════════════════════════ */}
       {alerts.length > 0 && (
-        <View style={s.darkCard}>
-          <Text style={s.darkCardLabel}>CẢNH BÁO NHANH</Text>
+        <View style={[s.darkCard, { backgroundColor: cardBg, borderColor: cardBorder, borderWidth: 1 }]}>
+          <Text style={[s.darkCardLabel, { color: textMuted }]}>CẢNH BÁO NHANH</Text>
           {alerts.map((a, i) => (
             <View
               key={i}
@@ -698,7 +801,7 @@ export default function DashboardScreen({ navigation }) {
             onPress={() => navigation?.navigate('Alerts')}
             style={{ marginTop: 10, alignItems: 'center' }}
           >
-            <Text style={{ color: '#6366F1', fontSize: 13 }}>Xem tất cả →</Text>
+            <Text style={{ color: colors.interactive, fontSize: 13 }}>Xem tất cả →</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -708,35 +811,37 @@ export default function DashboardScreen({ navigation }) {
   )
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
+// ─── Styles (static layout; colors overridden inline via theme) ───────────────
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.surface },
+  container: { flex: 1 },
   header: {
     flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between',
     paddingHorizontal: 16, paddingTop: 52, paddingBottom: 14,
-    backgroundColor: colors.surfaceContainerLow,
-    borderBottomWidth: 1, borderBottomColor: colors.outlineVariant,
+    borderBottomWidth: 1,
   },
   headerLeft:  { flexDirection: 'row', alignItems: 'flex-start', flex: 1 },
-  headerRight: { alignItems: 'flex-end', gap: 6 },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 0 },
   headerBtn:   { padding: 4 },
 
-  // Logo chữ cái đầu công ty
-  companyLogo: {
-    width: 40, height: 40, borderRadius: 20,
-    backgroundColor: colors.primaryContainer,
+  // Avatar người dùng
+  userAvatar: {
+    width: 42, height: 42, borderRadius: 21,
+    marginRight: 10, marginTop: 2,
+  },
+  userAvatarFallback: {
+    width: 42, height: 42, borderRadius: 21,
     alignItems: 'center', justifyContent: 'center',
     marginRight: 10, marginTop: 2,
   },
-  companyLogoText: { fontSize: 18, fontWeight: '700', color: colors.surface },
-  companyName: { fontSize: 12, color: colors.outline, marginBottom: 1 },
+  userAvatarText: { fontSize: 16, fontWeight: '700', color: '#FFF' },
+  companyName: { fontSize: 12, marginBottom: 1 },
 
   // Role badge
   roleBadge:     { paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.full },
   roleBadgeText: { fontSize: 10, fontWeight: '700' },
 
-  greeting:   { fontSize: 16, fontWeight: '700', color: colors.onSurface },
-  dateText:   { fontSize: 11, color: colors.outline, marginTop: 1 },
+  greeting:   { fontSize: 16, fontWeight: '700' },
+  dateText:   { fontSize: 11, marginTop: 1 },
 
   // Banner mock
   mockBanner: {
@@ -747,51 +852,49 @@ const s = StyleSheet.create({
   },
   mockBannerText: { color: '#ffb400', fontSize: 12, textAlign: 'center' },
 
-  // Section label uppercase style (dùng cho tất cả section 2-5)
+  // Section label uppercase style
   sectionLabel: {
-    fontSize: 11, fontWeight: '700', color: '#9CA3AF',
+    fontSize: 11, fontWeight: '700',
     letterSpacing: 1, textTransform: 'uppercase',
     marginHorizontal: 16, marginTop: 20, marginBottom: 8,
   },
 
-  // Dark card container cho section 2-5
+  // Card container cho section 2-5
   darkCard: {
-    backgroundColor: '#1F2937',
-    borderRadius: 12,
-    padding: 16,
-    marginHorizontal: 16,
-    marginBottom: 16,
+    borderRadius: 12, padding: 16,
+    marginHorizontal: 16, marginBottom: 16,
   },
   darkCardLabel: {
-    fontSize: 11,
-    letterSpacing: 1,
-    color: '#9CA3AF',
-    marginBottom: 12,
-    textTransform: 'uppercase',
-    fontWeight: '700',
+    fontSize: 11, letterSpacing: 1,
+    marginBottom: 12, textTransform: 'uppercase', fontWeight: '700',
   },
 
   // KPI grid
   kpiGrid: {
     flexDirection: 'row', flexWrap: 'wrap',
-    paddingHorizontal: 12,
-    marginBottom: 4,
+    paddingHorizontal: 12, marginBottom: 4,
   },
   kpiCard: {
     width: '47%', margin: '1.5%',
-    backgroundColor: colors.surfaceContainerLow,
-    borderRadius: radius.md, padding: 14,
-    borderWidth: 1, borderColor: colors.outlineVariant,
+    borderRadius: radius.md, padding: 14, borderWidth: 1,
   },
   kpiEmoji: { fontSize: 22, marginBottom: 6 },
-  kpiLabel: { fontSize: 11, fontWeight: '600', color: colors.onSurfaceVariant, letterSpacing: 0.3 },
-  kpiValue: { fontSize: 22, fontWeight: '700', color: colors.onSurface, marginTop: 4, letterSpacing: -0.5 },
+  kpiLabel: { fontSize: 11, fontWeight: '600', letterSpacing: 0.3 },
+  kpiValue: { fontSize: 22, fontWeight: '700', marginTop: 4, letterSpacing: -0.5 },
+  kpiUnit:  { fontSize: 12, fontWeight: '500' },
   kpiTrend: { fontSize: 11, marginTop: 4 },
-  up:   { color: colors.tertiary },
-  down: { color: colors.error    },
-  flat: { color: colors.outline  },
 
   // Top products rows
   productRow: { flexDirection: 'row', alignItems: 'center', padding: 12 },
   borderTop:  { borderTopWidth: 1, borderTopColor: '#374151' },
+
+  // Period filter bar
+  periodBar:        { flexShrink: 0 },
+  periodBarContent: { flexDirection: 'row', paddingHorizontal: 12, paddingVertical: 10, gap: 8 },
+  periodChip: {
+    paddingHorizontal: 14, paddingVertical: 6,
+    borderRadius: 20, borderWidth: 1,
+  },
+  periodChipText:       { fontSize: 13, fontWeight: '600' },
+  periodChipTextActive: { fontWeight: '700' },
 })

@@ -1,12 +1,16 @@
-import React, { useState } from 'react'
+import React, { useState, useMemo } from 'react'
 import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView,
 } from 'react-native'
 import api from '../api/axios'
-import { colors, radius } from '../components/theme'
+import { useTheme } from '../context/ThemeContext'
+import { radius } from '../components/theme'
 
 export default function ForgotPasswordScreen({ navigation }) {
+  const { colors } = useTheme()
+  const s          = useMemo(() => makeStyles(colors), [colors])
+
   const [email,    setEmail]    = useState('')
   const [loading,  setLoading]  = useState(false)
   const [sent,     setSent]     = useState(false)
@@ -100,45 +104,45 @@ export default function ForgotPasswordScreen({ navigation }) {
   )
 }
 
-const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.surface },
-  inner: { padding: 24, paddingTop: 40 },
-  title: { fontSize: 22, fontWeight: '700', color: colors.onSurface, marginBottom: 8 },
-  sub:   { fontSize: 14, color: colors.outline, marginBottom: 24, lineHeight: 20 },
+const makeStyles = (c) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.surface },
+  inner:     { padding: 24, paddingTop: 40 },
+  title:     { fontSize: 22, fontWeight: '700', color: c.onSurface, marginBottom: 8 },
+  sub:       { fontSize: 14, color: c.outline, marginBottom: 24, lineHeight: 20 },
   errorBox: {
     backgroundColor: 'rgba(255,180,171,0.1)',
     borderWidth: 1, borderColor: 'rgba(255,180,171,0.3)',
     borderRadius: radius.sm, padding: 12, marginBottom: 16,
   },
-  errorText: { color: colors.error, fontSize: 13 },
+  errorText: { color: c.error, fontSize: 13 },
   successBox: {
     backgroundColor: 'rgba(16,185,129,0.08)',
     borderWidth: 1, borderColor: 'rgba(16,185,129,0.25)',
     borderRadius: radius.sm, padding: 14, marginBottom: 16,
   },
-  successText: { color: colors.onSurface, fontSize: 14, lineHeight: 20 },
+  successText: { color: c.onSurface, fontSize: 14, lineHeight: 20 },
   devBox: {
-    backgroundColor: colors.surfaceContainer,
+    backgroundColor: c.surfaceContainer,
     borderRadius: radius.sm, padding: 14, marginBottom: 20,
-    borderWidth: 1, borderColor: colors.outlineVariant, borderStyle: 'dashed',
+    borderWidth: 1, borderColor: c.outlineVariant, borderStyle: 'dashed',
   },
-  devLabel: { fontSize: 11, color: colors.outline, marginBottom: 6 },
-  devToken: { fontSize: 28, fontWeight: '800', color: colors.primary, letterSpacing: 8 },
-  label: { fontSize: 13, color: colors.outline, marginBottom: 6 },
+  devLabel:  { fontSize: 11, color: c.outline, marginBottom: 6 },
+  devToken:  { fontSize: 28, fontWeight: '800', color: c.primary, letterSpacing: 8 },
+  label:     { fontSize: 13, color: c.outline, marginBottom: 6 },
   input: {
-    backgroundColor: colors.surfaceContainer,
+    backgroundColor: c.surfaceContainer,
     borderRadius: radius.sm,
-    padding: 14, fontSize: 14, color: colors.onSurface,
+    padding: 14, fontSize: 14, color: c.onSurface,
     marginBottom: 20,
   },
   btn: {
-    backgroundColor: colors.primaryContainer,
+    backgroundColor: c.primaryContainer,
     borderRadius: radius.sm,
     paddingVertical: 15,
     alignItems: 'center',
   },
   btnDisabled: { opacity: 0.6 },
-  btnText: { color: colors.surface, fontSize: 15, fontWeight: '700' },
-  backRow: { alignItems: 'center', marginTop: 24 },
-  backText: { fontSize: 13, color: colors.primary },
+  btnText:     { color: c.surface, fontSize: 15, fontWeight: '700' },
+  backRow:     { alignItems: 'center', marginTop: 24 },
+  backText:    { fontSize: 13, color: c.primary },
 })

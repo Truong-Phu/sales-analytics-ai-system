@@ -1,13 +1,16 @@
-import React, { useState } from 'react'
+import React, { useState, useMemo } from 'react'
 import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView,
 } from 'react-native'
 import api from '../api/axios'
-import { colors, radius } from '../components/theme'
+import { useTheme } from '../context/ThemeContext'
+import { radius } from '../components/theme'
 
 export default function ResetPasswordScreen({ navigation, route }) {
   const emailFromParams = route.params?.email ?? ''
+  const { colors } = useTheme()
+  const s          = useMemo(() => makeStyles(colors), [colors])
 
   const [form, setForm] = useState({
     email:           emailFromParams,
@@ -15,9 +18,9 @@ export default function ResetPasswordScreen({ navigation, route }) {
     newPassword:     '',
     confirmPassword: '',
   })
-  const [loading,  setLoading]  = useState(false)
-  const [error,    setError]    = useState('')
-  const [success,  setSuccess]  = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [error,   setError]   = useState('')
+  const [success, setSuccess] = useState(false)
 
   const set = field => val => setForm(f => ({ ...f, [field]: val }))
 
@@ -140,42 +143,41 @@ export default function ResetPasswordScreen({ navigation, route }) {
   )
 }
 
-const s = StyleSheet.create({
-  container:        { flex: 1, backgroundColor: colors.surface },
-  inner:            { padding: 24, paddingTop: 40 },
-  title:            { fontSize: 22, fontWeight: '700', color: colors.onSurface, marginBottom: 8 },
-  sub:              { fontSize: 14, color: colors.outline, marginBottom: 24, lineHeight: 20 },
+const makeStyles = (c) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.surface },
+  inner:     { padding: 24, paddingTop: 40 },
+  title:     { fontSize: 22, fontWeight: '700', color: c.onSurface, marginBottom: 8 },
+  sub:       { fontSize: 14, color: c.outline, marginBottom: 24, lineHeight: 20 },
   errorBox: {
     backgroundColor: 'rgba(255,180,171,0.1)',
     borderWidth: 1, borderColor: 'rgba(255,180,171,0.3)',
     borderRadius: radius.sm, padding: 12, marginBottom: 16,
   },
-  errorText:  { color: colors.error, fontSize: 13 },
-  label:      { fontSize: 13, color: colors.outline, marginBottom: 6 },
+  errorText:  { color: c.error, fontSize: 13 },
+  label:      { fontSize: 13, color: c.outline, marginBottom: 6 },
   input: {
-    backgroundColor: colors.surfaceContainer,
+    backgroundColor: c.surfaceContainer,
     borderRadius: radius.sm,
-    padding: 14, fontSize: 14, color: colors.onSurface,
+    padding: 14, fontSize: 14, color: c.onSurface,
     marginBottom: 16,
   },
-  otpInput:   { textAlign: 'center', fontSize: 22, fontWeight: '800', letterSpacing: 10 },
+  otpInput:    { textAlign: 'center', fontSize: 22, fontWeight: '800', letterSpacing: 10 },
   btn: {
-    backgroundColor: colors.primaryContainer,
+    backgroundColor: c.primaryContainer,
     borderRadius: radius.sm,
     paddingVertical: 15,
     alignItems: 'center',
     marginTop: 8,
   },
   btnDisabled: { opacity: 0.6 },
-  btnText:    { color: colors.surface, fontSize: 15, fontWeight: '700' },
-  backRow:    { alignItems: 'center', marginTop: 24 },
-  backText:   { fontSize: 13, color: colors.primary },
-  // success state
+  btnText:     { color: c.surface, fontSize: 15, fontWeight: '700' },
+  backRow:     { alignItems: 'center', marginTop: 24 },
+  backText:    { fontSize: 13, color: c.primary },
   successContainer: {
-    flex: 1, backgroundColor: colors.surface,
+    flex: 1, backgroundColor: c.surface,
     alignItems: 'center', justifyContent: 'center', padding: 32,
   },
-  successEmoji:  { fontSize: 64, marginBottom: 16 },
-  successTitle:  { fontSize: 20, fontWeight: '700', color: colors.onSurface, textAlign: 'center' },
-  successSub:    { fontSize: 14, color: colors.outline, marginTop: 8, textAlign: 'center' },
+  successEmoji: { fontSize: 64, marginBottom: 16 },
+  successTitle: { fontSize: 20, fontWeight: '700', color: c.onSurface, textAlign: 'center' },
+  successSub:   { fontSize: 14, color: c.outline, marginTop: 8, textAlign: 'center' },
 })

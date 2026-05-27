@@ -1,16 +1,59 @@
-import React, { useState } from 'react'
+import React, { useState, useMemo } from 'react'
 import {
   View, Text, TextInput, TouchableOpacity,
   ScrollView, StyleSheet, KeyboardAvoidingView,
   Platform, ActivityIndicator, Alert,
 } from 'react-native'
 import api from '../api/axios'
-import { colors, radius } from '../components/theme'
+import { useTheme } from '../context/ThemeContext'
+import { radius } from '../components/theme'
 
 const CHANNELS = ['Shopee', 'Lazada', 'TikTok Shop', 'Facebook', 'Website']
 const PAYMENT  = ['COD', 'MoMo', 'VNPay', 'ZaloPay', 'Chuyển khoản']
 
+const makeStyles = (c) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.surface },
+  content:   { padding: 16 },
+  pageTitle: { fontSize: 20, fontWeight: '700', color: c.onSurface, marginBottom: 20, marginTop: 8 },
+  section: {
+    backgroundColor: c.surfaceContainerLow,
+    borderRadius: radius.md, padding: 16, marginBottom: 16,
+    borderWidth: 1, borderColor: c.outlineVariant,
+  },
+  sectionTitle: {
+    fontSize: 11, fontWeight: '700', color: c.outline,
+    letterSpacing: 1, textTransform: 'uppercase', marginBottom: 16,
+  },
+  field:    { marginBottom: 14 },
+  label:    { fontSize: 13, color: c.outline, marginBottom: 6 },
+  required: { color: c.error },
+  input: {
+    backgroundColor: c.surfaceContainer,
+    borderRadius: radius.sm, padding: 13,
+    fontSize: 14, color: c.onSurface,
+  },
+  textarea:       { height: 80, textAlignVertical: 'top' },
+  row:            { flexDirection: 'row' },
+  chipRow:        { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  chip:           { paddingHorizontal: 12, paddingVertical: 6, borderRadius: radius.full, borderWidth: 1, borderColor: c.outlineVariant },
+  chipActive:     { backgroundColor: c.primaryContainer, borderColor: c.primary },
+  chipText:       { fontSize: 13, color: c.outline },
+  chipTextActive: { color: c.surface, fontWeight: '700' },
+  totalRow: {
+    flexDirection: 'row', justifyContent: 'space-between',
+    backgroundColor: c.surfaceContainerHighest,
+    borderRadius: radius.sm, padding: 12, marginBottom: 14,
+  },
+  totalLabel: { fontSize: 14, color: c.outline },
+  totalValue: { fontSize: 16, fontWeight: '700', color: c.primary },
+  btn:        { backgroundColor: c.primaryContainer, borderRadius: radius.md, paddingVertical: 16, alignItems: 'center', marginTop: 8 },
+  btnDisabled:{ opacity: 0.6 },
+  btnText:    { color: c.surface, fontSize: 16, fontWeight: '700' },
+})
+
 export default function AddOrderScreen({ navigation }) {
+  const { colors } = useTheme()
+  const s = useMemo(() => makeStyles(colors), [colors])
   const [form, setForm] = useState({
     customerName: '', customerPhone: '', channel: 'Shopee',
     productName: '', quantity: '1', unitPrice: '',
@@ -173,50 +216,3 @@ export default function AddOrderScreen({ navigation }) {
   )
 }
 
-const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.surface },
-  content:   { padding: 16 },
-  pageTitle: { fontSize: 20, fontWeight: '700', color: colors.onSurface, marginBottom: 20, marginTop: 8 },
-  section: {
-    backgroundColor: colors.surfaceContainerLow,
-    borderRadius: radius.md, padding: 16, marginBottom: 16,
-    borderWidth: 1, borderColor: colors.outlineVariant,
-  },
-  sectionTitle: {
-    fontSize: 11, fontWeight: '700', color: colors.outline,
-    letterSpacing: 1, textTransform: 'uppercase', marginBottom: 16,
-  },
-  field: { marginBottom: 14 },
-  label: { fontSize: 13, color: colors.outline, marginBottom: 6 },
-  required: { color: colors.error },
-  input: {
-    backgroundColor: colors.surfaceContainer,
-    borderRadius: radius.sm, padding: 13,
-    fontSize: 14, color: colors.onSurface,
-  },
-  textarea: { height: 80, textAlignVertical: 'top' },
-  row: { flexDirection: 'row' },
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  chip: {
-    paddingHorizontal: 12, paddingVertical: 6,
-    borderRadius: radius.full, borderWidth: 1,
-    borderColor: colors.outlineVariant,
-  },
-  chipActive:     { backgroundColor: colors.primaryContainer, borderColor: colors.primary },
-  chipText:       { fontSize: 13, color: colors.outline },
-  chipTextActive: { color: colors.surface, fontWeight: '700' },
-  totalRow: {
-    flexDirection: 'row', justifyContent: 'space-between',
-    backgroundColor: colors.surfaceContainerHighest,
-    borderRadius: radius.sm, padding: 12, marginBottom: 14,
-  },
-  totalLabel: { fontSize: 14, color: colors.outline },
-  totalValue: { fontSize: 16, fontWeight: '700', color: colors.primary },
-  btn: {
-    backgroundColor: colors.primaryContainer,
-    borderRadius: radius.md, paddingVertical: 16,
-    alignItems: 'center', marginTop: 8,
-  },
-  btnDisabled: { opacity: 0.6 },
-  btnText:     { color: colors.surface, fontSize: 16, fontWeight: '700' },
-})

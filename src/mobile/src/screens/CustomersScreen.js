@@ -1,11 +1,12 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react'
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import {
   View, Text, FlatList, StyleSheet, TextInput,
   TouchableOpacity, ActivityIndicator, RefreshControl, Alert,
 } from 'react-native'
 import api from '../api/axios'
 import { usePlan, usePermission } from '../hooks/usePermission'
-import { colors, radius } from '../components/theme'
+import { useTheme } from '../context/ThemeContext'
+import { radius } from '../components/theme'
 
 function formatMoney(v) {
   if (v == null || !Number.isFinite(Number(v))) return '0'
@@ -25,7 +26,7 @@ const SEGMENT_CONFIG = {
   New:         { color: '#c4c0ff', bg: 'rgba(196,192,255,0.15)', icon: '🆕' },
   Hibernating: { color: '#9CA3AF', bg: 'rgba(156,163,175,0.12)', icon: '😴' },
 }
-const DEFAULT_SEG = { color: colors.outline, bg: colors.surfaceContainerHigh, icon: '👤' }
+const DEFAULT_SEG = { color: '#64748B', bg: '#E2E8F0', icon: '👤' }
 
 const MOCK_CUSTOMERS = [
   { id: 1, name: 'Nguyễn Thị Hoa',   phone: '0901234567', totalOrders: 12, totalSpent: 4_200_000, segment: 'VIP'         },
@@ -37,7 +38,7 @@ const MOCK_CUSTOMERS = [
   { id: 7, name: 'Nguyễn Văn Cường', phone: '0967890123', totalOrders: 0,  totalSpent: 0,         segment: 'Lost'        },
 ]
 
-function CustomerCard({ item }) {
+function CustomerCard({ item, s, colors }) {
   const seg = SEGMENT_CONFIG[item.segment] ?? DEFAULT_SEG
   return (
     <View style={s.card}>
@@ -65,7 +66,7 @@ function CustomerCard({ item }) {
 }
 
 // Màn hình yêu cầu nâng cấp Pro
-function ProGateView() {
+function ProGateView({ s }) {
   return (
     <View style={s.proGate}>
       <Text style={s.proGateIcon}>👥</Text>
@@ -89,8 +90,10 @@ function ProGateView() {
 }
 
 export default function CustomersScreen() {
-  const { isFree } = usePlan()
-  const canView = usePermission('customers.view')
+  const { isFree }    = usePlan()
+  const canView       = usePermission('customers.view')
+  const { colors }    = useTheme()
+  const s             = useMemo(() => makeStyles(colors), [colors])
 
   const [data,       setData]       = useState([])
   const [loading,    setLoading]    = useState(true)
@@ -148,7 +151,7 @@ export default function CustomersScreen() {
     setRefreshing(false)
   }
 
-  if (isFree || !canView) return <ProGateView />
+  if (isFree || !canView) return <ProGateView s={s} />
 
   // Thống kê phân khúc
   const segCounts = data.reduce((acc, c) => {
@@ -206,7 +209,7 @@ export default function CustomersScreen() {
         <FlatList
           data={data}
           keyExtractor={(item, i) => `${item.id ?? i}`}
-          renderItem={({ item }) => <CustomerCard item={item} />}
+          renderItem={({ item }) => <CustomerCard item={item} s={s} colors={colors} />}
           contentContainerStyle={s.list}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
@@ -223,73 +226,54 @@ export default function CustomersScreen() {
   )
 }
 
-const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.surface },
+const makeStyles = (c) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.surface },
   center:    { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
   searchWrap: {
     flexDirection: 'row', alignItems: 'center',
     margin: 12, marginBottom: 6,
-    backgroundColor: colors.surfaceContainer,
+    backgroundColor: c.surfaceContainer,
     borderRadius: radius.md, paddingHorizontal: 12,
-    borderWidth: 1, borderColor: colors.outlineVariant,
+    borderWidth: 1, borderColor: c.outlineVariant,
   },
   searchIcon:  { fontSize: 14, marginRight: 8 },
-  searchInput: { flex: 1, paddingVertical: 11, fontSize: 14, color: colors.onSurface },
-  clearText:   { fontSize: 13, color: colors.outline, padding: 4 },
+  searchInput: { flex: 1, paddingVertical: 11, fontSize: 14, color: c.onSurface },
+  clearText:   { fontSize: 13, color: c.outline, padding: 4 },
 
-  segSummaryRow: {
-    flexDirection: 'row', flexWrap: 'wrap',
-    paddingHorizontal: 12, paddingBottom: 6, gap: 6,
-  },
+  segSummaryRow:  { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 12, paddingBottom: 6, gap: 6 },
   segSummaryChip: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: radius.full },
   segSummaryText: { fontSize: 11, fontWeight: '600' },
 
-  mockBanner: {
-    marginHorizontal: 12, marginBottom: 4,
-    backgroundColor: 'rgba(255,180,0,0.1)',
-    borderWidth: 1, borderColor: 'rgba(255,180,0,0.3)',
-    borderRadius: radius.sm, padding: 8,
-  },
+  mockBanner:     { marginHorizontal: 12, marginBottom: 4, backgroundColor: 'rgba(255,180,0,0.1)', borderWidth: 1, borderColor: 'rgba(255,180,0,0.3)', borderRadius: radius.sm, padding: 8 },
   mockBannerText: { color: '#ffb400', fontSize: 11, textAlign: 'center' },
 
   list: { padding: 12, paddingBottom: 24 },
 
   card: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: colors.surfaceContainerLow,
+    backgroundColor: c.surfaceContainerLow,
     borderRadius: radius.md, padding: 14, marginBottom: 10,
-    borderWidth: 1, borderColor: colors.outlineVariant,
+    borderWidth: 1, borderColor: c.outlineVariant,
   },
-  avatar: {
-    width: 44, height: 44, borderRadius: 22,
-    backgroundColor: colors.primaryContainer,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  avatarText: { fontSize: 18, fontWeight: '700', color: colors.surface },
+  avatar:     { width: 44, height: 44, borderRadius: 22, backgroundColor: c.primaryContainer, alignItems: 'center', justifyContent: 'center' },
+  avatarText: { fontSize: 18, fontWeight: '700', color: c.surface },
   nameRow:    { flexDirection: 'row', alignItems: 'center', marginBottom: 3 },
-  name:       { fontSize: 14, fontWeight: '700', color: colors.onSurface, flex: 1, marginRight: 8 },
+  name:       { fontSize: 14, fontWeight: '700', color: c.onSurface, flex: 1, marginRight: 8 },
   segBadge:   { paddingHorizontal: 7, paddingVertical: 3, borderRadius: radius.full },
   segText:    { fontSize: 10, fontWeight: '700' },
-  phone:      { fontSize: 12, color: colors.outline, marginBottom: 6 },
+  phone:      { fontSize: 12, color: c.outline, marginBottom: 6 },
   statsRow:   { flexDirection: 'row', gap: 16 },
-  statItem:   { fontSize: 12, color: colors.outline },
+  statItem:   { fontSize: 12, color: c.outline },
 
   emptyState: { alignItems: 'center', paddingTop: 60 },
   emptyIcon:  { fontSize: 48, marginBottom: 12 },
-  emptyText:  { fontSize: 15, color: colors.outline },
+  emptyText:  { fontSize: 15, color: c.outline },
 
-  // Pro gate
-  proGate: {
-    flex: 1, alignItems: 'center', justifyContent: 'center',
-    padding: 32, backgroundColor: colors.surface,
-  },
+  proGate:      { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32, backgroundColor: c.surface },
   proGateIcon:  { fontSize: 56, marginBottom: 20 },
-  proGateTitle: { fontSize: 18, fontWeight: '700', color: colors.onSurface, marginBottom: 12, textAlign: 'center' },
-  proGateDesc:  { fontSize: 14, color: colors.outline, textAlign: 'center', lineHeight: 22, marginBottom: 28 },
-  upgradeBtn: {
-    backgroundColor: '#4ae176',
-    borderRadius: radius.md, paddingVertical: 14, paddingHorizontal: 32,
-  },
+  proGateTitle: { fontSize: 18, fontWeight: '700', color: c.onSurface, marginBottom: 12, textAlign: 'center' },
+  proGateDesc:  { fontSize: 14, color: c.outline, textAlign: 'center', lineHeight: 22, marginBottom: 28 },
+  upgradeBtn:   { backgroundColor: '#4ae176', borderRadius: radius.md, paddingVertical: 14, paddingHorizontal: 32 },
   upgradeBtnText: { color: '#0a1a0f', fontSize: 15, fontWeight: '700' },
 })

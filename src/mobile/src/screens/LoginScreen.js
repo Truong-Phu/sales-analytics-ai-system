@@ -1,16 +1,18 @@
-import React, { useState } from 'react'
+import React, { useState, useMemo } from 'react'
 import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator,
 } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { useAuth } from '../context/AuthContext'
-import { colors, radius } from '../components/theme'
+import { useTheme } from '../context/ThemeContext'
+import { radius } from '../components/theme'
 
 export default function LoginScreen({ navigation }) {
-  const { login } = useAuth()
+  const { login }   = useAuth()
+  const { colors }  = useTheme()
+  const s           = useMemo(() => makeStyles(colors), [colors])
 
-  // Ô duy nhất: người dùng nhập email hoặc username
   const [identifier,    setIdentifier]    = useState('')
   const [password,      setPassword]      = useState('')
   const [loading,       setLoading]       = useState(false)
@@ -26,10 +28,8 @@ export default function LoginScreen({ navigation }) {
     setLoading(true)
     try {
       await login(identifier.trim(), password)
-      // Navigation tự động xử lý bởi AppNavigator khi user !== null
     } catch (err) {
       if (!err.response) {
-        // Lỗi mạng: không kết nối được server
         setError('Không thể kết nối server. Kiểm tra IP backend và kết nối mạng.')
         return
       }
@@ -54,7 +54,6 @@ export default function LoginScreen({ navigation }) {
       {/* Logo */}
       <View style={s.logoBox}>
         <View style={s.logoIcon}>
-          {/* Bar chart ascending — đồng bộ với web TopBar */}
           <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 4 }}>
             <View style={{ width: 8, height: 14, backgroundColor: 'rgba(255,255,255,0.65)', borderRadius: 2 }} />
             <View style={{ width: 8, height: 20, backgroundColor: 'rgba(255,255,255,0.82)', borderRadius: 2 }} />
@@ -75,7 +74,6 @@ export default function LoginScreen({ navigation }) {
           </View>
         )}
 
-        {/* Single identifier field */}
         <Text style={s.label}>Email hoặc Tên đăng nhập</Text>
         <TextInput
           style={s.input}
@@ -111,7 +109,6 @@ export default function LoginScreen({ navigation }) {
           </TouchableOpacity>
         </View>
 
-        {/* Quên mật khẩu */}
         <TouchableOpacity
           style={s.forgotRow}
           onPress={() => navigation.navigate('ForgotPassword')}
@@ -135,10 +132,10 @@ export default function LoginScreen({ navigation }) {
   )
 }
 
-const s = StyleSheet.create({
+const makeStyles = (c) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.surface,
+    backgroundColor: c.surface,
     justifyContent: 'center',
     padding: 24,
   },
@@ -149,44 +146,40 @@ const s = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
     marginBottom: 12,
   },
-  appName:   { fontSize: 22, fontWeight: '700', color: colors.onSurface },
-  appSub:    { fontSize: 13, color: colors.outline, marginTop: 4, textAlign: 'center' },
+  appName:   { fontSize: 22, fontWeight: '700', color: c.onSurface },
+  appSub:    { fontSize: 13, color: c.outline, marginTop: 4, textAlign: 'center' },
   card: {
-    backgroundColor: colors.surfaceContainerLow,
+    backgroundColor: c.surfaceContainerLow,
     borderRadius: radius.lg,
     padding: 24,
     borderWidth: 1,
-    borderColor: colors.outlineVariant,
+    borderColor: c.outlineVariant,
   },
-  title: { fontSize: 18, fontWeight: '700', color: colors.onSurface, marginBottom: 20 },
+  title: { fontSize: 18, fontWeight: '700', color: c.onSurface, marginBottom: 20 },
   errorBox: {
     backgroundColor: 'rgba(255,180,171,0.1)',
     borderWidth: 1, borderColor: 'rgba(255,180,171,0.3)',
     borderRadius: radius.sm, padding: 12, marginBottom: 12,
   },
-  errorText: { color: colors.error, fontSize: 13 },
-  label: { fontSize: 13, color: colors.outline, marginBottom: 6 },
+  errorText: { color: c.error, fontSize: 13 },
+  label: { fontSize: 13, color: c.outline, marginBottom: 6 },
   input: {
-    backgroundColor: colors.surfaceContainer,
+    backgroundColor: c.surfaceContainer,
     borderRadius: radius.sm,
-    padding: 14, fontSize: 14, color: colors.onSurface,
+    padding: 14, fontSize: 14, color: c.onSurface,
     marginBottom: 16,
   },
-  passwordRow: { position: 'relative', marginBottom: 0 },
-  passwordInput: { marginBottom: 0, paddingRight: 48 },
-  eyeBtn: {
-    position: 'absolute',
-    right: 14,
-    top: 14,
-  },
-  forgotRow: { alignItems: 'flex-end', marginTop: 8, marginBottom: 20 },
-  forgotText: { fontSize: 13, color: colors.primary },
+  passwordRow:  { position: 'relative', marginBottom: 0 },
+  passwordInput:{ marginBottom: 0, paddingRight: 48 },
+  eyeBtn:       { position: 'absolute', right: 14, top: 14 },
+  forgotRow:    { alignItems: 'flex-end', marginTop: 8, marginBottom: 20 },
+  forgotText:   { fontSize: 13, color: c.primary },
   btn: {
-    backgroundColor: colors.primaryContainer,
+    backgroundColor: c.primaryContainer,
     borderRadius: radius.sm,
     paddingVertical: 15,
     alignItems: 'center',
   },
   btnDisabled: { opacity: 0.6 },
-  btnText: { color: colors.surface, fontSize: 15, fontWeight: '700' },
+  btnText:     { color: c.surface, fontSize: 15, fontWeight: '700' },
 })

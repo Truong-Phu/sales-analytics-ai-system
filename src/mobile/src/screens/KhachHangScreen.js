@@ -1,11 +1,12 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react'
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import {
   View, Text, FlatList, StyleSheet, TextInput,
   TouchableOpacity, ActivityIndicator, RefreshControl,
-  ScrollView, Alert,
+  ScrollView,
 } from 'react-native'
 import api from '../api/axios'
-import { colors, radius } from '../components/theme'
+import { useTheme } from '../context/ThemeContext'
+import { radius } from '../components/theme'
 
 function formatMoney(v) {
   if (v == null || !Number.isFinite(Number(v))) return '0'
@@ -25,9 +26,8 @@ const SEGMENT_CONFIG = {
   New:         { color: '#A78BFA', bg: 'rgba(167,139,250,0.15)',   icon: '🆕', priority: 6 },
   Hibernating: { color: '#9CA3AF', bg: 'rgba(156,163,175,0.12)',   icon: '😴', priority: 7 },
 }
-const DEFAULT_SEG = { color: colors.outline, bg: colors.surfaceContainerHigh, icon: '👤', priority: 99 }
+const DEFAULT_SEG = { color: '#64748B', bg: '#E2E8F0', icon: '👤', priority: 99 }
 
-// Tabs lọc segment
 const SEGMENT_TABS = [
   { key: '',          label: 'Tất cả'    },
   { key: 'VIP',       label: '👑 VIP'    },
@@ -36,20 +36,19 @@ const SEGMENT_TABS = [
   { key: 'New',       label: '🆕 Mới'    },
 ]
 
-// ─── Mock data ────────────────────────────────────────────────────────────────
 const MOCK_CUSTOMERS = [
-  { id: 1, name: 'Nguyễn Thị Hoa',    phone: '0901234567', totalOrders: 12, totalSpent: 4_200_000, segment: 'VIP',         email: 'hoa@mail.com'    },
-  { id: 2, name: 'Trần Văn Minh',     phone: '0912345678', totalOrders: 8,  totalSpent: 2_800_000, segment: 'Loyal',       email: ''                },
-  { id: 3, name: 'Lê Hoàng Phúc',     phone: '0923456789', totalOrders: 3,  totalSpent: 890_000,   segment: 'Promising',   email: ''                },
-  { id: 4, name: 'Phạm Thị Lan',      phone: '0934567890', totalOrders: 6,  totalSpent: 1_500_000, segment: 'At Risk',     email: 'lan@mail.com'    },
-  { id: 5, name: 'Võ Minh Tuấn',      phone: '0945678901', totalOrders: 1,  totalSpent: 250_000,   segment: 'New',         email: ''                },
-  { id: 6, name: 'Đặng Thị Bích',     phone: '0956789012', totalOrders: 2,  totalSpent: 450_000,   segment: 'Hibernating', email: ''                },
-  { id: 7, name: 'Nguyễn Văn Cường',  phone: '0967890123', totalOrders: 0,  totalSpent: 0,         segment: 'Lost',        email: ''                },
-  { id: 8, name: 'Trương Thị Mai',    phone: '0978901234', totalOrders: 15, totalSpent: 6_800_000, segment: 'VIP',         email: 'mai@mail.com'    },
+  { id: 1, name: 'Nguyễn Thị Hoa',    phone: '0901234567', totalOrders: 12, totalSpent: 4_200_000, segment: 'VIP',         email: 'hoa@mail.com' },
+  { id: 2, name: 'Trần Văn Minh',     phone: '0912345678', totalOrders: 8,  totalSpent: 2_800_000, segment: 'Loyal',       email: '' },
+  { id: 3, name: 'Lê Hoàng Phúc',     phone: '0923456789', totalOrders: 3,  totalSpent: 890_000,   segment: 'Promising',   email: '' },
+  { id: 4, name: 'Phạm Thị Lan',      phone: '0934567890', totalOrders: 6,  totalSpent: 1_500_000, segment: 'At Risk',     email: 'lan@mail.com' },
+  { id: 5, name: 'Võ Minh Tuấn',      phone: '0945678901', totalOrders: 1,  totalSpent: 250_000,   segment: 'New',         email: '' },
+  { id: 6, name: 'Đặng Thị Bích',     phone: '0956789012', totalOrders: 2,  totalSpent: 450_000,   segment: 'Hibernating', email: '' },
+  { id: 7, name: 'Nguyễn Văn Cường',  phone: '0967890123', totalOrders: 0,  totalSpent: 0,         segment: 'Lost',        email: '' },
+  { id: 8, name: 'Trương Thị Mai',    phone: '0978901234', totalOrders: 15, totalSpent: 6_800_000, segment: 'VIP',         email: 'mai@mail.com' },
 ]
 
 // ─── CustomerCard component ───────────────────────────────────────────────────
-function CustomerCard({ item, onPress }) {
+function CustomerCard({ item, onPress, s, colors }) {
   const seg = SEGMENT_CONFIG[item.segment] ?? DEFAULT_SEG
   const initials = (item.name ?? 'K')
     .split(' ')
@@ -59,11 +58,9 @@ function CustomerCard({ item, onPress }) {
 
   return (
     <TouchableOpacity onPress={() => onPress(item)} activeOpacity={0.8} style={s.card}>
-      {/* Avatar initials */}
       <View style={[s.avatar, { backgroundColor: seg.bg }]}>
         <Text style={[s.avatarText, { color: seg.color }]}>{initials}</Text>
       </View>
-
       <View style={{ flex: 1, marginLeft: 12 }}>
         <View style={s.nameRow}>
           <Text style={s.name} numberOfLines={1}>{item.name ?? 'Khách ẩn danh'}</Text>
@@ -77,18 +74,16 @@ function CustomerCard({ item, onPress }) {
           <Text style={s.statItem}>💰 ₫{formatMoney(item.totalSpent)}</Text>
         </View>
       </View>
-
       <Text style={{ color: colors.outline, fontSize: 16 }}>›</Text>
     </TouchableOpacity>
   )
 }
 
-// ─── CustomerDetail screen (push từ CustomerCard tap) ────────────────────────
-function CustomerDetailScreen({ customer, onBack }) {
+// ─── CustomerDetail screen ────────────────────────────────────────────────────
+function CustomerDetailScreen({ customer, onBack, s, colors }) {
   const seg = SEGMENT_CONFIG[customer.segment] ?? DEFAULT_SEG
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
-      {/* Header */}
       <View style={s.detailHeader}>
         <TouchableOpacity onPress={onBack} style={s.backBtn}>
           <Text style={{ color: colors.primary, fontSize: 16 }}>‹ Quay lại</Text>
@@ -98,7 +93,6 @@ function CustomerDetailScreen({ customer, onBack }) {
       </View>
 
       <ScrollView style={{ flex: 1 }}>
-        {/* Avatar + tên */}
         <View style={s.detailAvatarSection}>
           <View style={[s.detailAvatar, { backgroundColor: seg.bg }]}>
             <Text style={[s.detailAvatarText, { color: seg.color }]}>
@@ -111,25 +105,23 @@ function CustomerDetailScreen({ customer, onBack }) {
           </View>
         </View>
 
-        {/* Thông tin */}
         <View style={s.detailCard}>
           <Text style={s.detailCardLabel}>THÔNG TIN LIÊN HỆ</Text>
-          <DetailRow icon="📞" label="SĐT"    value={customer.phone || '—'}  />
-          <DetailRow icon="📧" label="Email"  value={customer.email || '—'} />
+          <DetailRow icon="📞" label="SĐT"   value={customer.phone || '—'} s={s} />
+          <DetailRow icon="📧" label="Email" value={customer.email || '—'} s={s} />
         </View>
 
-        {/* Số liệu */}
         <View style={s.detailCard}>
           <Text style={s.detailCardLabel}>SỐ LIỆU MUA HÀNG</Text>
-          <DetailRow icon="🛒" label="Tổng đơn"    value={`${customer.totalOrders ?? 0} đơn`} />
-          <DetailRow icon="💰" label="Tổng chi tiêu" value={`₫${formatMoney(customer.totalSpent)}`} />
+          <DetailRow icon="🛒" label="Tổng đơn"      value={`${customer.totalOrders ?? 0} đơn`}      s={s} />
+          <DetailRow icon="💰" label="Tổng chi tiêu"  value={`₫${formatMoney(customer.totalSpent)}`}  s={s} />
         </View>
       </ScrollView>
     </View>
   )
 }
 
-function DetailRow({ icon, label, value }) {
+function DetailRow({ icon, label, value, s }) {
   return (
     <View style={s.detailRow}>
       <Text style={s.detailIcon}>{icon}</Text>
@@ -141,16 +133,19 @@ function DetailRow({ icon, label, value }) {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function KhachHangScreen({ navigation }) {
-  const [data,           setData]           = useState([])
-  const [loading,        setLoading]        = useState(true)
-  const [refreshing,     setRefreshing]     = useState(false)
-  const [search,         setSearch]         = useState('')
-  const [activeSegment,  setActiveSegment]  = useState('')
-  const [isMock,         setIsMock]         = useState(false)
-  const [selectedCustomer, setSelectedCustomer] = useState(null)
-  const [page,           setPage]           = useState(1)
-  const [hasMore,        setHasMore]        = useState(true)
-  const [loadingMore,    setLoadingMore]    = useState(false)
+  const { colors } = useTheme()
+  const s          = useMemo(() => makeStyles(colors), [colors])
+
+  const [data,              setData]              = useState([])
+  const [loading,           setLoading]           = useState(true)
+  const [refreshing,        setRefreshing]        = useState(false)
+  const [search,            setSearch]            = useState('')
+  const [activeSegment,     setActiveSegment]     = useState('')
+  const [isMock,            setIsMock]            = useState(false)
+  const [selectedCustomer,  setSelectedCustomer]  = useState(null)
+  const [page,              setPage]              = useState(1)
+  const [hasMore,           setHasMore]           = useState(true)
+  const [loadingMore,       setLoadingMore]       = useState(false)
   const searchTimeout = useRef(null)
 
   const normalizeCustomer = (c) => ({
@@ -232,18 +227,18 @@ export default function KhachHangScreen({ navigation }) {
     setLoadingMore(false)
   }
 
-  // Thống kê phân khúc
   const segCounts = data.reduce((acc, c) => {
     if (c.segment) acc[c.segment] = (acc[c.segment] ?? 0) + 1
     return acc
   }, {})
 
-  // Hiện chi tiết khách hàng inline
   if (selectedCustomer) {
     return (
       <CustomerDetailScreen
         customer={selectedCustomer}
         onBack={() => setSelectedCustomer(null)}
+        s={s}
+        colors={colors}
       />
     )
   }
@@ -296,7 +291,6 @@ export default function KhachHangScreen({ navigation }) {
         </View>
       )}
 
-      {/* Danh sách */}
       {loading ? (
         <View style={s.center}>
           <ActivityIndicator size="large" color={colors.primary} />
@@ -306,7 +300,7 @@ export default function KhachHangScreen({ navigation }) {
           data={data}
           keyExtractor={(item, i) => `cust-${item.id ?? i}`}
           renderItem={({ item }) => (
-            <CustomerCard item={item} onPress={setSelectedCustomer} />
+            <CustomerCard item={item} onPress={setSelectedCustomer} s={s} colors={colors} />
           )}
           contentContainerStyle={s.list}
           refreshControl={
@@ -333,28 +327,28 @@ export default function KhachHangScreen({ navigation }) {
 }
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
-const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.surface },
+const makeStyles = (c) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.surface },
   center:    { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
   searchWrap: {
     flexDirection: 'row', alignItems: 'center',
     margin: 12, marginBottom: 4,
-    backgroundColor: colors.surfaceContainer,
+    backgroundColor: c.surfaceContainer,
     borderRadius: radius.md, paddingHorizontal: 12,
-    borderWidth: 1, borderColor: colors.outlineVariant,
+    borderWidth: 1, borderColor: c.outlineVariant,
   },
   searchIcon:  { fontSize: 14, marginRight: 8 },
-  searchInput: { flex: 1, paddingVertical: 11, fontSize: 14, color: colors.onSurface },
-  clearText:   { fontSize: 13, color: colors.outline, padding: 4 },
+  searchInput: { flex: 1, paddingVertical: 11, fontSize: 14, color: c.onSurface },
+  clearText:   { fontSize: 13, color: c.outline, padding: 4 },
 
   filterTab: {
     height: 32, paddingHorizontal: 12,
     borderRadius: 16, justifyContent: 'center', alignItems: 'center',
-    marginRight: 8, borderWidth: 1, borderColor: colors.outlineVariant,
+    marginRight: 8, borderWidth: 1, borderColor: c.outlineVariant,
   },
   filterTabActive:     { backgroundColor: '#6366F1', borderColor: '#6366F1' },
-  filterTabText:       { fontSize: 12, color: '#9CA3AF' },
+  filterTabText:       { fontSize: 12, color: c.outline },
   filterTabTextActive: { color: '#FFF', fontWeight: '700' },
 
   mockBanner: {
@@ -369,9 +363,9 @@ const s = StyleSheet.create({
 
   card: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: colors.surfaceContainerLow,
+    backgroundColor: c.surfaceContainerLow,
     borderRadius: radius.md, padding: 14, marginBottom: 10,
-    borderWidth: 1, borderColor: colors.outlineVariant,
+    borderWidth: 1, borderColor: c.outlineVariant,
   },
   avatar: {
     width: 44, height: 44, borderRadius: 22,
@@ -379,50 +373,50 @@ const s = StyleSheet.create({
   },
   avatarText: { fontSize: 18, fontWeight: '700' },
   nameRow:    { flexDirection: 'row', alignItems: 'center', marginBottom: 3, flexWrap: 'wrap' },
-  name:       { fontSize: 14, fontWeight: '700', color: colors.onSurface, flex: 1, marginRight: 6 },
+  name:       { fontSize: 14, fontWeight: '700', color: c.onSurface, flex: 1, marginRight: 6 },
   segBadge:   { paddingHorizontal: 7, paddingVertical: 3, borderRadius: radius.full },
   segText:    { fontSize: 10, fontWeight: '700' },
-  phone:      { fontSize: 12, color: colors.outline, marginBottom: 6 },
+  phone:      { fontSize: 12, color: c.outline, marginBottom: 6 },
   statsRow:   { flexDirection: 'row', gap: 16 },
-  statItem:   { fontSize: 12, color: colors.outline },
+  statItem:   { fontSize: 12, color: c.outline },
 
   emptyState:   { alignItems: 'center', paddingTop: 60, paddingBottom: 40 },
   emptyIcon:    { fontSize: 48, marginBottom: 12 },
-  emptyText:    { fontSize: 15, color: colors.onSurface, fontWeight: '600', marginBottom: 6 },
-  emptySubText: { fontSize: 13, color: colors.outline },
+  emptyText:    { fontSize: 15, color: c.onSurface, fontWeight: '600', marginBottom: 6 },
+  emptySubText: { fontSize: 13, color: c.outline },
 
   // Detail screen
   detailHeader: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 16, paddingTop: 52, paddingBottom: 12,
-    backgroundColor: colors.surfaceContainerLow,
-    borderBottomWidth: 1, borderBottomColor: colors.outlineVariant,
+    backgroundColor: c.surfaceContainerLow,
+    borderBottomWidth: 1, borderBottomColor: c.outlineVariant,
   },
   backBtn:     { padding: 4 },
-  detailTitle: { fontSize: 16, fontWeight: '700', color: colors.onSurface },
+  detailTitle: { fontSize: 16, fontWeight: '700', color: c.onSurface },
   detailAvatarSection: {
     alignItems: 'center', paddingVertical: 24,
-    backgroundColor: colors.surfaceContainerLow,
-    borderBottomWidth: 1, borderBottomColor: colors.outlineVariant,
+    backgroundColor: c.surfaceContainerLow,
+    borderBottomWidth: 1, borderBottomColor: c.outlineVariant,
   },
   detailAvatar: {
     width: 72, height: 72, borderRadius: 36,
     alignItems: 'center', justifyContent: 'center', marginBottom: 10,
   },
   detailAvatarText: { fontSize: 28, fontWeight: '700' },
-  detailName:  { fontSize: 18, fontWeight: '700', color: colors.onSurface },
+  detailName:       { fontSize: 18, fontWeight: '700', color: c.onSurface },
 
   detailCard: {
-    backgroundColor: '#1F2937',
+    backgroundColor: c.card,
     borderRadius: radius.md, padding: 16,
     marginHorizontal: 12, marginTop: 12,
   },
   detailCardLabel: {
-    fontSize: 11, fontWeight: '700', color: '#9CA3AF',
+    fontSize: 11, fontWeight: '700', color: c.textSecondary,
     letterSpacing: 1, textTransform: 'uppercase', marginBottom: 12,
   },
   detailRow:   { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
   detailIcon:  { fontSize: 15, marginRight: 8, width: 24 },
-  detailLabel: { fontSize: 13, color: '#9CA3AF', width: 100 },
-  detailValue: { fontSize: 13, color: '#F9FAFB', flex: 1 },
+  detailLabel: { fontSize: 13, color: c.textSecondary, width: 100 },
+  detailValue: { fontSize: 13, color: c.textPrimary, flex: 1 },
 })
