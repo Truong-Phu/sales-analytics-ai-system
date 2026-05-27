@@ -3,22 +3,28 @@ namespace SalesAnalytics.Core.DTOs;
 /// <summary>Request body cho endpoint POST /api/chatbot/chat</summary>
 public class ChatRequest
 {
-    /// <summary>Câu hỏi của người dùng</summary>
     public string Message { get; set; } = "";
-
-    /// <summary>Tab nguồn dữ liệu: "business" | "market" | "feedback"</summary>
     public string Tab { get; set; } = "business";
-
-    /// <summary>Lịch sử hội thoại (tối đa 10 lượt gần nhất được xử lý)</summary>
     public List<ChatMessage> History { get; set; } = [];
 }
 
 /// <summary>Một lượt hội thoại trong lịch sử chat</summary>
 public class ChatMessage
 {
-    /// <summary>Vai trò: "user" hoặc "model"</summary>
-    public string Role { get; set; } = "user";
-
-    /// <summary>Nội dung tin nhắn</summary>
+    public string Role    { get; set; } = "user";
     public string Content { get; set; } = "";
+}
+
+/// <summary>Response chuẩn từ chatbot, bao gồm intent và metadata</summary>
+public class ChatResponse
+{
+    public bool     Success        { get; set; } = true;
+    public string   Question       { get; set; } = "";
+    public string   Intent         { get; set; } = "unknown";
+    public string   Answer         { get; set; } = "";
+    public string   DataSource     { get; set; } = "database";
+    public bool     IsAiGenerated  { get; set; } = true;
+    public bool     FallbackUsed   { get; set; } = false;
+    public string?  FallbackReason { get; set; }
+    public DateTime Timestamp      { get; set; } = DateTime.UtcNow;
 }

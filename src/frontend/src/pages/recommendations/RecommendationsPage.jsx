@@ -132,7 +132,7 @@ function ChatTab({ tab }) {
           { role: 'model', content: item.answer?.text ?? item.answer?.recommendation ?? '' },
         ])),
       })
-      const aiText = res.data.message ?? 'Xin lỗi, không có phản hồi.'
+      const aiText = res.data.answer ?? res.data.message ?? 'Xin lỗi, không có phản hồi.'
       setHistory(prev => [
         ...prev,
         {

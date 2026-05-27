@@ -30,12 +30,7 @@ public class ChatbotController(
         var response = await gemini.ChatAsync(
             companyId, req.Message, req.Tab, req.History);
 
-        return Ok(new
-        {
-            success   = true,
-            message   = response,
-            timestamp = DateTime.UtcNow,
-        });
+        return Ok(response);
     }
 
     /// <summary>
