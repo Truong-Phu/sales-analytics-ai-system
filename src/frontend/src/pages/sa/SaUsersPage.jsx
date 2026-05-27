@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+﻿import { useState, useEffect, useCallback } from 'react'
 import axios from '../../api/axios'
 
 const fmtDate = d => d ? new Date(d).toLocaleDateString('vi-VN') : '—'
@@ -100,7 +100,7 @@ export default function SaUsersPage() {
                       </div>
                     </td>
                     <td className="px-4 py-3" style={{ color: 'var(--text-secondary)' }}>{u.email}</td>
-                    <td className="px-4 py-3 text-xs" style={{ color: 'var(--text-secondary)' }}>
+                    <td className="px-4 py-3 text-sm" style={{ color: 'var(--text-secondary)' }}>
                       {u.companyName ?? '—'}
                     </td>
                     <td className="px-4 py-3">

@@ -31,6 +31,7 @@ function LuminaLogo({ size = 32 }) {
 // ── Theme Toggle ───────────────────────────────────────────────────────────────
 function ThemeToggle() {
   const { isDark, toggle } = useTheme()
+  const { t } = useTranslation()
   return (
     <button
       onClick={toggle}

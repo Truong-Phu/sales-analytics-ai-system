@@ -8,11 +8,16 @@ import { useAuth } from '../../hooks/useAuth'
 const PAGE_SIZE = 10
 
 function StockBadge({ p, t }) {
-  const stock = p.stock ?? 0
+  if (!(p.isActive ?? true))
+    return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
+                 style={{ background: 'rgba(107,114,128,0.10)', border: '1px solid rgba(107,114,128,0.30)', color: '#6B7280' }}>
+             <span className="w-1.5 h-1.5 rounded-full bg-gray-500" />Ngừng bán
+           </span>
+  const stock = p.stock ?? p.stockQuantity ?? 0
   if (stock === 0)
     return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
                  style={{ background: 'rgba(239,68,68,0.10)', border: '1px solid rgba(239,68,68,0.30)', color: '#EF4444' }}>
-             <span className="w-1.5 h-1.5 rounded-full bg-red-500" />{t('products.status.inactive')}
+             <span className="w-1.5 h-1.5 rounded-full bg-red-500" />Hết hàng
            </span>
   if (stock < 20)
     return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
@@ -198,15 +203,20 @@ function ProductDetailModal({ product, canEdit, isMock, onClose, onSaved }) {
                   }
                 </div>
                 {/* Trạng thái */}
-                {(product.stock ?? 0) === 0
+                {!(product.isActive ?? true)
                   ? <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium"
-                           style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#EF4444' }}>
-                      <span className="w-1.5 h-1.5 rounded-full bg-red-500" />Ngừng bán
+                           style={{ background: 'rgba(107,114,128,0.1)', border: '1px solid rgba(107,114,128,0.3)', color: '#6B7280' }}>
+                      <span className="w-1.5 h-1.5 rounded-full bg-gray-500" />Ngừng bán
                     </span>
-                  : <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium"
-                           style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)', color: 'var(--accent-500)' }}>
-                      <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--accent-500)' }} />Đang bán
-                    </span>
+                  : (product.stock ?? product.stockQuantity ?? 0) === 0
+                    ? <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium"
+                             style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#EF4444' }}>
+                        <span className="w-1.5 h-1.5 rounded-full bg-red-500" />Hết hàng
+                      </span>
+                    : <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium"
+                             style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)', color: 'var(--accent-500)' }}>
+                        <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--accent-500)' }} />Đang bán
+                      </span>
                 }
                 {/* Badge danh mục */}
                 {product.category && (
@@ -223,7 +233,7 @@ function ProductDetailModal({ product, canEdit, isMock, onClose, onSaved }) {
                   <h3 className="font-bold text-base leading-snug" style={{ color: 'var(--text-primary)' }}>
                     {product.product_name ?? product.name}
                   </h3>
-                  <p className="text-xs font-mono mt-1" style={{ color: 'var(--text-tertiary)' }}>
+                  <p className="text-sm font-mono mt-1" style={{ color: 'var(--text-secondary)' }}>
                     {product.sku}
                   </p>
                 </div>
@@ -241,7 +251,7 @@ function ProductDetailModal({ product, canEdit, isMock, onClose, onSaved }) {
                     ['Số đơn hàng', (product.total_orders ?? 0).toLocaleString()],
                   ].map(([label, value]) => (
                     <div key={label}>
-                      <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{label}</p>
+                      <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{label}</p>
                       <p className="font-semibold mt-0.5" style={{ color: 'var(--text-primary)' }}>{value}</p>
                     </div>
                   ))}
@@ -250,7 +260,7 @@ function ProductDetailModal({ product, canEdit, isMock, onClose, onSaved }) {
                 {/* Mô tả */}
                 {product.description && (
                   <div style={{ borderTop: '1px solid var(--border)', paddingTop: 8 }}>
-                    <p className="text-xs mb-1" style={{ color: 'var(--text-tertiary)' }}>Mô tả</p>
+                    <p className="text-sm mb-1" style={{ color: 'var(--text-secondary)' }}>Mô tả</p>
                     <p className="text-sm leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
                       {product.description}
                     </p>
@@ -327,7 +337,7 @@ function ProductDetailModal({ product, canEdit, isMock, onClose, onSaved }) {
           <>
             {/* Ảnh sản phẩm */}
             <div>
-              <label className="block text-xs mb-2" style={{ color: 'var(--text-tertiary)' }}>Hình ảnh sản phẩm</label>
+              <label className="block text-sm mb-2" style={{ color: 'var(--text-secondary)' }}>Hình ảnh sản phẩm</label>
               <div className="flex items-center gap-3">
                 <div className="w-16 h-16 rounded-xl border-2 border-dashed flex items-center justify-center overflow-hidden shrink-0"
                      style={{ borderColor: 'var(--border)', background: 'var(--bg-elevated)' }}>
@@ -358,13 +368,13 @@ function ProductDetailModal({ product, canEdit, isMock, onClose, onSaved }) {
                 ['Tồn kho', 'stockQuantity', 'number'],
               ].map(([label, field, type]) => (
                 <div key={field}>
-                  <label className="block text-xs mb-1" style={{ color: 'var(--text-tertiary)' }}>{label}</label>
+                  <label className="block text-sm mb-1" style={{ color: 'var(--text-secondary)' }}>{label}</label>
                   <input type={type} className="linput text-sm" value={editData[field] ?? ''}
                          onChange={set(field)} />
                 </div>
               ))}
               <div>
-                <label className="block text-xs mb-1" style={{ color: 'var(--text-tertiary)' }}>Danh mục</label>
+                <label className="block text-sm mb-1" style={{ color: 'var(--text-secondary)' }}>Danh mục</label>
                 <select className="linput text-sm" value={editData.categoryId ?? ''} onChange={set('categoryId')}>
                   <option value="">-- Chọn danh mục --</option>
                   {catOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -373,7 +383,7 @@ function ProductDetailModal({ product, canEdit, isMock, onClose, onSaved }) {
             </div>
 
             <div>
-              <label className="block text-xs mb-1" style={{ color: 'var(--text-tertiary)' }}>Mô tả</label>
+              <label className="block text-sm mb-1" style={{ color: 'var(--text-secondary)' }}>Mô tả</label>
               <textarea className="linput text-sm" rows={2} value={editData.description ?? ''}
                         onChange={set('description')} />
             </div>
@@ -459,7 +469,7 @@ function ProductFormModal({ initial, mode, onClose, onSaved }) {
 
   const inp = (label, field, type = 'text', required = false) => (
     <div key={field}>
-      <label className="block text-xs mb-1" style={{ color: 'var(--text-tertiary)' }}>
+      <label className="block text-sm mb-1" style={{ color: 'var(--text-secondary)' }}>
         {label}{required && <span style={{ color: '#EF4444' }}> *</span>}
       </label>
       <input type={type} className="linput text-sm" value={form[field] ?? ''}
@@ -494,7 +504,7 @@ function ProductFormModal({ initial, mode, onClose, onSaved }) {
 
         {/* Hình ảnh sản phẩm */}
         <div>
-          <label className="block text-xs mb-2" style={{ color: 'var(--text-tertiary)' }}>Hình ảnh sản phẩm</label>
+          <label className="block text-sm mb-2" style={{ color: 'var(--text-secondary)' }}>Hình ảnh sản phẩm</label>
           <div className="flex items-center gap-3">
             <div className="w-16 h-16 rounded-xl border-2 border-dashed flex items-center justify-center overflow-hidden shrink-0"
                  style={{ borderColor: 'var(--border)', background: 'var(--bg-elevated)' }}>
@@ -525,7 +535,7 @@ function ProductFormModal({ initial, mode, onClose, onSaved }) {
 
           {/* Dropdown danh mục */}
           <div>
-            <label className="block text-xs mb-1" style={{ color: 'var(--text-tertiary)' }}>
+            <label className="block text-sm mb-1" style={{ color: 'var(--text-secondary)' }}>
               Danh mục<span style={{ color: '#EF4444' }}> *</span>
             </label>
             <select className="linput text-sm"
@@ -540,7 +550,7 @@ function ProductFormModal({ initial, mode, onClose, onSaved }) {
         </div>
 
         <div>
-          <label className="block text-xs mb-1" style={{ color: 'var(--text-tertiary)' }}>Mô tả</label>
+          <label className="block text-sm mb-1" style={{ color: 'var(--text-secondary)' }}>Mô tả</label>
           <textarea className="linput text-sm" rows={2} value={form.description ?? ''}
                     onChange={set('description')} />
         </div>
@@ -730,32 +740,50 @@ export default function ProductsPage() {
         </div>
       ) : view === 'grid' ? (
         /* Grid view */
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-          {items.map((p, i) => (
-            <div
-              key={p.product_id ?? p.id ?? i}
-              className="lcard p-4 cursor-pointer transition-all"
-              onClick={() => setSelected(p)}
-              onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'}
-              onMouseLeave={e => e.currentTarget.style.transform = ''}
-            >
-              <div className="w-full rounded-xl overflow-hidden mb-3 flex items-center justify-center"
-                   style={{ aspectRatio: '1', background: 'var(--bg-elevated)', maxHeight: 120 }}>
-                {p.imageUrl
-                  ? <img src={p.imageUrl} alt={p.product_name ?? p.name} className="w-full h-full object-cover" />
-                  : <span className="icon" style={{ fontSize: 32, color: 'var(--text-tertiary)', opacity: 0.4 }}>inventory_2</span>
-                }
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+            {items.map((p, i) => (
+              <div
+                key={p.product_id ?? p.id ?? i}
+                className="lcard p-4 cursor-pointer transition-all"
+                onClick={() => setSelected(p)}
+                onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'}
+                onMouseLeave={e => e.currentTarget.style.transform = ''}
+              >
+                <div className="w-full rounded-xl overflow-hidden mb-3 flex items-center justify-center"
+                     style={{ aspectRatio: '1', background: 'var(--bg-elevated)', maxHeight: 120 }}>
+                  {p.imageUrl
+                    ? <img src={p.imageUrl} alt={p.product_name ?? p.name} className="w-full h-full object-cover" />
+                    : <span className="icon" style={{ fontSize: 32, color: 'var(--text-tertiary)', opacity: 0.4 }}>inventory_2</span>
+                  }
+                </div>
+                <div className="font-medium text-sm truncate mb-1" style={{ color: 'var(--text-primary)' }}>
+                  {p.product_name ?? p.name}
+                </div>
+                <div className="text-xs mb-2 truncate" style={{ color: 'var(--text-secondary)' }}>{p.category}</div>
+                <div className="font-mono text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
+                  {(p.unit_price ?? p.price ?? 0).toLocaleString('vi-VN')}₫
+                </div>
+                <div className="mt-2"><StockBadge p={p} t={t} /></div>
               </div>
-              <div className="font-medium text-sm truncate mb-1" style={{ color: 'var(--text-primary)' }}>
-                {p.product_name ?? p.name}
-              </div>
-              <div className="text-xs mb-2" style={{ color: 'var(--text-tertiary)' }}>{p.category}</div>
-              <div className="font-mono text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
-                {(p.unit_price ?? p.price ?? 0).toLocaleString('vi-VN')}₫
-              </div>
-              <div className="mt-2"><StockBadge p={p} t={t} /></div>
+            ))}
+          </div>
+          {/* Pagination cho grid view */}
+          {totalPages > 1 && (
+            <div className="lcard flex items-center justify-center gap-2 px-5 py-3">
+              <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1}
+                      className="lbtn lbtn-secondary !h-8 !px-3 disabled:opacity-40">
+                <span className="icon text-base">chevron_left</span>
+              </button>
+              <span className="text-xs px-2" style={{ color: 'var(--text-secondary)' }}>
+                {t('common.pageInfo', { page, total: totalPages })}
+              </span>
+              <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page >= totalPages}
+                      className="lbtn lbtn-secondary !h-8 !px-3 disabled:opacity-40">
+                <span className="icon text-base">chevron_right</span>
+              </button>
             </div>
-          ))}
+          )}
         </div>
       ) : (
         /* Table view */
@@ -766,8 +794,8 @@ export default function ProductsPage() {
                 <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-elevated)' }}>
                   {['#', t('products.name'), 'SKU', t('products.category'), t('products.price'),
                     'Tồn kho', t('common.status'), 'Bán', ''].map(h => (
-                    <th key={h} className="text-left px-4 py-3 text-xs font-semibold tracking-wide"
-                        style={{ color: 'var(--text-tertiary)', whiteSpace: 'nowrap' }}>{h}</th>
+                    <th key={h} className="text-left px-4 py-3 text-sm font-semibold tracking-wide"
+                        style={{ color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -779,7 +807,7 @@ export default function ProductsPage() {
                       onClick={() => setSelected(p)}
                       onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
                       onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                    <td className="px-4 py-3 text-xs tabular-nums" style={{ color: 'var(--text-tertiary)' }}>
+                    <td className="px-4 py-3 text-sm tabular-nums" style={{ color: 'var(--text-secondary)' }}>
                       {(page - 1) * PAGE_SIZE + i + 1}
                     </td>
                     <td className="px-4 py-3 font-medium max-w-[200px]" style={{ color: 'var(--text-primary)' }}>
@@ -794,8 +822,8 @@ export default function ProductsPage() {
                         <span className="truncate">{p.product_name ?? p.name}</span>
                       </div>
                     </td>
-                    <td className="px-4 py-3 font-mono text-xs" style={{ color: 'var(--text-secondary)' }}>{p.sku}</td>
-                    <td className="px-4 py-3 text-xs" style={{ color: 'var(--text-secondary)' }}>{p.category}</td>
+                    <td className="px-4 py-3 font-mono text-sm" style={{ color: 'var(--text-secondary)' }}>{p.sku}</td>
+                    <td className="px-4 py-3 text-sm" style={{ color: 'var(--text-secondary)' }}>{p.category}</td>
                     <td className="px-4 py-3 font-mono text-sm text-right" style={{ color: 'var(--text-primary)' }}>
                       {(p.unit_price ?? p.price ?? 0).toLocaleString('vi-VN')}₫
                     </td>

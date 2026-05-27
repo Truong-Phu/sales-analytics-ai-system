@@ -1,4 +1,4 @@
-import { useState } from 'react'
+﻿import { useState } from 'react'
 import { simulateWhatIf } from '../../api/aiApi'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 
@@ -149,7 +149,7 @@ export default function WhatIfPage() {
             <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{result.recommendation}</p>
             {result.assumptions?.length > 0 && (
               <div className="mt-3 pt-3" style={{ borderTop: '1px solid var(--border)' }}>
-                <div className="text-xs font-medium mb-1" style={{ color: 'var(--text-tertiary)' }}>Giả định mô hình:</div>
+                <div className="text-sm font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>Giả định mô hình:</div>
                 <ul className="text-xs list-disc list-inside space-y-0.5" style={{ color: 'var(--text-tertiary)' }}>
                   {result.assumptions.map((a, i) => <li key={i}>{a}</li>)}
                 </ul>

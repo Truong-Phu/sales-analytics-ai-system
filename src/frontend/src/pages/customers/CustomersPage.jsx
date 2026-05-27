@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import MockToast from '../../components/ui/MockToast'
-import { getCustomers, createCustomer, updateCustomer, deactivateCustomer, getCustomerOrderHistory } from '../../api/dashboardApi'
+import { getCustomers, createCustomer, updateCustomer, deactivateCustomer, getCustomerOrderHistory, getOltpCustomer } from '../../api/dashboardApi'
 import { MOCK_CUSTOMERS } from '../../mockData/customers'
 import { useAuth } from '../../hooks/useAuth'
 import i18n from '../../i18n'
@@ -14,7 +14,7 @@ function resolveSegment(seg) {
   return (seg[lang] ?? seg.vi ?? seg.en ?? 'NEW').toUpperCase()
 }
 
-const EMPTY_CUST = { fullName: '', email: '', phoneNumber: '', address: '', province: '', district: '' }
+const EMPTY_CUST = { fullName: '', email: '', phoneNumber: '', address: '', province: '', district: '', ward: '' }
 
 function CustomerFormModal({ initial, mode, onClose, onSaved }) {
   const [form,   setForm]   = useState(initial ?? EMPTY_CUST)
@@ -35,6 +35,7 @@ function CustomerFormModal({ initial, mode, onClose, onSaved }) {
         address:     form.address     || null,
         province:    form.province    || null,
         district:    form.district    || null,
+        ward:        form.ward        || null,
       }
       if (isEdit) await updateCustomer(form.customerId, dto)
       else         await createCustomer(dto)
@@ -81,9 +82,10 @@ function CustomerFormModal({ initial, mode, onClose, onSaved }) {
           {inp('Số điện thoại', 'phoneNumber', 'tel')}
           {inp('Tỉnh / Thành phố', 'province')}
           {inp('Quận / Huyện', 'district')}
+          {inp('Phường / Xã', 'ward')}
         </div>
         <div>
-          <label className="block text-sm mb-1" style={{ color: 'var(--text-secondary)' }}>Địa chỉ</label>
+          <label className="block text-sm mb-1" style={{ color: 'var(--text-secondary)' }}>Địa chỉ cụ thể</label>
           <textarea className="linput text-sm" rows={2} value={form.address ?? ''}
                     onChange={set('address')} />
         </div>
@@ -195,15 +197,22 @@ export default function CustomersPage() {
 
   const openCreate = () => { setFormInit(null); setFormMode('create') }
 
-  const openEdit = (c) => {
+  const openEdit = async (c) => {
+    const cid = c.customer_id ?? c.customerId
+    // Luôn lấy từ OLTP để có đủ address, district, ward
+    let src = c
+    try {
+      if (cid) src = await getOltpCustomer(cid)
+    } catch { /* fallback to DW data */ }
     setFormInit({
-      customerId:  c.customer_id ?? c.customerId,
-      fullName:    c.full_name   ?? c.fullName ?? '',
-      email:       c.email  ?? '',
-      phoneNumber: c.phone  ?? c.phoneNumber ?? '',
-      address:     c.address ?? '',
-      province:    c.province ?? '',
-      district:    c.district ?? '',
+      customerId:  cid,
+      fullName:    src.fullName    ?? src.full_name   ?? c.full_name ?? '',
+      email:       src.email       ?? '',
+      phoneNumber: src.phone       ?? src.phoneNumber ?? c.phone ?? '',
+      address:     src.address     ?? '',
+      province:    src.province    ?? '',
+      district:    src.district    ?? '',
+      ward:        src.ward        ?? '',
     })
     setSelected(null)
     setFormMode('edit')
@@ -479,7 +488,7 @@ export default function CustomersPage() {
                     {[
                       { icon: 'email',       label: email ?? '—' },
                       { icon: 'phone',       label: phone ?? '—' },
-                      { icon: 'location_on', label: [address, district, province].filter(Boolean).join(', ') || '—' },
+                      { icon: 'location_on', label: [selected.address, selected.district, selected.ward, selected.province].filter(v => v && v !== '—').join(', ') || address || '—' },
                       ...(primaryChan ? [{ icon: CHANNEL_ICON[primaryChan] ?? 'store', label: `Kênh chính: ${primaryChan}` }] : []),
                     ].map(item => (
                       <div key={item.icon} className="flex items-center gap-2.5 text-sm">

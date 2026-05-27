@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+﻿import { useState, useEffect } from 'react'
 import axios from '../../api/axios'
 import {
   LineChart, Line, PieChart, Pie, Cell,
@@ -10,7 +10,7 @@ const PLAN_COLORS = { free: '#94A3B8', pro: '#7C3AED', enterprise: '#D97706' }
 function KpiCard({ label, value, sub, color = '#6366F1' }) {
   return (
     <div className="rounded-xl px-5 py-4" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
-      <p className="text-xs mb-1" style={{ color: 'var(--text-tertiary)' }}>{label}</p>
+      <p className="text-sm mb-1" style={{ color: 'var(--text-secondary)' }}>{label}</p>
       <p className="text-2xl font-bold" style={{ color }}>{value}</p>
       {sub && <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>{sub}</p>}
     </div>

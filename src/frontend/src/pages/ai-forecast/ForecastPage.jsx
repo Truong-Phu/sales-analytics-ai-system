@@ -1,4 +1,4 @@
-import { useState } from 'react'
+﻿import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   ComposedChart, Area, Line, ReferenceLine,
@@ -257,7 +257,7 @@ export default function ForecastPage() {
             <div className="space-y-3">
               {/* Trend */}
               <div className="lcard p-4">
-                <p className="text-xs mb-1.5" style={{ color: 'var(--text-tertiary)' }}>Xu hướng</p>
+                <p className="text-sm mb-1.5" style={{ color: 'var(--text-secondary)' }}>Xu hướng</p>
                 <div className="flex items-center gap-2">
                   <span className="icon" style={{ fontSize: 20, color: isUp ? 'var(--accent-500)' : 'var(--color-error)' }}>
                     {isUp ? 'trending_up' : 'trending_down'}
@@ -270,7 +270,7 @@ export default function ForecastPage() {
 
               {/* Growth rate */}
               <div className="lcard p-4">
-                <p className="text-xs mb-1" style={{ color: 'var(--text-tertiary)' }}>Tăng trưởng dự kiến</p>
+                <p className="text-sm mb-1" style={{ color: 'var(--text-secondary)' }}>Tăng trưởng dự kiến</p>
                 <div
                   className="font-mono text-2xl font-bold"
                   style={{ color: isUp ? 'var(--accent-500)' : 'var(--color-error)' }}
@@ -282,7 +282,7 @@ export default function ForecastPage() {
               {/* MA7 */}
               {trend.ma7 > 0 && (
                 <div className="lcard p-4">
-                  <p className="text-xs mb-1" style={{ color: 'var(--text-tertiary)' }}>
+                  <p className="text-sm mb-1" style={{ color: 'var(--text-secondary)' }}>
                     Trung bình 7 ngày (MA7)
                   </p>
                   <div className="font-mono text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
@@ -320,7 +320,7 @@ export default function ForecastPage() {
               { label: 'Tập test', value: `${metrics.n_test ?? '–'} ngày`, sub: `${metrics.test_from ?? ''} → ${metrics.test_to ?? ''}`, color: 'var(--text-tertiary)' },
             ].map(({ label, value, sub, color }) => (
               <div key={label} className="p-3 rounded-xl" style={{ background: 'var(--bg-elevated)' }}>
-                <p className="text-xs mb-1" style={{ color: 'var(--text-tertiary)' }}>{label}</p>
+                <p className="text-sm mb-1" style={{ color: 'var(--text-secondary)' }}>{label}</p>
                 <p className="font-mono text-lg font-bold" style={{ color }}>{value}</p>
                 <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>{sub}</p>
               </div>

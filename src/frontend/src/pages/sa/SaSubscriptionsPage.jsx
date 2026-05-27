@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+﻿import { useState, useEffect, useCallback } from 'react'
 import axios from '../../api/axios'
 
 const fmtDate = d => d ? new Date(d).toLocaleDateString('vi-VN') : '—'
@@ -87,7 +87,7 @@ function EditModal({ sub, onClose, onSaved }) {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-tertiary)' }}>Gói</label>
+              <label className="text-sm font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>Gói</label>
               <select className={inp} style={inpStyle}
                 value={form.plan} onChange={e => handlePlanChange(e.target.value)}>
                 {['free', 'pro', 'enterprise'].map(p => (
@@ -96,7 +96,7 @@ function EditModal({ sub, onClose, onSaved }) {
               </select>
             </div>
             <div>
-              <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-tertiary)' }}>Trạng thái</label>
+              <label className="text-sm font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>Trạng thái</label>
               <select className={inp} style={inpStyle}
                 value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}>
                 {['active', 'trial', 'expired', 'cancelled'].map(s => <option key={s} value={s}>{s}</option>)}
@@ -119,7 +119,7 @@ function EditModal({ sub, onClose, onSaved }) {
           </div>
 
           <div>
-            <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-tertiary)' }}>Hết hạn</label>
+            <label className="text-sm font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>Hết hạn</label>
             <input type="date" className={inp} style={inpStyle}
               value={form.expiresAt}
               onChange={e => setForm(f => ({ ...f, expiresAt: e.target.value }))} />
@@ -127,7 +127,7 @@ function EditModal({ sub, onClose, onSaved }) {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-tertiary)' }}>
+              <label className="text-sm font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>
                 Tối đa Kênh
                 {!isEnterprise && <span className="ml-1 opacity-60">(mặc định: {planDef.maxChannels})</span>}
               </label>
@@ -140,7 +140,7 @@ function EditModal({ sub, onClose, onSaved }) {
               )}
             </div>
             <div>
-              <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-tertiary)' }}>
+              <label className="text-sm font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>
                 Tối đa Người dùng
                 {!isEnterprise && <span className="ml-1 opacity-60">(mặc định: {planDef.maxUsers})</span>}
               </label>

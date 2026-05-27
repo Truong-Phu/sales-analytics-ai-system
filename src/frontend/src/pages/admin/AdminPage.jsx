@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+﻿import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import MockToast from '../../components/ui/MockToast'
 import {
@@ -90,6 +90,7 @@ function IconBtn({ icon, title, color, bg, hoverBg, onClick, disabled }) {
 
 // ─── Modal Thêm người dùng ────────────────────────────────────────────────────
 function CreateUserModal({ onClose, onCreated }) {
+  const { t } = useTranslation()
   const [form, setForm]   = useState({ fullName: '', email: '', tempPassword: '', role: 'Staff', sendInvite: false })
   const [saving, setSaving] = useState(false)
   const [error,  setError]  = useState('')
@@ -368,7 +369,7 @@ function KpiTab() {
       {/* Controls */}
       <div className="lcard p-3 flex flex-wrap gap-3 items-center">
         <div className="flex flex-col gap-1">
-          <label className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Kỳ (tháng/năm)</label>
+          <label className="text-xs" style={{ color: 'var(--text-secondary)' }}>Kỳ (tháng/năm)</label>
           <input type="month" value={period} onChange={e => setPeriod(e.target.value)}
                  className="linput !h-8 text-xs" />
         </div>
@@ -635,7 +636,7 @@ export default function AdminPage() {
                             )}
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-xs" style={{ color: 'var(--text-secondary)' }}>{u.email}</td>
+                        <td className="px-4 py-3 text-sm" style={{ color: 'var(--text-secondary)' }}>{u.email}</td>
                         <td className="px-4 py-3"><RoleBadge role={u.role} /></td>
                         <td className="px-4 py-3"><StatusDot status={u.status} /></td>
                         <td className="px-4 py-3">
@@ -694,7 +695,7 @@ export default function AdminPage() {
           {/* Filter bar */}
           <div className="lcard p-3 flex flex-wrap gap-3 items-end">
             <div className="flex flex-col gap-1">
-              <label className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Loại hành động</label>
+              <label className="text-xs" style={{ color: 'var(--text-secondary)' }}>Loại hành động</label>
               <select value={filterAction} onChange={e => setFilterAction(e.target.value)}
                       className="linput !h-8 text-xs" style={{ minWidth: 160 }}>
                 <option value="">Tất cả</option>
@@ -702,11 +703,11 @@ export default function AdminPage() {
               </select>
             </div>
             <div className="flex flex-col gap-1">
-              <label className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Từ ngày</label>
+              <label className="text-xs" style={{ color: 'var(--text-secondary)' }}>Từ ngày</label>
               <input type="date" value={filterFrom} onChange={e => setFilterFrom(e.target.value)} className="linput !h-8 text-xs" />
             </div>
             <div className="flex flex-col gap-1">
-              <label className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Đến ngày</label>
+              <label className="text-xs" style={{ color: 'var(--text-secondary)' }}>Đến ngày</label>
               <input type="date" value={filterTo} onChange={e => setFilterTo(e.target.value)} className="linput !h-8 text-xs" />
             </div>
             <button onClick={() => fetchAuditLogs(1)} className="lbtn lbtn-primary !h-8 !px-4 text-xs" disabled={auditLoading}>

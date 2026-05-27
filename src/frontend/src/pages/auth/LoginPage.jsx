@@ -5,20 +5,19 @@ import { useAuth } from '../../hooks/useAuth'
 import { useTheme } from '../../hooks/useTheme'
 import i18n from '../../i18n'
 
-function LuminaLogoSm({ size = 28, white = false }) {
-  const stroke = white ? 'white' : 'url(#lgSmGrad)'
-  const fill   = white ? 'rgba(255,255,255,0.15)' : 'url(#lgSmGrad)'
+function LuminaLogoSm({ size = 28 }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 32 32" fill="none">
+    <svg width={size} height={size} viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
       <defs>
-        <linearGradient id="lgSmGrad" x1="0" y1="0" x2="1" y2="1">
+        <linearGradient id="lgSmGrad" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
           <stop offset="0%" stopColor="#6366F1" />
-          <stop offset="100%" stopColor="#10B981" />
+          <stop offset="100%" stopColor="#3B82F6" />
         </linearGradient>
       </defs>
-      <polygon points="16,2 28,9 28,23 16,30 4,23 4,9" fill={fill} opacity="0.9" />
-      <polygon points="16,2 28,9 28,23 16,30 4,23 4,9" fill="none" stroke={stroke} strokeWidth="1.5" />
-      <circle cx="16" cy="16" r="4" fill={stroke === 'white' ? 'white' : 'url(#lgSmGrad)'} />
+      <rect width="32" height="32" rx="8" fill="url(#lgSmGrad)" />
+      <rect x="6"  y="20" width="5" height="7"  rx="1.5" fill="white" fillOpacity="0.7" />
+      <rect x="13" y="14" width="5" height="13" rx="1.5" fill="white" fillOpacity="0.85" />
+      <rect x="20" y="8"  width="5" height="19" rx="1.5" fill="white" />
     </svg>
   )
 }
@@ -122,7 +121,7 @@ export default function LoginPage() {
       >
         <MeshBg />
         <div className="relative z-10 text-center px-12 max-w-md">
-          <LuminaLogoSm size={64} white />
+          <LuminaLogoSm size={64} />
           <h1 className="text-white text-3xl font-bold mt-4">MSAS Analytics</h1>
           <p className="text-white/75 text-base mt-2">{t('auth.tagline')}</p>
           <div className="mt-8 flex flex-col gap-3">

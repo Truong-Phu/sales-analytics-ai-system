@@ -98,6 +98,12 @@ export default {
         'chart-7': 'var(--chart-7)',
         'chart-8': 'var(--chart-8)',
 
+        // ── Foreground tokens (WCAG AA) ──
+        'foreground':         'var(--foreground)',
+        'muted-foreground':   'var(--muted-foreground)',
+        'card-foreground':    'var(--card-foreground)',
+        'popover-foreground': 'var(--popover-foreground)',
+
         // ── Brand tokens ──
         'brand': 'var(--brand-primary)',
         'brand-muted': 'var(--brand-muted)',

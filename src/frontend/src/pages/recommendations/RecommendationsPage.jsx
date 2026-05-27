@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+﻿import { useState, useEffect, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import MockToast from '../../components/ui/MockToast'
 import { getRecommendations } from '../../api/aiApi'
@@ -262,7 +262,7 @@ function ChatTab({ tab }) {
 
       {/* Sample questions */}
       <div>
-        <p className="text-xs mb-2" style={{ color: 'var(--text-tertiary)' }}>Câu hỏi gợi ý:</p>
+        <p className="text-sm mb-2" style={{ color: 'var(--text-secondary)' }}>Câu hỏi gợi ý:</p>
         <div className="flex flex-col gap-1.5">
           {smartSuggestions.map((s, i) => (
             <button

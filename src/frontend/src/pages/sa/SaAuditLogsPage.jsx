@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+﻿import { useState, useEffect, useCallback } from 'react'
 import axios from '../../api/axios'
 
 const fmtDate = d => d ? new Date(d).toLocaleString('vi-VN') : '—'
@@ -55,7 +55,7 @@ export default function SaAuditLogsPage() {
       {/* Filters */}
       <div className="flex flex-wrap gap-3 items-end">
         <div>
-          <label className="text-xs font-medium block mb-1" style={{ color: 'var(--text-tertiary)' }}>Hành động</label>
+          <label className="text-sm font-medium block mb-1" style={{ color: 'var(--text-secondary)' }}>Hành động</label>
           <select value={actionFilter} onChange={e => { setActionFilter(e.target.value); setPage(1) }}
             className="text-sm px-3 py-2 rounded-lg"
             style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}>
@@ -63,14 +63,14 @@ export default function SaAuditLogsPage() {
           </select>
         </div>
         <div>
-          <label className="text-xs font-medium block mb-1" style={{ color: 'var(--text-tertiary)' }}>Từ ngày</label>
+          <label className="text-sm font-medium block mb-1" style={{ color: 'var(--text-secondary)' }}>Từ ngày</label>
           <input type="date" value={dateFrom}
             onChange={e => { setDateFrom(e.target.value); setPage(1) }}
             className="text-sm px-3 py-2 rounded-lg"
             style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', color: 'var(--text-primary)' }} />
         </div>
         <div>
-          <label className="text-xs font-medium block mb-1" style={{ color: 'var(--text-tertiary)' }}>Đến ngày</label>
+          <label className="text-sm font-medium block mb-1" style={{ color: 'var(--text-secondary)' }}>Đến ngày</label>
           <input type="date" value={dateTo}
             onChange={e => { setDateTo(e.target.value); setPage(1) }}
             className="text-sm px-3 py-2 rounded-lg"

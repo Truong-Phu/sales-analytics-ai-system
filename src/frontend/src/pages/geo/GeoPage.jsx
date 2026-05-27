@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+﻿import { useState, useEffect, useRef } from 'react'
 import MockToast from '../../components/ui/MockToast'
 import { getGeoDistribution } from '../../api/aiApi'
 
@@ -242,7 +242,7 @@ export default function GeoPage() {
               { label: 'Đơn hàng',  value: selected.orders.toLocaleString(),             color: '#F59E0B' },
             ].map(k => (
               <div key={k.label}>
-                <div className="text-xs mb-1" style={{ color: 'var(--text-tertiary)' }}>{k.label}</div>
+                <div className="text-sm mb-1" style={{ color: 'var(--text-secondary)' }}>{k.label}</div>
                 <div className="font-bold" style={{ color: k.color }}>{k.value}</div>
               </div>
             ))}
