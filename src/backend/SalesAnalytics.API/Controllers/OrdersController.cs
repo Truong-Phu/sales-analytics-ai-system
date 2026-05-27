@@ -251,10 +251,11 @@ public class OrdersController(
                 ExternalOrderId      = order.ExternalOrderId,
                 TrackingNumber       = order.TrackingNumber,
                 GhnOrderCode         = order.GhnOrderCode,
-                ShippingAddress      = order.ShippingAddress,
-                ShippingDistrict     = order.ShippingDistrict,
-                ShippingProvince     = order.ShippingProvince,
-                ShippingFullAddress  = order.ShippingFullAddress,
+                ShippingAddress      = order.ShippingAddress      ?? order.Customer?.Address,
+                ShippingDistrict     = order.ShippingDistrict    ?? order.Customer?.District,
+                ShippingProvince     = order.ShippingProvince    ?? order.Customer?.Province,
+                ShippingFullAddress  = order.ShippingFullAddress ?? order.Customer?.FullAddress
+                                       ?? BuildFullAddress(order.Customer),
                 PlatformStatus       = order.PlatformStatus,
                 PaidAt               = order.PaidAt,
                 CreatedAt            = order.CreatedAt,
@@ -424,6 +425,16 @@ public class OrdersController(
     }
 
     // ══════════════════════════════════════════════════════════════════════════
+    // Ghép địa chỉ đầy đủ từ Customer khi shipping_full_address bị null
+    private static string? BuildFullAddress(Customer? c)
+    {
+        if (c is null) return null;
+        var parts = new[] { c.Address, c.District, c.Province }
+            .Where(s => !string.IsNullOrWhiteSpace(s));
+        var full = string.Join(", ", parts);
+        return string.IsNullOrWhiteSpace(full) ? null : full;
+    }
+
     // 3. GHI CHÚ NỘI BỘ – order_notes (raw SQL, idempotent CREATE TABLE)
     // ══════════════════════════════════════════════════════════════════════════
 

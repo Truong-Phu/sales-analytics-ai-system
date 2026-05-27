@@ -12,6 +12,8 @@ public class CustomerResponseDto
     public string? Phone        { get; set; }
     public string? Address      { get; set; }
     public string? Province     { get; set; }
+    public string? District     { get; set; }
+    public string? Ward         { get; set; }
     public int     TotalOrders  { get; set; }
     public decimal TotalSpent   { get; set; }
     public string? SegmentLabel { get; set; }

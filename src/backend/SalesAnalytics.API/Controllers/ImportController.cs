@@ -107,34 +107,55 @@ public class ImportController(IConfiguration cfg, ITenantContext tenant, IAuditL
         if (type is not ("orders" or "products"))
             return NotFound(new { message = "Loại file không hợp lệ. Chọn: orders, products." });
 
-        var basePath = Path.Combine(
-            Directory.GetCurrentDirectory(),
-            "..", "..", "..", "..",
-            "docs", "sample-data", "templates"
-        );
+        var displayName = $"template_{src}_{type}_{DateTime.Now:yyyyMMdd}.csv";
 
-        var fileName    = $"template_{src}_{type}.csv";
-        var displayName = fileName;
-        var fullPath    = Path.GetFullPath(Path.Combine(basePath, fileName));
-
-        if (System.IO.File.Exists(fullPath))
+        // Đơn hàng: header chuẩn Open Platform + 10 hàng mẫu ngày D-5 đến D
+        if (type == "orders")
         {
-            var csvBytes = System.IO.File.ReadAllBytes(fullPath);
-            return File(csvBytes, "text/csv", displayName);
+            var header = src switch
+            {
+                "shopee" => "Mã đơn hàng,Trạng thái đơn hàng,Lý do hủy/hoàn,Ngày đặt hàng,Ngày cập nhật," +
+                            "Ngày thanh toán,Tên đăng nhập người mua,Tên người nhận,Số điện thoại,Địa chỉ giao hàng," +
+                            "Phường/Xã,Quận/Huyện,Tỉnh/Thành phố,Vùng,Mã bưu điện," +
+                            "Tên sản phẩm,Phân loại hàng,SKU phân loại,Mã sản phẩm Shopee,Giá gốc (VND)," +
+                            "Giá bán (VND),Số lượng,Tổng tiền hàng (VND),Phí vận chuyển (VND),Phí ship gốc (VND)," +
+                            "Giảm phí ship sàn (VND),Tổng thanh toán (VND),Phương thức thanh toán," +
+                            "Đơn vị vận chuyển,Mã vận đơn,Trạng thái vận chuyển,Loại thực hiện đơn,Ghi chú từ người mua",
+                "tiktok" => "Order ID,Order Status,Create Time,Update Time,Paid Time,RTS SLA Time," +
+                            "Buyer User ID,Buyer Message,Payment Method,Is COD," +
+                            "Recipient Name,Recipient Phone,Full Address,Address Detail,Province,District,Ward,Postal Code,Region Code," +
+                            "Shipping Type,Shipping Provider,Tracking Number,Fulfillment Type,Currency," +
+                            "Sub Total (VND),Shipping Fee (VND),Original Shipping Fee (VND)," +
+                            "Shipping Fee Platform Discount (VND),Seller Discount (VND),Platform Discount (VND)," +
+                            "Total Amount (VND),Original Total Product Price (VND)," +
+                            "Line Item ID,SKU ID,Product ID,Product Name,Seller SKU,SKU Name," +
+                            "Original Price (VND),Sale Price (VND),Platform Discount Item (VND),Seller Discount Item (VND)," +
+                            "Package ID,Package Status,Item Tracking Number,Shipping Provider Name,Display Status",
+                "lazada" => "Order ID,Order Number,Created At,Updated At,Status,Payment Method," +
+                            "Price (VND),Shipping Fee (VND),Shipping Fee Original (VND),Shipping Fee Discount Platform (VND)," +
+                            "Voucher (VND),Voucher Platform (VND),Voucher Seller (VND)," +
+                            "Customer First Name,Customer Last Name,Address Line 1,City,District (Address3),Ward (Address4),Country," +
+                            "Items Count,Warehouse Code,Order Item ID,Item Name,SKU,Shop SKU,Variation," +
+                            "Item Price (VND),Paid Price (VND),Shipping Amount (VND),Status Item," +
+                            "Shipment Provider,Tracking Code,Currency,Product ID,Product Main Image",
+                _ => ""
+            };
+            var sbOrd = new StringBuilder();
+            sbOrd.AppendLine(header);
+            foreach (var row in BuildOrderSampleRows(src, DateTime.Now))
+                sbOrd.AppendLine(row);
+            return File(Encoding.UTF8.GetBytes(sbOrd.ToString()), "text/csv", displayName);
         }
 
-        // Fallback header-only (chuẩn template mới Open Platform 2026-05-21)
-        var fallback = (src, type) switch
+        // Sản phẩm: header chuẩn Open Platform (không có trường ngày biến động)
+        var productHeader = src switch
         {
-            ("shopee", "orders")   => "Mã đơn hàng,Trạng thái đơn hàng,Lý do hủy/hoàn,Ngày đặt hàng,Ngày cập nhật,Ngày thanh toán,Tên đăng nhập người mua,Tên người nhận,Số điện thoại,Địa chỉ giao hàng,Phường/Xã,Quận/Huyện,Tỉnh/Thành phố,Vùng,Mã bưu điện,Tên sản phẩm,Phân loại hàng,SKU phân loại,Mã sản phẩm Shopee,Giá gốc (VND),Giá bán (VND),Số lượng,Tổng tiền hàng (VND),Phí vận chuyển (VND),Phí ship gốc (VND),Giảm phí ship sàn (VND),Tổng thanh toán (VND),Phương thức thanh toán,Đơn vị vận chuyển,Mã vận đơn,Trạng thái vận chuyển,Loại thực hiện đơn,Ghi chú từ người mua",
-            ("shopee", "products") => "Mã sản phẩm Shopee,Tên sản phẩm,Mã SKU gốc,Danh mục,ID danh mục,Thương hiệu,Giá gốc (VND),Giá bán (VND),Tồn kho,Tồn kho đặt trước,Trạng thái,Tình trạng,Cân nặng (kg),Chiều dài (cm),Chiều rộng (cm),Chiều cao (cm),Mô tả,Ảnh chính,Có phân loại,Ngày tạo,Ngày cập nhật",
-            ("tiktok", "orders")   => "Order ID,Order Status,Create Time,Update Time,Paid Time,RTS SLA Time,Buyer User ID,Buyer Message,Payment Method,Is COD,Recipient Name,Recipient Phone,Full Address,Address Detail,Province,District,Ward,Postal Code,Region Code,Shipping Type,Shipping Provider,Tracking Number,Fulfillment Type,Currency,Sub Total (VND),Shipping Fee (VND),Original Shipping Fee (VND),Shipping Fee Platform Discount (VND),Seller Discount (VND),Platform Discount (VND),Total Amount (VND),Original Total Product Price (VND),Line Item ID,SKU ID,Product ID,Product Name,Seller SKU,SKU Name,Original Price (VND),Sale Price (VND),Platform Discount Item (VND),Seller Discount Item (VND),Package ID,Package Status,Item Tracking Number,Shipping Provider Name,Display Status",
-            ("tiktok", "products") => "Product ID,Title,Status,Create Time,Update Time,Category ID,Category Name,Brand ID,Brand Name,SKU ID,Seller SKU,SKU Name,Sale Price (VND),Currency,Warehouse ID,Quantity,Color,Size,Image URL,Package Weight (kg),Package Weight Unit,Package Length (cm),Package Width (cm),Package Height (cm),Description",
-            ("lazada", "orders")   => "Order ID,Order Number,Created At,Updated At,Status,Payment Method,Price (VND),Shipping Fee (VND),Shipping Fee Original (VND),Shipping Fee Discount Platform (VND),Voucher (VND),Voucher Platform (VND),Voucher Seller (VND),Customer First Name,Customer Last Name,Address Line 1,City,District (Address3),Ward (Address4),Country,Items Count,Warehouse Code,Order Item ID,Item Name,SKU,Shop SKU,Variation,Item Price (VND),Paid Price (VND),Shipping Amount (VND),Status Item,Shipment Provider,Tracking Code,Currency,Product ID,Product Main Image",
-            ("lazada", "products") => "Item ID,Name,Status,Created Time,Updated Time,Primary Category,Brand,Short Description,Seller SKU,Shop SKU,Price (VND),Special Price (VND),Special From,Special To,Quantity,Package Width (cm),Package Height (cm),Package Length (cm),Package Weight (kg),Images,Product URL,Warehouse Code",
-            _                      => "",
+            "shopee" => "Mã sản phẩm Shopee,Tên sản phẩm,Mã SKU gốc,Danh mục,ID danh mục,Thương hiệu,Giá gốc (VND),Giá bán (VND),Tồn kho,Tồn kho đặt trước,Trạng thái,Tình trạng,Cân nặng (kg),Chiều dài (cm),Chiều rộng (cm),Chiều cao (cm),Mô tả,Ảnh chính,Có phân loại,Ngày tạo,Ngày cập nhật",
+            "tiktok" => "Product ID,Title,Status,Create Time,Update Time,Category ID,Category Name,Brand ID,Brand Name,SKU ID,Seller SKU,SKU Name,Sale Price (VND),Currency,Warehouse ID,Quantity,Color,Size,Image URL,Package Weight (kg),Package Weight Unit,Package Length (cm),Package Width (cm),Package Height (cm),Description",
+            "lazada" => "Item ID,Name,Status,Created Time,Updated Time,Primary Category,Brand,Short Description,Seller SKU,Shop SKU,Price (VND),Special Price (VND),Special From,Special To,Quantity,Package Width (cm),Package Height (cm),Package Length (cm),Package Weight (kg),Images,Product URL,Warehouse Code",
+            _ => ""
         };
-        return File(Encoding.UTF8.GetBytes(fallback + "\r\n"), "text/csv", displayName);
+        return File(Encoding.UTF8.GetBytes(productHeader + "\r\n"), "text/csv", displayName);
     }
 
     // ── POST /api/import/platform-orders ─────────────────────────────────────
@@ -1250,15 +1271,223 @@ public class ImportController(IConfiguration cfg, ITenantContext tenant, IAuditL
         return (affected, categoryNew);
     }
 
+    // ── Tạo 10 hàng mẫu chuẩn Open Platform, ngày động từ D-5 đến D ─────────────
+    private static string[] BuildOrderSampleRows(string platform, DateTime now)
+    {
+        // 10 khách hàng mẫu thực tế (username, họ tên, sđt, địa chỉ, phường, quận, tỉnh, vùng, zip)
+        var buyers = new (string user, string name, string phone, string addr, string ward, string dist, string prov, string region, string zip)[]
+        {
+            ("nguyenvana01","Nguyễn Văn An","0901234567","123 Nguyễn Trãi, P.3, Q.5","Phường 3","Quận 5","TP. Hồ Chí Minh","Miền Nam","70000"),
+            ("tranthib02","Trần Thị Bình","0912345678","45 Hoàng Hoa Thám, P.7, Q.Bình Thạnh","Phường 7","Quận Bình Thạnh","TP. Hồ Chí Minh","Miền Nam","70000"),
+            ("levanc03","Lê Văn Cường","0923456789","78 Lê Lợi, P.Bến Nghé, Q.1","Phường Bến Nghé","Quận 1","TP. Hồ Chí Minh","Miền Nam","70000"),
+            ("phamthid04","Phạm Thị Dung","0934567890","234 Tô Hiệu, P.Nghĩa Tân, Q.Cầu Giấy","Phường Nghĩa Tân","Quận Cầu Giấy","Hà Nội","Miền Bắc","10000"),
+            ("hoangdine05","Hoàng Đình Em","0945678901","15 Phan Châu Trinh, P.Minh An","Phường Minh An","Tp. Hội An","Quảng Nam","Miền Trung","51000"),
+            ("nguyenvanf06","Nguyễn Văn Phát","0956789012","89 Đường 30-4, P.Hưng Lợi, Q.Ninh Kiều","Phường Hưng Lợi","Quận Ninh Kiều","Cần Thơ","Miền Nam","94000"),
+            ("tranthig07","Trần Thị Giang","0967890123","34 Phan Đình Phùng, P.17, Q.Phú Nhuận","Phường 17","Quận Phú Nhuận","TP. Hồ Chí Minh","Miền Nam","70000"),
+            ("lethih08","Lê Thị Hoa","0978901234","67 Nguyễn Đình Chiểu, P.6, Q.3","Phường 6","Quận 3","TP. Hồ Chí Minh","Miền Nam","70000"),
+            ("phamvani09","Phạm Văn Ích","0989012345","22 Trần Hưng Đạo, P.Nhơn Bình","Phường Nhơn Bình","Tp. Quy Nhơn","Bình Định","Miền Trung","55100"),
+            ("hoangthik10","Hoàng Thị Kim","0990123456","90 Võ Văn Tần, P.6, Q.3","Phường 6","Quận 3","TP. Hồ Chí Minh","Miền Nam","70000"),
+        };
+
+        // 10 sản phẩm mẫu thực tế (sku, tên, phân loại, productId, giá gốc, giá bán, số lượng)
+        var products = new (string sku, string name, string variant, string pid, int orig, int sale, int qty)[]
+        {
+            ("AT-NAM-001","Áo thun nam basic cotton thoáng mát","Trắng - L","100001",249000,219000,2),
+            ("QJ-NAM-002","Quần jean nam slim fit co giãn","Xanh đậm - 32","100002",399000,359000,1),
+            ("DAM-NU-003","Đầm maxi nữ đi biển vải musselin","Hồng - M","100003",299000,269000,1),
+            ("ASM-NAM-004","Áo sơ mi nam công sở dài tay","Trắng - M","100004",349000,319000,3),
+            ("TX-NU-005","Túi tote nữ da PU thời trang","Đen - One Size","100005",499000,449000,1),
+            ("GT-NAM-006","Giày thể thao nam đế chunky","Trắng - 42","100006",650000,599000,1),
+            ("AK-NAM-007","Áo khoác nam bomber phong cách","Xanh Navy - XL","100007",470000,420000,2),
+            ("BL-UNI-008","Balo laptop chống thấm 15.6 inch","Đen - 15.6 inch","100008",420000,385000,1),
+            ("QS-NU-009","Quần short thể thao nữ lưng cao","Xám - M","100009",239000,219000,2),
+            ("VY-NU-010","Váy midi nữ họa tiết hoa nhí","Vàng - S","100010",360000,329000,1),
+        };
+
+        int[] dayOffsets = { -5, -5, -4, -4, -3, -3, -2, -2, -1,  0 };
+        int[] hours      = {  9, 14,  8, 14,  9, 16, 11,  8, 15, now.Hour };
+        int[] mins       = { 15, 30,  0, 30,  0, 45, 20,  0,  0, now.Minute };
+        int[] shipFees   = { 25000,30000,25000,30000,25000,35000,25000,30000,25000,30000 };
+        var   payments   = new[] { "COD","MOMO","COD","VNPAY","COD","MOMO","COD","VNPAY","COD","MOMO" };
+
+        var shopeeStatus = new[] { "COMPLETED","COMPLETED","COMPLETED","COMPLETED","SHIPPED","SHIPPED","SHIPPED","SHIPPED","PENDING","PENDING" };
+        var tiktokStatus = new[] { "COMPLETED","COMPLETED","COMPLETED","COMPLETED","IN_TRANSIT","IN_TRANSIT","IN_TRANSIT","IN_TRANSIT","AWAITING_SHIPMENT","AWAITING_SHIPMENT" };
+        var lazadaStatus = new[] { "delivered","delivered","delivered","delivered","shipped","shipped","shipped","shipped","pending","pending" };
+        var shopeeShip   = new[] { "Giao thành công","Giao thành công","Giao thành công","Giao thành công","Đang vận chuyển","Đang vận chuyển","Đang vận chuyển","Đang vận chuyển","Chờ lấy hàng","Chờ lấy hàng" };
+
+        static string Q(string s) => s.Contains(',') || s.Contains('"')
+            ? $"\"{s.Replace("\"", "\"\"")}\"" : s;
+
+        var rows = new string[10];
+        for (int i = 0; i < 10; i++)
+        {
+            var    b       = buyers[i];
+            var    p       = products[i];
+            int    n       = i + 1;
+            int    dOff    = dayOffsets[i];
+            int    ship    = shipFees[i];
+            string pay     = payments[i];
+            bool   isCod   = pay == "COD";
+            long   subtotal = (long)p.sale * p.qty;
+            long   total    = subtotal + ship;
+
+            var    orderDt  = now.Date.AddDays(dOff).AddHours(hours[i]).AddMinutes(mins[i]);
+            var    updateDt = dOff <= -4 ? orderDt.AddHours(26) : dOff <= -2 ? orderDt.AddHours(4) : orderDt.AddMinutes(30);
+            string paidSh   = dOff <= -4 ? orderDt.AddMinutes(15).ToString("dd/MM/yyyy HH:mm") : "";
+            string paidIso  = dOff <= -4 ? orderDt.AddMinutes(15).ToString("yyyy-MM-dd HH:mm:ss") : "";
+            bool   hasTrack = dOff <= -2;
+            string trackSPX = hasTrack ? $"SPX{now:yyyyMMdd}{n:D2}" : "";
+            string trackTTK = hasTrack ? $"TTK{now:yyyyMMdd}{n:D2}" : "";
+            string trackLZD = hasTrack ? $"LZD{now:yyyyMMdd}{n:D2}" : "";
+
+            var    nameWords = b.name.Split(' ');
+            string firstName = nameWords[^1];
+            string lastName  = string.Join(" ", nameWords, 0, nameWords.Length - 1);
+
+            rows[i] = platform switch
+            {
+                // Shopee: 33 cột chuẩn Open Platform
+                "shopee" => string.Join(",",
+                    $"SPE{now:yyyyMMdd}{n:D3}",               // Mã đơn hàng
+                    shopeeStatus[i],                           // Trạng thái đơn hàng
+                    "",                                        // Lý do hủy/hoàn
+                    orderDt.ToString("dd/MM/yyyy HH:mm"),      // Ngày đặt hàng
+                    updateDt.ToString("dd/MM/yyyy HH:mm"),     // Ngày cập nhật
+                    paidSh,                                    // Ngày thanh toán
+                    b.user,                                    // Tên đăng nhập người mua
+                    Q(b.name),                                 // Tên người nhận
+                    b.phone,                                   // Số điện thoại
+                    Q(b.addr),                                 // Địa chỉ giao hàng
+                    b.ward,                                    // Phường/Xã
+                    b.dist,                                    // Quận/Huyện
+                    b.prov,                                    // Tỉnh/Thành phố
+                    b.region,                                  // Vùng
+                    b.zip,                                     // Mã bưu điện
+                    Q(p.name),                                 // Tên sản phẩm
+                    Q(p.variant),                              // Phân loại hàng
+                    p.sku,                                     // SKU phân loại
+                    p.pid,                                     // Mã sản phẩm Shopee
+                    p.orig.ToString(),                         // Giá gốc (VND)
+                    p.sale.ToString(),                         // Giá bán (VND)
+                    p.qty.ToString(),                          // Số lượng
+                    subtotal.ToString(),                       // Tổng tiền hàng (VND)
+                    ship.ToString(),                           // Phí vận chuyển (VND)
+                    ship.ToString(),                           // Phí ship gốc (VND)
+                    "0",                                       // Giảm phí ship sàn (VND)
+                    total.ToString(),                          // Tổng thanh toán (VND)
+                    pay,                                       // Phương thức thanh toán
+                    "Giao Hàng Nhanh",                        // Đơn vị vận chuyển
+                    trackSPX,                                  // Mã vận đơn
+                    shopeeShip[i],                             // Trạng thái vận chuyển
+                    "Người bán tự giao",                      // Loại thực hiện đơn
+                    ""                                         // Ghi chú từ người mua
+                ),
+
+                // TikTok Shop: 47 cột chuẩn Open Platform
+                "tiktok" => string.Join(",",
+                    $"TTK{now:yyyyMMdd}{n:D4}",               // Order ID
+                    tiktokStatus[i],                           // Order Status
+                    orderDt.ToString("yyyy-MM-dd HH:mm:ss"),  // Create Time
+                    updateDt.ToString("yyyy-MM-dd HH:mm:ss"), // Update Time
+                    paidIso,                                   // Paid Time
+                    "",                                        // RTS SLA Time
+                    $"tt_{b.user}",                            // Buyer User ID
+                    "",                                        // Buyer Message
+                    pay,                                       // Payment Method
+                    isCod ? "1" : "0",                        // Is COD
+                    Q(b.name),                                 // Recipient Name
+                    b.phone,                                   // Recipient Phone
+                    Q($"{b.addr}, {b.ward}, {b.dist}, {b.prov}"), // Full Address
+                    Q(b.addr),                                 // Address Detail
+                    b.prov,                                    // Province
+                    b.dist,                                    // District
+                    b.ward,                                    // Ward
+                    b.zip,                                     // Postal Code
+                    "VN",                                      // Region Code
+                    "STANDARD",                                // Shipping Type
+                    "GHN",                                     // Shipping Provider
+                    trackTTK,                                  // Tracking Number
+                    "FULFILLED_BY_SELLER",                     // Fulfillment Type
+                    "VND",                                     // Currency
+                    subtotal.ToString(),                       // Sub Total (VND)
+                    ship.ToString(),                           // Shipping Fee (VND)
+                    ship.ToString(),                           // Original Shipping Fee (VND)
+                    "0",                                       // Shipping Fee Platform Discount (VND)
+                    "0",                                       // Seller Discount (VND)
+                    "0",                                       // Platform Discount (VND)
+                    total.ToString(),                          // Total Amount (VND)
+                    ((long)p.orig * p.qty).ToString(),         // Original Total Product Price (VND)
+                    $"LI{n:D6}",                               // Line Item ID
+                    $"SKU{p.pid}",                             // SKU ID
+                    $"PRD{p.pid}",                             // Product ID
+                    Q(p.name),                                 // Product Name
+                    p.sku,                                     // Seller SKU
+                    Q(p.variant),                              // SKU Name
+                    p.orig.ToString(),                         // Original Price (VND)
+                    p.sale.ToString(),                         // Sale Price (VND)
+                    "0",                                       // Platform Discount Item (VND)
+                    "0",                                       // Seller Discount Item (VND)
+                    $"PKG{n:D6}",                              // Package ID
+                    tiktokStatus[i],                           // Package Status
+                    trackTTK,                                  // Item Tracking Number
+                    "Giao Hàng Nhanh (GHN)",                  // Shipping Provider Name
+                    tiktokStatus[i]                            // Display Status
+                ),
+
+                // Lazada: 36 cột chuẩn Open Platform
+                "lazada" => string.Join(",",
+                    $"LZD{now:yyyyMMdd}{n:D3}",               // Order ID
+                    $"150{now:MMdd}{n:D3}",                    // Order Number
+                    orderDt.ToString("yyyy-MM-ddTHH:mm:ss+07:00"),  // Created At
+                    updateDt.ToString("yyyy-MM-ddTHH:mm:ss+07:00"), // Updated At
+                    lazadaStatus[i],                           // Status
+                    pay,                                       // Payment Method
+                    total.ToString(),                          // Price (VND)
+                    ship.ToString(),                           // Shipping Fee (VND)
+                    ship.ToString(),                           // Shipping Fee Original (VND)
+                    "0",                                       // Shipping Fee Discount Platform (VND)
+                    "0",                                       // Voucher (VND)
+                    "0",                                       // Voucher Platform (VND)
+                    "0",                                       // Voucher Seller (VND)
+                    Q(firstName),                              // Customer First Name
+                    Q(lastName),                               // Customer Last Name
+                    Q(b.addr),                                 // Address Line 1
+                    b.prov,                                    // City
+                    b.dist,                                    // District (Address3)
+                    b.ward,                                    // Ward (Address4)
+                    "Việt Nam",                                // Country
+                    p.qty.ToString(),                          // Items Count
+                    "WH_DEFAULT",                              // Warehouse Code
+                    $"OI{n:D6}",                               // Order Item ID
+                    Q(p.name),                                 // Item Name
+                    p.sku,                                     // SKU
+                    p.sku,                                     // Shop SKU
+                    Q(p.variant),                              // Variation
+                    p.orig.ToString(),                         // Item Price (VND)
+                    p.sale.ToString(),                         // Paid Price (VND)
+                    ship.ToString(),                           // Shipping Amount (VND)
+                    lazadaStatus[i],                           // Status Item
+                    "Lazada Logistics",                        // Shipment Provider
+                    trackLZD,                                  // Tracking Code
+                    "VND",                                     // Currency
+                    p.pid,                                     // Product ID
+                    ""                                         // Product Main Image
+                ),
+
+                _ => ""
+            };
+        }
+        return rows;
+    }
+
     // ── GET /api/templates/download ─────────────────────────────────────────────
     // Tạo file CSV template chuẩn Open Platform với dữ liệu mẫu thực tế.
     // platform=shopee|tiktok|lazada|ghn  type=orders|products  includeSample=true|false
     [HttpGet("/api/templates/download")]
     [AllowAnonymous]  // cho phép tải template không cần login (chỉ tải mẫu)
     public IActionResult DownloadTemplate(
-        [FromQuery] string platform    = "shopee",
-        [FromQuery] string type        = "orders",
-        [FromQuery] bool   includeSample = true)
+        [FromQuery] string platform = "shopee",
+        [FromQuery] string type     = "orders")
     {
         var plt = platform.ToLower();
         var typ = type.ToLower();
@@ -1278,33 +1507,42 @@ public class ImportController(IConfiguration cfg, ITenantContext tenant, IAuditL
         string header = (plt, typ) switch
         {
             ("shopee", "orders")   =>
-                "Mã đơn hàng,Trạng thái đơn hàng,Lý do hủy,Ngày đặt hàng,Ngày cập nhật," +
-                "Tên người mua,Tên người nhận,Số điện thoại,Địa chỉ giao hàng,Phường/Xã,Quận/Huyện,Tỉnh/Thành," +
-                "Tên sản phẩm,Phân loại hàng,SKU sản phẩm,Giá gốc (VND),Giá bán (VND),Số lượng," +
-                "Tổng tiền hàng (VND),Phí vận chuyển (VND),Tổng thanh toán (VND)," +
-                "Phương thức thanh toán,Đơn vị vận chuyển,Mã vận đơn,Ghi chú",
+                "Mã đơn hàng,Trạng thái đơn hàng,Lý do hủy/hoàn,Ngày đặt hàng,Ngày cập nhật," +
+                "Ngày thanh toán,Tên đăng nhập người mua,Tên người nhận,Số điện thoại,Địa chỉ giao hàng," +
+                "Phường/Xã,Quận/Huyện,Tỉnh/Thành phố,Vùng,Mã bưu điện," +
+                "Tên sản phẩm,Phân loại hàng,SKU phân loại,Mã sản phẩm Shopee,Giá gốc (VND)," +
+                "Giá bán (VND),Số lượng,Tổng tiền hàng (VND),Phí vận chuyển (VND),Phí ship gốc (VND)," +
+                "Giảm phí ship sàn (VND),Tổng thanh toán (VND),Phương thức thanh toán," +
+                "Đơn vị vận chuyển,Mã vận đơn,Trạng thái vận chuyển,Loại thực hiện đơn,Ghi chú từ người mua",
 
             ("shopee", "products") =>
                 "Mã sản phẩm Shopee,Tên sản phẩm,SKU,Danh mục,Thương hiệu," +
                 "Giá gốc (VND),Giá bán (VND),Tồn kho,Trạng thái,Cân nặng (kg),Mô tả,Ảnh sản phẩm",
 
             ("tiktok", "orders")   =>
-                "Order ID,Order Status,Create Time,Update Time,Paid Time," +
-                "Buyer Username,Recipient Name,Phone,Full Address,Province,District,Ward,Postal Code," +
-                "Product Name,SKU ID,Seller SKU,SKU Name,Original Price (VND),Sale Price (VND),Quantity," +
-                "Sub Total (VND),Shipping Fee (VND),Platform Discount (VND),Total Amount (VND)," +
-                "Payment Method,Shipping Provider,Tracking Number,Package ID,Package Status",
+                "Order ID,Order Status,Create Time,Update Time,Paid Time,RTS SLA Time," +
+                "Buyer User ID,Buyer Message,Payment Method,Is COD," +
+                "Recipient Name,Recipient Phone,Full Address,Address Detail,Province,District,Ward,Postal Code,Region Code," +
+                "Shipping Type,Shipping Provider,Tracking Number,Fulfillment Type,Currency," +
+                "Sub Total (VND),Shipping Fee (VND),Original Shipping Fee (VND)," +
+                "Shipping Fee Platform Discount (VND),Seller Discount (VND),Platform Discount (VND)," +
+                "Total Amount (VND),Original Total Product Price (VND)," +
+                "Line Item ID,SKU ID,Product ID,Product Name,Seller SKU,SKU Name," +
+                "Original Price (VND),Sale Price (VND),Platform Discount Item (VND),Seller Discount Item (VND)," +
+                "Package ID,Package Status,Item Tracking Number,Shipping Provider Name,Display Status",
 
             ("tiktok", "products") =>
                 "Product ID,Title,Status,Category,Brand," +
                 "SKU ID,Seller SKU,SKU Name,Sale Price (VND),Inventory,Create Time,Update Time",
 
             ("lazada", "orders")   =>
-                "Order ID,Order Number,Created At,Updated At,Status," +
-                "Customer First Name,Customer Last Name,Phone,Address,City,District,Province," +
-                "Item Name,SKU,Seller SKU,Variation,Unit Price (VND),Paid Price (VND),Quantity," +
-                "Shipping Provider,Tracking Code,Payment Method,Voucher Platform,Voucher Seller," +
-                "Shipping Fee (VND),Order Value (VND)",
+                "Order ID,Order Number,Created At,Updated At,Status,Payment Method," +
+                "Price (VND),Shipping Fee (VND),Shipping Fee Original (VND),Shipping Fee Discount Platform (VND)," +
+                "Voucher (VND),Voucher Platform (VND),Voucher Seller (VND)," +
+                "Customer First Name,Customer Last Name,Address Line 1,City,District (Address3),Ward (Address4),Country," +
+                "Items Count,Warehouse Code,Order Item ID,Item Name,SKU,Shop SKU,Variation," +
+                "Item Price (VND),Paid Price (VND),Shipping Amount (VND),Status Item," +
+                "Shipment Provider,Tracking Code,Currency,Product ID,Product Main Image",
 
             ("lazada", "products") =>
                 "Item ID,Name,Status,Category,Brand,Seller SKU," +
@@ -1320,73 +1558,11 @@ public class ImportController(IConfiguration cfg, ITenantContext tenant, IAuditL
 
         sb.AppendLine(header);
 
-        // ── Sample rows ──────────────────────────────────────────────────────
-        if (includeSample)
-        {
-            var samples = (plt, typ) switch
-            {
-                ("shopee", "orders") => new[]
-                {
-                    $"2605{now:MMdd}001,COMPLETED,,{now.AddDays(-25):dd/MM/yyyy HH:mm},{now.AddDays(-23):dd/MM/yyyy HH:mm},nguyenvanan,Nguyễn Văn An,0901234567,\"123 Nguyễn Trãi P.3 Q.5\",Phường 3,Quận 5,TP. Hồ Chí Minh,\"Áo thun nam basic cotton\",\"Trắng - L\",AT-NAM-001-TRANG-L,250000,220000,2,440000,25000,465000,COD,Giao Hàng Nhanh,SPX{now:yyyyMMdd}001,",
-                    $"2605{now:MMdd}002,COMPLETED,,{now.AddDays(-20):dd/MM/yyyy HH:mm},{now.AddDays(-18):dd/MM/yyyy HH:mm},tranthib,Trần Thị Bình,0912345678,\"45 Hoàng Hoa Thám P.7 Q.Bình Thạnh\",Phường 7,Quận Bình Thạnh,TP. Hồ Chí Minh,\"Đầm maxi nữ đi biển\",\"Xanh - M\",DAM-NU-003-XANH-M,450000,399000,1,399000,30000,429000,MOMO,Giao Hàng Nhanh,SPX{now:yyyyMMdd}002,",
-                    $"2605{now:MMdd}003,SHIPPED,,{now.AddDays(-10):dd/MM/yyyy HH:mm},{now.AddDays(-8):dd/MM/yyyy HH:mm},leminhduc,Lê Minh Đức,0923456789,\"78 Lê Lợi P.Bến Nghé Q.1\",Phường Bến Nghé,Quận 1,TP. Hồ Chí Minh,\"Quần jean nam slim fit\",\"Xanh đậm - 32\",QJ-NAM-002-XANH-32,580000,520000,1,520000,25000,545000,VNPAY,Giao Hàng Nhanh,SPX{now:yyyyMMdd}003,",
-                    $"2605{now:MMdd}004,CANCELLED,Không muốn mua nữa,{now.AddDays(-5):dd/MM/yyyy HH:mm},{now.AddDays(-4):dd/MM/yyyy HH:mm},phamthuh,Phạm Thu Hà,0934567890,\"12 Trần Phú P.Hải Châu 1 Q.Hải Châu\",Phường Hải Châu 1,Quận Hải Châu,Đà Nẵng,\"Áo sơ mi nam công sở\",\"Trắng - M\",ASM-NAM-004-TRANG-M,320000,280000,1,280000,30000,310000,COD,Giao Hàng Nhanh,,",
-                    $"2605{now:MMdd}005,COMPLETED,,{now.AddDays(-3):dd/MM/yyyy HH:mm},{now.AddDays(-1):dd/MM/yyyy HH:mm},hoangqk,Hoàng Quốc Khải,0945678901,\"56 Đinh Tiên Hoàng P.ĐaKao Q.1\",Phường ĐaKao,Quận 1,TP. Hồ Chí Minh,\"Túi xách nữ da PU\",\"Đen - One Size\",TX-NU-005-DEN-OS,680000,599000,1,599000,35000,634000,ZALOPAY,Giao Hàng Nhanh,SPX{now:yyyyMMdd}005,",
-                },
-                ("shopee", "products") => new[]
-                {
-                    $"100001,Áo thun nam basic cotton thoáng mát,AT-NAM-001,Áo nam,PhuThinh Fashion,250000,220000,150,NORMAL,0.3,\"Chất cotton 100% thoáng mát\",https://cf.shopee.vn/file/at_nam_001.jpg",
-                    $"100002,Áo sơ mi nam công sở dài tay,ASM-NAM-004,Áo nam,PhuThinh Fashion,320000,280000,120,NORMAL,0.35,\"Vải lụa cotton mềm mại\",https://cf.shopee.vn/file/asm_nam_004.jpg",
-                    $"100003,Quần jean nam slim fit,QJ-NAM-002,Quần nam,PhuThinh Fashion,580000,520000,80,NORMAL,0.6,\"Denim cao cấp co giãn 4 chiều\",https://cf.shopee.vn/file/qj_nam_002.jpg",
-                    $"100004,Đầm maxi nữ đi biển,DAM-NU-003,Đầm & Váy,PhuThinh Fashion,450000,399000,60,NORMAL,0.4,\"Chất vải musselin nhẹ nhàng\",https://cf.shopee.vn/file/dam_nu_003.jpg",
-                    $"100005,Túi xách nữ da PU,TX-NU-005,Túi xách & Ba lô,PhuThinh Fashion,750000,650000,45,NORMAL,0.5,\"Da PU cao cấp chống nước\",https://cf.shopee.vn/file/tx_nu_005.jpg",
-                },
-                ("tiktok", "orders") => new[]
-                {
-                    $"576{now:yyyyMMddHH}0001,COMPLETED,{now.AddDays(-25):yyyy-MM-dd HH:mm:ss},{now.AddDays(-23):yyyy-MM-dd HH:mm:ss},{now.AddDays(-25):yyyy-MM-dd HH:mm:ss},user_12345,Nguyễn Văn An,0901234567,\"123 Nguyễn Trãi P.3 Q.5 TP.HCM\",TP. Hồ Chí Minh,Quận 5,Phường 3,,\"Áo thun nam basic cotton\",172001,AT-NAM-001-TRANG-L,\"Trắng - L\",250000,220000,2,440000,25000,0,465000,COD,GHN,TTKGHN{now:yyyyMMdd}01,115001,COMPLETED",
-                    $"576{now:yyyyMMddHH}0002,COMPLETED,{now.AddDays(-18):yyyy-MM-dd HH:mm:ss},{now.AddDays(-16):yyyy-MM-dd HH:mm:ss},{now.AddDays(-18):yyyy-MM-dd HH:mm:ss},user_23456,Trần Thị Bình,0912345678,\"45 Hoàng Hoa Thám Q.Bình Thạnh TP.HCM\",TP. Hồ Chí Minh,Quận Bình Thạnh,Phường 7,,\"Đầm maxi nữ đi biển\",172002,DAM-NU-003-XANH-M,\"Xanh - M\",450000,399000,1,399000,30000,0,429000,Momo,GHN,TTKGHN{now:yyyyMMdd}02,115002,COMPLETED",
-                    $"576{now:yyyyMMddHH}0003,IN_TRANSIT,{now.AddDays(-8):yyyy-MM-dd HH:mm:ss},{now.AddDays(-6):yyyy-MM-dd HH:mm:ss},{now.AddDays(-8):yyyy-MM-dd HH:mm:ss},user_34567,Lê Minh Đức,0923456789,\"78 Lê Lợi Q.1 TP.HCM\",TP. Hồ Chí Minh,Quận 1,Phường Bến Nghé,,\"Quần jean nam slim fit\",172003,QJ-NAM-002-XANH-32,\"Xanh đậm - 32\",580000,520000,1,520000,25000,0,545000,VNPay,GHN,TTKGHN{now:yyyyMMdd}03,115003,IN_TRANSIT",
-                    $"576{now:yyyyMMddHH}0004,CANCELLED,{now.AddDays(-5):yyyy-MM-dd HH:mm:ss},{now.AddDays(-4):yyyy-MM-dd HH:mm:ss},{now.AddDays(-5):yyyy-MM-dd HH:mm:ss},user_45678,Phạm Thu Hà,0934567890,\"12 Trần Phú Q.Hải Châu Đà Nẵng\",Đà Nẵng,Quận Hải Châu,Phường Hải Châu 1,,\"Áo sơ mi nam công sở\",172004,ASM-NAM-004-TRANG-M,\"Trắng - M\",320000,280000,1,280000,30000,0,310000,COD,GHN,,115004,CANCELLED",
-                    $"576{now:yyyyMMddHH}0005,COMPLETED,{now.AddDays(-2):yyyy-MM-dd HH:mm:ss},{now.AddDays(-1):yyyy-MM-dd HH:mm:ss},{now.AddDays(-2):yyyy-MM-dd HH:mm:ss},user_56789,Hoàng Quốc Khải,0945678901,\"56 Đinh Tiên Hoàng Q.1 TP.HCM\",TP. Hồ Chí Minh,Quận 1,Phường ĐaKao,,\"Túi xách nữ da PU\",172005,TX-NU-005-DEN-OS,\"Đen - One Size\",750000,650000,1,650000,35000,0,685000,ZaloPay,GHN,TTKGHN{now:yyyyMMdd}05,115005,COMPLETED",
-                },
-                ("tiktok", "products") => new[]
-                {
-                    $"1729{now:yyyyMMdd}001,Áo thun nam basic cotton thoáng mát,ACTIVATE,Thời trang nam,PhuThinh Fashion,2729001,AT-NAM-001-TRANG-L,\"Trắng - L\",220000,150,{now.AddDays(-90):yyyy-MM-dd},{now.AddDays(-10):yyyy-MM-dd}",
-                    $"1729{now:yyyyMMdd}002,Đầm maxi nữ đi biển,ACTIVATE,Thời trang nữ,PhuThinh Fashion,2729002,DAM-NU-003-XANH-M,\"Xanh - M\",399000,60,{now.AddDays(-80):yyyy-MM-dd},{now.AddDays(-5):yyyy-MM-dd}",
-                    $"1729{now:yyyyMMdd}003,Quần jean nam slim fit,ACTIVATE,Thời trang nam,PhuThinh Fashion,2729003,QJ-NAM-002-XANH-32,\"Xanh đậm - 32\",520000,80,{now.AddDays(-75):yyyy-MM-dd},{now.AddDays(-3):yyyy-MM-dd}",
-                    $"1729{now:yyyyMMdd}004,Áo sơ mi nam công sở dài tay,ACTIVATE,Thời trang nam,PhuThinh Fashion,2729004,ASM-NAM-004-TRANG-M,\"Trắng - M\",280000,120,{now.AddDays(-70):yyyy-MM-dd},{now.AddDays(-2):yyyy-MM-dd}",
-                    $"1729{now:yyyyMMdd}005,Túi xách nữ da PU,ACTIVATE,Túi & Ví,PhuThinh Fashion,2729005,TX-NU-005-DEN-OS,\"Đen - One Size\",650000,45,{now.AddDays(-60):yyyy-MM-dd},{now.AddDays(-1):yyyy-MM-dd}",
-                },
-                ("lazada", "orders") => new[]
-                {
-                    $"7010{now:MMddHH}01,150{now:MMddHH}001,{now.AddDays(-25):yyyy-MM-ddTHH:mm:ss}+07:00,{now.AddDays(-23):yyyy-MM-ddTHH:mm:ss}+07:00,delivered,Văn An,Nguyễn,0901234567,\"123 Nguyễn Trãi P.3 Q.5\",Quận 5,Quận 5,TP. Hồ Chí Minh,Áo thun nam basic cotton,AT-NAM-001-TRANG-L,AT-NAM-001-TRANG-L,\"Trắng;L\",250000,220000,2,Lazada Logistics,LZD-VN-{now:yyyyMMdd}01,COD,0,0,25000,465000",
-                    $"7010{now:MMddHH}02,150{now:MMddHH}002,{now.AddDays(-20):yyyy-MM-ddTHH:mm:ss}+07:00,{now.AddDays(-18):yyyy-MM-ddTHH:mm:ss}+07:00,delivered,Thị Bình,Trần,0912345678,\"45 Hoàng Hoa Thám P.7 Q.Bình Thạnh\",Quận Bình Thạnh,Quận Bình Thạnh,TP. Hồ Chí Minh,Đầm maxi nữ đi biển,DAM-NU-003-XANH-M,DAM-NU-003-XANH-M,\"Xanh;M\",450000,399000,1,Lazada Logistics,LZD-VN-{now:yyyyMMdd}02,Momo,0,0,30000,429000",
-                    $"7010{now:MMddHH}03,150{now:MMddHH}003,{now.AddDays(-12):yyyy-MM-ddTHH:mm:ss}+07:00,{now.AddDays(-10):yyyy-MM-ddTHH:mm:ss}+07:00,shipped,Minh Đức,Lê,0923456789,\"78 Lê Lợi P.Bến Nghé Q.1\",Quận 1,Quận 1,TP. Hồ Chí Minh,Quần jean nam slim fit,QJ-NAM-002-XANH-32,QJ-NAM-002-XANH-32,\"Xanh đậm;32\",580000,520000,1,Lazada Logistics,LZD-VN-{now:yyyyMMdd}03,COD,0,0,25000,545000",
-                    $"7010{now:MMddHH}04,150{now:MMddHH}004,{now.AddDays(-5):yyyy-MM-ddTHH:mm:ss}+07:00,{now.AddDays(-4):yyyy-MM-ddTHH:mm:ss}+07:00,cancelled,Thu Hà,Phạm,0934567890,\"12 Trần Phú P.Hải Châu 1 Q.Hải Châu\",Quận Hải Châu,Quận Hải Châu,Đà Nẵng,Áo sơ mi nam công sở dài tay,ASM-NAM-004-TRANG-M,ASM-NAM-004-TRANG-M,\"Trắng;M\",320000,280000,1,Lazada Logistics,,COD,0,0,30000,310000",
-                    $"7010{now:MMddHH}05,150{now:MMddHH}005,{now.AddDays(-2):yyyy-MM-ddTHH:mm:ss}+07:00,{now.AddDays(-1):yyyy-MM-ddTHH:mm:ss}+07:00,delivered,Quốc Khải,Hoàng,0945678901,\"56 Đinh Tiên Hoàng P.ĐaKao Q.1\",Quận 1,Quận 1,TP. Hồ Chí Minh,Túi xách nữ da PU,TX-NU-005-DEN-OS,TX-NU-005-DEN-OS,\"Đen;One Size\",750000,650000,1,Lazada Logistics,LZD-VN-{now:yyyyMMdd}05,VNPay,0,0,35000,685000",
-                },
-                ("lazada", "products") => new[]
-                {
-                    $"100001,Áo thun nam basic cotton thoáng mát,Active,Thời trang nam,PhuThinh Fashion,AT-NAM-001,250000,220000,150,0.30,\"Chất cotton 100% thoáng mát\"",
-                    $"100002,Áo sơ mi nam công sở dài tay,Active,Thời trang nam,PhuThinh Fashion,ASM-NAM-004,320000,280000,120,0.35,\"Vải lụa cotton mềm mại\"",
-                    $"100003,Quần jean nam slim fit,Active,Thời trang nam,PhuThinh Fashion,QJ-NAM-002,580000,520000,80,0.60,\"Denim cao cấp co giãn 4 chiều\"",
-                    $"100004,Đầm maxi nữ đi biển,Active,Thời trang nữ,PhuThinh Fashion,DAM-NU-003,450000,399000,60,0.40,\"Chất vải musselin nhẹ nhàng\"",
-                    $"100005,Túi xách nữ da PU,Active,Túi xách & Ba lô,PhuThinh Fashion,TX-NU-005,750000,650000,45,0.50,\"Da PU cao cấp chống nước\"",
-                },
-                ("ghn", "orders") => new[]
-                {
-                    $"SPXVN{now:yyyyMMdd}01,2605{now:MMdd}001,delivered,{now.AddDays(-23):yyyy-MM-dd HH:mm:ss},{now.AddDays(-22):yyyy-MM-dd HH:mm:ss},Nguyễn Văn An,0901234567,\"123 Nguyễn Trãi P.3 Q.5 TP.HCM\",1442,465000,465000,\"Áo thun nam\",300,2,1",
-                    $"SPXVN{now:yyyyMMdd}02,2605{now:MMdd}002,delivered,{now.AddDays(-18):yyyy-MM-dd HH:mm:ss},{now.AddDays(-17):yyyy-MM-dd HH:mm:ss},Trần Thị Bình,0912345678,\"45 Hoàng Hoa Thám Q.Bình Thạnh TP.HCM\",1444,0,429000,\"Đầm maxi nữ\",400,2,2",
-                    $"SPXVN{now:yyyyMMdd}03,2605{now:MMdd}003,transporting,{now.AddDays(-6):yyyy-MM-dd HH:mm:ss},{now.AddDays(-5):yyyy-MM-dd HH:mm:ss},Lê Minh Đức,0923456789,\"78 Lê Lợi Q.1 TP.HCM\",1452,545000,545000,\"Quần jean nam\",600,2,1",
-                    $"SPXVN{now:yyyyMMdd}04,2605{now:MMdd}004,cancel,{now.AddDays(-4):yyyy-MM-dd HH:mm:ss},{now.AddDays(-3):yyyy-MM-dd HH:mm:ss},Phạm Thu Hà,0934567890,\"12 Trần Phú Q.Hải Châu Đà Nẵng\",1553,310000,310000,\"Áo sơ mi nam\",350,2,1",
-                    $"SPXVN{now:yyyyMMdd}05,2605{now:MMdd}005,delivered,{now.AddDays(-1):yyyy-MM-dd HH:mm:ss},{now:yyyy-MM-dd HH:mm:ss},Hoàng Quốc Khải,0945678901,\"56 Đinh Tiên Hoàng Q.1 TP.HCM\",1456,0,685000,\"Túi xách nữ\",500,2,2",
-                },
-                _ => Array.Empty<string>(),
-            };
-
-            foreach (var row in samples)
+        // Đơn hàng Shopee/TikTok/Lazada: thêm 10 hàng mẫu ngày D-5 đến D
+        if (typ == "orders" && plt is "shopee" or "tiktok" or "lazada")
+            foreach (var row in BuildOrderSampleRows(plt, now))
                 sb.AppendLine(row);
-        }
+        // Products và GHN: chỉ header (không có dữ liệu mẫu)
 
         var fileName = $"template_{plt}_{typ}_{now:yyyyMMdd_HHmmss}.csv";
         var bytes    = Encoding.UTF8.GetBytes(sb.ToString());
