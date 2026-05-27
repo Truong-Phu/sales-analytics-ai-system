@@ -142,11 +142,12 @@ try
     builder.Services.AddHttpClient<IExpoPushService, ExpoPushService>();
 
     // Named client cho IntegrationsController gọi AI Service scrape endpoint
+    // Timeout 180s vì scraper có thể chờ 60s retry khi bị 429 + thời gian crawl
     builder.Services.AddHttpClient("AiService", client =>
     {
         var aiBaseUrl = builder.Configuration["AiService:BaseUrl"] ?? "http://localhost:8001";
         client.BaseAddress = new Uri(aiBaseUrl);
-        client.Timeout     = TimeSpan.FromSeconds(60);
+        client.Timeout     = TimeSpan.FromSeconds(180);
     });
 
     // ── 7. Application Services ───────────────────────────────────────────────
