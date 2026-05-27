@@ -27,6 +27,8 @@ import POSScreen             from '../screens/POSScreen'
 import KhachHangScreen       from '../screens/KhachHangScreen'
 import TonKhoScreen          from '../screens/TonKhoScreen'
 import KPINhanVienScreen     from '../screens/KPINhanVienScreen'
+import PaymentHistoryScreen  from '../screens/PaymentHistoryScreen'
+import VietQRScreen          from '../screens/VietQRScreen'
 
 const Tab       = createBottomTabNavigator()
 const Stack     = createStackNavigator()
@@ -114,14 +116,15 @@ function DashboardSimpleStack() {
   )
 }
 
-// Orders Stack (Orders list + OrderDetail + AddOrder)
+// Orders Stack (Orders list + OrderDetail + AddOrder + VietQR)
 function OrdersStack() {
   const { colors } = useTheme()
   return (
     <Stack.Navigator screenOptions={getStackOptions(colors)}>
-      <Stack.Screen name="OrdersList"   component={OrdersScreen}      options={{ title: 'Đơn hàng'      }} />
-      <Stack.Screen name="OrderDetail"  component={OrderDetailScreen} options={{ title: 'Chi tiết đơn'   }} />
-      <Stack.Screen name="AddOrder"     component={AddOrderScreen}    options={{ title: 'Thêm đơn hàng' }} />
+      <Stack.Screen name="OrdersList"   component={OrdersScreen}         options={{ title: 'Đơn hàng'        }} />
+      <Stack.Screen name="OrderDetail"  component={OrderDetailScreen}    options={{ title: 'Chi tiết đơn'    }} />
+      <Stack.Screen name="AddOrder"     component={AddOrderScreen}       options={{ title: 'Thêm đơn hàng'   }} />
+      <Stack.Screen name="VietQR"       component={VietQRScreen}         options={{ title: 'QR Thanh toán'   }} />
     </Stack.Navigator>
   )
 }
@@ -167,15 +170,16 @@ function ReportsStack() {
   )
 }
 
-// Profile Stack (Profile + ChangePassword + KPI + TonKho)
+// Profile Stack (Profile + ChangePassword + KPI + TonKho + PaymentHistory)
 function ProfileStack() {
   const { colors } = useTheme()
   return (
     <Stack.Navigator screenOptions={getStackOptions(colors)}>
-      <Stack.Screen name="ProfileMain"    component={ProfileScreen}       options={{ title: 'Tài khoản'    }} />
-      <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} options={{ title: 'Đổi mật khẩu' }} />
-      <Stack.Screen name="KPINhanVien"    component={KPINhanVienScreen}   options={{ title: 'KPI của tôi'  }} />
-      <Stack.Screen name="TonKho"         component={TonKhoScreen}        options={{ title: 'Tồn kho'      }} />
+      <Stack.Screen name="ProfileMain"      component={ProfileScreen}         options={{ title: 'Tài khoản'         }} />
+      <Stack.Screen name="ChangePassword"   component={ChangePasswordScreen}  options={{ title: 'Đổi mật khẩu'      }} />
+      <Stack.Screen name="KPINhanVien"      component={KPINhanVienScreen}     options={{ title: 'KPI của tôi'        }} />
+      <Stack.Screen name="TonKho"           component={TonKhoScreen}          options={{ title: 'Tồn kho'            }} />
+      <Stack.Screen name="PaymentHistory"   component={PaymentHistoryScreen}  options={{ title: 'Lịch sử thanh toán' }} />
     </Stack.Navigator>
   )
 }

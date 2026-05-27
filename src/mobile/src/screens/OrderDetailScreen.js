@@ -142,6 +142,29 @@ const makeStyles = (c) => StyleSheet.create({
   },
   updateStatusBtnText: { color: '#FFF', fontSize: 15, fontWeight: '700' },
 
+  // Payment
+  payBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10, paddingVertical: 4,
+    borderRadius: radius.full, marginBottom: 10,
+  },
+  payBadgeText: { fontSize: 12, fontWeight: '700' },
+  payBtn: {
+    borderRadius: radius.sm, paddingVertical: 10, paddingHorizontal: 14,
+    alignItems: 'center', marginTop: 4,
+  },
+  payBtnText: { color: '#FFF', fontSize: 14, fontWeight: '700' },
+
+  // Payment method picker modal
+  methodOption: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingVertical: 12, paddingHorizontal: 12,
+    borderRadius: radius.sm, marginBottom: 6,
+    borderWidth: 1, borderColor: 'transparent',
+  },
+  methodIcon:  { fontSize: 20, marginRight: 10 },
+  methodLabel: { fontSize: 14, color: c.onSurface, flex: 1 },
+
   // Modal
   modalSheet: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
@@ -275,6 +298,20 @@ function SummaryRow({ label, value, bold, color, s }) {
   )
 }
 
+const PAYMENT_STATUS_CFG = {
+  UNPAID:   { bg: '#FEF3C7', text: '#92400E', label: 'Chưa thanh toán' },
+  PAID:     { bg: '#D1FAE5', text: '#065F46', label: 'Đã thanh toán'   },
+  REFUNDED: { bg: '#DBEAFE', text: '#1E40AF', label: 'Đã hoàn tiền'   },
+}
+
+const METHOD_OPTS = [
+  { key: 'CASH',          label: 'Tiền mặt',        icon: '💵' },
+  { key: 'BANK_TRANSFER', label: 'Chuyển khoản',     icon: '🏦' },
+  { key: 'VIETQR',        label: 'VietQR',           icon: '📱' },
+  { key: 'MOMO',          label: 'MoMo',             icon: '🟣' },
+  { key: 'VNPAY',         label: 'VNPAY',            icon: '💳' },
+]
+
 function normalizeOrder(raw) {
   if (!raw) return null
   const rawItems = raw.details ?? raw.items ?? raw.orderItems ?? raw.order_items ?? []
@@ -304,12 +341,13 @@ function normalizeOrder(raw) {
                || null,
     },
     items,
-    subtotal:      raw.subtotal      ?? raw.sub_total      ?? 0,
-    shippingFee:   raw.shippingFee   ?? raw.shipping_fee   ?? 0,
-    discount:      raw.discount      ?? raw.discountAmount  ?? 0,
-    totalAmount:   raw.totalAmount   ?? raw.total_amount   ?? raw.grandTotal    ?? 0,
-    paymentMethod: raw.paymentMethod ?? raw.payment_method ?? '',
-    note:          raw.note          ?? raw.notes          ?? '',
+    subtotal:       raw.subtotal       ?? raw.sub_total      ?? 0,
+    shippingFee:    raw.shippingFee    ?? raw.shipping_fee   ?? 0,
+    discount:       raw.discount       ?? raw.discountAmount  ?? 0,
+    totalAmount:    raw.totalAmount    ?? raw.total_amount   ?? raw.grandTotal    ?? 0,
+    paymentMethod:  raw.paymentMethod  ?? raw.payment_method ?? '',
+    paymentStatus:  raw.paymentStatus  ?? raw.payment_status ?? 'UNPAID',
+    note:           raw.note           ?? raw.notes          ?? '',
   }
 }
 
@@ -327,6 +365,12 @@ export default function OrderDetailScreen({ route, navigation }) {
   const [isMock,     setIsMock]     = useState(false)
   const [showUpdate, setShowUpdate] = useState(false)
   const [updating,   setUpdating]   = useState(false)
+
+  // Payment state
+  const [payTx,       setPayTx]       = useState(null)   // giao dịch thanh toán hiện tại
+  const [showPayPick, setShowPayPick] = useState(false)  // modal chọn phương thức
+  const [selMethod,   setSelMethod]   = useState('CASH')
+  const [paying,      setPaying]      = useState(false)
 
   const fetchDetail = useCallback(async () => {
     const id = orderId ?? order?.orderId ?? order?.id
@@ -365,6 +409,67 @@ export default function OrderDetailScreen({ route, navigation }) {
     setRefreshing(true)
     await fetchDetail()
     setRefreshing(false)
+  }
+
+  const fetchPayTx = useCallback(async (id) => {
+    if (!id) return
+    try {
+      const res = await api.get(`/api/payment/order/${id}`)
+      setPayTx(res.data?.data ?? null)
+    } catch { /* Im lặng */ }
+  }, [])
+
+  // Gọi fetchPayTx sau khi load xong order
+  useEffect(() => {
+    if (order?.orderId) fetchPayTx(order.orderId)
+  }, [order?.orderId, fetchPayTx])
+
+  const handleInitiatePayment = async () => {
+    const id = order?.orderId ?? order?.id
+    if (!id) return
+    setPaying(true)
+    try {
+      const res = await api.post(`/api/payment/order/${id}/initiate`, { method: selMethod })
+      const tx = res.data?.data
+      setPayTx(tx)
+      setShowPayPick(false)
+
+      if (selMethod === 'VIETQR') {
+        navigation.navigate('VietQR', { txId: tx?.transactionId ?? tx?.id })
+      } else {
+        // Cash / Bank Transfer: xác nhận đã thu tay
+        Alert.alert(
+          'Thanh toán ' + (selMethod === 'CASH' ? 'tiền mặt' : 'chuyển khoản'),
+          'Xác nhận đã thu tiền từ khách?',
+          [
+            { text: 'Hủy', style: 'cancel' },
+            {
+              text: 'Đã thu',
+              onPress: async () => {
+                try {
+                  const txId = tx?.transactionId ?? tx?.id
+                  await api.post(`/api/payment/transaction/${txId}/confirm`, {})
+                  setPayTx(prev => ({ ...prev, status: 'Paid' }))
+                  setOrder(prev => ({ ...prev, paymentStatus: 'PAID' }))
+                  Alert.alert('✅', 'Đã xác nhận thanh toán thành công!')
+                } catch (err) {
+                  Alert.alert('Lỗi', err.response?.data?.message ?? 'Không thể xác nhận')
+                }
+              },
+            },
+          ]
+        )
+      }
+    } catch (err) {
+      Alert.alert(t('common.error'), err.response?.data?.message ?? 'Không thể khởi tạo thanh toán')
+    } finally {
+      setPaying(false)
+    }
+  }
+
+  const handleViewQR = () => {
+    if (!payTx) return
+    navigation.navigate('VietQR', { txId: payTx.id })
   }
 
   const handleUpdateStatus = async (newStatus) => {
@@ -500,6 +605,79 @@ export default function OrderDetailScreen({ route, navigation }) {
         </View>
       )}
 
+      {/* Thanh toán */}
+      {(() => {
+        const psCfg = PAYMENT_STATUS_CFG[order.paymentStatus?.toUpperCase()] ?? PAYMENT_STATUS_CFG.UNPAID
+        const txPending = payTx && payTx.status === 'Pending'
+        const isUnpaid  = (order.paymentStatus ?? 'UNPAID').toUpperCase() === 'UNPAID'
+        return (
+          <View style={s.sectionCard}>
+            <Text style={s.cardLabel}>THANH TOÁN</Text>
+
+            {/* Badge trạng thái thanh toán */}
+            <View style={[s.payBadge, { backgroundColor: psCfg.bg }]}>
+              <Text style={[s.payBadgeText, { color: psCfg.text }]}>{psCfg.label}</Text>
+            </View>
+
+            {order.paymentMethod ? (
+              <Text style={{ fontSize: 13, color: colors.outline, marginBottom: 8 }}>
+                Phương thức: {order.paymentMethod}
+              </Text>
+            ) : null}
+
+            {/* Nút xem QR nếu đang có giao dịch VietQR Pending */}
+            {txPending && payTx.paymentMethod === 'VIETQR' && (
+              <TouchableOpacity
+                style={[s.payBtn, { backgroundColor: '#6366F1' }]}
+                onPress={handleViewQR}
+                activeOpacity={0.85}
+              >
+                <Text style={s.payBtnText}>📱  Xem mã QR thanh toán</Text>
+              </TouchableOpacity>
+            )}
+
+            {/* Nút xác nhận thủ công nếu đang Pending (Cash/Bank Transfer) */}
+            {txPending && payTx.paymentMethod !== 'VIETQR' && canUpdate && (
+              <TouchableOpacity
+                style={[s.payBtn, { backgroundColor: '#10B981' }]}
+                onPress={async () => {
+                  Alert.alert('Xác nhận thanh toán', 'Xác nhận đã thu tiền từ khách?', [
+                    { text: 'Hủy', style: 'cancel' },
+                    {
+                      text: 'Đã thu',
+                      onPress: async () => {
+                        try {
+                          await api.post(`/api/payment/transaction/${payTx.id}/confirm`, {})
+                          setPayTx(prev => ({ ...prev, status: 'Paid' }))
+                          setOrder(prev => ({ ...prev, paymentStatus: 'PAID' }))
+                          Alert.alert('✅', 'Đã xác nhận thanh toán!')
+                        } catch (err) {
+                          Alert.alert(t('common.error'), err.response?.data?.message ?? 'Không thể xác nhận')
+                        }
+                      },
+                    },
+                  ])
+                }}
+                activeOpacity={0.85}
+              >
+                <Text style={s.payBtnText}>✅  Xác nhận đã thu tiền</Text>
+              </TouchableOpacity>
+            )}
+
+            {/* Nút khởi tạo thanh toán nếu chưa thanh toán */}
+            {isUnpaid && !txPending && canUpdate && (
+              <TouchableOpacity
+                style={[s.payBtn, { backgroundColor: colors.interactive }]}
+                onPress={() => setShowPayPick(true)}
+                activeOpacity={0.85}
+              >
+                <Text style={s.payBtnText}>💳  {t('payment.initiate')}</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )
+      })()}
+
       {/* Nút cập nhật */}
       {canUpdate && !['cancelled', 'returned', 'completed'].includes(statusKey) && (
         <TouchableOpacity
@@ -523,6 +701,50 @@ export default function OrderDetailScreen({ route, navigation }) {
         colors={colors}
         t={t}
       />
+
+      {/* Modal chọn phương thức thanh toán */}
+      <Modal visible={showPayPick} transparent animationType="slide" onRequestClose={() => setShowPayPick(false)}>
+        <TouchableOpacity
+          style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)' }}
+          onPress={() => setShowPayPick(false)}
+          activeOpacity={1}
+        >
+          <View style={s.modalSheet}>
+            <Text style={s.modalTitle}>{t('payment.initiateTitle')}</Text>
+            {METHOD_OPTS.map(m => {
+              const active = selMethod === m.key
+              return (
+                <TouchableOpacity
+                  key={m.key}
+                  onPress={() => setSelMethod(m.key)}
+                  style={[
+                    s.methodOption,
+                    active && { backgroundColor: '#EEF2FF', borderColor: '#6366F1' },
+                  ]}
+                >
+                  <Text style={s.methodIcon}>{m.icon}</Text>
+                  <Text style={[s.methodLabel, active && { fontWeight: '700', color: '#4338CA' }]}>
+                    {m.label}
+                  </Text>
+                  <View style={[s.radio, active && { borderColor: '#6366F1' }]}>
+                    {active && <View style={[s.radioDot, { backgroundColor: '#6366F1' }]} />}
+                  </View>
+                </TouchableOpacity>
+              )
+            })}
+            <TouchableOpacity
+              style={[s.updateBtn, paying && { opacity: 0.6 }]}
+              onPress={handleInitiatePayment}
+              disabled={paying}
+            >
+              {paying
+                ? <ActivityIndicator color="#FFF" />
+                : <Text style={s.updateBtnText}>{t('payment.initiate')}</Text>
+              }
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </ScrollView>
   )
 }

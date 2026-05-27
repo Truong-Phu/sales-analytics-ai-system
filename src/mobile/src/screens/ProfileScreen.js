@@ -207,6 +207,8 @@ export default function ProfileScreen({ navigation }) {
           <MenuItem icon="📊" label={t('profile.myKpi')} subtitle={t('profile.kpiSub')} onPress={() => navigation.navigate('KPINhanVien')} colors={colors} />
           <View style={dividerStyle} />
           <MenuItem icon="🛍️" label={t('profile.inventory')} subtitle={t('profile.inventorySub')} onPress={() => navigation.navigate('TonKho')} colors={colors} />
+          <View style={dividerStyle} />
+          <MenuItem icon="💳" label={t('payment.history')} subtitle={t('payment.title')} onPress={() => navigation.navigate('PaymentHistory')} colors={colors} />
         </View>
       </View>
 

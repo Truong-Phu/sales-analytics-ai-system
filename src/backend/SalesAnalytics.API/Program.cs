@@ -170,6 +170,11 @@ try
     builder.Services.AddScoped<ITenantContext, TenantContext>();
     builder.Services.AddMemoryCache();  // Dùng cho SubscriptionAuthorizationFilter cache
 
+    // Payment services (thêm 2026-05-27)
+    builder.Services.AddScoped<VietQRService>();
+    builder.Services.AddScoped<PaymentService>();
+    builder.Services.AddScoped<SubscriptionPaymentService>();
+
     // Background jobs
     builder.Services.AddHostedService<SubscriptionExpiryJob>();
     builder.Services.AddSingleton<SmartAlertJob>();

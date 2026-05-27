@@ -34,6 +34,7 @@ const ChangePasswordPage  = lazy(() => import('../pages/auth/ChangePasswordPage'
 const OnboardingPage      = lazy(() => import('../pages/OnboardingPage'))
 
 // Super Admin pages (lazy)
+const SaPaymentSettingsPage = lazy(() => import('../pages/sa/SaPaymentSettingsPage'))
 const SaDashboard         = lazy(() => import('../pages/sa/SaDashboard'))
 const SaCompaniesPage     = lazy(() => import('../pages/sa/SaCompaniesPage'))
 const SaUsersPage         = lazy(() => import('../pages/sa/SaUsersPage'))
@@ -43,6 +44,10 @@ const SaAuditLogsPage         = lazy(() => import('../pages/sa/SaAuditLogsPage')
 const SaPaymentAccountsPage   = lazy(() => import('../pages/sa/SaPaymentAccountsPage'))
 const SaAnalyticsPage         = lazy(() => import('../pages/sa/SaAnalyticsPage'))
 const SaUsagePage             = lazy(() => import('../pages/sa/SaUsagePage'))
+
+// Payment pages
+const VietQRPage          = lazy(() => import('../pages/payment/VietQRPage'))
+const PaymentHistoryPage  = lazy(() => import('../pages/payment/PaymentHistoryPage'))
 
 // Chức năng sáng tạo mới
 const ChurnPage       = lazy(() => import('../pages/churn/ChurnPage'))
@@ -287,6 +292,18 @@ export default function AppRouter() {
           </ProtectedRoute>
         } />
 
+        {/* ── Payment ── */}
+        <Route path="/payment/vietqr" element={
+          <ProtectedRoute roles={['Owner', 'Manager', 'Staff']}>
+            <Shell><VietQRPage /></Shell>
+          </ProtectedRoute>
+        } />
+        <Route path="/payment/history" element={
+          <ProtectedRoute roles={VIEWER_ROUTES}>
+            <Shell><PaymentHistoryPage /></Shell>
+          </ProtectedRoute>
+        } />
+
         {/* POS — Bán hàng tại quầy: chỉ Owner/Manager/Staff */}
         <Route path="/pos" element={
           <ProtectedRoute roles={['Owner', 'Manager', 'Staff']}>
@@ -330,6 +347,7 @@ export default function AppRouter() {
           <Route path="sync-monitor"    element={<Suspense fallback={<PageSpinner />}><SaSyncMonitorPage /></Suspense>} />
           <Route path="audit-logs"      element={<Suspense fallback={<PageSpinner />}><SaAuditLogsPage /></Suspense>} />
           <Route path="system/payment-accounts" element={<Suspense fallback={<PageSpinner />}><SaPaymentAccountsPage /></Suspense>} />
+          <Route path="payment-settings" element={<Suspense fallback={<PageSpinner />}><SaPaymentSettingsPage /></Suspense>} />
           <Route path="analytics"       element={<Suspense fallback={<PageSpinner />}><SaAnalyticsPage /></Suspense>} />
           <Route path="usage"           element={<Suspense fallback={<PageSpinner />}><SaUsagePage /></Suspense>} />
         </Route>

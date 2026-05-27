@@ -181,5 +181,30 @@
     "Staff": "Staff",
     "DataIT": "Data/IT",
     "Viewer": "Viewer"
+  },
+  "payment": {
+    "title": "Payment",
+    "history": "Payment History",
+    "initiate": "Pay",
+    "initiateTitle": "Select Payment Method",
+    "confirmTitle": "Confirm Cash Received",
+    "confirmBtn": "Confirm Received",
+    "viewQR": "View QR Code",
+    "processing": "Processing...",
+    "loadError": "Cannot load payment history",
+    "orderRef": "Order #{{id}}",
+    "subRef": "Subscription",
+    "methods": {
+      "CASH": "Cash",
+      "BANK_TRANSFER": "Bank Transfer",
+      "VIETQR": "VietQR",
+      "MOMO": "MoMo",
+      "VNPAY": "VNPAY"
+    },
+    "paymentStatus": {
+      "UNPAID": "Unpaid",
+      "PAID": "Paid",
+      "REFUNDED": "Refunded"
+    }
   }
 }

@@ -181,5 +181,30 @@
     "Staff": "Nhân viên",
     "DataIT": "Data/IT",
     "Viewer": "Xem"
+  },
+  "payment": {
+    "title": "Thanh toán",
+    "history": "Lịch sử thanh toán",
+    "initiate": "Thanh toán",
+    "initiateTitle": "Chọn phương thức thanh toán",
+    "confirmTitle": "Xác nhận đã thu tiền",
+    "confirmBtn": "Đã thu tiền",
+    "viewQR": "Xem mã QR",
+    "processing": "Đang xử lý...",
+    "loadError": "Không thể tải lịch sử thanh toán",
+    "orderRef": "Đơn #{{id}}",
+    "subRef": "Gói dịch vụ",
+    "methods": {
+      "CASH": "Tiền mặt",
+      "BANK_TRANSFER": "Chuyển khoản",
+      "VIETQR": "VietQR",
+      "MOMO": "MoMo",
+      "VNPAY": "VNPAY"
+    },
+    "paymentStatus": {
+      "UNPAID": "Chưa thanh toán",
+      "PAID": "Đã thanh toán",
+      "REFUNDED": "Đã hoàn tiền"
+    }
   }
 }

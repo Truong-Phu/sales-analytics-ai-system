@@ -1,11 +1,16 @@
 import { useState, useEffect, useCallback, Fragment } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useNavigate } from 'react-router-dom'
 import MockToast from '../../components/ui/MockToast'
 import FilterPill from '../../components/ui/FilterPill'
 import { getOrders, updateOrderStatus, cancelOrder, getOrderNotes, addOrderNote, deleteOrderNote } from '../../api/dashboardApi'
 import api from '../../api/axios'
 import { useAuth } from '../../hooks/useAuth'
 import { MOCK_ORDERS } from '../../mockData/orders'
+import PaymentStatusBadge from '../../components/payment/PaymentStatusBadge'
+import PaymentSelectModal from '../../components/payment/PaymentSelectModal'
+import ManualConfirmModal from '../../components/payment/ManualConfirmModal'
+import MockPaymentModal from '../../components/payment/MockPaymentModal'
 
 const STATUS_COLOR = {
   pending:    { bg: 'rgba(100,116,139,0.10)', border: 'rgba(100,116,139,0.25)', text: '#64748B',              dot: '#64748B'  },
@@ -354,9 +359,13 @@ function OrderDetailPanel({ order }) {
 }
 
 export default function OrdersPage() {
-  const { t } = useTranslation()
+  const { t }    = useTranslation()
   const { user } = useAuth()
-  const canDelete = ['Owner', 'Manager'].includes(user?.role)
+  const navigate = useNavigate()
+  const canDelete     = ['Owner', 'Manager'].includes(user?.role)
+  const canPayment    = ['Owner', 'Manager', 'Staff'].includes(user?.role)
+  const isAdminDemo   = ['Owner', 'Manager', 'SuperAdmin'].includes(user?.role) || user?.isSuperAdmin
+
   const [data,    setData]    = useState(null)
   const [loading, setLoading] = useState(true)
   const [isMock,  setIsMock]  = useState(false)
@@ -365,10 +374,46 @@ export default function OrdersPage() {
   const [channel, setChannel] = useState('all')
   const [page,    setPage]    = useState(1)
   const [expanded, setExpanded] = useState(null)
-  const [editOrder, setEditOrder] = useState(null)  // order đang cập nhật
-  const [toast,    setToast]  = useState('')         // toast message
+  const [editOrder,  setEditOrder]  = useState(null)
+  const [toast,      setToast]      = useState('')
+
+  // Payment modals
+  const [paymentOrder,   setPaymentOrder]   = useState(null)  // order đang chọn PTTT
+  const [confirmTx,      setConfirmTx]      = useState(null)  // transaction cần confirm thủ công
+  const [mockPayTx,      setMockPayTx]      = useState(null)  // { tx, provider }
+  const [paymentTxCache, setPaymentTxCache] = useState({})    // orderId → tx
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 3000) }
+
+  // Lấy transaction hiện tại của một order (dùng cache)
+  const fetchOrderTx = useCallback(async orderId => {
+    try {
+      const res = await api.get(`/api/payment/order/${orderId}`)
+      const tx  = res.data?.data ?? null
+      setPaymentTxCache(prev => ({ ...prev, [orderId]: tx }))
+      return tx
+    } catch { return null }
+  }, [])
+
+  // Khi payment thành công → refresh data
+  const handlePaymentSuccess = useCallback(async (txData, method) => {
+    setPaymentOrder(null)
+    showToast(`Đã khởi tạo thanh toán ${method}`)
+    // Nếu VIETQR → chuyển sang trang QR
+    if (method === 'VIETQR' && txData?.transactionId) {
+      navigate(`/payment/vietqr?txId=${txData.transactionId}`)
+      return
+    }
+    // Nếu CASH hoặc BANK_TRANSFER → cập nhật cache và mở confirm
+    if (method === 'CASH' || method === 'BANK_TRANSFER') {
+      await fetchOrderTx(txData.orderId ?? paymentOrder?.orderId)
+    }
+    // MOMO / VNPAY → mở mock modal
+    if ((method === 'MOMO' || method === 'VNPAY') && isAdminDemo) {
+      setMockPayTx({ tx: txData, provider: method })
+    }
+    fetchData()
+  }, [paymentOrder, isAdminDemo]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -427,6 +472,39 @@ export default function OrdersPage() {
         />
       )}
 
+      {/* Payment modals */}
+      {paymentOrder && (
+        <PaymentSelectModal
+          order={paymentOrder}
+          onClose={() => setPaymentOrder(null)}
+          onSuccess={handlePaymentSuccess}
+        />
+      )}
+      {confirmTx && (
+        <ManualConfirmModal
+          transaction={confirmTx}
+          onClose={() => setConfirmTx(null)}
+          onConfirmed={() => {
+            setConfirmTx(null)
+            showToast('Đã xác nhận thanh toán')
+            fetchOrderTx(confirmTx.orderId)
+            fetchData()
+          }}
+        />
+      )}
+      {mockPayTx && (
+        <MockPaymentModal
+          transaction={mockPayTx.tx}
+          provider={mockPayTx.provider}
+          onClose={() => setMockPayTx(null)}
+          onResult={result => {
+            setMockPayTx(null)
+            showToast(`Mock ${mockPayTx.provider}: ${result}`)
+            fetchData()
+          }}
+        />
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between gap-4">
         <div>
@@ -479,7 +557,7 @@ export default function OrdersPage() {
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-elevated)' }}>
                   {[t('orders.orderId'), 'Kênh', t('orders.customer'),
-                    t('orders.amount'), 'Vận chuyển', t('common.status'), t('orders.date'), ''].map(h => (
+                    t('orders.amount'), 'Vận chuyển', t('common.status'), 'Thanh toán', t('orders.date'), ''].map(h => (
                     <th key={h} className="text-left px-4 py-3 text-sm font-semibold tracking-wide"
                         style={{ color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
                       {h}
@@ -533,6 +611,51 @@ export default function OrdersPage() {
                       </td>
                       <td className="px-4 py-3">
                         <StatusBadge status={order.status} label={t(`orders.status.${order.status}`, order.status)} />
+                      </td>
+                      {/* Cột thanh toán */}
+                      <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                        <div className="flex flex-col gap-1">
+                          <PaymentStatusBadge
+                            status={paymentTxCache[order.orderId]?.status ?? order.paymentStatus ?? 'UNPAID'}
+                            size="xs"
+                          />
+                          {canPayment && !isMock && (
+                            <>
+                              {/* Chưa có transaction → nút khởi tạo */}
+                              {(!paymentTxCache[order.orderId] && (order.paymentStatus === 'UNPAID' || !order.paymentStatus)) && (
+                                <button
+                                  onClick={() => {
+                                    setPaymentOrder(order)
+                                    fetchOrderTx(order.orderId)
+                                  }}
+                                  className="px-2 py-0.5 rounded text-xs font-medium"
+                                  style={{ background: 'rgba(99,102,241,0.1)', color: 'var(--primary-500)', border: '1px solid rgba(99,102,241,0.2)' }}>
+                                  Thanh toán
+                                </button>
+                              )}
+                              {/* Có tx Pending (Cash/Bank) → nút xác nhận thủ công */}
+                              {paymentTxCache[order.orderId]?.status === 'Pending' &&
+                               ['CASH','BANK_TRANSFER'].includes(paymentTxCache[order.orderId]?.paymentMethod) && (
+                                <button
+                                  onClick={() => setConfirmTx(paymentTxCache[order.orderId])}
+                                  className="px-2 py-0.5 rounded text-xs font-medium"
+                                  style={{ background: 'rgba(16,185,129,0.1)', color: '#10B981', border: '1px solid rgba(16,185,129,0.2)' }}>
+                                  Xác nhận
+                                </button>
+                              )}
+                              {/* Có tx Pending VietQR → nút xem QR */}
+                              {paymentTxCache[order.orderId]?.status === 'Pending' &&
+                               paymentTxCache[order.orderId]?.paymentMethod === 'VIETQR' && (
+                                <button
+                                  onClick={() => navigate(`/payment/vietqr?txId=${paymentTxCache[order.orderId].id}`)}
+                                  className="px-2 py-0.5 rounded text-xs font-medium"
+                                  style={{ background: 'rgba(99,102,241,0.1)', color: 'var(--primary-500)' }}>
+                                  Xem QR
+                                </button>
+                              )}
+                            </>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-sm" style={{ color: 'var(--text-secondary)' }}>
                         {new Date(order.platformCreatedAt ?? order.platform_created_at ?? order.orderDate ?? order.createdAt ?? 0).toLocaleDateString('vi-VN')}

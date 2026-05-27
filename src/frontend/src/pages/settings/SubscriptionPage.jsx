@@ -169,8 +169,8 @@ function UpgradeModal({ onClose, onSuccess, t }) {
   const handleConfirm = async () => {
     setLoading(true); setError('')
     try {
-      const res = await axios.post('/api/subscription/upgrade', {
-        plan: 'pro', billingCycle: cycle, paymentMethod: method,
+      const res = await axios.post('/api/payment/subscription/initiate', {
+        plan: 'pro', billingCycle: cycle, method: method.toUpperCase(),
       })
       onSuccess(res.data.data)
     } catch (err) {
@@ -465,8 +465,8 @@ function PaymentTab({ onSuccess, t, pendingInvoice }) {
   const handlePay = async () => {
     setLoading(true); setError('')
     try {
-      const res = await axios.post('/api/subscription/upgrade', {
-        plan: 'pro', billingCycle: cycle, paymentMethod: method,
+      const res = await axios.post('/api/payment/subscription/initiate', {
+        plan: 'pro', billingCycle: cycle, method: method.toUpperCase(),
       })
       setResult(res.data.data)
       onSuccess()

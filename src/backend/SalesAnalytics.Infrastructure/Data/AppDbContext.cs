@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using SalesAnalytics.Core.Entities;
+using SalesAnalytics.Core.Enums;
 
 namespace SalesAnalytics.Infrastructure.Data;
 
@@ -41,6 +42,11 @@ public class AppDbContext : DbContext
 
     // Open Platform extensions (thêm 2026-05-21)
     public DbSet<ProductVariation> ProductVariations => Set<ProductVariation>();
+
+    // Payment module (thêm 2026-05-27)
+    public DbSet<PaymentTransaction>  PaymentTransactions  => Set<PaymentTransaction>();
+    public DbSet<PaymentWebhookLog>   PaymentWebhookLogs   => Set<PaymentWebhookLog>();
+    public DbSet<PaymentMethodConfig> PaymentMethodConfigs => Set<PaymentMethodConfig>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -442,6 +448,75 @@ public class AppDbContext : DbContext
              .OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(l => l.UserId);
             e.HasIndex(l => l.LoggedAt);
+        });
+
+        // ── PaymentTransaction ───────────────────────────────────────────────
+        modelBuilder.Entity<PaymentTransaction>(e =>
+        {
+            e.ToTable("payment_transactions", "public");
+            e.HasKey(p => p.Id);
+            e.Property(p => p.Id).HasColumnName("id").HasDefaultValueSql("gen_random_uuid()");
+            e.Property(p => p.OrderId).HasColumnName("order_id");
+            e.Property(p => p.InvoiceId).HasColumnName("invoice_id");
+            e.Property(p => p.TenantId).HasColumnName("tenant_id").IsRequired();
+            e.Property(p => p.PaymentCode).HasColumnName("payment_code").HasMaxLength(100).IsRequired();
+            e.Property(p => p.PaymentMethod).HasColumnName("payment_method")
+             .HasConversion<string>().HasMaxLength(30).IsRequired();
+            e.Property(p => p.Amount).HasColumnName("amount").HasColumnType("numeric(15,2)").IsRequired();
+            e.Property(p => p.Currency).HasColumnName("currency").HasMaxLength(10).HasDefaultValue("VND");
+            e.Property(p => p.Status).HasColumnName("status")
+             .HasConversion<string>().HasMaxLength(20).HasDefaultValue(PaymentStatus.Pending);
+            e.Property(p => p.TransactionCode).HasColumnName("transaction_code").HasMaxLength(200);
+            e.Property(p => p.GatewayResponse).HasColumnName("gateway_response").HasColumnType("jsonb");
+            e.Property(p => p.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()");
+            e.Property(p => p.PaidAt).HasColumnName("paid_at");
+            e.Property(p => p.ExpiredAt).HasColumnName("expired_at");
+            e.Property(p => p.CreatedBy).HasColumnName("created_by");
+            e.HasOne(p => p.Order)
+             .WithMany()
+             .HasForeignKey(p => p.OrderId)
+             .OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(p => p.Invoice)
+             .WithMany()
+             .HasForeignKey(p => p.InvoiceId)
+             .OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(p => p.Creator)
+             .WithMany()
+             .HasForeignKey(p => p.CreatedBy)
+             .OnDelete(DeleteBehavior.SetNull);
+            e.HasIndex(p => p.PaymentCode);
+            e.HasIndex(p => p.TenantId);
+            e.HasIndex(p => p.OrderId);
+            e.HasIndex(p => new { p.Status, p.CreatedAt });
+        });
+
+        // ── PaymentWebhookLog ────────────────────────────────────────────────
+        modelBuilder.Entity<PaymentWebhookLog>(e =>
+        {
+            e.ToTable("payment_webhook_logs", "public");
+            e.HasKey(w => w.Id);
+            e.Property(w => w.Id).HasColumnName("id").HasDefaultValueSql("gen_random_uuid()");
+            e.Property(w => w.Provider).HasColumnName("provider").HasMaxLength(50).IsRequired();
+            e.Property(w => w.Payload).HasColumnName("payload").HasColumnType("jsonb").IsRequired();
+            e.Property(w => w.Signature).HasColumnName("signature").HasMaxLength(500);
+            e.Property(w => w.ProcessedStatus).HasColumnName("processed_status").HasMaxLength(20).HasDefaultValue("PENDING");
+            e.Property(w => w.Notes).HasColumnName("notes");
+            e.Property(w => w.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()");
+            e.HasIndex(w => new { w.Provider, w.CreatedAt });
+        });
+
+        // ── PaymentMethodConfig ──────────────────────────────────────────────
+        modelBuilder.Entity<PaymentMethodConfig>(e =>
+        {
+            e.ToTable("payment_method_configs", "public");
+            e.HasKey(c => c.Id);
+            e.Property(c => c.Id).HasColumnName("id").HasDefaultValueSql("gen_random_uuid()");
+            e.Property(c => c.PaymentMethod).HasColumnName("payment_method").HasMaxLength(50).IsRequired();
+            e.Property(c => c.Enabled).HasColumnName("enabled").HasDefaultValue(true);
+            e.Property(c => c.ConfigJson).HasColumnName("config_json").HasColumnType("jsonb");
+            e.Property(c => c.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("NOW()");
+            e.Property(c => c.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()");
+            e.HasIndex(c => c.PaymentMethod).IsUnique();
         });
 
         // ── NotificationPreference ───────────────────────────────────────────
