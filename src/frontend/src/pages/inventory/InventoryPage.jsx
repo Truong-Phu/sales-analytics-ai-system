@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { Link } from 'react-router-dom'
 import MockToast from '../../components/ui/MockToast'
 import { getInventoryIntelligence } from '../../api/aiApi'
 
@@ -53,13 +54,20 @@ export default function InventoryPage() {
           <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Thông minh Tồn kho</h1>
           <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>Dự báo ngày hết hàng và gợi ý đặt thêm</p>
         </div>
-        <select value={days} onChange={e => setDays(+e.target.value)} className="linput text-sm" style={{ width: 120 }}>
+        <div className="flex items-center gap-2">
+          <Link to="/inventory/dashboard"
+            className="text-xs px-3 py-1.5 rounded-lg border transition-colors"
+            style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>
+            Dashboard vận hành →
+          </Link>
+          <select value={days} onChange={e => setDays(+e.target.value)} className="linput text-sm" style={{ width: 120 }}>
           <option value={7}>7 ngày</option>
           <option value={14}>14 ngày</option>
           <option value={30}>30 ngày</option>
           <option value={60}>60 ngày</option>
           <option value={90}>90 ngày</option>
         </select>
+        </div>
       </div>
 
       {/* Summary cards */}

@@ -508,6 +508,18 @@ export default function TopBar() {
     { label: t('nav.etlMonitor', 'Giám sát ETL'),     desc: 'Giám sát pipeline dữ liệu',         icon: 'monitoring', href: '/etl-monitor' },
   ]
 
+  // ── Nhóm Tồn kho & Mua hàng ──────────────────────────────────────────────
+  const invMenuItems = [
+    { label: t('nav.invDashboard',   'Dashboard Tồn kho'),    desc: 'KPI, biến động kho, gợi ý nhập hàng',   icon: 'bar_chart',    href: '/inventory/dashboard' },
+    { label: t('nav.inventory',      'Thông minh Tồn kho'),   desc: 'Dự báo hết hàng & đặt thêm (AI)',       icon: 'inventory',    href: '/inventory' },
+    { label: t('nav.invTransactions','Lịch sử giao dịch'),    desc: 'Nhật ký nhập/xuất/chỉnh kho',           icon: 'history',      href: '/inventory/transactions' },
+    { label: t('nav.stockAdjust',    'Chỉnh kho thủ công'),   desc: 'Kiểm kê thực tế, điều chỉnh sai lệch', icon: 'tune',         href: '/stock-adjustments' },
+    { label: t('nav.suppliers',      'Nhà cung cấp'),         desc: 'Danh sách & thông tin liên hệ NCC',     icon: 'business',     href: '/suppliers' },
+    { label: t('nav.purchaseOrders', 'Phiếu đặt hàng'),       desc: 'Tạo và theo dõi đơn đặt hàng NCC',     icon: 'shopping_cart',href: '/purchase-orders' },
+    { label: t('nav.goodsReceipts',  'Phiếu nhập kho'),       desc: 'Xác nhận hàng về & cập nhật tồn kho',  icon: 'move_to_inbox',href: '/goods-receipts' },
+    { label: t('nav.supplier',       'Hiệu suất NCC (AI)'),   desc: 'Phân tích & đánh giá nhà cung cấp',    icon: 'local_shipping',href: '/supplier' },
+  ]
+
   // ── Build navTabs theo role ────────────────────────────────────────────────
   const navTabs = [
     { href: '/dashboard', icon: 'dashboard', label: t('nav.dashboard', 'Tổng quan') },
@@ -527,6 +539,14 @@ export default function TopBar() {
       hasMega: true,
       menuItems: dataMenuItems,
     },
+    ...(canSeeAI ? [{
+      href: '/inventory/dashboard',
+      icon: 'warehouse',
+      label: t('nav.groupInvOps', 'Kho & Mua hàng'),
+      hasMega: true,
+      menuItems: invMenuItems,
+      columns: 2,
+    }] : []),
     ...(canSeeAI ? [{ href: '/report', icon: 'picture_as_pdf', label: t('nav.report', 'Báo cáo') }] : []),
     ...(canSeeOperations ? [{
       href: '/data-sync',

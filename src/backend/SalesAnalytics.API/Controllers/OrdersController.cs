@@ -383,7 +383,7 @@ public class OrdersController(
     }
 
     /// <summary>
-    /// [OLTP] Hủy đơn hàng (soft-delete: set Status = CANCELLED).
+    /// [OLTP] Hủy đơn hàng: set Status = CANCELLED + hoàn kho nếu đơn đã trừ kho.
     /// Roles: Owner, Manager
     /// </summary>
     [HttpDelete("oltp/{id:int}")]
@@ -401,22 +401,178 @@ public class OrdersController(
             if (order.Status == "DELIVERED")
                 return BadRequest(new { message = "Không thể hủy đơn đã giao thành công." });
 
+            if (order.Status == "CANCELLED")
+                return BadRequest(new { message = "Đơn hàng đã được hủy trước đó." });
+
             var old = order.Status;
-            order.Status    = "CANCELLED";
-            order.UpdatedAt = DateTime.UtcNow;
-            await orderRepo.UpdateAsync(order);
+            var stockRefunded = false;
+            var cancelUid = int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var cancelUidVal) ? (object)cancelUidVal : DBNull.Value;
+
+            // Dùng raw SQL transaction để đảm bảo hoàn kho + log + cập nhật status là atomic
+            await using var conn = new NpgsqlConnection(_connStr);
+            await conn.OpenAsync();
+            await using var tx = await conn.BeginTransactionAsync();
+            try
+            {
+                // Hoàn kho + ghi log inventory transaction (chỉ khi đơn đã trừ kho trước đó)
+                if (order.IsStockDeducted)
+                {
+                    await using var stockCmd = new NpgsqlCommand("""
+                        WITH upd AS (
+                            UPDATE public.products p
+                            SET stock_quantity = p.stock_quantity + oi.quantity,
+                                updated_at = NOW()
+                            FROM public.order_items oi
+                            WHERE oi.order_id = @orderId
+                              AND oi.product_id = p.product_id
+                            RETURNING p.product_id,
+                                      p.stock_quantity          AS after_stock,
+                                      oi.quantity               AS refunded_qty
+                        )
+                        INSERT INTO public.inventory_transactions
+                            (company_id, product_id, transaction_type, quantity_change,
+                             before_stock, after_stock, reference_type, reference_id, note, created_by)
+                        SELECT @cid::uuid, product_id, 'ORDER_CANCEL_REFUND', refunded_qty,
+                               after_stock - refunded_qty, after_stock,
+                               'order', @orderId, 'Hoan kho do huy don hang', @createdBy
+                        FROM upd
+                        """, conn, tx);
+                    stockCmd.Parameters.AddWithValue("orderId",   id);
+                    stockCmd.Parameters.AddWithValue("cid",       order.CompanyId!.Value.ToString());
+                    stockCmd.Parameters.AddWithValue("createdBy", cancelUid);
+                    await stockCmd.ExecuteNonQueryAsync();
+                    stockRefunded = true;
+                }
+
+                // Cập nhật status + đánh dấu is_stock_deducted = FALSE trong cùng transaction
+                await using var cancelCmd = new NpgsqlCommand("""
+                    UPDATE public.orders
+                    SET status = 'CANCELLED', is_stock_deducted = FALSE, updated_at = NOW()
+                    WHERE order_id = @id
+                    """, conn, tx);
+                cancelCmd.Parameters.AddWithValue("id", id);
+                await cancelCmd.ExecuteNonQueryAsync();
+
+                await tx.CommitAsync();
+            }
+            catch
+            {
+                await tx.RollbackAsync();
+                throw;
+            }
 
             await audit.LogAsync(
-                userId:     int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var uid) ? (int?)uid : null,
+                userId:     cancelUidVal > 0 ? (int?)cancelUidVal : null,
                 username:   User.FindFirstValue(ClaimTypes.Name) ?? "",
                 action:     "CANCEL_ORDER",
                 entityType: "Order", entityId: id.ToString(),
-                oldValue:   $"{{\"status\":\"{old}\"}}",
-                newValue:   "{\"status\":\"CANCELLED\"}",
+                oldValue:   $"{{\"status\":\"{old}\",\"isStockDeducted\":{order.IsStockDeducted.ToString().ToLower()}}}",
+                newValue:   "{\"status\":\"CANCELLED\",\"isStockDeducted\":false}",
                 ipAddress:  HttpContext.Connection.RemoteIpAddress?.ToString(),
                 userAgent:  HttpContext.Request.Headers["User-Agent"].ToString());
 
-            return Ok(new { message = "Đã hủy đơn hàng." });
+            var msg = stockRefunded ? "Đã hủy đơn hàng và hoàn kho thành công." : "Đã hủy đơn hàng.";
+            return Ok(new { message = msg });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(503, new { message = "Lỗi kết nối database.", detail = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// [OLTP] Hoàn trả đơn hàng: hoàn kho + ghi RETURN_REFUND.
+    /// Chỉ áp dụng khi is_stock_deducted = TRUE.
+    /// Block nếu đã CANCELLED hoặc đã RETURNED.
+    /// </summary>
+    [HttpPost("oltp/{id:int}/return")]
+    [Authorize(Roles = "Owner,Manager")]
+    public async Task<IActionResult> ReturnOrder(int id)
+    {
+        try
+        {
+            var order = await orderRepo.GetByIdAsync(id);
+            if (order is null) return NotFound(new { message = "Không tìm thấy đơn hàng." });
+
+            if (!tenant.IsSuperAdmin && order.CompanyId != tenant.CompanyId)
+                return StatusCode(403, new { message = "Không có quyền hoàn trả đơn hàng này." });
+
+            if (order.Status == "CANCELLED")
+                return BadRequest(new { message = "Không thể hoàn trả đơn đã hủy." });
+
+            if (order.Status == "RETURNED")
+                return BadRequest(new { message = "Đơn hàng đã được hoàn trả trước đó." });
+
+            var retUid = int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var retUidVal)
+                ? (object)retUidVal : DBNull.Value;
+            var stockRestored = false;
+
+            await using var conn = new NpgsqlConnection(_connStr);
+            await conn.OpenAsync();
+            await using var tx = await conn.BeginTransactionAsync();
+            try
+            {
+                // Hoàn kho + ghi RETURN_REFUND (chỉ khi đơn đã trừ kho)
+                if (order.IsStockDeducted)
+                {
+                    await using var stockCmd = new NpgsqlCommand("""
+                        WITH upd AS (
+                            UPDATE public.products p
+                            SET stock_quantity = p.stock_quantity + oi.quantity,
+                                updated_at = NOW()
+                            FROM public.order_items oi
+                            WHERE oi.order_id = @orderId
+                              AND oi.product_id = p.product_id
+                            RETURNING p.product_id,
+                                      p.stock_quantity   AS after_stock,
+                                      oi.quantity        AS returned_qty
+                        )
+                        INSERT INTO public.inventory_transactions
+                            (company_id, product_id, transaction_type, quantity_change,
+                             before_stock, after_stock, reference_type, reference_id, note, created_by)
+                        SELECT @cid::uuid, product_id, 'RETURN_REFUND', returned_qty,
+                               after_stock - returned_qty, after_stock,
+                               'order', @orderId, 'Hoan kho do tra hang', @createdBy
+                        FROM upd
+                        """, conn, tx);
+                    stockCmd.Parameters.AddWithValue("orderId",   id);
+                    stockCmd.Parameters.AddWithValue("cid",       order.CompanyId!.Value.ToString());
+                    stockCmd.Parameters.AddWithValue("createdBy", retUid);
+                    await stockCmd.ExecuteNonQueryAsync();
+                    stockRestored = true;
+                }
+
+                // Set status = RETURNED và is_stock_deducted = FALSE
+                await using var retCmd = new NpgsqlCommand("""
+                    UPDATE public.orders
+                    SET status = 'RETURNED', is_stock_deducted = FALSE, updated_at = NOW()
+                    WHERE order_id = @id
+                    """, conn, tx);
+                retCmd.Parameters.AddWithValue("id", id);
+                await retCmd.ExecuteNonQueryAsync();
+
+                await tx.CommitAsync();
+            }
+            catch
+            {
+                await tx.RollbackAsync();
+                throw;
+            }
+
+            await audit.LogAsync(
+                userId:     retUidVal > 0 ? (int?)retUidVal : null,
+                username:   User.FindFirstValue(ClaimTypes.Name) ?? "",
+                action:     "RETURN_ORDER",
+                entityType: "Order", entityId: id.ToString(),
+                oldValue:   $"{{\"status\":\"{order.Status}\",\"isStockDeducted\":{order.IsStockDeducted.ToString().ToLower()}}}",
+                newValue:   "{\"status\":\"RETURNED\",\"isStockDeducted\":false}",
+                ipAddress:  HttpContext.Connection.RemoteIpAddress?.ToString(),
+                userAgent:  HttpContext.Request.Headers["User-Agent"].ToString());
+
+            var msg = stockRestored
+                ? "Đã hoàn trả đơn hàng và cộng lại kho thành công."
+                : "Đã hoàn trả đơn hàng (kho không thay đổi do đơn chưa trừ kho).";
+            return Ok(new { message = msg, stockRestored });
         }
         catch (Exception ex)
         {

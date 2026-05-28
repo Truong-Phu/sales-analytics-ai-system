@@ -52,7 +52,13 @@ const PaymentHistoryPage  = lazy(() => import('../pages/payment/PaymentHistoryPa
 // Chức năng sáng tạo mới
 const ChurnPage       = lazy(() => import('../pages/churn/ChurnPage'))
 const BasketPage      = lazy(() => import('../pages/basket/BasketPage'))
-const InventoryPage   = lazy(() => import('../pages/inventory/InventoryPage'))
+const InventoryPage              = lazy(() => import('../pages/inventory/InventoryPage'))
+const InventoryTransactionsPage  = lazy(() => import('../pages/inventory/InventoryTransactionsPage'))
+const InventoryDashboardPage     = lazy(() => import('../pages/inventory/InventoryDashboardPage'))
+const StockAdjustmentsPage       = lazy(() => import('../pages/inventory/StockAdjustmentsPage'))
+const SuppliersManagementPage    = lazy(() => import('../pages/supplier/SuppliersManagementPage'))
+const PurchaseOrdersPage         = lazy(() => import('../pages/procurement/PurchaseOrdersPage'))
+const GoodsReceiptsPage          = lazy(() => import('../pages/procurement/GoodsReceiptsPage'))
 const WhatIfPage      = lazy(() => import('../pages/whatif/WhatIfPage'))
 const AttributionPage = lazy(() => import('../pages/attribution/AttributionPage'))
 const CampaignPage    = lazy(() => import('../pages/campaign/CampaignPage'))
@@ -228,6 +234,36 @@ export default function AppRouter() {
             <PlanRoute minPlan="pro" feature="Tồn kho thông minh">
               <Shell><InventoryPage /></Shell>
             </PlanRoute>
+          </ProtectedRoute>
+        } />
+        <Route path="/inventory/transactions" element={
+          <ProtectedRoute roles={['Owner', 'Manager', 'DataIT']}>
+            <Shell><InventoryTransactionsPage /></Shell>
+          </ProtectedRoute>
+        } />
+        <Route path="/inventory/dashboard" element={
+          <ProtectedRoute roles={['Owner', 'Manager', 'DataIT']}>
+            <Shell><InventoryDashboardPage /></Shell>
+          </ProtectedRoute>
+        } />
+        <Route path="/stock-adjustments" element={
+          <ProtectedRoute roles={['Owner', 'Manager']}>
+            <Shell><StockAdjustmentsPage /></Shell>
+          </ProtectedRoute>
+        } />
+        <Route path="/suppliers" element={
+          <ProtectedRoute roles={['Owner', 'Manager', 'DataIT']}>
+            <Shell><SuppliersManagementPage /></Shell>
+          </ProtectedRoute>
+        } />
+        <Route path="/purchase-orders" element={
+          <ProtectedRoute roles={['Owner', 'Manager']}>
+            <Shell><PurchaseOrdersPage /></Shell>
+          </ProtectedRoute>
+        } />
+        <Route path="/goods-receipts" element={
+          <ProtectedRoute roles={['Owner', 'Manager']}>
+            <Shell><GoodsReceiptsPage /></Shell>
           </ProtectedRoute>
         } />
         <Route path="/whatif" element={
