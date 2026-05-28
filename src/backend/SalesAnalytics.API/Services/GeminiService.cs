@@ -868,17 +868,22 @@ public class GeminiService(
                     return result;
                 }
 
-                logger.LogWarning("Gemini thất bại (HTTP {Status}) — thử Tier-2 FastAPI", status);
-                var tier2 = await CallRecommendationFallbackAsync(userMessage, tab, companyId);
-                if (tier2 is not null)
+                logger.LogWarning("Gemini thất bại (HTTP {Status}) — fallback", status);
+                // business tab: dùng tier-3 intent-aware trực tiếp (context đã focused theo intent)
+                // market/feedback tab: thử FastAPI vì QueryEngine có dữ liệu riêng
+                if (tab != "business")
                 {
-                    result.Answer = tier2; result.FallbackUsed = true; result.FallbackReason = $"Gemini HTTP {status}";
-                    return result;
+                    var tier2 = await CallRecommendationFallbackAsync(userMessage, tab, companyId);
+                    if (tier2 is not null)
+                    {
+                        result.Answer = tier2; result.FallbackUsed = true; result.FallbackReason = $"Gemini HTTP {status}";
+                        return result;
+                    }
                 }
 
                 var rb = BuildRuleBasedResponse(userMessage, intent, context);
                 result.Answer = rb; result.IsAiGenerated = false;
-                result.FallbackUsed = true; result.FallbackReason = "Gemini + FastAPI unavailable";
+                result.FallbackUsed = true; result.FallbackReason = $"Gemini HTTP {status}, rule-based intent={intent}";
                 return result;
             }
 
@@ -893,18 +898,21 @@ public class GeminiService(
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Gemini ChatAsync exception — thử Tier-2 FastAPI");
+            logger.LogError(ex, "Gemini ChatAsync exception — fallback");
 
-            var tier2 = await CallRecommendationFallbackAsync(userMessage, tab, companyId);
-            if (tier2 is not null)
+            if (tab != "business")
             {
-                result.Answer = tier2; result.FallbackUsed = true; result.FallbackReason = "Gemini exception";
-                return result;
+                var tier2 = await CallRecommendationFallbackAsync(userMessage, tab, companyId);
+                if (tier2 is not null)
+                {
+                    result.Answer = tier2; result.FallbackUsed = true; result.FallbackReason = "Gemini exception";
+                    return result;
+                }
             }
 
             var rb = BuildRuleBasedResponse(userMessage, intent, context);
             result.Answer = rb; result.IsAiGenerated = false;
-            result.FallbackUsed = true; result.FallbackReason = "Gemini exception + FastAPI unavailable";
+            result.FallbackUsed = true; result.FallbackReason = $"Gemini exception, rule-based intent={intent}";
             return result;
         }
     }
