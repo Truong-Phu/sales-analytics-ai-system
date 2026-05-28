@@ -23,7 +23,7 @@ public class PaymentSettingsController : ControllerBase
     // Các key hợp lệ
     private static readonly HashSet<string> ValidMethods = new(StringComparer.OrdinalIgnoreCase)
     {
-        "CASH", "BANK_TRANSFER", "VIETQR", "MOMO", "VNPAY",
+        "CASH", "VIETQR", "MOMO", "VNPAY",
         "MOCK_SEPAY", "MOCK_MOMO", "MOCK_VNPAY"
     };
 

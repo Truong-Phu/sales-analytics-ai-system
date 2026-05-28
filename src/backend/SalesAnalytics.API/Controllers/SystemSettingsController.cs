@@ -139,7 +139,7 @@ public class SystemSettingsController(AppDbContext db) : ControllerBase
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     private static bool IsValidMethod(string method)
-        => method is "vnpay" or "momo" or "bank_transfer" or "zalopay";
+        => method is "bank_transfer" or "vietqr" or "momo" or "vnpay";
 
     private static JsonDocument ParseJson(string? raw)
     {

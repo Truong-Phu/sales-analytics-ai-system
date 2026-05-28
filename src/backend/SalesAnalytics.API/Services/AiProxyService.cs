@@ -151,11 +151,11 @@ public class AiProxyService
     /// POST /etl/oltp-to-dw với body { "channel": "shopee" } hoặc {}.
     /// Trả về null nếu AI Service không khả dụng (controller tự fallback).
     /// </summary>
-    public async Task<Dictionary<string, object?>?> TriggerOltpToDwAsync(string? channel = null)
+    public async Task<Dictionary<string, object?>?> TriggerOltpToDwAsync(string? channel = null, string? companyId = null)
     {
         try
         {
-            var body    = new { channel };
+            var body    = new { channel, company_id = companyId };
             var json    = JsonSerializer.Serialize(body);
             var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
             var resp    = await _http.PostAsync("/etl/oltp-to-dw", content);

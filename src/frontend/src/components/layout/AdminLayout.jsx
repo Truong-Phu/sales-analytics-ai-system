@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useAuth } from '../../hooks/useAuth'
@@ -5,15 +6,24 @@ import { useTheme } from '../../hooks/useTheme'
 import i18n from '../../i18n'
 
 const NAV = [
-  { to: '/sa',                           icon: 'dashboard',         label: 'Dashboard',          labelVi: 'Tổng quan',            exact: true },
-  { to: '/sa/companies',                 icon: 'business',          label: 'Companies',           labelVi: 'Công ty' },
-  { to: '/sa/users',                     icon: 'group',             label: 'Users',               labelVi: 'Người dùng' },
-  { to: '/sa/subscriptions',             icon: 'workspace_premium', label: 'Subscriptions',       labelVi: 'Đăng ký' },
-  { to: '/sa/analytics',                 icon: 'bar_chart',         label: 'Analytics',           labelVi: 'Thống kê nền tảng' },
-  { to: '/sa/usage',                     icon: 'speed',             label: 'Usage Monitor',       labelVi: 'Giám sát sử dụng' },
-  { to: '/sa/sync-monitor',              icon: 'sync',              label: 'Sync Monitor',        labelVi: 'Giám sát Sync' },
-  { to: '/sa/audit-logs',                icon: 'history',           label: 'Audit Logs',          labelVi: 'Nhật ký' },
-  { to: '/sa/system/payment-accounts',   icon: 'payments',          label: 'Payment Accounts',    labelVi: 'Tài khoản thanh toán' },
+  { to: '/sa',               icon: 'dashboard',         label: 'Dashboard',       labelVi: 'Tổng quan',        exact: true },
+  { to: '/sa/companies',     icon: 'business',          label: 'Companies',       labelVi: 'Công ty' },
+  { to: '/sa/users',         icon: 'group',             label: 'Users',           labelVi: 'Người dùng' },
+  { to: '/sa/subscriptions', icon: 'workspace_premium', label: 'Subscriptions',   labelVi: 'Đăng ký' },
+  { to: '/sa/analytics',     icon: 'bar_chart',         label: 'Analytics',       labelVi: 'Thống kê nền tảng' },
+  { to: '/sa/usage',         icon: 'speed',             label: 'Usage Monitor',   labelVi: 'Giám sát sử dụng' },
+  { to: '/sa/sync-monitor',  icon: 'sync',              label: 'Sync Monitor',    labelVi: 'Giám sát Sync' },
+  { to: '/sa/audit-logs',    icon: 'history',           label: 'Audit Logs',      labelVi: 'Nhật ký' },
+  {
+    subgroup: 'payment',
+    icon: 'payments',
+    label: 'Payment',
+    labelVi: 'Thanh toán',
+    children: [
+      { to: '/sa/system/payment-accounts', icon: 'account_balance', label: 'Payment Accounts', labelVi: 'Tài khoản thanh toán' },
+      { to: '/sa/payment-settings',        icon: 'tune',            label: 'Payment Settings',  labelVi: 'Cài đặt thanh toán' },
+    ],
+  },
 ]
 
 export default function AdminLayout() {
@@ -21,6 +31,7 @@ export default function AdminLayout() {
   const { isDark }       = useTheme()
   const navigate         = useNavigate()
   const { t }            = useTranslation()
+  const [openGroups, setOpenGroups] = useState({ payment: true })
 
   const currentLang = i18n.language?.startsWith('en') ? 'en' : 'vi'
   const toggleLang  = () => {
@@ -28,6 +39,8 @@ export default function AdminLayout() {
     i18n.changeLanguage(next)
     localStorage.setItem('lang', next)
   }
+
+  const label = item => currentLang === 'vi' ? item.labelVi : item.label
 
   return (
     <div className={`min-h-screen flex ${isDark ? 'dark' : ''}`}
@@ -60,24 +73,67 @@ export default function AdminLayout() {
 
         {/* Navigation */}
         <nav className="flex-1 px-3 py-4 space-y-0.5">
-          {NAV.map(item => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.exact}
-              className={({ isActive }) =>
-                `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                  isActive ? 'text-white' : 'hover:text-white hover:bg-white/5'
-                }`
-              }
-              style={({ isActive }) => ({
-                background: isActive ? 'rgba(99,102,241,0.18)' : undefined,
-                color:      isActive ? '#A5B4FC' : 'rgba(255,255,255,0.72)',
-              })}>
-              <span className="icon text-lg">{item.icon}</span>
-              {currentLang === 'vi' ? item.labelVi : item.label}
-            </NavLink>
-          ))}
+          {NAV.map(item => {
+            if (item.subgroup) {
+              const isOpen = openGroups[item.subgroup] ?? false
+              return (
+                <div key={item.subgroup}>
+                  <button
+                    onClick={() => setOpenGroups(g => ({ ...g, [item.subgroup]: !g[item.subgroup] }))}
+                    className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-all hover:bg-white/5"
+                    style={{ color: 'rgba(255,255,255,0.72)' }}>
+                    <span className="flex items-center gap-3">
+                      <span className="icon text-lg">{item.icon}</span>
+                      {label(item)}
+                    </span>
+                    <span className="icon text-base" style={{ transition: 'transform 0.2s', transform: isOpen ? 'rotate(180deg)' : 'none' }}>
+                      expand_more
+                    </span>
+                  </button>
+                  {isOpen && (
+                    <div className="ml-3 mt-0.5 border-l flex flex-col gap-0.5 py-0.5" style={{ borderColor: 'rgba(255,255,255,0.10)' }}>
+                      {item.children.map(child => (
+                        <NavLink
+                          key={child.to}
+                          to={child.to}
+                          className={({ isActive }) =>
+                            `flex items-center gap-3 pl-3 pr-2 py-2 rounded-lg text-sm font-medium transition-all ${
+                              isActive ? 'text-white' : 'hover:text-white hover:bg-white/5'
+                            }`
+                          }
+                          style={({ isActive }) => ({
+                            background: isActive ? 'rgba(99,102,241,0.18)' : undefined,
+                            color:      isActive ? '#A5B4FC' : 'rgba(255,255,255,0.60)',
+                          })}>
+                          <span className="icon text-base">{child.icon}</span>
+                          {label(child)}
+                        </NavLink>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            }
+
+            return (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                end={item.exact}
+                className={({ isActive }) =>
+                  `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                    isActive ? 'text-white' : 'hover:text-white hover:bg-white/5'
+                  }`
+                }
+                style={({ isActive }) => ({
+                  background: isActive ? 'rgba(99,102,241,0.18)' : undefined,
+                  color:      isActive ? '#A5B4FC' : 'rgba(255,255,255,0.72)',
+                })}>
+                <span className="icon text-lg">{item.icon}</span>
+                {label(item)}
+              </NavLink>
+            )
+          })}
         </nav>
 
         {/* User + back-to-app */}

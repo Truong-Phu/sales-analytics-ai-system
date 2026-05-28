@@ -274,8 +274,9 @@ public class DataSyncController(
     [Authorize(Roles = "Owner,Manager,DataIT,SuperAdmin")]
     public async Task<IActionResult> TriggerFullSync([FromBody] TriggerFullSyncRequest? req)
     {
-        var channel = req?.Channel?.Trim().ToLower();
-        var jobId   = Guid.NewGuid().ToString("N")[..8];
+        var channel   = req?.Channel?.Trim().ToLower();
+        var companyId = tenant.CompanyId?.ToString();  // resolve trước khi vào background task
+        var jobId     = Guid.NewGuid().ToString("N")[..8];
 
         var state = new SyncJobState
         {
@@ -309,8 +310,8 @@ public class DataSyncController(
                 state.Progress = 15;
                 state.Message  = "Đang đọc dữ liệu từ OLTP...";
 
-                // Gọi Python AI Service nếu có
-                var etlResult = await ai.TriggerOltpToDwAsync(channel);
+                // Gọi Python AI Service nếu có (truyền company_id để ETL không dùng hardcoded email)
+                var etlResult = await ai.TriggerOltpToDwAsync(channel, companyId);
 
                 if (etlResult is not null)
                 {

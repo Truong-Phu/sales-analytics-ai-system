@@ -64,6 +64,23 @@ const TYPE_ICON = {
   revenue: 'payments', channel: 'store', product: 'inventory_2',
   anomaly: 'warning',  general: 'lightbulb',
 }
+
+// Label hiển thị theo intent được backend phát hiện
+const INTENT_LABEL = {
+  top_product:             'Top sản phẩm',
+  declining_product:       'SP giảm doanh số',
+  trending_product:        'SP xu hướng tăng',
+  revenue_summary:         'Doanh thu',
+  order_summary:           'Đơn hàng',
+  top_channel:             'Kênh tốt nhất',
+  channel_comparison:      'So sánh kênh',
+  customer_overview:       'Khách hàng',
+  inventory_alert:         'Tồn kho',
+  business_recommendation: 'Gợi ý chiến lược',
+  performance_overview:    'Tổng quan KD',
+  customer_feedback:       'Phản hồi KH',
+  market:                  'Xu hướng thị trường',
+}
 const PRIORITY_DOT = { high: '#EF4444', medium: '#F59E0B', low: 'var(--primary-500)' }
 const TYPE_FILTER_KEYS = ['all', 'revenue', 'channel', 'product', 'anomaly', 'general']
 
@@ -132,7 +149,10 @@ function ChatTab({ tab }) {
           { role: 'model', content: item.answer?.text ?? item.answer?.recommendation ?? '' },
         ])),
       })
-      const aiText = res.data.answer ?? res.data.message ?? 'Xin lỗi, không có phản hồi.'
+      const aiText      = res.data.answer ?? res.data.message ?? 'Xin lỗi, không có phản hồi.'
+      const fallback    = res.data.fallbackUsed ?? false
+      const isAi        = res.data.isAiGenerated ?? true
+      const confidence  = (!isAi || fallback) ? 'low' : 'high'
       setHistory(prev => [
         ...prev,
         {
@@ -140,7 +160,10 @@ function ChatTab({ tab }) {
           answer: {
             text:           aiText,
             recommendation: aiText,
-            confidence:     'high',
+            confidence,
+            fallbackUsed:   fallback,
+            isAiGenerated:  isAi,
+            intent:         res.data.intent,
             sources_used:   tab.sources,
             context_type:   tab.context,
             question:       q,
@@ -229,6 +252,20 @@ function ChatTab({ tab }) {
                     {tab.badge}
                   </span>
                   <ConfidenceBadge level={item.answer.confidence} />
+                  {item.answer.intent && INTENT_LABEL[item.answer.intent] && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs"
+                      style={{ background: 'var(--bg-base)', border: '1px solid var(--border)', color: 'var(--text-tertiary)' }}>
+                      <span className="icon" style={{ fontSize: 11 }}>psychology</span>
+                      {INTENT_LABEL[item.answer.intent]}
+                    </span>
+                  )}
+                  {item.answer.fallbackUsed && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs"
+                      style={{ background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.30)', color: '#F59E0B' }}>
+                      <span className="icon" style={{ fontSize: 11 }}>warning</span>
+                      AI dự phòng
+                    </span>
+                  )}
                 </div>
               </div>
             </div>

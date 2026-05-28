@@ -2,23 +2,28 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import axios from '../../api/axios'
 
 const METHOD_LABELS = {
-  vnpay:        { label: 'VNPay',                  icon: '💳' },
-  momo:         { label: 'MoMo',                   icon: '🟣' },
-  bank_transfer:{ label: 'Chuyển khoản ngân hàng', icon: '🏦' },
-  zalopay:      { label: 'ZaloPay',                icon: '🔵' },
+  bank_transfer: { label: 'Chuyển khoản ngân hàng', icon: '🏦' },
+  vietqr:        { label: 'VietQR',                  icon: '📱' },
+  momo:          { label: 'MoMo',                    icon: '🟣' },
+  vnpay:         { label: 'VNPay',                   icon: '💳' },
 }
 
 const METHODS = Object.keys(METHOD_LABELS)
 
 // Định nghĩa fields config theo từng method
 const METHOD_CONFIG = {
-  vnpay: [
-    { key: 'tmn_code',    label: 'TMN Code',   type: 'text',     required: true },
-    { key: 'hash_secret', label: 'Hash Secret', type: 'password', required: true },
-    { key: 'payment_url', label: 'Payment URL', type: 'url',      required: true,
-      defaultVal: 'https://pay.vnpay.vn/vpcpay.html' },
-    { key: 'api_url',     label: 'API URL',     type: 'url',      required: false,
-      defaultVal: 'https://msp.vnpay.vn/payment/query' },
+  bank_transfer: [
+    { key: 'bank_name',      label: 'Tên ngân hàng',     type: 'text', required: true },
+    { key: 'account_number', label: 'Số tài khoản',      type: 'text', required: true },
+    { key: 'account_name',   label: 'Tên chủ tài khoản', type: 'text', required: true, uppercase: true },
+    { key: 'branch',         label: 'Chi nhánh',         type: 'text', required: false },
+    { key: 'qr_image',       label: 'Ảnh QR Code',       type: 'file', required: false },
+  ],
+  vietqr: [
+    { key: 'bank_name',      label: 'Tên ngân hàng',     type: 'text', required: true },
+    { key: 'bank_bin',       label: 'Bank BIN',          type: 'text', required: true },
+    { key: 'account_number', label: 'Số tài khoản',      type: 'text', required: true },
+    { key: 'account_name',   label: 'Tên chủ tài khoản', type: 'text', required: true, uppercase: true },
   ],
   momo: [
     { key: 'partner_code', label: 'Partner Code', type: 'text',     required: true },
@@ -27,18 +32,11 @@ const METHOD_CONFIG = {
     { key: 'endpoint',     label: 'Endpoint',     type: 'url',      required: true,
       defaultVal: 'https://payment.momo.vn/v2/gateway/api/create' },
   ],
-  bank_transfer: [
-    { key: 'bank_name',       label: 'Tên ngân hàng',     type: 'text', required: true },
-    { key: 'account_number',  label: 'Số tài khoản',      type: 'text', required: true },
-    { key: 'account_name',    label: 'Tên chủ tài khoản', type: 'text', required: true, uppercase: true },
-    { key: 'branch',          label: 'Chi nhánh',         type: 'text', required: false },
-    { key: 'qr_image',        label: 'Ảnh QR Code',       type: 'file', required: false },
-  ],
-  zalopay: [
-    { key: 'app_id',   label: 'App ID',   type: 'text',     required: true },
-    { key: 'key1',     label: 'Key 1',    type: 'password', required: true },
-    { key: 'key2',     label: 'Key 2',    type: 'password', required: true },
-    { key: 'endpoint', label: 'Endpoint', type: 'url',      required: true },
+  vnpay: [
+    { key: 'tmn_code',    label: 'TMN Code',    type: 'text',     required: true },
+    { key: 'hash_secret', label: 'Hash Secret', type: 'password', required: true },
+    { key: 'payment_url', label: 'Payment URL', type: 'url',      required: true,
+      defaultVal: 'https://pay.vnpay.vn/vpcpay.html' },
   ],
 }
 

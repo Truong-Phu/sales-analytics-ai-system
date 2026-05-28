@@ -204,6 +204,8 @@ try
         // Đảm bảo tất cả API response đều trả camelCase cho React frontend
         opt.JsonSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
         opt.JsonSerializerOptions.DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull;
+        // Cho phép deserialize enum từ tên chuỗi (VD: "VIETQR" → PaymentMethod.VIETQR)
+        opt.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
     });
     builder.Services.AddEndpointsApiExplorer();
     builder.Services.AddSwaggerGen(opt =>

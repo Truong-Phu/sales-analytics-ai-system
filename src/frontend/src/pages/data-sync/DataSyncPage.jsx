@@ -640,14 +640,16 @@ function TemplateDownloadSection() {
 }
 
 function ImportTab() {
-  const [source,    setSource]    = useState('shopee')
-  const [fileType,  setFileType]  = useState(null)   // 'orders' | 'products' | null
-  const [file,      setFile]      = useState(null)
-  const [preview,   setPreview]   = useState(null)   // { headers, rows, total }
-  const [importing, setImporting] = useState(false)
-  const [result,    setResult]    = useState(null)
-  const [dragOver,  setDragOver]  = useState(false)
+  const [source,      setSource]      = useState('shopee')
+  const [fileType,    setFileType]    = useState(null)
+  const [file,        setFile]        = useState(null)
+  const [preview,     setPreview]     = useState(null)   // { headers, allRows, total }
+  const [previewPage, setPreviewPage] = useState(1)
+  const [importing,   setImporting]   = useState(false)
+  const [result,      setResult]      = useState(null)
+  const [dragOver,    setDragOver]    = useState(false)
   const fileRef = useRef(null)
+  const PAGE_SIZE = 10
 
   const selectedPlatform = PLATFORM_SOURCES.find(s => s.key === source) ?? PLATFORM_SOURCES[0]
   const typeConf         = fileType ? FILE_TYPE_CONFIG[fileType] : null
@@ -660,17 +662,17 @@ function ImportTab() {
     ? `/api/import/template/platform/${source}/${fileType}`
     : null
 
-  // Parse CSV preview (5 dòng đầu)
   const parsePreview = (csvFile) => {
     const reader = new FileReader()
     reader.onload = (e) => {
       const text    = e.target.result
       const lines   = text.split(/\r?\n/).filter(l => l.trim())
       const headers = lines[0]?.split(',').map(h => h.trim().replace(/^"|"$/g, '')) ?? []
-      const rows    = lines.slice(1, 6).map(l =>
+      const allRows = lines.slice(1).map(l =>
         l.split(',').map(c => c.trim().replace(/^"|"$/g, ''))
       )
-      setPreview({ headers, rows, total: lines.length - 1 })
+      setPreview({ headers, allRows, total: allRows.length })
+      setPreviewPage(1)
     }
     reader.readAsText(csvFile, 'UTF-8')
   }
@@ -723,14 +725,11 @@ function ImportTab() {
     }
   }
 
-  const resetFile = () => { setFile(null); setPreview(null); setResult(null) }
+  const resetFile = () => { setFile(null); setPreview(null); setResult(null); setPreviewPage(1) }
   const resetAll  = () => { resetFile(); setFileType(null) }
 
   return (
     <div className="space-y-5">
-      {/* Section tải template mẫu */}
-      <TemplateDownloadSection />
-
       {/* BƯỚC 1: Chọn nguồn sàn */}
       <div className="lcard p-5">
         <p className="text-xs font-semibold mb-3" style={{ color: 'var(--text-secondary)' }}>
@@ -878,45 +877,98 @@ function ImportTab() {
         </div>
       )}
 
-      {/* Preview 5 dòng đầu */}
-      {preview && (
-        <div className="lcard p-5 space-y-3">
-          <div className="flex items-center justify-between flex-wrap gap-2">
-            <p className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>XEM TRƯỚC</p>
-            <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-              {preview.total} dòng · {preview.headers.length} cột
-            </span>
-          </div>
+      {/* Preview với phân trang */}
+      {preview && (() => {
+        const totalPages  = Math.ceil(preview.total / PAGE_SIZE)
+        const pageRows    = preview.allRows.slice((previewPage - 1) * PAGE_SIZE, previewPage * PAGE_SIZE)
+        const startRow    = (previewPage - 1) * PAGE_SIZE + 1
+        const endRow      = Math.min(previewPage * PAGE_SIZE, preview.total)
+        return (
+          <div className="lcard p-5 space-y-3">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <p className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>XEM TRƯỚC</p>
+              <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                {preview.total} dòng · {preview.headers.length} cột
+              </span>
+            </div>
 
-          <div className="overflow-x-auto rounded-lg border" style={{ borderColor: 'var(--border)' }}>
-            <table className="w-full text-xs">
-              <thead>
-                <tr style={{ background: 'var(--bg-elevated)', borderBottom: '1px solid var(--border)' }}>
-                  {preview.headers.map((h, i) => (
-                    <th key={i} className="px-3 py-2 text-left font-semibold whitespace-nowrap"
-                        style={{ color: 'var(--text-secondary)' }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {preview.rows.map((row, ri) => (
-                  <tr key={ri} style={{ borderBottom: '1px solid var(--border)' }}>
-                    {row.map((cell, ci) => (
-                      <td key={ci} className="px-3 py-1.5 whitespace-nowrap"
-                          style={{ color: 'var(--text-primary)' }}>{cell || '—'}</td>
+            <div className="overflow-x-auto rounded-lg border" style={{ borderColor: 'var(--border)' }}>
+              <table className="w-full text-xs">
+                <thead>
+                  <tr style={{ background: 'var(--bg-elevated)', borderBottom: '1px solid var(--border)' }}>
+                    <th className="px-3 py-2 text-left font-semibold whitespace-nowrap w-8"
+                        style={{ color: 'var(--text-tertiary)' }}>#</th>
+                    {preview.headers.map((h, i) => (
+                      <th key={i} className="px-3 py-2 text-left font-semibold whitespace-nowrap"
+                          style={{ color: 'var(--text-secondary)' }}>{h}</th>
                     ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {pageRows.map((row, ri) => (
+                    <tr key={ri} style={{ borderBottom: '1px solid var(--border)' }}>
+                      <td className="px-3 py-1.5 whitespace-nowrap font-mono"
+                          style={{ color: 'var(--text-tertiary)' }}>{startRow + ri}</td>
+                      {row.map((cell, ci) => (
+                        <td key={ci} className="px-3 py-1.5 whitespace-nowrap"
+                            style={{ color: 'var(--text-primary)' }}>{cell || '—'}</td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Phân trang */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between">
+                <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                  Dòng {startRow}–{endRow} / {preview.total}
+                </span>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setPreviewPage(p => Math.max(1, p - 1))}
+                    disabled={previewPage === 1}
+                    className="w-7 h-7 flex items-center justify-center rounded-lg text-xs disabled:opacity-30"
+                    style={{ border: '1px solid var(--border)', background: 'var(--bg-elevated)' }}
+                  >
+                    <span className="icon" style={{ fontSize: 16 }}>chevron_left</span>
+                  </button>
+                  {Array.from({ length: totalPages }, (_, i) => i + 1)
+                    .filter(p => p === 1 || p === totalPages || Math.abs(p - previewPage) <= 1)
+                    .reduce((acc, p, idx, arr) => {
+                      if (idx > 0 && p - arr[idx - 1] > 1) acc.push('...')
+                      acc.push(p)
+                      return acc
+                    }, [])
+                    .map((p, i) => p === '...'
+                      ? <span key={`e${i}`} className="w-7 h-7 flex items-center justify-center text-xs"
+                              style={{ color: 'var(--text-tertiary)' }}>…</span>
+                      : <button key={p}
+                          onClick={() => setPreviewPage(p)}
+                          className="w-7 h-7 flex items-center justify-center rounded-lg text-xs font-medium"
+                          style={{
+                            border: `1px solid ${previewPage === p ? 'var(--primary-500)' : 'var(--border)'}`,
+                            background: previewPage === p ? 'var(--primary-500)' : 'var(--bg-elevated)',
+                            color: previewPage === p ? '#fff' : 'var(--text-primary)',
+                          }}
+                        >{p}</button>
+                    )
+                  }
+                  <button
+                    onClick={() => setPreviewPage(p => Math.min(totalPages, p + 1))}
+                    disabled={previewPage === totalPages}
+                    className="w-7 h-7 flex items-center justify-center rounded-lg text-xs disabled:opacity-30"
+                    style={{ border: '1px solid var(--border)', background: 'var(--bg-elevated)' }}
+                  >
+                    <span className="icon" style={{ fontSize: 16 }}>chevron_right</span>
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
-          {preview.total > 5 && (
-            <p className="text-xs text-center" style={{ color: 'var(--text-tertiary)' }}>
-              Hiển thị 5/{preview.total} dòng đầu
-            </p>
-          )}
-        </div>
-      )}
+        )
+      })()}
 
       {/* Xác nhận import */}
       {preview && fileType && (

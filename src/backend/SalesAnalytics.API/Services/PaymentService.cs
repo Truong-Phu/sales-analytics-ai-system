@@ -50,7 +50,7 @@ public class PaymentService
             old.Status = PaymentStatus.Cancelled;
 
         var paymentCode = $"DH{orderId}";
-        var expiredAt   = (method == PaymentMethod.VIETQR || method == PaymentMethod.BANK_TRANSFER)
+        var expiredAt   = method == PaymentMethod.VIETQR
             ? DateTime.UtcNow.AddMinutes(QR_EXPIRY_MINUTES)
             : (DateTime?)null;
 
@@ -77,27 +77,17 @@ public class PaymentService
         _logger.LogInformation("Tạo PaymentTransaction {Code} – method={Method} – amount={Amount}",
             paymentCode, method, order.TotalAmount);
 
-        // Lấy thông tin ngân hàng/QR
-        BankTransferInfoDto? bankInfo  = null;
-        VietQRInfoDto?       vietQrInfo = null;
+        VietQRInfoDto? vietQrInfo = null;
         string? mockUrl = null;
 
         switch (method)
         {
-            case PaymentMethod.BANK_TRANSFER:
-                bankInfo = await _vietqr.GetBankTransferInfoAsync(paymentCode);
-                if (bankInfo is not null)
-                    bankInfo = bankInfo with { Amount = order.TotalAmount };
-                break;
-
             case PaymentMethod.VIETQR:
                 vietQrInfo = await _vietqr.GetVietQRAsync(paymentCode);
                 break;
-
             case PaymentMethod.MOMO:
                 mockUrl = $"/payment/mock-momo/{tx.Id}";
                 break;
-
             case PaymentMethod.VNPAY:
                 mockUrl = $"/payment/mock-vnpay/{tx.Id}";
                 break;
@@ -105,12 +95,12 @@ public class PaymentService
 
         return new InitiatePaymentResponse(
             TransactionId  : tx.Id,
+            OrderId        : orderId,
             PaymentCode    : paymentCode,
             PaymentMethod  : method.ToString(),
             Status         : tx.Status.ToString(),
             Amount         : order.TotalAmount,
             MockPaymentUrl : mockUrl,
-            BankInfo       : bankInfo,
             VietQRInfo     : vietQrInfo
         );
     }
@@ -371,18 +361,12 @@ public class PaymentService
 
         if (tx is null) return null;
 
-        BankTransferInfoDto? bankInfo   = null;
-        VietQRInfoDto?       vietQrInfo = null;
+        VietQRInfoDto? vietQrInfo = null;
 
-        if (tx.Status == PaymentStatus.Pending)
-        {
-            if (tx.PaymentMethod == PaymentMethod.BANK_TRANSFER)
-                bankInfo = await _vietqr.GetBankTransferInfoAsync(tx.PaymentCode);
-            else if (tx.PaymentMethod == PaymentMethod.VIETQR)
-                vietQrInfo = await _vietqr.GetVietQRAsync(tx.PaymentCode);
-        }
+        if (tx.Status == PaymentStatus.Pending && tx.PaymentMethod == PaymentMethod.VIETQR)
+            vietQrInfo = await _vietqr.GetVietQRAsync(tx.PaymentCode);
 
-        return MapToDto(tx, bankInfo, vietQrInfo);
+        return MapToDto(tx, vietQrInfo);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -409,7 +393,6 @@ public class PaymentService
     // ─────────────────────────────────────────────────────────────────────────
     private static PaymentTransactionDto MapToDto(
         PaymentTransaction tx,
-        BankTransferInfoDto? bankInfo = null,
         VietQRInfoDto? vietQrInfo = null) => new(
             Id             : tx.Id,
             OrderId        : tx.OrderId,
@@ -423,7 +406,6 @@ public class PaymentService
             CreatedAt      : tx.CreatedAt,
             PaidAt         : tx.PaidAt,
             ExpiredAt      : tx.ExpiredAt,
-            BankInfo       : bankInfo,
             VietQRInfo     : vietQrInfo
         );
 }

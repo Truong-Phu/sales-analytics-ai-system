@@ -13,8 +13,7 @@ export default function ManualConfirmModal({ transaction, onClose, onConfirmed }
   const [error,   setError]   = useState('')
 
   const methodLabel = {
-    CASH: 'Tiền mặt', BANK_TRANSFER: 'Chuyển khoản', VIETQR: 'VietQR',
-    MOMO: 'MoMo', VNPAY: 'VNPAY',
+    CASH: 'Tiền mặt', VIETQR: 'VietQR', MOMO: 'MoMo', VNPAY: 'VNPAY',
   }[transaction?.paymentMethod] ?? transaction?.paymentMethod
 
   const handleConfirm = async () => {
@@ -78,7 +77,7 @@ export default function ManualConfirmModal({ transaction, onClose, onConfirmed }
         <div className="space-y-3 mb-5">
           <div>
             <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>
-              Mã giao dịch ngân hàng <span style={{ color: 'var(--text-tertiary)', fontWeight: 400 }}>(tuỳ chọn)</span>
+              Mã giao dịch <span style={{ color: 'var(--text-tertiary)', fontWeight: 400 }}>(tuỳ chọn)</span>
             </label>
             <input type="text" className="linput text-sm"
               placeholder="VD: FT26152912345"

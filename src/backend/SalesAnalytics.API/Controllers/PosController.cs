@@ -399,7 +399,39 @@ public class PosController(IConfiguration cfg, ITenantContext tenant) : Controll
             discount  = Math.Min(discount, subtotal);
             var total = Math.Max(0, subtotal - discount);
 
-            // 6. Tạo order
+            // 6. Kiểm tra tồn kho TRƯỚC khi tạo đơn (FOR UPDATE để tránh race condition)
+            foreach (var item in dto.Items)
+            {
+                await using var chkCmd = new NpgsqlCommand("""
+                    SELECT product_name, stock_quantity
+                    FROM public.products
+                    WHERE product_id = @pid AND company_id = @cid::uuid
+                    FOR UPDATE
+                    """, conn, tx);
+                chkCmd.Parameters.AddWithValue("pid", item.ProductId);
+                chkCmd.Parameters.AddWithValue("cid", tenant.CompanyId!.Value.ToString());
+                await using var chkR = await chkCmd.ExecuteReaderAsync();
+                if (!await chkR.ReadAsync())
+                {
+                    await chkR.CloseAsync();
+                    await tx.RollbackAsync();
+                    return BadRequest(new { message = $"Không tìm thấy sản phẩm ID {item.ProductId}." });
+                }
+                var pName  = chkR.GetString(0);
+                var pStock = chkR.GetInt32(1);
+                await chkR.CloseAsync();
+
+                if (pStock < item.Qty)
+                {
+                    await tx.RollbackAsync();
+                    return BadRequest(new
+                    {
+                        message = $"Sản phẩm \"{pName}\" không đủ hàng. Còn {pStock}, cần {item.Qty}."
+                    });
+                }
+            }
+
+            // 7. Tạo order (is_stock_deducted = TRUE vì sẽ trừ kho ngay bên dưới)
             var orderCode = $"POS-{DateTime.Now:yyyyMMdd-HHmmss}";
             var userId2   = int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var uid2) ? uid2 : 0;
 
@@ -408,12 +440,12 @@ public class PosController(IConfiguration cfg, ITenantContext tenant) : Controll
                     (order_code, customer_id, channel_id, order_date, status,
                      total_amount, discount_amount, shipping_fee,
                      payment_method, payment_status, shipping_status,
-                     company_id, created_by_user_id, pos_note, created_at, updated_at)
+                     company_id, created_by_user_id, pos_note, is_stock_deducted, created_at, updated_at)
                 VALUES
                     (@code, @cust, @chan, NOW(), 'DELIVERED',
                      @total, @disc, 0,
                      @pay, 'PAID', 'NOT_SHIPPED',
-                     @cid::uuid, @createdBy, @note, NOW(), NOW())
+                     @cid::uuid, @createdBy, @note, TRUE, NOW(), NOW())
                 RETURNING order_id
                 """, conn, tx);
             orCmd.Parameters.AddWithValue("code",      orderCode);
@@ -427,7 +459,7 @@ public class PosController(IConfiguration cfg, ITenantContext tenant) : Controll
             orCmd.Parameters.AddWithValue("note",      (object?)(dto.Note) ?? DBNull.Value);
             var orderId = Convert.ToInt32(await orCmd.ExecuteScalarAsync());
 
-            // 7. Insert order_items + trừ tồn kho
+            // 8. Insert order_items + trừ tồn kho (đã validate ở bước 6, dùng exact deduction)
             foreach (var item in dto.Items)
             {
                 await using var itmCmd = new NpgsqlCommand("""
@@ -442,11 +474,26 @@ public class PosController(IConfiguration cfg, ITenantContext tenant) : Controll
                 itmCmd.Parameters.AddWithValue("sub",   item.Price * item.Qty);
                 await itmCmd.ExecuteNonQueryAsync();
 
-                await using var stockCmd = new NpgsqlCommand(
-                    "UPDATE public.products SET stock_quantity = GREATEST(0, stock_quantity - @qty) WHERE product_id=@pid",
-                    conn, tx);
-                stockCmd.Parameters.AddWithValue("qty", item.Qty);
-                stockCmd.Parameters.AddWithValue("pid", item.ProductId);
+                await using var stockCmd = new NpgsqlCommand("""
+                    WITH upd AS (
+                        UPDATE public.products
+                        SET stock_quantity = stock_quantity - @qty, updated_at = NOW()
+                        WHERE product_id = @pid AND company_id = @cid::uuid
+                        RETURNING product_id, stock_quantity AS after_stock
+                    )
+                    INSERT INTO public.inventory_transactions
+                        (company_id, product_id, transaction_type, quantity_change,
+                         before_stock, after_stock, reference_type, reference_id, note, created_by)
+                    SELECT @cid::uuid, product_id, 'POS_SALE', -@qty,
+                           after_stock + @qty, after_stock,
+                           'order', @orderId, 'POS ban hang', @createdBy
+                    FROM upd
+                    """, conn, tx);
+                stockCmd.Parameters.AddWithValue("qty",       item.Qty);
+                stockCmd.Parameters.AddWithValue("pid",       item.ProductId);
+                stockCmd.Parameters.AddWithValue("cid",       tenant.CompanyId!.Value.ToString());
+                stockCmd.Parameters.AddWithValue("orderId",   (long)orderId);
+                stockCmd.Parameters.AddWithValue("createdBy", userId2 > 0 ? (object)userId2 : DBNull.Value);
                 await stockCmd.ExecuteNonQueryAsync();
             }
 

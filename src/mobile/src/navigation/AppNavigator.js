@@ -24,7 +24,6 @@ import ProductsScreen        from '../screens/ProductsScreen'
 import QuickReportScreen     from '../screens/QuickReportScreen'
 import CustomersScreen       from '../screens/CustomersScreen'
 import POSScreen             from '../screens/POSScreen'
-import KhachHangScreen       from '../screens/KhachHangScreen'
 import TonKhoScreen          from '../screens/TonKhoScreen'
 import KPINhanVienScreen     from '../screens/KPINhanVienScreen'
 import PaymentHistoryScreen  from '../screens/PaymentHistoryScreen'
@@ -96,7 +95,6 @@ function DashboardWithAlertsStack() {
     <Stack.Navigator screenOptions={getStackOptions(colors)}>
       <Stack.Screen name="DashboardMain" component={DashboardScreen} options={{ headerShown: false }} />
       <Stack.Screen name="Alerts" component={AlertsScreen} options={{ title: 'Cảnh báo & Thông báo' }} />
-      <Stack.Screen name="KhachHang"     component={KhachHangScreen}   options={{ title: 'Khách hàng'       }} />
       <Stack.Screen name="TonKho"        component={TonKhoScreen}       options={{ title: 'Tồn kho'          }} />
       <Stack.Screen name="KPINhanVien"   component={KPINhanVienScreen}  options={{ title: 'KPI của tôi'      }} />
     </Stack.Navigator>
@@ -109,7 +107,6 @@ function DashboardSimpleStack() {
   return (
     <Stack.Navigator screenOptions={getStackOptions(colors)}>
       <Stack.Screen name="DashboardMain" component={DashboardScreen} options={{ headerShown: false }} />
-      <Stack.Screen name="KhachHang"     component={KhachHangScreen}   options={{ title: 'Khách hàng'       }} />
       <Stack.Screen name="TonKho"        component={TonKhoScreen}       options={{ title: 'Tồn kho'          }} />
       <Stack.Screen name="KPINhanVien"   component={KPINhanVienScreen}  options={{ title: 'KPI của tôi'      }} />
     </Stack.Navigator>
@@ -271,9 +268,9 @@ function StaffTabs() {
   )
 }
 
-// Owner / Manager: Tổng quan | Đơn hàng | POS | Thông báo | Tôi
+// Owner / Manager: Tổng quan | Đơn hàng | POS | Báo cáo | Tôi
+// Alerts truy cập qua Dashboard → sub-screen. Reports tab = QuickReport + Customers.
 function OwnerManagerTabs() {
-  const unread = useUnreadCount()
   const { colors } = useTheme()
   return (
     <Tab.Navigator screenOptions={getTabOptions(colors)}>
@@ -296,9 +293,9 @@ function OwnerManagerTabs() {
         }}
       />
       <Tab.Screen
-        name="Notifications"
-        component={NotificationsStack}
-        options={{ title: 'Thông báo', headerShown: false, tabBarIcon: ({ focused }) => <TabIconWithBadge emoji="🔔" focused={focused} badge={unread} /> }}
+        name="Reports"
+        component={ReportsStack}
+        options={{ title: 'Báo cáo', headerShown: false, tabBarIcon: ({ focused }) => <TabIcon emoji="📈" focused={focused} /> }}
       />
       <Tab.Screen
         name="Profile"

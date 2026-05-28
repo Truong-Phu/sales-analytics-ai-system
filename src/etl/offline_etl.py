@@ -669,6 +669,156 @@ class OfflineETL:
         return stats
 
 
+# ── Advance demo statuses ────────────────────────────────────────────────────────
+# Pipeline CSV không có real-time webhook từ sàn → đơn nhập vào sẽ giữ nguyên
+# trạng thái tại thời điểm export CSV. Hàm này advance status dựa vào tuổi đơn
+# để hệ thống luôn có dữ liệu "sống" khi demo, không cần re-import CSV liên tục.
+
+def _advance_demo_statuses(conn, company_id: str) -> int:
+    """
+    Tự động cập nhật trạng thái đơn hàng theo thời gian đã trôi qua:
+      CONFIRMED + order_date < NOW()-1d  → SHIPPING   (đã được lấy hàng)
+      SHIPPING  + order_date < NOW()-4d  → DELIVERED  (đã giao thành công)
+      DELIVERED + payment_status ≠ PAID → PAID        (COD đã thu / online đã xác nhận)
+
+    Không đụng tới PENDING / CANCELLED / RETURNED.
+    """
+    with conn.cursor() as cur:
+        cur.execute("""
+            UPDATE public.orders
+               SET status = 'SHIPPING', shipping_status = 'IN_TRANSIT', updated_at = NOW()
+             WHERE company_id = %s::uuid
+               AND status = 'CONFIRMED'
+               AND order_date < NOW() - INTERVAL '1 day'
+        """, (company_id,))
+        n_shipping = cur.rowcount
+
+        cur.execute("""
+            UPDATE public.orders
+               SET status = 'DELIVERED', shipping_status = 'DELIVERED', updated_at = NOW()
+             WHERE company_id = %s::uuid
+               AND status = 'SHIPPING'
+               AND order_date < NOW() - INTERVAL '4 days'
+        """, (company_id,))
+        n_delivered = cur.rowcount
+
+        cur.execute("""
+            UPDATE public.orders
+               SET payment_status = 'PAID', updated_at = NOW()
+             WHERE company_id = %s::uuid
+               AND status = 'DELIVERED'
+               AND payment_status NOT IN ('PAID', 'REFUNDED')
+        """, (company_id,))
+        n_paid = cur.rowcount
+
+    conn.commit()
+    total = n_shipping + n_delivered + n_paid
+    if total > 0:
+        logger.info(
+            "advance_demo: CONFIRMED→SHIPPING=%d  SHIPPING→DELIVERED=%d  UNPAID→PAID=%d",
+            n_shipping, n_delivered, n_paid,
+        )
+    return total
+
+
+# ── Trừ tồn kho cho đơn hàng từ sàn (idempotent) ───────────────────────────────
+
+def _deduct_stock_for_new_orders(conn, company_id: str) -> int:
+    """
+    Trừ tồn kho cho các đơn hàng chưa được xử lý kho (is_stock_deducted = FALSE).
+
+    Idempotency:
+      - Chỉ trừ đơn có is_stock_deducted = FALSE
+      - Sau khi trừ xong → đánh dấu is_stock_deducted = TRUE, insert inventory_transactions
+      - Import lại cùng file → không trừ lần 2, không duplicate log
+
+    Chỉ trừ đơn hợp lệ (không trừ CANCELLED / RETURNED).
+    Dùng GREATEST(0, ...) để phòng âm kho khi reconcile dữ liệu lịch sử.
+    """
+    with conn.cursor() as cur:
+        # Lấy tổng qty cần trừ theo sản phẩm + stock hiện tại (trước khi trừ)
+        cur.execute("""
+            SELECT oi.product_id,
+                   SUM(oi.quantity)    AS total_qty,
+                   p.stock_quantity    AS before_stock
+            FROM public.order_items oi
+            JOIN public.orders o  ON oi.order_id  = o.order_id
+            JOIN public.products p ON oi.product_id = p.product_id
+            WHERE o.company_id        = %s::uuid
+              AND o.is_stock_deducted = FALSE
+              AND o.status NOT IN ('CANCELLED', 'RETURNED')
+            GROUP BY oi.product_id, p.stock_quantity
+        """, (company_id,))
+        product_rows = cur.fetchall()  # (product_id, total_qty, before_stock)
+
+        if not product_rows:
+            return 0
+
+        # Cập nhật tồn kho và ghi nhớ before/after theo sản phẩm
+        product_stock_map: dict = {}  # product_id → (before_stock, after_stock)
+        for product_id, total_qty, before_stock in product_rows:
+            deduct = int(total_qty)
+            after_stock = max(0, before_stock - deduct)
+            cur.execute("""
+                UPDATE public.products
+                SET stock_quantity = GREATEST(0, stock_quantity - %s),
+                    updated_at = NOW()
+                WHERE product_id = %s
+            """, (deduct, product_id))
+            product_stock_map[product_id] = (before_stock, after_stock)
+
+        # Lấy từng order_item cần log (per-order, idempotent vì chỉ lấy is_stock_deducted=FALSE)
+        cur.execute("""
+            SELECT o.order_id, oi.product_id, oi.quantity
+            FROM public.order_items oi
+            JOIN public.orders o ON oi.order_id = o.order_id
+            WHERE o.company_id        = %s::uuid
+              AND o.is_stock_deducted = FALSE
+              AND o.status NOT IN ('CANCELLED', 'RETURNED')
+        """, (company_id,))
+        order_item_rows = cur.fetchall()  # (order_id, product_id, quantity)
+
+        # Bulk insert inventory_transactions (một dòng per order_item)
+        log_rows = []
+        for order_id, product_id, quantity in order_item_rows:
+            if product_id in product_stock_map:
+                before_s, after_s = product_stock_map[product_id]
+                log_rows.append((
+                    company_id, product_id,
+                    'MARKETPLACE_IMPORT_SALE', -quantity,
+                    before_s, after_s,
+                    'marketplace_order', order_id,
+                    'ETL sync tu san thuong mai dien tu',
+                ))
+
+        if log_rows:
+            psycopg2.extras.execute_values(cur, """
+                INSERT INTO public.inventory_transactions
+                    (company_id, product_id, transaction_type, quantity_change,
+                     before_stock, after_stock, reference_type, reference_id, note)
+                VALUES %s
+            """, log_rows, template="(%s::uuid, %s, %s, %s, %s, %s, %s, %s, %s)")
+
+        # Đánh dấu tất cả đơn đã được xử lý kho
+        cur.execute("""
+            UPDATE public.orders
+            SET is_stock_deducted = TRUE, updated_at = NOW()
+            WHERE company_id        = %s::uuid
+              AND is_stock_deducted = FALSE
+              AND status NOT IN ('CANCELLED', 'RETURNED')
+        """, (company_id,))
+        n_orders = cur.rowcount
+
+    conn.commit()
+    n_products = len(product_stock_map)
+    if n_products > 0:
+        logger.info(
+            "deduct_stock: %d products deducted across %d orders (%d tx logs)",
+            n_products, n_orders, len(log_rows),
+        )
+    return n_orders
+
+
 # ── OLTP → DW (direct path, bypass staging) ─────────────────────────────────────
 
 def run_oltp_to_dw(company_id: Optional[str] = None, channel: Optional[str] = None) -> dict:
@@ -711,6 +861,11 @@ def run_oltp_to_dw(company_id: Optional[str] = None, channel: Optional[str] = No
             row0 = _c.fetchone()
             actual_company_id = str(row0[0]) if row0 else None
 
+    # -- Advance trạng thái đơn hàng + trừ kho trước khi đọc DW -----------------
+    if actual_company_id:
+        _advance_demo_statuses(conn, actual_company_id)
+        _deduct_stock_for_new_orders(conn, actual_company_id)
+
     # -- Lấy danh sách order từ OLTP ------------------------------------------
     where_parts = ["o.company_id = (SELECT id FROM public.companies WHERE email = %s)"]
     params: list = [COMPANY_EMAIL]
@@ -743,7 +898,7 @@ def run_oltp_to_dw(company_id: Optional[str] = None, channel: Optional[str] = No
         """, params)
         orders = cur.fetchall()
 
-    print(f"  [run_oltp_to_dw] Tim thay {len(orders)} don hang → chuyen len DW...")
+    print(f"  [run_oltp_to_dw] Tim thay {len(orders)} don hang -> chuyen len DW...")
 
     fact_records: List[Dict] = []
 

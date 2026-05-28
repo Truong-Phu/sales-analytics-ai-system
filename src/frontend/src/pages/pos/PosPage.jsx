@@ -160,6 +160,13 @@ function CartItem({ item, onQty, onRemove }) {
   )
 }
 
+const ALL_PAY_META = {
+  CASH:   { icon: 'payments',     label: 'Tiền mặt' },
+  VIETQR: { icon: 'qr_code_2',   label: 'VietQR'   },
+  MOMO:   { icon: 'phone_iphone', label: 'MoMo'     },
+  VNPAY:  { icon: 'credit_card',  label: 'VNPay'    },
+}
+
 // ── Main POS ─────────────────────────────────────────────────────────────────
 export default function PosPage() {
   const [cart,        setCart]        = useState([])
@@ -172,10 +179,21 @@ export default function PosPage() {
   const [voucherInfo, setVoucherInfo] = useState(null)
   const [voucherErr,  setVoucherErr]  = useState('')
   const [payMethod,   setPayMethod]   = useState('CASH')
+  const [payMethods,  setPayMethods]  = useState([])
   const [note,        setNote]        = useState('')
   const [submitting,  setSubmitting]  = useState(false)
   const [lastOrder,   setLastOrder]   = useState(null)
   const cusTimer = useRef(null)
+
+  useEffect(() => {
+    api.get('/api/payment/methods')
+      .then(r => {
+        const list = r.data?.data ?? ['CASH', 'VIETQR']
+        setPayMethods(list)
+        if (!list.includes(payMethod)) setPayMethod(list[0] ?? 'CASH')
+      })
+      .catch(() => setPayMethods(['CASH', 'VIETQR']))
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Giỏ hàng ──────────────────────────────────────────────────────────────
   const addToCart = (product) => {
@@ -261,12 +279,7 @@ export default function PosPage() {
     } finally { setSubmitting(false) }
   }
 
-  const PAYMENT_METHODS = [
-    { id: 'CASH',          icon: 'payments',         label: 'Tiền mặt'   },
-    { id: 'BANK_TRANSFER', icon: 'account_balance',  label: 'Chuyển khoản' },
-    { id: 'MOMO',          icon: 'phone_iphone',     label: 'MoMo'       },
-    { id: 'VNPAY',         icon: 'qr_code_2',        label: 'VNPay'      },
-  ]
+  const PAYMENT_METHODS = payMethods.map(id => ({ id, ...(ALL_PAY_META[id] ?? { icon: 'payments', label: id }) }))
 
   return (
     <div className="flex gap-4" style={{ height: 'calc(100vh - 80px)' }}>

@@ -404,8 +404,8 @@ export default function OrdersPage() {
       navigate(`/payment/vietqr?txId=${txData.transactionId}`)
       return
     }
-    // Nếu CASH hoặc BANK_TRANSFER → cập nhật cache và mở confirm
-    if (method === 'CASH' || method === 'BANK_TRANSFER') {
+    // Nếu CASH → cập nhật cache (nhân viên tự thu tiền mặt, click Xác nhận trong list)
+    if (method === 'CASH') {
       await fetchOrderTx(txData.orderId ?? paymentOrder?.orderId)
     }
     // MOMO / VNPAY → mở mock modal
@@ -633,9 +633,9 @@ export default function OrdersPage() {
                                   Thanh toán
                                 </button>
                               )}
-                              {/* Có tx Pending (Cash/Bank) → nút xác nhận thủ công */}
+                              {/* Có tx Pending Cash → nút xác nhận thủ công */}
                               {paymentTxCache[order.orderId]?.status === 'Pending' &&
-                               ['CASH','BANK_TRANSFER'].includes(paymentTxCache[order.orderId]?.paymentMethod) && (
+                               paymentTxCache[order.orderId]?.paymentMethod === 'CASH' && (
                                 <button
                                   onClick={() => setConfirmTx(paymentTxCache[order.orderId])}
                                   className="px-2 py-0.5 rounded text-xs font-medium"

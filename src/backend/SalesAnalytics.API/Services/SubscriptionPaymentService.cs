@@ -80,29 +80,17 @@ public class SubscriptionPaymentService
         _db.PaymentTransactions.Add(tx);
         await _db.SaveChangesAsync();
 
-        BankTransferInfoDto? bankInfo   = null;
-        VietQRInfoDto?       vietQrInfo = null;
+        VietQRInfoDto? vietQrInfo = null;
         string? mockUrl = null;
 
         switch (method)
         {
-            case PaymentMethod.BANK_TRANSFER:
-                bankInfo = await _vietqr.GetBankTransferInfoAsync(paymentCode);
-                if (bankInfo is not null)
-                    bankInfo = bankInfo with { Amount = total };
-                else
-                    bankInfo = new BankTransferInfoDto("Vietcombank", null, "1234567890",
-                        "CONG TY TNHH MSAS", paymentCode, total);
-                break;
-
             case PaymentMethod.VIETQR:
                 vietQrInfo = await _vietqr.GetVietQRAsync(paymentCode);
                 break;
-
             case PaymentMethod.MOMO:
                 mockUrl = $"/payment/mock-momo/{tx.Id}";
                 break;
-
             case PaymentMethod.VNPAY:
                 mockUrl = $"/payment/mock-vnpay/{tx.Id}";
                 break;
@@ -110,12 +98,12 @@ public class SubscriptionPaymentService
 
         return new InitiatePaymentResponse(
             TransactionId  : tx.Id,
+            OrderId        : null,
             PaymentCode    : paymentCode,
             PaymentMethod  : method.ToString(),
             Status         : tx.Status.ToString(),
             Amount         : total,
             MockPaymentUrl : mockUrl,
-            BankInfo       : bankInfo,
             VietQRInfo     : vietQrInfo
         );
     }

@@ -6,7 +6,7 @@ namespace SalesAnalytics.Core.Entities;
 public class SystemPaymentAccount
 {
     public Guid     Id          { get; set; }
-    public string   Method      { get; set; } = string.Empty;   // vnpay | momo | bank_transfer | zalopay
+    public string   Method      { get; set; } = string.Empty;   // bank_transfer | vietqr | momo | vnpay
     public string   DisplayName { get; set; } = string.Empty;
     public bool     IsActive    { get; set; } = true;
     public bool     IsDefault   { get; set; } = false;

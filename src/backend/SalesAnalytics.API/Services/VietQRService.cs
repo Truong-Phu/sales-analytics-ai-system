@@ -1,6 +1,4 @@
-using System.Text.Json;
 using SalesAnalytics.Core.DTOs;
-using SalesAnalytics.Core.Entities;
 using SalesAnalytics.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -8,98 +6,55 @@ namespace SalesAnalytics.API.Services;
 
 /// <summary>
 /// Sinh QR VietQR thật theo chuẩn Napas.
-/// URL ảnh QR: https://img.vietqr.io/image/{bankBin}-{accountNumber}-compact2.png?amount={amount}&addInfo={content}&accountName={accountName}
+/// Đọc thông tin ngân hàng từ system_payment_accounts (nguồn duy nhất).
+/// URL: https://img.vietqr.io/image/{bankBin}-{accountNumber}-compact2.png?amount=...
 /// </summary>
 public class VietQRService
 {
     private readonly AppDbContext _db;
 
-    public VietQRService(AppDbContext db)
-    {
-        _db = db;
-    }
+    public VietQRService(AppDbContext db) => _db = db;
 
     public async Task<VietQRInfoDto?> GetVietQRAsync(string paymentCode)
     {
-        var config = await _db.PaymentMethodConfigs
-            .FirstOrDefaultAsync(c => c.PaymentMethod == "VIETQR" && c.Enabled);
+        // Ưu tiên tài khoản is_default, sau đó sort_order
+        var account = await _db.SystemPaymentAccounts
+            .Where(a => a.Method == "vietqr" && a.IsActive)
+            .OrderBy(a => a.IsDefault ? 0 : 1)
+            .ThenBy(a => a.SortOrder)
+            .FirstOrDefaultAsync();
 
-        if (config?.ConfigJson is null) return null;
+        if (account is null) return null;
 
-        var cfg = ParseConfig(config.ConfigJson);
-        if (cfg is null) return null;
+        var cfg = account.Config.RootElement;
 
-        var bankBin       = cfg.TryGetValue("bankBin", out var b) ? b?.ToString() : null;
-        var accountNumber = cfg.TryGetValue("accountNumber", out var an) ? an?.ToString() : null;
-        var accountHolder = cfg.TryGetValue("accountHolder", out var ah) ? ah?.ToString() : null;
-        var bankName      = cfg.TryGetValue("bankName", out var bn) ? bn?.ToString() ?? "Ngân hàng" : "Ngân hàng";
+        var bankBin       = GetStr(cfg, "bank_bin");
+        var accountNumber = GetStr(cfg, "account_number");
+        var accountName   = GetStr(cfg, "account_name");
+        var bankName      = GetStr(cfg, "bank_name") ?? "Ngân hàng";
 
         if (string.IsNullOrEmpty(bankBin) || string.IsNullOrEmpty(accountNumber)) return null;
 
-        // Lấy thông tin giao dịch để biết amount
         var tx = await _db.PaymentTransactions
             .FirstOrDefaultAsync(t => t.PaymentCode == paymentCode);
         if (tx is null) return null;
 
-        var encodedContent = Uri.EscapeDataString(paymentCode);
-        var encodedName    = Uri.EscapeDataString(accountHolder ?? "");
         var qrUrl = $"https://img.vietqr.io/image/{bankBin}-{accountNumber}-compact2.png" +
-                    $"?amount={(long)tx.Amount}&addInfo={encodedContent}&accountName={encodedName}";
+                    $"?amount={(long)tx.Amount}" +
+                    $"&addInfo={Uri.EscapeDataString(paymentCode)}" +
+                    $"&accountName={Uri.EscapeDataString(accountName ?? "")}";
 
         return new VietQRInfoDto(
             QrDataUrl      : qrUrl,
             BankName       : bankName,
             BankBin        : bankBin,
             AccountNumber  : accountNumber,
-            AccountHolder  : accountHolder ?? "",
+            AccountHolder  : accountName ?? "",
             TransferContent: paymentCode,
             Amount         : tx.Amount
         );
     }
 
-    public async Task<BankTransferInfoDto?> GetBankTransferInfoAsync(string paymentCode)
-    {
-        var config = await _db.PaymentMethodConfigs
-            .FirstOrDefaultAsync(c => c.PaymentMethod == "BANK_TRANSFER" && c.Enabled);
-
-        if (config?.ConfigJson is null)
-        {
-            // Fallback config nếu chưa cấu hình
-            return new BankTransferInfoDto(
-                BankName       : "Vietcombank",
-                BankBin        : null,
-                AccountNumber  : "1234567890",
-                AccountHolder  : "CONG TY TNHH MSAS",
-                TransferContent: paymentCode,
-                Amount         : 0
-            );
-        }
-
-        var cfg = ParseConfig(config.ConfigJson);
-
-        var tx = await _db.PaymentTransactions
-            .FirstOrDefaultAsync(t => t.PaymentCode == paymentCode);
-
-        return new BankTransferInfoDto(
-            BankName       : cfg?.TryGetValue("bankName", out var bn) == true ? bn?.ToString() ?? "Ngân hàng" : "Ngân hàng",
-            BankBin        : cfg?.TryGetValue("bankBin", out var bb) == true ? bb?.ToString() : null,
-            AccountNumber  : cfg?.TryGetValue("accountNumber", out var an) == true ? an?.ToString() ?? "" : "",
-            AccountHolder  : cfg?.TryGetValue("accountHolder", out var ah) == true ? ah?.ToString() ?? "" : "",
-            TransferContent: paymentCode,
-            Amount         : tx?.Amount ?? 0
-        );
-    }
-
-    private static Dictionary<string, object?>? ParseConfig(string json)
-    {
-        try
-        {
-            return JsonSerializer.Deserialize<Dictionary<string, object?>>(json,
-                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-        }
-        catch
-        {
-            return null;
-        }
-    }
+    private static string? GetStr(System.Text.Json.JsonElement el, string key)
+        => el.TryGetProperty(key, out var v) ? v.GetString() : null;
 }

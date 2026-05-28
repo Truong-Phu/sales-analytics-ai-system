@@ -41,6 +41,27 @@ public class PaymentController : ControllerBase
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // GET /api/payment/methods
+    // Trả về danh sách method đang enabled (SA cấu hình) — tenant gọi khi mở modal
+    // ─────────────────────────────────────────────────────────────────────────
+    [HttpGet("methods")]
+    public async Task<IActionResult> GetEnabledMethods()
+    {
+        var enabled = await _db.PaymentMethodConfigs
+            .Where(c => c.Enabled &&
+                        !c.PaymentMethod.StartsWith("MOCK_")) // ẩn mock với tenant
+            .OrderBy(c => c.PaymentMethod)
+            .Select(c => c.PaymentMethod)
+            .ToListAsync();
+
+        // Nếu SA chưa cấu hình gì → mặc định trả về CASH + BANK_TRANSFER + VIETQR
+        if (enabled.Count == 0)
+            enabled = ["CASH", "BANK_TRANSFER", "VIETQR"];
+
+        return Ok(new { success = true, data = enabled });
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // POST /api/payment/order/{orderId}/initiate
     // Khởi tạo thanh toán cho đơn hàng
     // ─────────────────────────────────────────────────────────────────────────
@@ -193,9 +214,9 @@ public class PaymentController : ControllerBase
     // ─────────────────────────────────────────────────────────────────────────
 
     // POST /api/payment/mock/sepay-success
-    /// <summary>Giả lập SePay webhook – cho Admin/SuperAdmin trong demo mode</summary>
+    /// <summary>Giả lập SePay webhook – demo mode, production thay bằng SePay tự động</summary>
     [HttpPost("mock/sepay-success")]
-    [Authorize(Roles = "Owner,Manager,SuperAdmin")]
+    [Authorize(Roles = "Owner,Manager,Staff,SuperAdmin")]
     public async Task<IActionResult> MockSePaySuccess([FromBody] MockSePayRequest req)
     {
         // SaaS isolation: non-SuperAdmin chỉ được mock giao dịch của chính tenant mình

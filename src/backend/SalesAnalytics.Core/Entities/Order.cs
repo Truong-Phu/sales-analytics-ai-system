@@ -201,6 +201,11 @@ public class Order
     [Column("ship_by_date")]
     public DateTime? ShipByDate { get; set; }
 
+    // ── Tồn kho ──────────────────────────────────────────────────────────────
+    // TRUE = stock đã được trừ cho đơn này; FALSE = chưa trừ hoặc đã hoàn kho
+    [Column("is_stock_deducted")]
+    public bool IsStockDeducted { get; set; } = false;
+
     // ── Multi-tenant ─────────────────────────────────────────────────────────
     [Column("company_id")]
     public Guid? CompanyId { get; set; }

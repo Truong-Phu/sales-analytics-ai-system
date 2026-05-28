@@ -6,16 +6,16 @@ namespace SalesAnalytics.Core.DTOs;
 
 /// <summary>Khởi tạo thanh toán cho đơn hàng</summary>
 public record InitiateOrderPaymentRequest(
-    PaymentMethod Method  // CASH | BANK_TRANSFER | VIETQR | MOMO | VNPAY
+    PaymentMethod Method  // CASH | VIETQR | MOMO | VNPAY
 );
 
-/// <summary>Xác nhận thanh toán thủ công (Cash/Bank Transfer)</summary>
+/// <summary>Xác nhận thanh toán thủ công (Cash)</summary>
 public record ManualConfirmPaymentRequest(
-    string? TransactionCode,  // Mã giao dịch ngân hàng (tùy chọn)
+    string? TransactionCode,
     string? Notes
 );
 
-/// <summary>Mock SePay webhook – giả lập thanh toán VietQR/chuyển khoản thành công</summary>
+/// <summary>Mock SePay webhook – giả lập thanh toán VietQR thành công</summary>
 public record MockSePayRequest(
     string PaymentCode,
     decimal Amount,
@@ -44,7 +44,7 @@ public record InitiateSubscriptionPaymentRequest(
 /// <summary>Cập nhật cấu hình một phương thức thanh toán</summary>
 public record UpdatePaymentMethodConfigRequest(
     bool Enabled,
-    string? ConfigJson  // JSON string linh hoạt
+    string? ConfigJson
 );
 
 // ── Responses ─────────────────────────────────────────────────────────────────
@@ -63,23 +63,12 @@ public record PaymentTransactionDto(
     DateTime  CreatedAt,
     DateTime? PaidAt,
     DateTime? ExpiredAt,
-    BankTransferInfoDto? BankInfo,    // có khi method là BANK_TRANSFER
-    VietQRInfoDto?       VietQRInfo   // có khi method là VIETQR
+    VietQRInfoDto? VietQRInfo   // có khi method là VIETQR
 );
 
-/// <summary>Thông tin chuyển khoản ngân hàng</summary>
-public record BankTransferInfoDto(
-    string BankName,
-    string? BankBin,
-    string AccountNumber,
-    string AccountHolder,
-    string TransferContent,
-    decimal Amount
-);
-
-/// <summary>Thông tin VietQR</summary>
+/// <summary>Thông tin VietQR (bao gồm thông tin CK để hiện dự phòng)</summary>
 public record VietQRInfoDto(
-    string QrDataUrl,      // URL ảnh QR từ VietQR API
+    string QrDataUrl,
     string BankName,
     string? BankBin,
     string AccountNumber,
@@ -90,14 +79,14 @@ public record VietQRInfoDto(
 
 /// <summary>Kết quả khởi tạo thanh toán đơn hàng</summary>
 public record InitiatePaymentResponse(
-    Guid   TransactionId,
-    string PaymentCode,
-    string PaymentMethod,
-    string Status,
+    Guid    TransactionId,
+    int?    OrderId,
+    string  PaymentCode,
+    string  PaymentMethod,
+    string  Status,
     decimal Amount,
-    string? MockPaymentUrl,         // URL giả lập cho MoMo/VNPAY mock flow
-    BankTransferInfoDto? BankInfo,
-    VietQRInfoDto?       VietQRInfo
+    string? MockPaymentUrl,
+    VietQRInfoDto? VietQRInfo
 );
 
 /// <summary>Cấu hình phương thức thanh toán (response)</summary>
@@ -105,7 +94,7 @@ public record PaymentMethodConfigDto(
     Guid    Id,
     string  PaymentMethod,
     bool    Enabled,
-    object? Config,        // Deserialized JSON object
+    object? Config,
     DateTime UpdatedAt
 );
 

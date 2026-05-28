@@ -31,11 +31,10 @@ public enum ChannelType
 /// <summary>Phương thức thanh toán hiển thị cho người dùng</summary>
 public enum PaymentMethod
 {
-    CASH,           // Tiền mặt – xác nhận thủ công
-    BANK_TRANSFER,  // Chuyển khoản ngân hàng – xác nhận thủ công
-    VIETQR,         // VietQR – sinh QR thật, xác nhận qua SePay mock
-    MOMO,           // Ví MoMo – mock callback nội bộ
-    VNPAY           // VNPAY – mock callback nội bộ
+    CASH,    // Tiền mặt – xác nhận thủ công
+    VIETQR,  // VietQR – sinh QR thật + hiện thông tin CK, xác nhận qua SePay mock
+    MOMO,    // Ví MoMo – mock callback nội bộ
+    VNPAY    // VNPAY – mock callback nội bộ
 }
 
 /// <summary>Trạng thái giao dịch thanh toán</summary>

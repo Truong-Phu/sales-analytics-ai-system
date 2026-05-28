@@ -3,11 +3,10 @@ import api from '../../api/axios'
 
 // Các phương thức thật người dùng nhìn thấy
 const REAL_METHODS = [
-  { key: 'CASH',          label: 'Tiền mặt',                icon: '💵' },
-  { key: 'BANK_TRANSFER', label: 'Chuyển khoản ngân hàng',  icon: '🏦' },
-  { key: 'VIETQR',        label: 'VietQR',                  icon: '📱' },
-  { key: 'MOMO',          label: 'MoMo',                    icon: '🟣' },
-  { key: 'VNPAY',         label: 'VNPAY',                   icon: '💳' },
+  { key: 'CASH',   label: 'Tiền mặt', icon: '💵' },
+  { key: 'VIETQR', label: 'VietQR',   icon: '📱' },
+  { key: 'MOMO',   label: 'MoMo',     icon: '🟣' },
+  { key: 'VNPAY',  label: 'VNPAY',    icon: '💳' },
 ]
 
 // Mock providers – chỉ dùng nội bộ dev/demo
@@ -17,21 +16,9 @@ const MOCK_PROVIDERS = [
   { key: 'MOCK_VNPAY', label: 'Mock VNPAY Callback', desc: 'Giả lập callback VNPAY (success/failed/cancelled)' },
 ]
 
-// Config fields cho từng method
+// Config fields theo từng method
+// VIETQR không có fields ở đây — bank info quản lý tập trung ở "Tài khoản thanh toán"
 const METHOD_FIELDS = {
-  BANK_TRANSFER: [
-    { key: 'bankName',       label: 'Tên ngân hàng',      placeholder: 'VD: Vietcombank' },
-    { key: 'bankBin',        label: 'Bank BIN',           placeholder: 'VD: 970436 (6 chữ số)' },
-    { key: 'accountNumber',  label: 'Số tài khoản',       placeholder: '' },
-    { key: 'accountHolder',  label: 'Tên chủ tài khoản',  placeholder: 'VIET NAM UPPER CASE', uppercase: true },
-    { key: 'transferPrefix', label: 'Prefix nội dung CK', placeholder: 'VD: MSAS' },
-  ],
-  VIETQR: [
-    { key: 'bankName',      label: 'Tên ngân hàng',      placeholder: 'VD: Vietcombank' },
-    { key: 'bankBin',       label: 'Bank BIN',           placeholder: 'VD: 970436' },
-    { key: 'accountNumber', label: 'Số tài khoản',       placeholder: '' },
-    { key: 'accountHolder', label: 'Tên chủ tài khoản',  placeholder: 'VIET NAM UPPER CASE', uppercase: true },
-  ],
   // Future: credentials sandbox/production (hiện tại chỉ lưu cấu trúc, chưa gọi API thật)
   MOMO: [
     { key: 'partnerCode', label: 'Partner Code', placeholder: 'Sandbox/Production', future: true },
@@ -231,7 +218,18 @@ export default function SaPaymentSettingsPage() {
                   checked={cfg.enabled ?? false}
                   onChange={() => toggleEnabled(m.key, !(cfg.enabled ?? false))}
                 />
-                {(cfg.enabled ?? false) && (
+                {(cfg.enabled ?? false) && m.key === 'VIETQR' && (
+                  <div className="mt-3 pt-3 flex items-start gap-2 text-xs"
+                    style={{ borderTop: '1px solid var(--border)', color: 'var(--text-tertiary)' }}>
+                    <span className="icon text-sm mt-0.5" style={{ color: 'var(--primary-400)' }}>info</span>
+                    <span>
+                      Thông tin ngân hàng VietQR được cấu hình tại{' '}
+                      <strong style={{ color: 'var(--primary-500)' }}>Tài khoản thanh toán</strong>
+                      {' '}→ Thêm tài khoản với phương thức <em>VietQR</em> và đặt làm mặc định.
+                    </span>
+                  </div>
+                )}
+                {(cfg.enabled ?? false) && m.key !== 'VIETQR' && (
                   <ConfigSection
                     methodKey={m.key}
                     config={cfg.config}

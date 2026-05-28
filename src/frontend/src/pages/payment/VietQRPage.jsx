@@ -48,7 +48,8 @@ export default function VietQRPage() {
   const [toast,    setToast]    = useState('')
   const [checking, setChecking] = useState(false)
 
-  const isAdmin = user?.role === 'Owner' || user?.role === 'Manager' || user?.isSuperAdmin
+  // Tất cả role nội bộ đều có thể giả lập – production sẽ thay bằng SePay webhook tự động
+  const canMock = ['Owner', 'Manager', 'Staff'].includes(user?.role) || user?.isSuperAdmin
 
   const load = useCallback(async () => {
     if (!txId) { setError('Không có mã giao dịch'); setLoading(false); return }
@@ -197,8 +198,8 @@ export default function VietQRPage() {
             </div>
           )}
 
-          {/* Mock SePay button – chỉ Admin */}
-          {isAdmin && (
+          {/* Mock SePay button – tất cả nhân viên nội bộ */}
+          {canMock && (
             <button onClick={handleMockSePay} disabled={checking}
               className="w-full py-3 rounded-xl text-sm font-medium disabled:opacity-50 flex items-center justify-center gap-2"
               style={{ background: '#FEF3C7', color: '#92400E', border: '1px solid #FDE68A' }}>
@@ -206,6 +207,18 @@ export default function VietQRPage() {
               {checking ? 'Đang giả lập...' : '🔬 Giả lập khách đã chuyển khoản (Demo)'}
             </button>
           )}
+
+          {/* Hướng phát triển */}
+          <div className="px-3 py-2.5 rounded-xl text-xs space-y-1"
+            style={{ background: 'var(--bg-elevated)', border: '1px dashed var(--border)' }}>
+            <div className="flex items-center gap-1.5 font-semibold" style={{ color: 'var(--text-secondary)' }}>
+              <span className="icon text-sm">rocket_launch</span>
+              Hướng phát triển
+            </div>
+            <p style={{ color: 'var(--text-tertiary)' }}>
+              Tích hợp <strong>SePay</strong> (hoặc tương đương) để tự động đối soát giao dịch ngân hàng qua SMS/webhook — xác nhận đơn hàng không cần thao tác thủ công.
+            </p>
+          </div>
         </>
       )}
     </div>
