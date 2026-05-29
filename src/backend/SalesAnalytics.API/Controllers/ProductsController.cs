@@ -165,11 +165,13 @@ public class ProductsController(
                 SELECT category_id, category_name, parent_id, level
                 FROM public.categories
                 WHERE is_active = TRUE
+                  AND (company_id = @cid::uuid OR company_id IS NULL)
                 ORDER BY level, category_name
                 """;
 
             var cats = new List<object>();
             await using var cmd    = new NpgsqlCommand(sql, conn);
+            cmd.Parameters.AddWithValue("cid", tenant.CompanyId!.Value.ToString());
             await using var reader = await cmd.ExecuteReaderAsync();
             while (await reader.ReadAsync())
             {

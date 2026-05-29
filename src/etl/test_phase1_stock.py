@@ -46,20 +46,25 @@ def get_customer_id(cur, company_id):
     r = cur.fetchone()
     return r[0] if r else None
 
-def create_test_product(cur, company_id, stock):
-    """Tạo sản phẩm test với tồn kho xác định."""
-    import random
-    sku = f"TEST-PHASE1-{random.randint(10000,99999)}"
+def get_real_product(cur, company_id, stock):
+    """Dùng sản phẩm thật từ DB và set tồn kho tạm để test."""
     cur.execute("""
-        INSERT INTO public.products
-            (sku, product_name, base_price, stock_quantity, category_id, company_id, is_active, created_at, updated_at)
-        VALUES (%s, %s, 100000, %s,
-            (SELECT category_id FROM public.categories LIMIT 1),
-            %s::uuid, TRUE, NOW(), NOW())
-        RETURNING product_id, product_name
-    """, (sku, f"Test Product {sku}", stock, company_id))
+        SELECT product_id, product_name, stock_quantity
+        FROM public.products
+        WHERE company_id = %s::uuid
+          AND sku NOT LIKE 'TEST-%%'
+          AND is_active = TRUE
+        ORDER BY RANDOM()
+        LIMIT 1
+    """, (company_id,))
     r = cur.fetchone()
-    return r[0], r[1]
+    if not r:
+        raise RuntimeError("Khong co san pham that nao trong DB de test.")
+    pid, pname, orig_stock = r[0], r[1], r[2]
+    # Set tồn kho về giá trị cần cho test (lưu lại giá trị gốc để rollback sau)
+    cur.execute("UPDATE public.products SET stock_quantity = %s WHERE product_id = %s",
+                (stock, pid))
+    return pid, pname, orig_stock
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -90,10 +95,10 @@ print()
 # ─────────────────────────────────────────────────────────────
 # TC-2: Tao san pham test voi stock = 10
 # ─────────────────────────────────────────────────────────────
-print("TC-2: Tao san pham test voi stock=10 de chuan bi test")
+print("TC-2: Dung san pham that tu DB, set stock tam de test")
 with c.cursor() as cur:
-    pid_ok, pname_ok = create_test_product(cur, company_id, stock=10)
-    pid_low, pname_low = create_test_product(cur, company_id, stock=3)
+    pid_ok, pname_ok, orig_stock_ok = get_real_product(cur, company_id, stock=10)
+    pid_low, pname_low, orig_stock_low = get_real_product(cur, company_id, stock=3)
 c.commit()
 print(f"  Product A (stock=10): id={pid_ok}, name={pname_ok}")
 print(f"  Product B (stock=3):  id={pid_low}, name={pname_low}")
@@ -330,8 +335,10 @@ with c.cursor() as cur:
         cur.execute("DELETE FROM public.order_items WHERE order_id = ANY(%s)", (test_orders,))
         cur.execute("DELETE FROM public.loyalty_points WHERE order_id = ANY(%s)", (test_orders,))
         cur.execute("DELETE FROM public.orders WHERE order_id = ANY(%s)", (test_orders,))
+    # Khoi phuc stock ve gia tri goc (khong xoa san pham that)
     cur.execute("DELETE FROM public.inventory_transactions WHERE product_id IN (%s, %s)", (pid_ok, pid_low))
-    cur.execute("DELETE FROM public.products WHERE product_id IN (%s, %s)", (pid_ok, pid_low))
+    cur.execute("UPDATE public.products SET stock_quantity = %s WHERE product_id = %s", (orig_stock_ok, pid_ok))
+    cur.execute("UPDATE public.products SET stock_quantity = %s WHERE product_id = %s", (orig_stock_low, pid_low))
 c.commit()
 c.close()
 print("Cleanup done.\n")

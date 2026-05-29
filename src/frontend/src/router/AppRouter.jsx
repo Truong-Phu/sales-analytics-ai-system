@@ -69,6 +69,7 @@ const SupplierPage    = lazy(() => import('../pages/supplier/SupplierPage'))
 const PricePage       = lazy(() => import('../pages/price/PricePage'))
 const SentimentPage   = lazy(() => import('../pages/sentiment/SentimentPage'))
 const PosPage         = lazy(() => import('../pages/pos/PosPage'))
+const ProfitPage      = lazy(() => import('../pages/finance/ProfitPage'))
 
 // Roles constants
 const ALL_ROLES     = ['Owner', 'Manager', 'Staff', 'DataIT']
@@ -344,6 +345,13 @@ export default function AppRouter() {
         <Route path="/pos" element={
           <ProtectedRoute roles={['Owner', 'Manager', 'Staff']}>
             <Shell><PosPage /></Shell>
+          </ProtectedRoute>
+        } />
+
+        {/* Finance — Profit Engine */}
+        <Route path="/finance/profit" element={
+          <ProtectedRoute roles={ANALYST_ROLES}>
+            <Shell><ProfitPage /></Shell>
           </ProtectedRoute>
         } />
 

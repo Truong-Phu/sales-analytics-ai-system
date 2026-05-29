@@ -494,12 +494,16 @@ export default function TopBar() {
   ]
 
   // ── Nhóm Quản lý dữ liệu ──────────────────────────────────────────────────
+  // Khách hàng + RFM chỉ hiển thị với ANALYST_ROLES (Owner/Manager/DataIT)
+  // vì /customers route yêu cầu ANALYST_ROLES; Staff thấy item nhưng bị block → ẩn luôn
   const dataMenuItems = [
-    { label: t('nav.orders',      'Đơn hàng'),      desc: 'Xem và quản lý đơn hàng',      icon: 'receipt_long',  href: '/orders' },
-    { label: t('nav.products',    'Sản phẩm'),      desc: 'Quản lý kho sản phẩm',          icon: 'inventory_2',   href: '/products' },
-    { label: t('nav.categories',  'Danh mục'),      desc: 'Phân loại sản phẩm',            icon: 'category',      href: '/categories' },
-    { label: t('nav.customers',   'Khách hàng'),    desc: 'Thông tin khách hàng',           icon: 'people',        href: '/customers' },
-    ...(canSeeAI ? [{ label: t('nav.rfmAnalysis', 'Phân tích RFM'), desc: 'Phân khúc khách hàng RFM', icon: 'pie_chart', href: '/customers/rfm' }] : []),
+    { label: t('nav.orders',     'Đơn hàng'),  desc: 'Xem và quản lý đơn hàng',  icon: 'receipt_long', href: '/orders' },
+    { label: t('nav.products',   'Sản phẩm'),  desc: 'Quản lý kho sản phẩm',      icon: 'inventory_2',  href: '/products' },
+    { label: t('nav.categories', 'Danh mục'),  desc: 'Phân loại sản phẩm',        icon: 'category',     href: '/categories' },
+    ...(canSeeAI ? [
+      { label: t('nav.customers',   'Khách hàng'),    desc: 'Thông tin & phân tích KH',   icon: 'people',   href: '/customers' },
+      { label: t('nav.rfmAnalysis', 'Phân tích RFM'), desc: 'Phân khúc khách hàng RFM', icon: 'pie_chart', href: '/customers/rfm' },
+    ] : []),
   ]
 
   // ── Nhóm Vận hành & ETL ───────────────────────────────────────────────────
@@ -546,6 +550,11 @@ export default function TopBar() {
       hasMega: true,
       menuItems: invMenuItems,
       columns: 2,
+    }] : canSeeSales ? [{
+      // Staff chỉ có quyền xem /inventory (Smart Inventory), không có mega menu
+      href: '/inventory',
+      icon: 'inventory_2',
+      label: t('nav.inventory', 'Tồn kho'),
     }] : []),
     ...(canSeeAI ? [{ href: '/report', icon: 'picture_as_pdf', label: t('nav.report', 'Báo cáo') }] : []),
     ...(canSeeOperations ? [{

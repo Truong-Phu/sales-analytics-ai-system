@@ -17,8 +17,8 @@ import { getDashboard, getTodayVsYesterday, getDrillDownOrders, getDrillDownCust
          getOrderHeatmap, getOrderFunnel, getMonthlyByChannel,
          getOpsKpi, getInventoryReal } from '../../api/dashboardApi'
 import { getInsights, getLeaderboard, getGeoDistribution, getChannelAttribution,
-         getCampaignPlan, getSupplierPerformance, getFeedbackSummary,
-         getInventoryIntelligence, getRfmSegments } from '../../api/aiApi'
+         getCampaignPlan, getFeedbackSummary,
+         getRfmSegments } from '../../api/aiApi'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function relDate(offsetDays) {
@@ -1886,15 +1886,11 @@ function TabMarketing({ data, fbAdsData, wd = {}, wl = {} }) {
   )
 }
 
-// ── Tab: 6 — Inventory & Operations ──────────────────────────────────────────
+// ── Tab: 6 — Inventory Analytics ─────────────────────────────────────────────
 function TabInventory({ data, wd = {}, wl = {} }) {
-  const { t } = useTranslation()
+  const { t }      = useTranslation()
+  const navigate   = useNavigate()
   const invKpi = data.inventoryKpi || { avgDIO: 0, overstockRate: '0.0', stockoutRate: '0.0' }
-  const supplierData    = wd.supplier ?? null
-  const supplierLoading = wl.supplier ?? false
-  const invAiData       = wd.invAi   ?? null
-  const invAiLoading    = wl.invAi   ?? false
-
   const fmtPct = (v) => v != null ? `${Number(v).toFixed(1)}%` : '—'
   const invKpis = [
     { label: 'Số ngày tồn kho (DIO)',    value: `${invKpi.avgDIO ?? '—'} ngày`, icon: 'hourglass_empty',      color: '#6366F1' },
@@ -1925,6 +1921,26 @@ function TabInventory({ data, wd = {}, wl = {} }) {
 
   return (
     <div className="space-y-5">
+      {/* Header row — phân biệt analytics view vs. quản lý vận hành */}
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+            Phân tích tổng quan tồn kho & vận hành — dữ liệu từ đơn hàng thực tế
+          </p>
+        </div>
+        <button
+          onClick={() => navigate('/inventory/dashboard')}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
+          style={{ background: 'rgba(99,102,241,0.08)', color: 'var(--primary-600)' }}
+          onMouseEnter={e => e.currentTarget.style.background = 'rgba(99,102,241,0.16)'}
+          onMouseLeave={e => e.currentTarget.style.background = 'rgba(99,102,241,0.08)'}
+        >
+          <span className="icon icon-sm">warehouse</span>
+          Quản lý Kho
+          <span className="icon text-sm">arrow_forward</span>
+        </button>
+      </div>
+
       {/* KPI strip mở rộng — 7 cards trải đều màn hình */}
       <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-3">
         {invKpis.map((k, i) => (
@@ -2113,82 +2129,6 @@ function TabInventory({ data, wd = {}, wl = {} }) {
         )}
       </div>
 
-      {/* ── Supplier + Inventory AI mini-widgets ── */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <MiniWidget title="Hiệu suất Nhà cung cấp" icon="local_shipping" href="/supplier" loading={supplierLoading}>
-          {supplierData ? (
-            <div className="space-y-2">
-              {(supplierData.suppliers ?? supplierData.data ?? []).slice(0, 5).map((s, i) => {
-                const rate = Number(s.on_time_rate ?? s.onTimeRate ?? s.delivery_rate ?? 0)
-                return (
-                  <div key={i} className="flex items-center gap-3">
-                    <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0"
-                         style={{ background: 'var(--bg-elevated)' }}>
-                      <span className="icon text-sm" style={{ color: 'var(--text-tertiary)' }}>store</span>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium truncate" style={{ color: 'var(--text-primary)' }}>
-                        {s.supplier_name ?? s.name ?? `NCC ${i + 1}`}
-                      </p>
-                      <div className="h-1.5 rounded-full mt-1" style={{ background: 'var(--bg-elevated)' }}>
-                        <div className="h-full rounded-full"
-                             style={{ width: `${Math.min(rate, 100)}%`,
-                                      background: rate >= 90 ? '#10B981' : rate >= 70 ? '#F59E0B' : '#EF4444' }} />
-                      </div>
-                    </div>
-                    <span className="text-xs font-bold shrink-0"
-                          style={{ color: rate >= 90 ? '#10B981' : rate >= 70 ? '#F59E0B' : '#EF4444' }}>
-                      {rate.toFixed(0)}%
-                    </span>
-                  </div>
-                )
-              })}
-              {!(supplierData.suppliers ?? supplierData.data)?.length && (
-                <p className="text-xs text-center py-2" style={{ color: 'var(--text-tertiary)' }}>Chưa có dữ liệu</p>
-              )}
-            </div>
-          ) : (
-            <p className="text-xs text-center py-2" style={{ color: 'var(--text-tertiary)' }}>Không tải được dữ liệu</p>
-          )}
-        </MiniWidget>
-
-        <MiniWidget title="Gợi ý đặt hàng thông minh" icon="add_shopping_cart" href="/inventory" loading={invAiLoading}>
-          {invAiData ? (
-            <div className="space-y-2">
-              {(invAiData.reorder_suggestions ?? invAiData.suggestions ?? invAiData.data ?? []).slice(0, 5).map((item, i) => (
-                <div key={i} className="flex items-center gap-2.5 px-3 py-2 rounded-lg"
-                     style={{ background: 'var(--bg-elevated)' }}>
-                  <span className="icon text-sm shrink-0"
-                        style={{ color: (item.urgency ?? item.priority) === 'high' ? '#EF4444' : '#F59E0B' }}>
-                    {(item.urgency ?? item.priority) === 'high' ? 'warning' : 'info'}
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-medium truncate" style={{ color: 'var(--text-primary)' }}>
-                      {item.product_name ?? item.name ?? `Sản phẩm ${i + 1}`}
-                    </p>
-                    {item.reorder_qty != null && (
-                      <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                        Đặt thêm: {item.reorder_qty} {item.unit ?? 'đơn vị'}
-                      </p>
-                    )}
-                  </div>
-                  {item.days_left != null && (
-                    <span className="text-xs font-bold shrink-0"
-                          style={{ color: item.days_left <= 7 ? '#EF4444' : '#F59E0B' }}>
-                      {item.days_left}d
-                    </span>
-                  )}
-                </div>
-              ))}
-              {!(invAiData.reorder_suggestions ?? invAiData.suggestions ?? invAiData.data)?.length && (
-                <p className="text-xs text-center py-2" style={{ color: 'var(--text-tertiary)' }}>Tồn kho ổn định</p>
-              )}
-            </div>
-          ) : (
-            <p className="text-xs text-center py-2" style={{ color: 'var(--text-tertiary)' }}>Không tải được dữ liệu</p>
-          )}
-        </MiniWidget>
-      </div>
     </div>
   )
 }
@@ -2397,10 +2337,6 @@ export default function DashboardPage() {
     }
     if (activeTab === 'marketing')
       loadWidget('campaign',  () => getCampaignPlan())
-    if (activeTab === 'inventory') {
-      loadWidget('supplier',  () => getSupplierPerformance({ limit: 5 }))
-      loadWidget('invAi',     () => getInventoryIntelligence({ limit: 5 }))
-    }
   }, [activeTab, loadWidget])
 
   return (

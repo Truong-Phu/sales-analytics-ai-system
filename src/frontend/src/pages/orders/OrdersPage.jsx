@@ -256,18 +256,19 @@ function OrderDetailPanel({ order }) {
 
   const items = detail?.details ?? order.details ?? []
 
-  // Đọc đúng field: ưu tiên camelCase từ API mới, fallback sang snake_case cũ
-  const orderCode     = order.orderCode     ?? order.externalOrderId ?? order.order_code   ?? '—'
-  const custName      = order.customerName  ?? order.customer_name   ?? order.recipientName ?? '—'
-  const custPhone     = order.customerPhone ?? order.customer_phone  ?? order.phone ?? '—'
-  const shipProv      = order.shippingProvince ?? order.shipping_province ?? order.province ?? ''
-  const shipDist      = order.shippingDistrict ?? order.shipping_district ?? order.district ?? ''
-  const shipFull      = order.shippingFullAddress ?? order.shipping_full_address ?? ([shipDist, shipProv].filter(Boolean).join(', ') || '—')
-  const trackNum      = order.trackingNumber ?? order.tracking_number ?? '—'
-  const ghnCode       = order.ghnOrderCode  ?? order.ghn_order_code  ?? ''
-  const platStatus    = order.platformStatus ?? order.platform_status ?? ''
-  const paidAt        = order.paidAt        ?? order.paid_at
-  const deliveredAt   = order.deliveredAt   ?? order.delivered_at
+  // Ưu tiên dữ liệu từ detail API (đầy đủ hơn list), fallback về order từ list
+  const src        = detail ?? order
+  const orderCode  = src.orderCode     ?? src.externalOrderId ?? '—'
+  const custName   = src.customerName  ?? '—'
+  const custPhone  = src.customerPhone ?? '—'
+  const shipProv   = src.shippingProvince    ?? ''
+  const shipDist   = src.shippingDistrict    ?? ''
+  const shipFull   = src.shippingFullAddress ?? ([shipDist, shipProv].filter(Boolean).join(', ') || '—')
+  const trackNum   = src.trackingNumber ?? '—'
+  const ghnCode    = src.ghnOrderCode   ?? ''
+  const platStatus = src.platformStatus ?? ''
+  const paidAt     = src.paidAt
+  const deliveredAt= src.deliveredAt
 
   return (
     <div className="space-y-4 mb-3">
@@ -289,18 +290,18 @@ function OrderDetailPanel({ order }) {
         </div>
       </div>
 
-      {/* Info grid */}
+      {/* Info grid — chỉ hiển thị ô có dữ liệu thực */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
-          { label: 'Phí vận chuyển', value: fmtVND(order.shippingFee ?? order.shipping_fee) },
-          { label: 'Thanh toán',     value: order.paymentMethod ?? order.payment_method ?? '—' },
-          { label: 'Mã vận đơn',     value: trackNum },
-          { label: 'Mã GHN',         value: ghnCode || '—' },
-          { label: 'TT sàn',         value: platStatus || '—' },
-          { label: 'TT giao hàng',   value: (order.shippingStatus ?? order.shipping_status ?? '—').replace(/_/g,' ') },
-          { label: 'Ngày thanh toán',value: paidAt ? new Date(paidAt).toLocaleDateString('vi-VN') : '—' },
-          { label: 'Ngày giao',      value: deliveredAt ? new Date(deliveredAt).toLocaleDateString('vi-VN') : '—' },
-        ].map(item => (
+          { label: 'Phí vận chuyển', value: fmtVND(src.shippingFee),                           always: true },
+          { label: 'Thanh toán',     value: src.paymentMethod ?? '—',                          always: true },
+          { label: 'TT giao hàng',   value: (src.shippingStatus ?? '').replace(/_/g,' ') || '—', always: true },
+          { label: 'Mã vận đơn',     value: trackNum !== '—' ? trackNum : null },
+          { label: 'Mã GHN',         value: ghnCode    || null },
+          { label: 'TT sàn',         value: platStatus || null },
+          { label: 'Ngày thanh toán',value: paidAt      ? new Date(paidAt).toLocaleDateString('vi-VN')      : null },
+          { label: 'Ngày giao',      value: deliveredAt ? new Date(deliveredAt).toLocaleDateString('vi-VN') : null },
+        ].filter(item => item.always || item.value).map(item => (
           <div key={item.label} className="p-2 rounded-lg" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
             <div className="text-xs mb-0.5" style={{ color: 'var(--text-secondary)' }}>{item.label}</div>
             <div className="font-mono font-semibold text-sm truncate" style={{ color: 'var(--text-primary)' }}>{item.value}</div>
@@ -616,10 +617,14 @@ export default function OrdersPage() {
                       <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                         <div className="flex flex-col gap-1">
                           <PaymentStatusBadge
-                            status={paymentTxCache[order.orderId]?.status ?? order.paymentStatus ?? 'UNPAID'}
+                            status={
+                              ['cancelled', 'returned'].includes(order.status)
+                                ? (order.paymentStatus ?? 'UNPAID')
+                                : (paymentTxCache[order.orderId]?.status ?? order.paymentStatus ?? 'UNPAID')
+                            }
                             size="xs"
                           />
-                          {canPayment && !isMock && (
+                          {canPayment && !isMock && !['cancelled', 'returned'].includes(order.status) && (
                             <>
                               {/* Chưa có transaction → nút khởi tạo */}
                               {(!paymentTxCache[order.orderId] && (order.paymentStatus === 'UNPAID' || !order.paymentStatus)) && (

@@ -38,16 +38,18 @@ public class OrderResponseDto
 /// <summary>Chi tiết từng sản phẩm trong đơn hàng</summary>
 public class OrderDetailDto
 {
-    public int     ItemId      { get; set; }
-    public int     ProductId   { get; set; }
-    public string? ProductName { get; set; }
-    public string? Sku         { get; set; }
-    public string? Variation   { get; set; }
-    public string? ImageUrl    { get; set; }
-    public int     Quantity    { get; set; }
-    public decimal UnitPrice   { get; set; }
-    public decimal Discount    { get; set; }
-    public decimal Subtotal    { get; set; }
+    public int      ItemId         { get; set; }
+    public int      ProductId      { get; set; }
+    public string?  ProductName    { get; set; }
+    public string?  Sku            { get; set; }
+    public string?  Variation      { get; set; }
+    public string?  ImageUrl       { get; set; }
+    public int      Quantity       { get; set; }
+    public decimal  UnitPrice      { get; set; }
+    public decimal? SalePrice      { get; set; }
+    public decimal? OriginalPrice  { get; set; }
+    public decimal  Discount       { get; set; }
+    public decimal  Subtotal       { get; set; }
 }
 
 /// <summary>Dữ liệu tạo đơn hàng mới</summary>

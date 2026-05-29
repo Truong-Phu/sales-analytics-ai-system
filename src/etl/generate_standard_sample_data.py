@@ -5,10 +5,8 @@ Tạo dữ liệu mẫu chuẩn theo đúng cấu trúc response của 4 Open Pl
   Shopee (get_order_detail), TikTok Shop (Search Orders),
   Lazada (GetOrders + GetOrderItems), GHN (shipping-order/detail)
 
-Khoảng thời gian: 01/07/2024 → 21/05/2026
+Khoảng thời gian: 01/07/2024 → ngày hiện tại (động)
 Target: Shopee=550, TikTok=330, Lazada=270, GHN=~1050
-
-Ngày hiện tại hệ thống: 21/05/2026
 
 Chạy: python src/etl/generate_standard_sample_data.py
       (cần .env với DATABASE_URL)
@@ -32,7 +30,7 @@ load_dotenv()
 
 # ── Config ───────────────────────────────────────────────────────────────────
 START_DATE = datetime(2024, 7, 1, tzinfo=timezone.utc)
-END_DATE   = datetime(2026, 5, 21, tzinfo=timezone.utc)
+END_DATE   = datetime.now(timezone.utc).replace(hour=23, minute=59, second=59, microsecond=0)
 SHOP_ID    = "885"
 COMPANY_NAME = "Phú Thịnh"
 

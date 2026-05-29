@@ -20,20 +20,36 @@ function StatusBadge({ status }) {
 }
 
 function CreateModal({ onClose, onSaved }) {
-  const [suppliers, setSuppliers] = useState([])
-  const [products,  setProducts]  = useState([])
-  const [suppId,    setSuppId]    = useState('')
-  const [note,      setNote]      = useState('')
-  const [items,     setItems]     = useState([{ productId: '', quantity: 1, importPrice: 0 }])
-  const [loading,   setLoading]   = useState(false)
-  const [err,       setErr]       = useState('')
+  const [suppliers,    setSuppliers]    = useState([])
+  const [allProducts,  setAllProducts]  = useState([])
+  const [suppProducts, setSuppProducts] = useState(null)   // null = chưa lọc
+  const [suppId,       setSuppId]       = useState('')
+  const [note,         setNote]         = useState('')
+  const [items,        setItems]        = useState([{ productId: '', quantity: 1, importPrice: 0 }])
+  const [loading,      setLoading]      = useState(false)
+  const [loadingProds, setLoadingProds] = useState(false)
+  const [err,          setErr]          = useState('')
+
+  const products = suppProducts ?? allProducts
 
   useEffect(() => {
     api.get('/api/suppliers', { params: { active: true, pageSize: 100 } })
        .then(r => setSuppliers(r.data.items ?? [])).catch(() => {})
     api.get('/api/products/oltp', { params: { pageSize: 200 } })
-       .then(r => setProducts(r.data.items ?? [])).catch(() => {})
+       .then(r => setAllProducts(r.data.items ?? [])).catch(() => {})
   }, [])
+
+  // Khi chọn NCC → tải SP của NCC đó
+  useEffect(() => {
+    if (!suppId) { setSuppProducts(null); return }
+    setLoadingProds(true)
+    setSuppProducts(null)
+    setItems([{ productId: '', quantity: 1, importPrice: 0 }])
+    api.get(`/api/suppliers/${suppId}/products`)
+       .then(r => setSuppProducts(r.data ?? []))
+       .catch(() => setSuppProducts(null))
+       .finally(() => setLoadingProds(false))
+  }, [suppId])
 
   const addItem = () => setItems(it => [...it, { productId: '', quantity: 1, importPrice: 0 }])
   const removeItem = (i) => setItems(it => it.filter((_, j) => j !== i))
@@ -81,22 +97,31 @@ function CreateModal({ onClose, onSaved }) {
               className="w-full text-sm rounded-lg border px-3 py-1.5 resize-none"
               style={{ background: 'var(--bg-elevated)', borderColor: 'var(--border)', color: 'var(--text-primary)' }} />
           </div>
+
         </div>
 
         {/* Items */}
         <div>
-          <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center justify-between mb-1">
             <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Sản phẩm</span>
-            <button onClick={addItem} className="text-xs px-2 py-1 rounded border"
-              style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>+ Thêm</button>
+            <div className="flex items-center gap-3">
+              {suppId && (
+                <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                  {loadingProds ? 'Đang tải...' : suppProducts ? `${suppProducts.length} SP của NCC này` : 'Hiện tất cả SP'}
+                </span>
+              )}
+              <button onClick={addItem} className="text-xs px-2 py-1 rounded border"
+                style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>+ Thêm</button>
+            </div>
           </div>
           <div className="space-y-2">
             {items.map((it, i) => (
               <div key={i} className="flex gap-2 items-center">
                 <select value={it.productId} onChange={e => setItem(i, 'productId', e.target.value)}
+                  disabled={loadingProds}
                   className="flex-1 text-sm rounded-lg border px-2 py-1.5"
                   style={{ background: 'var(--bg-elevated)', borderColor: 'var(--border)', color: 'var(--text-primary)' }}>
-                  <option value="">-- Sản phẩm --</option>
+                  <option value="">{loadingProds ? 'Đang tải...' : '-- Sản phẩm --'}</option>
                   {products.map(p => <option key={p.productId} value={p.productId}>{p.productName}</option>)}
                 </select>
                 <input type="number" min="1" value={it.quantity}
@@ -135,15 +160,30 @@ function CreateModal({ onClose, onSaved }) {
 }
 
 export default function PurchaseOrdersPage() {
-  const [rows,       setRows]       = useState([])
-  const [total,      setTotal]      = useState(0)
-  const [page,       setPage]       = useState(1)
-  const [totalPages, setTotalPages] = useState(1)
-  const [loading,    setLoading]    = useState(true)
-  const [isMock,     setIsMock]     = useState(false)
+  const [rows,         setRows]         = useState([])
+  const [total,        setTotal]        = useState(0)
+  const [page,         setPage]         = useState(1)
+  const [totalPages,   setTotalPages]   = useState(1)
+  const [loading,      setLoading]      = useState(true)
+  const [isMock,       setIsMock]       = useState(false)
   const [filterStatus, setFilterStatus] = useState('')
-  const [showCreate, setShowCreate] = useState(false)
-  const [actionLoading, setActionLoading] = useState(null)
+  const [showCreate,   setShowCreate]   = useState(false)
+  const [actionLoading,setActionLoading]= useState(null)
+  const [expandedId,   setExpandedId]   = useState(null)
+  const [detailCache,  setDetailCache]  = useState({})   // po_id → items[]
+  const [detailLoading,setDetailLoading]= useState(null)
+
+  const toggleDetail = async (poId) => {
+    if (expandedId === poId) { setExpandedId(null); return }
+    setExpandedId(poId)
+    if (detailCache[poId]) return
+    setDetailLoading(poId)
+    try {
+      const res = await api.get(`/api/purchase-orders/${poId}`)
+      setDetailCache(c => ({ ...c, [poId]: res.data.items ?? [] }))
+    } catch { setDetailCache(c => ({ ...c, [poId]: [] })) }
+    finally { setDetailLoading(null) }
+  }
 
   const PAGE_SIZE = 20
 
@@ -228,52 +268,123 @@ export default function PurchaseOrdersPage() {
           <table className="w-full text-sm">
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-elevated)' }}>
-                {['Mã phiếu', 'Nhà cung cấp', 'Tổng tiền', 'Trạng thái', 'Ngày tạo', 'Thao tác'].map(h => (
+                {['', 'Mã phiếu', 'Nhà cung cấp', 'Tổng tiền', 'Trạng thái', 'Ngày tạo', 'Thao tác'].map(h => (
                   <th key={h} className="px-4 py-3 text-left text-xs font-medium" style={{ color: 'var(--text-tertiary)' }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {rows.map((po, i) => (
-                <tr key={po.purchaseOrderId}
-                    style={{ borderBottom: i < rows.length - 1 ? '1px solid var(--border)' : 'none' }}>
-                  <td className="px-4 py-3 font-mono text-xs" style={{ color: 'var(--text-primary)' }}>{po.purchaseCode}</td>
-                  <td className="px-4 py-3 text-sm" style={{ color: 'var(--text-primary)' }}>{po.supplierName}</td>
-                  <td className="px-4 py-3 tabular-nums text-sm" style={{ color: 'var(--text-secondary)' }}>
-                    {Number(po.totalAmount).toLocaleString('vi-VN')}đ
-                  </td>
-                  <td className="px-4 py-3"><StatusBadge status={po.status} /></td>
-                  <td className="px-4 py-3 text-xs" style={{ color: 'var(--text-tertiary)' }}>{fmtDate(po.createdAt)}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex gap-1 flex-wrap">
-                      {po.status === 'DRAFT' && (
-                        <button onClick={() => action(po.purchaseOrderId, 'submit', null)}
-                          disabled={actionLoading === po.purchaseOrderId + 'submit'}
-                          className="text-xs px-2 py-1 rounded border"
-                          style={{ borderColor: 'rgba(245,158,11,0.4)', color: '#F59E0B' }}>
-                          Gửi duyệt
-                        </button>
-                      )}
-                      {po.status === 'PENDING' && (
-                        <button onClick={() => action(po.purchaseOrderId, 'approve', 'Duyệt phiếu nhập này?')}
-                          disabled={actionLoading === po.purchaseOrderId + 'approve'}
-                          className="text-xs px-2 py-1 rounded border"
-                          style={{ borderColor: 'rgba(59,130,246,0.4)', color: '#3B82F6' }}>
-                          Duyệt
-                        </button>
-                      )}
-                      {!['RECEIVED', 'CANCELLED', 'PARTIALLY_RECEIVED'].includes(po.status) && (
-                        <button onClick={() => action(po.purchaseOrderId, 'cancel', 'Hủy phiếu nhập này?')}
-                          disabled={actionLoading === po.purchaseOrderId + 'cancel'}
-                          className="text-xs px-2 py-1 rounded border"
-                          style={{ borderColor: 'rgba(239,68,68,0.4)', color: '#EF4444' }}>
-                          Hủy
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {rows.map((po, i) => {
+                const isExpanded = expandedId === po.purchaseOrderId
+                const isLast     = i === rows.length - 1
+                const items      = detailCache[po.purchaseOrderId] ?? []
+                return (
+                  <>
+                    <tr key={po.purchaseOrderId}
+                        style={{ borderBottom: (!isExpanded && !isLast) ? '1px solid var(--border)' : 'none',
+                                 cursor: 'pointer' }}
+                        onClick={() => toggleDetail(po.purchaseOrderId)}>
+                      {/* Toggle icon */}
+                      <td className="pl-4 pr-1 py-3 w-6">
+                        <span className="icon text-sm" style={{ color: 'var(--text-tertiary)',
+                          display: 'block', transition: 'transform 0.2s',
+                          transform: isExpanded ? 'rotate(90deg)' : 'none' }}>
+                          chevron_right
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 font-mono text-xs" style={{ color: 'var(--text-primary)' }}>{po.purchaseCode}</td>
+                      <td className="px-4 py-3 text-sm" style={{ color: 'var(--text-primary)' }}>{po.supplierName}</td>
+                      <td className="px-4 py-3 tabular-nums text-sm" style={{ color: 'var(--text-secondary)' }}>
+                        {Number(po.totalAmount).toLocaleString('vi-VN')}đ
+                      </td>
+                      <td className="px-4 py-3"><StatusBadge status={po.status} /></td>
+                      <td className="px-4 py-3 text-xs" style={{ color: 'var(--text-tertiary)' }}>{fmtDate(po.createdAt)}</td>
+                      <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                        <div className="flex gap-1 flex-wrap">
+                          {po.status === 'DRAFT' && (
+                            <button onClick={() => action(po.purchaseOrderId, 'submit', null)}
+                              disabled={actionLoading === po.purchaseOrderId + 'submit'}
+                              className="text-xs px-2 py-1 rounded border"
+                              style={{ borderColor: 'rgba(245,158,11,0.4)', color: '#F59E0B' }}>
+                              Gửi duyệt
+                            </button>
+                          )}
+                          {po.status === 'PENDING' && (
+                            <button onClick={() => action(po.purchaseOrderId, 'approve', 'Duyệt phiếu nhập này?')}
+                              disabled={actionLoading === po.purchaseOrderId + 'approve'}
+                              className="text-xs px-2 py-1 rounded border"
+                              style={{ borderColor: 'rgba(59,130,246,0.4)', color: '#3B82F6' }}>
+                              Duyệt
+                            </button>
+                          )}
+                          {!['RECEIVED', 'CANCELLED', 'PARTIALLY_RECEIVED'].includes(po.status) && (
+                            <button onClick={() => action(po.purchaseOrderId, 'cancel', 'Hủy phiếu nhập này?')}
+                              disabled={actionLoading === po.purchaseOrderId + 'cancel'}
+                              className="text-xs px-2 py-1 rounded border"
+                              style={{ borderColor: 'rgba(239,68,68,0.4)', color: '#EF4444' }}>
+                              Hủy
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+
+                    {/* ── Detail row — danh sách sản phẩm ── */}
+                    {isExpanded && (
+                      <tr key={`${po.purchaseOrderId}-detail`}
+                          style={{ borderBottom: !isLast ? '1px solid var(--border)' : 'none',
+                                   background: 'var(--bg-elevated)' }}>
+                        <td colSpan={7} className="px-8 py-3">
+                          {detailLoading === po.purchaseOrderId ? (
+                            <div className="text-xs py-2" style={{ color: 'var(--text-tertiary)' }}>Đang tải...</div>
+                          ) : items.length === 0 ? (
+                            <div className="text-xs py-2" style={{ color: 'var(--text-tertiary)' }}>Không có sản phẩm.</div>
+                          ) : (
+                            <table className="w-full text-xs">
+                              <thead>
+                                <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                                  {['Sản phẩm', 'Số lượng đặt', 'Đã nhận', 'Còn lại', 'Giá nhập', 'Thành tiền'].map(h => (
+                                    <th key={h} className="pb-2 pr-4 text-left font-medium"
+                                        style={{ color: 'var(--text-tertiary)' }}>{h}</th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {items.map(it => {
+                                  const remaining = it.remainingQuantity ?? (it.quantity - it.receivedQuantity)
+                                  return (
+                                    <tr key={it.purchaseOrderItemId}>
+                                      <td className="py-1.5 pr-4 font-medium" style={{ color: 'var(--text-primary)' }}>
+                                        {it.productName}
+                                      </td>
+                                      <td className="py-1.5 pr-4 tabular-nums" style={{ color: 'var(--text-secondary)' }}>
+                                        {it.quantity}
+                                      </td>
+                                      <td className="py-1.5 pr-4 tabular-nums" style={{ color: '#22C55E' }}>
+                                        {it.receivedQuantity}
+                                      </td>
+                                      <td className="py-1.5 pr-4 tabular-nums font-semibold"
+                                          style={{ color: remaining > 0 ? '#F59E0B' : 'var(--text-tertiary)' }}>
+                                        {remaining}
+                                      </td>
+                                      <td className="py-1.5 pr-4 tabular-nums" style={{ color: 'var(--text-secondary)' }}>
+                                        {Number(it.importPrice).toLocaleString('vi-VN')}đ
+                                      </td>
+                                      <td className="py-1.5 tabular-nums" style={{ color: 'var(--text-primary)' }}>
+                                        {Number(it.totalPrice).toLocaleString('vi-VN')}đ
+                                      </td>
+                                    </tr>
+                                  )
+                                })}
+                              </tbody>
+                            </table>
+                          )}
+                        </td>
+                      </tr>
+                    )}
+                  </>
+                )
+              })}
             </tbody>
           </table>
         )}

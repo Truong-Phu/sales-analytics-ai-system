@@ -356,7 +356,12 @@ _FACT_SQL = """
         gross_revenue, discount_amount, net_revenue,
         cost_amount, gross_profit, profit_margin,
         shipping_fee, return_count, return_amount,
-        company_id
+        company_id,
+        cogs_amount, estimated_platform_fee, estimated_payment_fee,
+        estimated_packaging_cost, estimated_shipping_cost,
+        estimated_total_fee, estimated_net_profit,
+        gross_profit_margin, estimated_net_profit_margin,
+        missing_cost, is_fee_estimated
     ) VALUES (
         %(date_key)s, %(channel_key)s, %(product_key)s, %(customer_key)s,
         %(region_key)s, %(payment_key)s,
@@ -364,9 +369,34 @@ _FACT_SQL = """
         %(gross_revenue)s, %(discount_amount)s, %(net_revenue)s,
         %(cost_amount)s, %(gross_profit)s, %(profit_margin)s,
         %(shipping_fee)s, %(return_count)s, %(return_amount)s,
-        %(company_id)s
+        %(company_id)s,
+        %(cogs_amount)s, %(estimated_platform_fee)s, %(estimated_payment_fee)s,
+        %(estimated_packaging_cost)s, %(estimated_shipping_cost)s,
+        %(estimated_total_fee)s, %(estimated_net_profit)s,
+        %(gross_profit_margin)s, %(estimated_net_profit_margin)s,
+        %(missing_cost)s, %(is_fee_estimated)s
     )
-    ON CONFLICT (external_order_id) DO NOTHING
+    ON CONFLICT (external_order_id) DO UPDATE SET
+        gross_revenue             = EXCLUDED.gross_revenue,
+        discount_amount           = EXCLUDED.discount_amount,
+        net_revenue               = EXCLUDED.net_revenue,
+        cost_amount               = EXCLUDED.cost_amount,
+        gross_profit              = EXCLUDED.gross_profit,
+        profit_margin             = EXCLUDED.profit_margin,
+        shipping_fee              = EXCLUDED.shipping_fee,
+        return_count              = EXCLUDED.return_count,
+        return_amount             = EXCLUDED.return_amount,
+        cogs_amount               = EXCLUDED.cogs_amount,
+        estimated_platform_fee    = EXCLUDED.estimated_platform_fee,
+        estimated_payment_fee     = EXCLUDED.estimated_payment_fee,
+        estimated_packaging_cost  = EXCLUDED.estimated_packaging_cost,
+        estimated_shipping_cost   = EXCLUDED.estimated_shipping_cost,
+        estimated_total_fee       = EXCLUDED.estimated_total_fee,
+        estimated_net_profit      = EXCLUDED.estimated_net_profit,
+        gross_profit_margin       = EXCLUDED.gross_profit_margin,
+        estimated_net_profit_margin = EXCLUDED.estimated_net_profit_margin,
+        missing_cost              = EXCLUDED.missing_cost,
+        is_fee_estimated          = EXCLUDED.is_fee_estimated
 """
 
 
@@ -413,6 +443,17 @@ def _load_offline_records(conn, fact_records: List[Dict]) -> Tuple[int, int]:
                 "shipping_fee":      rec["shipping_fee"],
                 "return_count":      rec["return_count"],
                 "return_amount":     rec["return_amount"],
+                "cogs_amount":                  rec.get("cogs_amount"),
+                "estimated_platform_fee":       rec.get("estimated_platform_fee"),
+                "estimated_payment_fee":        rec.get("estimated_payment_fee"),
+                "estimated_packaging_cost":     rec.get("estimated_packaging_cost"),
+                "estimated_shipping_cost":      rec.get("estimated_shipping_cost"),
+                "estimated_total_fee":          rec.get("estimated_total_fee"),
+                "estimated_net_profit":         rec.get("estimated_net_profit"),
+                "gross_profit_margin":          rec.get("gross_profit_margin"),
+                "estimated_net_profit_margin":  rec.get("estimated_net_profit_margin"),
+                "missing_cost":                 rec.get("missing_cost", False),
+                "is_fee_estimated":             rec.get("is_fee_estimated", True),
             }
 
             with conn.cursor() as cur:
@@ -459,9 +500,17 @@ def _row_to_fact_record(row: Dict, company_id: Optional[str] = None) -> Optional
 
     gross_revenue = unit_price * quantity
     net_revenue   = gross_revenue - discount
-    cost_amount   = gross_revenue * 0.60      # ước tính 60% giá vốn
-    gross_profit  = net_revenue - cost_amount
-    profit_margin = round((gross_profit / net_revenue * 100) if net_revenue > 0 else 0, 2)
+    # COGS từ CSV nếu có, không dùng estimate 60%
+    cost_raw      = row.get("cost_price") or row.get("cost_amount")
+    if cost_raw:
+        cogs_amount  = float(cost_raw) * quantity
+        missing_cost = False
+    else:
+        cogs_amount  = 0.0
+        missing_cost = True
+    gross_profit  = net_revenue - cogs_amount
+    raw_margin    = (gross_profit / net_revenue * 100) if net_revenue > 0 else 0
+    profit_margin = round(max(-100.0, min(100.0, raw_margin)), 2)
 
     province = (row.get("province") or "Khác").strip()
 
@@ -477,18 +526,28 @@ def _row_to_fact_record(row: Dict, company_id: Optional[str] = None) -> Optional
         "_payment_method":    (row.get("payment_method") or "COD").strip().upper(),
         "_status":            (row.get("status") or "DELIVERED").strip().upper(),
         "_company_id":        company_id,
-        # Metrics
-        "order_count":   1,
-        "item_quantity": quantity,
-        "gross_revenue": gross_revenue,
+        "order_count":    1,
+        "item_quantity":  quantity,
+        "gross_revenue":  gross_revenue,
         "discount_amount": discount,
-        "net_revenue":   net_revenue,
-        "cost_amount":   cost_amount,
-        "gross_profit":  gross_profit,
-        "profit_margin": profit_margin,
-        "shipping_fee":  shipping_fee,
-        "return_count":  0,
-        "return_amount": 0.0,
+        "net_revenue":    net_revenue,
+        "cost_amount":    cogs_amount,
+        "cogs_amount":    cogs_amount,
+        "gross_profit":   gross_profit,
+        "profit_margin":  profit_margin,
+        "shipping_fee":   shipping_fee,
+        "return_count":   0,
+        "return_amount":  0.0,
+        "missing_cost":   missing_cost,
+        "is_fee_estimated": True,
+        "estimated_platform_fee":       None,
+        "estimated_payment_fee":        None,
+        "estimated_packaging_cost":     None,
+        "estimated_shipping_cost":      None,
+        "estimated_total_fee":          None,
+        "estimated_net_profit":         None,
+        "gross_profit_margin":          profit_margin,
+        "estimated_net_profit_margin":  None,
     }
 
 
@@ -676,38 +735,64 @@ class OfflineETL:
 
 def _advance_demo_statuses(conn, company_id: str) -> int:
     """
-    Tự động cập nhật trạng thái đơn hàng theo thời gian đã trôi qua:
-      CONFIRMED + order_date < NOW()-1d  → SHIPPING   (đã được lấy hàng)
-      SHIPPING  + order_date < NOW()-4d  → DELIVERED  (đã giao thành công)
-      DELIVERED + payment_status ≠ PAID → PAID        (COD đã thu / online đã xác nhận)
+    Tự động cập nhật trạng thái đơn hàng theo thời gian đã trôi qua (demo mode).
+    Không có payment/shipping integration thật → dùng time-based rules.
 
-    Không đụng tới PENDING / CANCELLED / RETURNED.
+    Order status:
+      CONFIRMED + order_date < NOW()-1d  → SHIPPING   (đã lấy hàng)
+      SHIPPING  + order_date < NOW()-4d  → DELIVERED  (đã giao)
+
+    Payment status (time-based, tương tự order status):
+      UNPAID + order_date < NOW()-1d + status ≠ CANCELLED/RETURNED → PAID
+      (Sau 1 ngày giả lập thanh toán đã được xác nhận/thu tiền)
+
+    Không đụng tới CANCELLED / RETURNED.
     """
     with conn.cursor() as cur:
+        # CONFIRMED + >1 ngày → SHIPPING, tạo mã vận đơn giả nếu chưa có
         cur.execute("""
             UPDATE public.orders
-               SET status = 'SHIPPING', shipping_status = 'IN_TRANSIT', updated_at = NOW()
+               SET status          = 'SHIPPING',
+                   shipping_status = 'IN_TRANSIT',
+                   tracking_number = COALESCE(
+                       tracking_number,
+                       'GHN-' || TO_CHAR(order_date, 'YYYYMM') || '-' || LPAD(order_id::text, 8, '0')
+                   ),
+                   updated_at = NOW()
              WHERE company_id = %s::uuid
                AND status = 'CONFIRMED'
                AND order_date < NOW() - INTERVAL '1 day'
         """, (company_id,))
         n_shipping = cur.rowcount
 
+        # SHIPPING + >4 ngày → DELIVERED, ghi nhận thời gian giao thực tế
         cur.execute("""
             UPDATE public.orders
-               SET status = 'DELIVERED', shipping_status = 'DELIVERED', updated_at = NOW()
+               SET status          = 'DELIVERED',
+                   shipping_status = 'DELIVERED',
+                   delivered_at    = COALESCE(delivered_at, NOW()),
+                   tracking_number = COALESCE(
+                       tracking_number,
+                       'GHN-' || TO_CHAR(order_date, 'YYYYMM') || '-' || LPAD(order_id::text, 8, '0')
+                   ),
+                   updated_at = NOW()
              WHERE company_id = %s::uuid
                AND status = 'SHIPPING'
                AND order_date < NOW() - INTERVAL '4 days'
         """, (company_id,))
         n_delivered = cur.rowcount
 
+        # Sau 1 ngày → giả lập đã thanh toán (không có payment integration thật)
+        # Loại trừ PENDING: đơn chưa xác nhận không thể giả định đã thu tiền
         cur.execute("""
             UPDATE public.orders
-               SET payment_status = 'PAID', updated_at = NOW()
+               SET payment_status = 'PAID',
+                   paid_at        = COALESCE(paid_at, NOW()),
+                   updated_at     = NOW()
              WHERE company_id = %s::uuid
-               AND status = 'DELIVERED'
                AND payment_status NOT IN ('PAID', 'REFUNDED')
+               AND status NOT IN ('CANCELLED', 'RETURNED', 'PENDING')
+               AND order_date < NOW() - INTERVAL '1 day'
         """, (company_id,))
         n_paid = cur.rowcount
 
@@ -861,6 +946,21 @@ def run_oltp_to_dw(company_id: Optional[str] = None, channel: Optional[str] = No
             row0 = _c.fetchone()
             actual_company_id = str(row0[0]) if row0 else None
 
+    # -- Tải fee config cho từng kênh ------------------------------------------
+    _fee_config_cache: Dict[str, Dict] = {}
+    if actual_company_id:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as _fc:
+            _fc.execute(
+                """SELECT channel_name, platform_fee_rate, payment_fee_rate,
+                          fixed_fee_per_order, packaging_cost_per_order,
+                          shipping_cost_mode, is_estimated
+                   FROM public.channel_fee_configs
+                   WHERE company_id = %s::uuid""",
+                (actual_company_id,)
+            )
+            for row in _fc.fetchall():
+                _fee_config_cache[row["channel_name"]] = dict(row)
+
     # -- Advance trạng thái đơn hàng + trừ kho trước khi đọc DW -----------------
     if actual_company_id:
         _advance_demo_statuses(conn, actual_company_id)
@@ -907,14 +1007,38 @@ def run_oltp_to_dw(company_id: Optional[str] = None, channel: Optional[str] = No
          order_date, status, total_amount, discount_amount, shipping_fee) = row
 
         # -- Lấy product + tổng số lượng từ order_items -----------------------
+        # COGS ưu tiên: goods_receipt_items.import_price → purchase_order_items.import_price → products.cost_price
         with conn.cursor() as cur2:
             cur2.execute("""
                 SELECT
                     p.sku,
                     p.product_name,
-                    SUM(oi.quantity)                       AS total_qty,
-                    SUM(oi.unit_price * oi.quantity)       AS gross_rev,
-                    COALESCE(SUM(p.cost_price * oi.quantity), 0) AS total_cost
+                    SUM(oi.quantity)                        AS total_qty,
+                    SUM(oi.unit_price * oi.quantity)        AS gross_rev,
+                    -- COGS ưu tiên: goods_receipt → PO → products.cost_price
+                    SUM(oi.quantity * COALESCE(
+                        (SELECT gri.import_price
+                         FROM public.goods_receipt_items gri
+                         JOIN public.purchase_order_items poi ON poi.purchase_order_item_id = gri.purchase_order_item_id
+                         WHERE poi.product_id = p.product_id
+                         ORDER BY gri.goods_receipt_item_id DESC LIMIT 1),
+                        (SELECT poi2.import_price
+                         FROM public.purchase_order_items poi2
+                         WHERE poi2.product_id = p.product_id AND poi2.import_price > 0
+                         ORDER BY poi2.purchase_order_item_id DESC LIMIT 1),
+                        p.cost_price
+                    ))                                      AS total_cost,
+                    -- Đánh dấu nếu không có cost
+                    BOOL_AND(COALESCE(
+                        (SELECT gri.import_price
+                         FROM public.goods_receipt_items gri
+                         JOIN public.purchase_order_items poi ON poi.purchase_order_item_id = gri.purchase_order_item_id
+                         WHERE poi.product_id = p.product_id LIMIT 1),
+                        (SELECT poi2.import_price
+                         FROM public.purchase_order_items poi2
+                         WHERE poi2.product_id = p.product_id AND poi2.import_price > 0 LIMIT 1),
+                        p.cost_price
+                    ) IS NULL)                              AS any_missing_cost
                 FROM public.order_items oi
                 JOIN public.products p ON oi.product_id = p.product_id
                 WHERE oi.order_id = %s
@@ -925,19 +1049,62 @@ def run_oltp_to_dw(company_id: Optional[str] = None, channel: Optional[str] = No
             item_row = cur2.fetchone()
 
         if item_row:
-            sku, prod_name, total_qty, gross_rev, total_cost = item_row
+            sku, prod_name, total_qty, gross_rev, total_cost, any_missing = item_row
         else:
             sku, prod_name = "UNKNOWN", "Unknown Product"
             total_qty = 1
             gross_rev = float(total_amount or 0)
-            total_cost = gross_rev * 0.6
+            total_cost = None
+            any_missing = True
 
-        gross_revenue = float(gross_rev  or total_amount or 0)
-        net_revenue   = float(total_amount or 0)
-        cost_amount   = float(total_cost) if total_cost else gross_revenue * 0.6
-        gross_profit  = net_revenue - cost_amount
-        profit_margin = round((gross_profit / net_revenue * 100) if net_revenue > 0 else 0, 2)
-        is_returned   = (status == "RETURNED")
+        # PART B: Sửa gross/net revenue logic
+        # gross_revenue = doanh thu trước giảm giá (từ order_items)
+        # net_revenue   = doanh thu sau giảm giá = total_amount - discount_amount
+        disc_val      = float(discount_amount or 0)
+        gross_revenue = float(gross_rev or total_amount or 0)
+        net_revenue   = max(0.0, float(total_amount or 0) - disc_val)
+        if net_revenue == 0.0 and gross_revenue > 0:
+            # Nếu discount bằng total → dùng gross làm fallback hiển thị
+            net_revenue = gross_revenue
+
+        # COGS thực tế (không fallback 60%)
+        if total_cost is not None and float(total_cost) > 0:
+            cogs_amount  = float(total_cost)
+            missing_cost = False
+        else:
+            cogs_amount  = 0.0
+            missing_cost = bool(any_missing if any_missing is not None else True)
+
+        gross_profit       = net_revenue - cogs_amount
+        raw_gm             = (gross_profit / net_revenue * 100) if net_revenue > 0 else 0
+        gross_margin       = round(max(-100.0, min(100.0, raw_gm)), 4)
+        is_returned        = (status == "RETURNED")
+
+        # -- Fee estimates từ channel_fee_configs ----------------------------------
+        ch_type = channel_type  # e.g. 'SHOPEE', 'TIKTOK_SHOP'
+        fee_cfg = _fee_config_cache.get(ch_type) if _fee_config_cache else None
+
+        if fee_cfg:
+            pf_rate      = float(fee_cfg["platform_fee_rate"] or 0)
+            pay_rate     = float(fee_cfg["payment_fee_rate"] or 0)
+            pkg_cost     = float(fee_cfg["packaging_cost_per_order"] or 0)
+            fixed_fee    = float(fee_cfg["fixed_fee_per_order"] or 0)
+            ship_mode    = fee_cfg.get("shipping_cost_mode", "USE_ORDER_SHIPPING_FEE")
+        else:
+            pf_rate = pay_rate = pkg_cost = fixed_fee = 0.0
+            ship_mode = "ZERO"
+
+        est_platform  = round(net_revenue * pf_rate, 2)
+        est_payment   = round(net_revenue * pay_rate, 2)
+        est_packaging = round(pkg_cost, 2)
+        est_fixed     = round(fixed_fee, 2)
+        ship_val      = round(float(shipping_fee or 0), 2)
+        est_ship_cost = ship_val if ship_mode == "USE_ORDER_SHIPPING_FEE" else 0.0
+        est_total_fee = round(est_platform + est_payment + est_packaging + est_fixed + est_ship_cost, 2)
+        est_net_profit = round(net_revenue - cogs_amount - est_total_fee, 2)
+        raw_nm         = (est_net_profit / net_revenue * 100) if net_revenue > 0 else 0
+        est_net_margin = round(max(-100.0, min(100.0, raw_nm)), 4)
+        is_fee_estimated = fee_cfg.get("is_estimated", True) if fee_cfg else True
 
         fact_records.append({
             "_external_order_id": ext_id or f"ORDER_{order_id}",
@@ -949,17 +1116,28 @@ def run_oltp_to_dw(company_id: Optional[str] = None, channel: Optional[str] = No
             "_province":          province or "Khac",
             "_payment_method":    payment_method or "COD",
             "_company_id":        actual_company_id,
-            "order_count":    1,
-            "item_quantity":  int(total_qty or 1),
-            "gross_revenue":  round(gross_revenue, 2),
-            "discount_amount": round(float(discount_amount or 0), 2),
-            "net_revenue":    round(net_revenue, 2),
-            "cost_amount":    round(cost_amount, 2),
-            "gross_profit":   round(gross_profit, 2),
-            "profit_margin":  profit_margin,
-            "shipping_fee":   round(float(shipping_fee or 0), 2),
-            "return_count":   1 if is_returned else 0,
-            "return_amount":  round(net_revenue, 2) if is_returned else 0.0,
+            "order_count":        1,
+            "item_quantity":      int(total_qty or 1),
+            "gross_revenue":      round(gross_revenue, 2),
+            "discount_amount":    round(disc_val, 2),
+            "net_revenue":        round(net_revenue, 2),
+            "cost_amount":        round(cogs_amount, 2),
+            "cogs_amount":        round(cogs_amount, 2),
+            "gross_profit":       round(gross_profit, 2),
+            "profit_margin":      gross_margin,
+            "gross_profit_margin": gross_margin,
+            "shipping_fee":       ship_val,
+            "return_count":       1 if is_returned else 0,
+            "return_amount":      round(net_revenue, 2) if is_returned else 0.0,
+            "missing_cost":       missing_cost,
+            "is_fee_estimated":   is_fee_estimated,
+            "estimated_platform_fee":       est_platform,
+            "estimated_payment_fee":        est_payment,
+            "estimated_packaging_cost":     est_packaging,
+            "estimated_shipping_cost":      est_ship_cost,
+            "estimated_total_fee":          est_total_fee,
+            "estimated_net_profit":         est_net_profit,
+            "estimated_net_profit_margin":  est_net_margin,
         })
 
     # Reset cache trước khi load để tránh stale data

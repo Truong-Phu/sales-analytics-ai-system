@@ -148,6 +148,49 @@ public class SuppliersController(
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // GET /api/suppliers/{id}/products  — danh sách SP của NCC qua supplier_products
+    // ─────────────────────────────────────────────────────────────────────────
+    [HttpGet("{id:int}/products")]
+    [Authorize(Roles = "Owner,Manager,DataIT,SuperAdmin")]
+    public async Task<IActionResult> GetProducts(int id)
+    {
+        try
+        {
+            await using var conn = new NpgsqlConnection(_connStr);
+            await conn.OpenAsync();
+
+            await using var cmd = new NpgsqlCommand("""
+                SELECT p.product_id, p.product_name, p.sku, p.base_price, p.stock_quantity
+                FROM public.supplier_products sp
+                JOIN public.products         p ON p.product_id  = sp.product_id
+                JOIN public.suppliers        s ON s.supplier_id = sp.supplier_id
+                WHERE sp.supplier_id = @id AND s.company_id = @cid::uuid
+                ORDER BY p.product_name
+                """, conn);
+            cmd.Parameters.AddWithValue("id",  id);
+            cmd.Parameters.AddWithValue("cid", tenant.CompanyId!.Value.ToString());
+
+            var list = new List<object>();
+            await using var r = await cmd.ExecuteReaderAsync();
+            while (await r.ReadAsync())
+                list.Add(new
+                {
+                    productId    = r.GetInt32(0),
+                    productName  = r.GetString(1),
+                    sku          = r.IsDBNull(2) ? null : r.GetString(2),
+                    sellingPrice = r.IsDBNull(3) ? 0m : r.GetDecimal(3),
+                    stockQuantity= r.IsDBNull(4) ? 0  : r.GetInt32(4),
+                });
+
+            return Ok(list);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(503, new { message = "Lỗi kết nối database.", detail = ex.Message });
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // POST /api/suppliers
     // ─────────────────────────────────────────────────────────────────────────
     [HttpPost]
@@ -161,28 +204,47 @@ public class SuppliersController(
         {
             await using var conn = new NpgsqlConnection(_connStr);
             await conn.OpenAsync();
+            await using var tx = await conn.BeginTransactionAsync();
+            try
+            {
+                await using var cmd = new NpgsqlCommand("""
+                    INSERT INTO public.suppliers
+                        (company_id, supplier_code, supplier_name, contact_name,
+                         phone, email, address, tax_code, note, is_active, created_at)
+                    VALUES
+                        (@cid::uuid, @code, @name, @contact,
+                         @phone, @email, @address, @tax, @note, TRUE, NOW())
+                    RETURNING supplier_id
+                    """, conn, tx);
+                cmd.Parameters.AddWithValue("cid",     tenant.CompanyId!.Value.ToString());
+                cmd.Parameters.AddWithValue("code",    (object?)dto.SupplierCode ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("name",    dto.SupplierName);
+                cmd.Parameters.AddWithValue("contact", (object?)dto.ContactName  ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("phone",   (object?)dto.Phone        ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("email",   (object?)dto.Email        ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("address", (object?)dto.Address      ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("tax",     (object?)dto.TaxCode      ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("note",    (object?)dto.Note         ?? DBNull.Value);
 
-            await using var cmd = new NpgsqlCommand("""
-                INSERT INTO public.suppliers
-                    (company_id, supplier_code, supplier_name, contact_name,
-                     phone, email, address, tax_code, note, is_active, created_at)
-                VALUES
-                    (@cid::uuid, @code, @name, @contact,
-                     @phone, @email, @address, @tax, @note, TRUE, NOW())
-                RETURNING supplier_id
-                """, conn);
-            cmd.Parameters.AddWithValue("cid",     tenant.CompanyId!.Value.ToString());
-            cmd.Parameters.AddWithValue("code",    (object?)dto.SupplierCode    ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("name",    dto.SupplierName);
-            cmd.Parameters.AddWithValue("contact", (object?)dto.ContactName     ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("phone",   (object?)dto.Phone           ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("email",   (object?)dto.Email           ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("address", (object?)dto.Address         ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("tax",     (object?)dto.TaxCode         ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("note",    (object?)dto.Note            ?? DBNull.Value);
+                var newId = Convert.ToInt32(await cmd.ExecuteScalarAsync());
 
-            var newId = Convert.ToInt32(await cmd.ExecuteScalarAsync());
-            return Ok(new { supplierId = newId, message = "Tạo nhà cung cấp thành công." });
+                // Lưu danh sách sản phẩm NCC cung cấp
+                if (dto.ProductIds?.Count > 0)
+                    foreach (var pid in dto.ProductIds.Distinct())
+                    {
+                        await using var sp = new NpgsqlCommand("""
+                            INSERT INTO public.supplier_products (supplier_id, product_id)
+                            VALUES (@sid, @pid) ON CONFLICT DO NOTHING
+                            """, conn, tx);
+                        sp.Parameters.AddWithValue("sid", newId);
+                        sp.Parameters.AddWithValue("pid", pid);
+                        await sp.ExecuteNonQueryAsync();
+                    }
+
+                await tx.CommitAsync();
+                return Ok(new { supplierId = newId, message = "Tạo nhà cung cấp thành công." });
+            }
+            catch { await tx.RollbackAsync(); throw; }
         }
         catch (Exception ex)
         {
@@ -204,34 +266,61 @@ public class SuppliersController(
         {
             await using var conn = new NpgsqlConnection(_connStr);
             await conn.OpenAsync();
+            await using var tx = await conn.BeginTransactionAsync();
+            try
+            {
+                await using var cmd = new NpgsqlCommand("""
+                    UPDATE public.suppliers
+                    SET supplier_code = @code,
+                        supplier_name = @name,
+                        contact_name  = @contact,
+                        phone         = @phone,
+                        email         = @email,
+                        address       = @address,
+                        tax_code      = @tax,
+                        note          = @note,
+                        updated_at    = NOW()
+                    WHERE supplier_id = @id AND company_id = @cid::uuid
+                    """, conn, tx);
+                cmd.Parameters.AddWithValue("id",      id);
+                cmd.Parameters.AddWithValue("cid",     tenant.CompanyId!.Value.ToString());
+                cmd.Parameters.AddWithValue("code",    (object?)dto.SupplierCode ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("name",    dto.SupplierName);
+                cmd.Parameters.AddWithValue("contact", (object?)dto.ContactName  ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("phone",   (object?)dto.Phone        ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("email",   (object?)dto.Email        ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("address", (object?)dto.Address      ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("tax",     (object?)dto.TaxCode      ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("note",    (object?)dto.Note         ?? DBNull.Value);
 
-            await using var cmd = new NpgsqlCommand("""
-                UPDATE public.suppliers
-                SET supplier_code = @code,
-                    supplier_name = @name,
-                    contact_name  = @contact,
-                    phone         = @phone,
-                    email         = @email,
-                    address       = @address,
-                    tax_code      = @tax,
-                    note          = @note,
-                    updated_at    = NOW()
-                WHERE supplier_id = @id AND company_id = @cid::uuid
-                """, conn);
-            cmd.Parameters.AddWithValue("id",      id);
-            cmd.Parameters.AddWithValue("cid",     tenant.CompanyId!.Value.ToString());
-            cmd.Parameters.AddWithValue("code",    (object?)dto.SupplierCode ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("name",    dto.SupplierName);
-            cmd.Parameters.AddWithValue("contact", (object?)dto.ContactName  ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("phone",   (object?)dto.Phone        ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("email",   (object?)dto.Email        ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("address", (object?)dto.Address      ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("tax",     (object?)dto.TaxCode      ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("note",    (object?)dto.Note         ?? DBNull.Value);
+                var rows = await cmd.ExecuteNonQueryAsync();
+                if (rows == 0) { await tx.RollbackAsync(); return NotFound(new { message = "Không tìm thấy nhà cung cấp." }); }
 
-            var rows = await cmd.ExecuteNonQueryAsync();
-            if (rows == 0) return NotFound(new { message = "Không tìm thấy nhà cung cấp." });
-            return Ok(new { message = "Cập nhật thành công." });
+                // Cập nhật danh sách SP (nếu được gửi kèm)
+                if (dto.ProductIds != null)
+                {
+                    await using var del = new NpgsqlCommand(
+                        "DELETE FROM public.supplier_products WHERE supplier_id = @id",
+                        conn, tx);
+                    del.Parameters.AddWithValue("id", id);
+                    await del.ExecuteNonQueryAsync();
+
+                    foreach (var pid in dto.ProductIds.Distinct())
+                    {
+                        await using var sp = new NpgsqlCommand("""
+                            INSERT INTO public.supplier_products (supplier_id, product_id)
+                            VALUES (@sid, @pid) ON CONFLICT DO NOTHING
+                            """, conn, tx);
+                        sp.Parameters.AddWithValue("sid", id);
+                        sp.Parameters.AddWithValue("pid", pid);
+                        await sp.ExecuteNonQueryAsync();
+                    }
+                }
+
+                await tx.CommitAsync();
+                return Ok(new { message = "Cập nhật thành công." });
+            }
+            catch { await tx.RollbackAsync(); throw; }
         }
         catch (Exception ex)
         {
@@ -282,12 +371,13 @@ public class SuppliersController(
 
 public class SupplierDto
 {
-    public string?  SupplierCode { get; set; }
-    public string   SupplierName { get; set; } = "";
-    public string?  ContactName  { get; set; }
-    public string?  Phone        { get; set; }
-    public string?  Email        { get; set; }
-    public string?  Address      { get; set; }
-    public string?  TaxCode      { get; set; }
-    public string?  Note         { get; set; }
+    public string?      SupplierCode { get; set; }
+    public string       SupplierName { get; set; } = "";
+    public string?      ContactName  { get; set; }
+    public string?      Phone        { get; set; }
+    public string?      Email        { get; set; }
+    public string?      Address      { get; set; }
+    public string?      TaxCode      { get; set; }
+    public string?      Note         { get; set; }
+    public List<int>?   ProductIds   { get; set; }  // null = không thay đổi SP; [] = xóa hết
 }

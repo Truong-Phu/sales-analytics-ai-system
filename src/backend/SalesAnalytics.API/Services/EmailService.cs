@@ -11,6 +11,8 @@ public interface IEmailService
     Task<bool> SendAlertAsync(string toEmail, string title, string body);
     Task<bool> SendSubscriptionConfirmedAsync(string toEmail, string companyName, string plan, DateTime expiresAt);
     Task<bool> SendSubscriptionExpiryWarningAsync(string toEmail, string companyName, DateTime expiresAt, int daysLeft);
+    Task<bool> SendPurchaseOrderAsync(string toEmail, string supplierName, string poCode,
+        decimal totalAmount, List<(string ProductName, int Qty, decimal Price)> items, string senderCompany);
 }
 
 public class ResendEmailService(
@@ -320,6 +322,95 @@ public class ResendEmailService(
           </table>
         </body></html>
         """;
+
+    public async Task<bool> SendPurchaseOrderAsync(string toEmail, string supplierName, string poCode,
+        decimal totalAmount, List<(string ProductName, int Qty, decimal Price)> items, string senderCompany)
+    {
+        var subject = $"[{senderCompany}] Phiếu đặt hàng mới #{poCode}";
+        var html    = BuildPurchaseOrderHtml(supplierName, poCode, totalAmount, items, senderCompany);
+        return await SendAsync(toEmail, subject, html);
+    }
+
+    private static string BuildPurchaseOrderHtml(string supplierName, string poCode, decimal totalAmount,
+        List<(string ProductName, int Qty, decimal Price)> items, string senderCompany)
+    {
+        var rows = string.Join("", items.Select((it, i) => $"""
+            <tr style="background:{(i % 2 == 0 ? "#f8fafc" : "#fff")}">
+              <td style="padding:10px 16px;color:#1e293b;font-size:14px">{it.ProductName}</td>
+              <td style="padding:10px 16px;color:#475569;font-size:14px;text-align:center">{it.Qty}</td>
+              <td style="padding:10px 16px;color:#475569;font-size:14px;text-align:right">{it.Price:N0}đ</td>
+              <td style="padding:10px 16px;color:#1e293b;font-size:14px;text-align:right;font-weight:600">{(it.Qty * it.Price):N0}đ</td>
+            </tr>
+            """));
+
+        return $"""
+            <!DOCTYPE html>
+            <html lang="vi">
+            <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+            <body style="margin:0;padding:0;background:#f4f6f8;font-family:'Segoe UI',Arial,sans-serif">
+              <table width="100%" cellpadding="0" cellspacing="0" style="padding:40px 20px">
+                <tr><td align="center">
+                  <table width="620" cellpadding="0" cellspacing="0"
+                         style="background:#ffffff;border-radius:16px;box-shadow:0 4px 24px rgba(0,0,0,0.08);overflow:hidden">
+                    <tr>
+                      <td style="background:linear-gradient(135deg,#6366f1,#8b5cf6);padding:32px 40px;text-align:center">
+                        <h1 style="margin:0;color:#fff;font-size:22px;font-weight:700">📦 Phiếu đặt hàng mới</h1>
+                        <p style="margin:8px 0 0;color:rgba(255,255,255,0.85);font-size:13px">{senderCompany}</p>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td style="padding:36px 40px">
+                        <p style="color:#1e293b;font-size:16px;margin:0 0 8px">Kính gửi <strong>{supplierName}</strong>,</p>
+                        <p style="color:#64748b;font-size:14px;line-height:1.7;margin:0 0 24px">
+                          Chúng tôi xin gửi phiếu đặt hàng <strong style="color:#6366f1">#{poCode}</strong> để quý vị xem xét và xác nhận.
+                        </p>
+                        <!-- Table -->
+                        <table width="100%" cellpadding="0" cellspacing="0"
+                               style="border-collapse:collapse;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;margin-bottom:24px">
+                          <thead>
+                            <tr style="background:#6366f1">
+                              <th style="padding:12px 16px;color:#fff;font-size:13px;text-align:left">Sản phẩm</th>
+                              <th style="padding:12px 16px;color:#fff;font-size:13px;text-align:center">Số lượng</th>
+                              <th style="padding:12px 16px;color:#fff;font-size:13px;text-align:right">Đơn giá</th>
+                              <th style="padding:12px 16px;color:#fff;font-size:13px;text-align:right">Thành tiền</th>
+                            </tr>
+                          </thead>
+                          <tbody>{rows}</tbody>
+                          <tfoot>
+                            <tr style="background:#f1f5f9;border-top:2px solid #e2e8f0">
+                              <td colspan="3" style="padding:14px 16px;color:#475569;font-size:14px;font-weight:600">
+                                Tổng cộng
+                              </td>
+                              <td style="padding:14px 16px;color:#6366f1;font-size:16px;font-weight:700;text-align:right">
+                                {totalAmount:N0}đ
+                              </td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                        <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:16px 20px;margin-bottom:20px">
+                          <p style="margin:0;color:#1e40af;font-size:14px;line-height:1.7">
+                            📩 Vui lòng <strong>trả lời email này</strong> hoặc liên hệ trực tiếp để xác nhận đơn hàng.<br>
+                            Sau khi xác nhận, chúng tôi sẽ cập nhật trạng thái phiếu nhập trong hệ thống.
+                          </p>
+                        </div>
+                        <p style="margin:0;color:#94a3b8;font-size:13px">
+                          Trân trọng,<br><strong>{senderCompany}</strong>
+                        </p>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td style="background:#f8fafc;padding:20px 40px;border-top:1px solid #e2e8f0">
+                        <p style="margin:0;color:#94a3b8;font-size:12px;text-align:center">
+                          © 2026 SalesAnalytics · Hệ thống quản lý bán hàng MSAS
+                        </p>
+                      </td>
+                    </tr>
+                  </table>
+                </td></tr>
+              </table>
+            </body></html>
+            """;
+    }
 
     private static string BuildAlertHtml(string title, string body) => $"""
         <!DOCTYPE html>

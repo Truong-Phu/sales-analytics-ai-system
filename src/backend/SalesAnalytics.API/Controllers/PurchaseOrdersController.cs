@@ -16,7 +16,8 @@ namespace SalesAnalytics.API.Controllers;
 [Authorize]
 public class PurchaseOrdersController(
     IConfiguration cfg,
-    ITenantContext tenant) : ControllerBase
+    ITenantContext tenant,
+    IEmailService emailService) : ControllerBase
 {
     private readonly string _connStr = cfg.GetConnectionString("Default")!;
 
@@ -211,7 +212,7 @@ public class PurchaseOrdersController(
             await using var tx = await conn.BeginTransactionAsync();
             try
             {
-                var code = $"PO-{DateTime.Now:yyyyMMdd-HHmmss}";
+                var code  = $"PO-{DateTime.Now:yyyyMMdd-HHmmss}";
                 var total = dto.Items.Sum(i => i.Quantity * i.ImportPrice);
 
                 await using var poCmd = new NpgsqlCommand("""
@@ -344,13 +345,85 @@ public class PurchaseOrdersController(
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // POST /api/purchase-orders/{id}/submit  (DRAFT → PENDING)
+    // POST /api/purchase-orders/{id}/submit  (DRAFT → PENDING + email NCC)
     // ─────────────────────────────────────────────────────────────────────────
     [HttpPost("{id:long}/submit")]
     [Authorize(Roles = "Owner,Manager")]
-    public async Task<IActionResult> Submit(long id) =>
-        await ChangeStatus(id, fromStatus: "DRAFT", toStatus: "PENDING",
-            extraSql: null, blockedMsg: "Chỉ có thể submit phiếu ở trạng thái DRAFT.");
+    public async Task<IActionResult> Submit(long id)
+    {
+        try
+        {
+            await using var conn = new NpgsqlConnection(_connStr);
+            await conn.OpenAsync();
+
+            // Lấy PO + thông tin NCC
+            await using var infoCmd = new NpgsqlCommand("""
+                SELECT po.status, po.purchase_code, po.total_amount,
+                       s.supplier_name, s.email AS supplier_email,
+                       c.company_name
+                FROM public.purchase_orders po
+                JOIN public.suppliers  s ON s.supplier_id  = po.supplier_id
+                JOIN public.companies  c ON c.id           = po.company_id
+                WHERE po.purchase_order_id = @id AND po.company_id = @cid::uuid
+                """, conn);
+            infoCmd.Parameters.AddWithValue("id",  id);
+            infoCmd.Parameters.AddWithValue("cid", tenant.CompanyId!.Value.ToString());
+
+            await using var infoR = await infoCmd.ExecuteReaderAsync();
+            if (!await infoR.ReadAsync())
+                return NotFound(new { message = "Không tìm thấy phiếu nhập." });
+
+            var status        = infoR.GetString(0);
+            var poCode        = infoR.GetString(1);
+            var totalAmount   = infoR.GetDecimal(2);
+            var supplierName  = infoR.GetString(3);
+            var supplierEmail = infoR.IsDBNull(4) ? null : infoR.GetString(4);
+            var companyName   = infoR.IsDBNull(5) ? "Công ty" : infoR.GetString(5);
+            await infoR.CloseAsync();
+
+            if (status != "DRAFT")
+                return BadRequest(new { message = "Chỉ có thể submit phiếu ở trạng thái DRAFT." });
+
+            // Chuyển sang PENDING
+            await using var updCmd = new NpgsqlCommand("""
+                UPDATE public.purchase_orders
+                SET status = 'PENDING', updated_at = NOW()
+                WHERE purchase_order_id = @id
+                """, conn);
+            updCmd.Parameters.AddWithValue("id", id);
+            await updCmd.ExecuteNonQueryAsync();
+
+            // Lấy danh sách sản phẩm để gửi email
+            await using var itemsCmd = new NpgsqlCommand("""
+                SELECT p.product_name, poi.quantity, poi.import_price
+                FROM public.purchase_order_items poi
+                JOIN public.products p ON p.product_id = poi.product_id
+                WHERE poi.purchase_order_id = @id
+                ORDER BY p.product_name
+                """, conn);
+            itemsCmd.Parameters.AddWithValue("id", id);
+
+            var poItems = new List<(string ProductName, int Qty, decimal Price)>();
+            await using var iR = await itemsCmd.ExecuteReaderAsync();
+            while (await iR.ReadAsync())
+                poItems.Add((iR.GetString(0), iR.GetInt32(1), iR.GetDecimal(2)));
+
+            // Gửi email đến NCC (fire-and-forget, không block response)
+            if (!string.IsNullOrEmpty(supplierEmail))
+                _ = emailService.SendPurchaseOrderAsync(
+                    supplierEmail, supplierName, poCode, totalAmount, poItems, companyName);
+
+            var emailNote = string.IsNullOrEmpty(supplierEmail)
+                ? " (NCC chưa có email — không gửi được thông báo)"
+                : $" Email thông báo đã gửi đến {supplierEmail}.";
+
+            return Ok(new { message = $"Đã gửi phiếu nhập lên để duyệt.{emailNote}" });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(503, new { message = "Lỗi kết nối database.", detail = ex.Message });
+        }
+    }
 
     // ─────────────────────────────────────────────────────────────────────────
     // POST /api/purchase-orders/{id}/approve  (PENDING → APPROVED)

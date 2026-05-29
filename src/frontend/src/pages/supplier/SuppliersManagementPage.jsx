@@ -12,10 +12,36 @@ function SupplierModal({ supplier, onClose, onSaved }) {
     supplierCode: '', supplierName: '', contactName: '',
     phone: '', email: '', address: '', taxCode: '', note: '',
   })
-  const [loading, setLoading] = useState(false)
-  const [err, setErr] = useState('')
+  const [allProducts,  setAllProducts]  = useState([])
+  const [selectedPids, setSelectedPids] = useState(new Set())
+  const [prodSearch,   setProdSearch]   = useState('')
+  const [loading,      setLoading]      = useState(false)
+  const [err,          setErr]          = useState('')
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+
+  useEffect(() => {
+    // Tải tất cả sản phẩm
+    api.get('/api/products/oltp', { params: { pageSize: 200 } })
+       .then(r => setAllProducts(r.data.items ?? [])).catch(() => {})
+
+    // Nếu đang chỉnh sửa → tải SP hiện tại của NCC
+    if (supplier?.supplierId) {
+      api.get(`/api/suppliers/${supplier.supplierId}/products`)
+         .then(r => setSelectedPids(new Set((r.data ?? []).map(p => p.productId))))
+         .catch(() => {})
+    }
+  }, [])
+
+  const filteredProducts = allProducts.filter(p =>
+    p.productName.toLowerCase().includes(prodSearch.toLowerCase())
+  )
+
+  const toggleProduct = (pid) => setSelectedPids(prev => {
+    const next = new Set(prev)
+    if (next.has(pid)) next.delete(pid); else next.add(pid)
+    return next
+  })
 
   const save = async () => {
     if (!form.supplierName?.trim()) { setErr('Tên nhà cung cấp không được để trống.'); return }
@@ -30,6 +56,7 @@ function SupplierModal({ supplier, onClose, onSaved }) {
         address:      form.address      || null,
         taxCode:      form.taxCode      || null,
         note:         form.note         || null,
+        productIds:   [...selectedPids],
       }
       if (supplier?.supplierId) {
         await api.put(`/api/suppliers/${supplier.supplierId}`, payload)
@@ -43,9 +70,9 @@ function SupplierModal({ supplier, onClose, onSaved }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+    <div className="fixed inset-0 z-50 flex items-start justify-center p-4 overflow-y-auto"
          style={{ background: 'rgba(0,0,0,0.5)' }}>
-      <div className="w-full max-w-lg rounded-xl shadow-xl p-6 space-y-4"
+      <div className="w-full max-w-xl rounded-xl shadow-xl p-6 space-y-4 my-8"
            style={{ background: 'var(--bg-card)' }}>
         <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
           {supplier?.supplierId ? 'Sửa nhà cung cấp' : 'Thêm nhà cung cấp'}
@@ -59,12 +86,12 @@ function SupplierModal({ supplier, onClose, onSaved }) {
 
         <div className="grid grid-cols-2 gap-3">
           {[
-            ['Mã NCC',         'supplierCode',  false],
-            ['Tên NCC *',      'supplierName',  false],
-            ['Người liên hệ',  'contactName',   false],
-            ['Điện thoại',     'phone',         false],
-            ['Email',          'email',         false],
-            ['Mã số thuế',     'taxCode',       false],
+            ['Mã NCC',         'supplierCode'],
+            ['Tên NCC *',      'supplierName'],
+            ['Người liên hệ',  'contactName'],
+            ['Điện thoại',     'phone'],
+            ['Email',          'email'],
+            ['Mã số thuế',     'taxCode'],
           ].map(([label, key]) => (
             <div key={key}>
               <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-tertiary)' }}>{label}</label>
@@ -94,6 +121,46 @@ function SupplierModal({ supplier, onClose, onSaved }) {
             className="w-full text-sm rounded-lg border px-3 py-1.5 resize-none"
             style={{ background: 'var(--bg-elevated)', borderColor: 'var(--border)', color: 'var(--text-primary)' }}
           />
+        </div>
+
+        {/* Sản phẩm NCC cung cấp */}
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+              Sản phẩm cung cấp
+              <span className="ml-2 text-xs font-normal" style={{ color: 'var(--text-tertiary)' }}>
+                {selectedPids.size > 0 ? `Đã chọn ${selectedPids.size} SP` : 'Chưa chọn'}
+              </span>
+            </label>
+            {selectedPids.size > 0 && (
+              <button onClick={() => setSelectedPids(new Set())}
+                className="text-xs" style={{ color: '#EF4444' }}>Bỏ chọn tất cả</button>
+            )}
+          </div>
+          <input
+            value={prodSearch} onChange={e => setProdSearch(e.target.value)}
+            placeholder="Tìm sản phẩm..."
+            className="w-full text-sm rounded-lg border px-3 py-1.5 mb-2"
+            style={{ background: 'var(--bg-elevated)', borderColor: 'var(--border)', color: 'var(--text-primary)' }}
+          />
+          <div className="rounded-lg border overflow-y-auto" style={{
+            borderColor: 'var(--border)', maxHeight: '220px', background: 'var(--bg-elevated)'
+          }}>
+            {filteredProducts.length === 0 ? (
+              <div className="text-xs py-3 text-center" style={{ color: 'var(--text-tertiary)' }}>
+                Không tìm thấy sản phẩm
+              </div>
+            ) : filteredProducts.map(p => (
+              <label key={p.productId} className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:opacity-80"
+                style={{ borderBottom: '1px solid var(--border)' }}>
+                <input type="checkbox"
+                  checked={selectedPids.has(p.productId)}
+                  onChange={() => toggleProduct(p.productId)}
+                  className="w-4 h-4 rounded accent-blue-500" />
+                <span className="text-sm" style={{ color: 'var(--text-primary)' }}>{p.productName}</span>
+              </label>
+            ))}
+          </div>
         </div>
 
         <div className="flex gap-2 justify-end pt-2">

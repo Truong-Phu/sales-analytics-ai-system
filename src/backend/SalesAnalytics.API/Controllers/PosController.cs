@@ -316,8 +316,9 @@ public class PosController(IConfiguration cfg, ITenantContext tenant) : Controll
                 if (cuObj is null or DBNull)
                 {
                     await using var getCmd = new NpgsqlCommand(
-                        "SELECT customer_id FROM public.customers WHERE phone=@p LIMIT 1", conn, tx);
-                    getCmd.Parameters.AddWithValue("p", phone);
+                        "SELECT customer_id FROM public.customers WHERE phone=@p AND company_id=@cid::uuid LIMIT 1", conn, tx);
+                    getCmd.Parameters.AddWithValue("p",   phone);
+                    getCmd.Parameters.AddWithValue("cid", tenant.CompanyId!.Value.ToString());
                     customerId = Convert.ToInt32(await getCmd.ExecuteScalarAsync() ?? 0);
                 }
                 else customerId = Convert.ToInt32(cuObj);

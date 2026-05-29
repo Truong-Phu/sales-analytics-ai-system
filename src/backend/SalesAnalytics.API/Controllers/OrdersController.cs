@@ -261,14 +261,18 @@ public class OrdersController(
                 CreatedAt            = order.CreatedAt,
                 Details              = order.OrderDetails.Select(d => new OrderDetailDto
                 {
-                    ItemId      = d.ItemId,
-                    ProductId   = d.ProductId,
-                    ProductName = d.Product?.ProductName,
-                    Sku         = d.Product?.Sku,
-                    Quantity    = d.Quantity,
-                    UnitPrice   = d.UnitPrice,
-                    Discount    = d.Discount,
-                    Subtotal    = d.Subtotal,
+                    ItemId        = d.ItemId,
+                    ProductId     = d.ProductId,
+                    ProductName   = d.ProductName   ?? d.Product?.ProductName,
+                    Sku           = d.Sku           ?? d.Product?.Sku,
+                    Variation     = d.VariationName,
+                    ImageUrl      = d.ImageUrl      ?? d.Product?.ImageUrl,
+                    Quantity      = d.Quantity,
+                    UnitPrice     = d.UnitPrice,
+                    SalePrice     = d.SalePrice,
+                    OriginalPrice = d.OriginalPrice,
+                    Discount      = d.Discount,
+                    Subtotal      = d.Subtotal,
                 }).ToList(),
             });
         }
@@ -444,10 +448,14 @@ public class OrdersController(
                     stockRefunded = true;
                 }
 
-                // Cập nhật status + đánh dấu is_stock_deducted = FALSE trong cùng transaction
+                // Cập nhật status + payment_status + is_stock_deducted trong cùng transaction
+                // Nếu đã PAID → chuyển REFUNDED (tiền thu rồi hủy đơn → phải hoàn)
                 await using var cancelCmd = new NpgsqlCommand("""
                     UPDATE public.orders
-                    SET status = 'CANCELLED', is_stock_deducted = FALSE, updated_at = NOW()
+                    SET status             = 'CANCELLED',
+                        is_stock_deducted  = FALSE,
+                        payment_status     = CASE WHEN payment_status = 'PAID' THEN 'REFUNDED' ELSE payment_status END,
+                        updated_at         = NOW()
                     WHERE order_id = @id
                     """, conn, tx);
                 cancelCmd.Parameters.AddWithValue("id", id);
@@ -542,10 +550,14 @@ public class OrdersController(
                     stockRestored = true;
                 }
 
-                // Set status = RETURNED và is_stock_deducted = FALSE
+                // Set status = RETURNED, is_stock_deducted = FALSE
+                // Nếu đã PAID → chuyển REFUNDED (hoàn hàng kèm hoàn tiền)
                 await using var retCmd = new NpgsqlCommand("""
                     UPDATE public.orders
-                    SET status = 'RETURNED', is_stock_deducted = FALSE, updated_at = NOW()
+                    SET status            = 'RETURNED',
+                        is_stock_deducted = FALSE,
+                        payment_status    = CASE WHEN payment_status = 'PAID' THEN 'REFUNDED' ELSE payment_status END,
+                        updated_at        = NOW()
                     WHERE order_id = @id
                     """, conn, tx);
                 retCmd.Parameters.AddWithValue("id", id);
