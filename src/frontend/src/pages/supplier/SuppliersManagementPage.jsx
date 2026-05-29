@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import api from '../../api/axios'
 import MockToast from '../../components/ui/MockToast'
+import DetailDrawer from '../../components/ui/DetailDrawer'
 
 const MOCK_SUPPLIERS = [
   { supplierId: 1, supplierCode: 'NCC-001', supplierName: 'Cong ty TNHH Nguyen Thanh', contactName: 'Nguyen Van A', phone: '0901234567', email: 'contact@nguyenthanh.vn', isActive: true },
@@ -134,15 +135,25 @@ function SupplierModal({ supplier, onClose, onSaved }) {
 
   const selectedCount = selectedProds.size
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center p-4 overflow-y-auto"
-         style={{ background: 'rgba(0,0,0,0.5)' }}>
-      <div className="w-full max-w-2xl rounded-xl shadow-xl p-6 space-y-4 my-8"
-           style={{ background: 'var(--bg-card)' }}>
-        <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
-          {supplier?.supplierId ? 'Sửa nhà cung cấp' : 'Thêm nhà cung cấp'}
-        </h2>
+  const drawerFooter = (
+    <>
+      <button onClick={onClose} className="lbtn lbtn-secondary flex-1 justify-center">Hủy</button>
+      <button onClick={save} disabled={loading} className="lbtn lbtn-primary flex-1 justify-center">
+        {loading ? 'Đang lưu...' : 'Lưu'}
+      </button>
+    </>
+  )
 
+  return (
+    <DetailDrawer
+      open={true}
+      onClose={onClose}
+      title={supplier?.supplierId ? 'Sửa nhà cung cấp' : 'Thêm nhà cung cấp'}
+      subtitle={supplier?.supplierCode ? `Mã: ${supplier.supplierCode}` : undefined}
+      width={600}
+      footer={drawerFooter}
+    >
+      <div className="p-5 space-y-4">
         {err && (
           <div className="text-sm px-3 py-2 rounded-lg" style={{ background: 'rgba(239,68,68,0.1)', color: '#EF4444' }}>
             {err}
@@ -163,8 +174,7 @@ function SupplierModal({ supplier, onClose, onSaved }) {
               <input
                 value={form[key] ?? ''}
                 onChange={e => set(key, e.target.value)}
-                className="w-full text-sm rounded-lg border px-3 py-1.5"
-                style={{ background: 'var(--bg-elevated)', borderColor: 'var(--border)', color: 'var(--text-primary)' }}
+                className="linput text-sm"
               />
             </div>
           ))}
@@ -174,8 +184,7 @@ function SupplierModal({ supplier, onClose, onSaved }) {
           <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-tertiary)' }}>Địa chỉ</label>
           <textarea rows={2} value={form.address ?? ''}
             onChange={e => set('address', e.target.value)}
-            className="w-full text-sm rounded-lg border px-3 py-1.5 resize-none"
-            style={{ background: 'var(--bg-elevated)', borderColor: 'var(--border)', color: 'var(--text-primary)' }}
+            className="linput text-sm resize-none"
           />
         </div>
 
@@ -183,8 +192,7 @@ function SupplierModal({ supplier, onClose, onSaved }) {
           <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-tertiary)' }}>Ghi chú</label>
           <textarea rows={2} value={form.note ?? ''}
             onChange={e => set('note', e.target.value)}
-            className="w-full text-sm rounded-lg border px-3 py-1.5 resize-none"
-            style={{ background: 'var(--bg-elevated)', borderColor: 'var(--border)', color: 'var(--text-primary)' }}
+            className="linput text-sm resize-none"
           />
         </div>
 
@@ -192,12 +200,12 @@ function SupplierModal({ supplier, onClose, onSaved }) {
         <div>
           <div className="flex items-center justify-between mb-2">
             <div>
-              <label className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+              <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
                 Sản phẩm cung cấp
                 <span className="ml-2 text-xs font-normal" style={{ color: 'var(--text-tertiary)' }}>
                   {selectedCount > 0 ? `Đã chọn ${selectedCount} SP` : 'Chưa chọn'}
                 </span>
-              </label>
+              </p>
               <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
                 Nhập giá nhập → hệ thống tự tính giá bán tối thiểu theo từng sàn
               </p>
@@ -210,17 +218,15 @@ function SupplierModal({ supplier, onClose, onSaved }) {
           <input
             value={prodSearch} onChange={e => setProdSearch(e.target.value)}
             placeholder="Tìm sản phẩm..."
-            className="w-full text-sm rounded-lg border px-3 py-1.5 mb-2"
-            style={{ background: 'var(--bg-elevated)', borderColor: 'var(--border)', color: 'var(--text-primary)' }}
+            className="linput text-sm mb-2"
           />
 
           <div className="rounded-lg border overflow-y-auto" style={{
-            borderColor: 'var(--border)', maxHeight: '320px', background: 'var(--bg-elevated)'
+            borderColor: 'var(--border)', maxHeight: '300px', background: 'var(--bg-elevated)'
           }}>
-            {/* Header */}
             <div className="grid grid-cols-[auto_1fr_160px] gap-2 px-3 py-2 text-[11px] font-medium sticky top-0"
                  style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text-tertiary)' }}>
-              <span></span>
+              <span />
               <span>Sản phẩm (giá bán hiện tại)</span>
               <span className="text-right">Giá nhập NCC (đ)</span>
             </div>
@@ -233,9 +239,7 @@ function SupplierModal({ supplier, onClose, onSaved }) {
               const isChecked    = selectedProds.has(p.productId)
               const importPrice  = selectedProds.get(p.productId) ?? 0
               const currentBase  = productMap[p.productId]?.basePrice ?? p.basePrice ?? 0
-              // Cảnh báo lỗ: giá nhập >= giá bán hiện tại
               const isLossRisk   = isChecked && importPrice > 0 && importPrice >= currentBase
-              // Giá bán tối thiểu gợi ý (Shopee 4%)
               const suggestedPrice = calcMinPrice(importPrice, 0.04)
               const updateState  = priceUpdating.get(p.productId)
 
@@ -277,13 +281,12 @@ function SupplierModal({ supplier, onClose, onSaved }) {
 
                   {isChecked && importPrice > 0 && (
                     <div className="px-3 pb-2 space-y-1">
-                      {/* Cảnh báo lỗ */}
                       {isLossRisk && (
                         <div className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg"
                              style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)' }}>
                           <span className="text-[11px]" style={{ color: '#EF4444' }}>
                             ⚠ Giá nhập ({importPrice.toLocaleString('vi-VN')}đ) ≥ giá bán ({currentBase.toLocaleString('vi-VN')}đ) — sẽ lỗ!
-                            &nbsp;Đề xuất giá bán mới: <strong>{suggestedPrice.toLocaleString('vi-VN')}đ</strong>
+                            &nbsp;Đề xuất: <strong>{suggestedPrice.toLocaleString('vi-VN')}đ</strong>
                           </span>
                           {updateState === 'done' ? (
                             <span className="text-[11px] shrink-0" style={{ color: '#22C55E' }}>✓ Đã cập nhật</span>
@@ -293,12 +296,11 @@ function SupplierModal({ supplier, onClose, onSaved }) {
                               onClick={() => updateProductPrice(p.productId, suggestedPrice)}
                               className="text-[11px] px-2 py-0.5 rounded shrink-0 disabled:opacity-60"
                               style={{ background: '#EF4444', color: '#fff' }}>
-                              {updateState === 'updating' ? '...' : `Cập nhật → ${suggestedPrice.toLocaleString('vi-VN')}đ`}
+                              {updateState === 'updating' ? '...' : `→ ${suggestedPrice.toLocaleString('vi-VN')}đ`}
                             </button>
                           )}
                         </div>
                       )}
-                      {/* Price advisor — giá bán tối thiểu các sàn */}
                       <PriceAdvisor importPrice={importPrice} />
                     </div>
                   )}
@@ -307,20 +309,8 @@ function SupplierModal({ supplier, onClose, onSaved }) {
             })}
           </div>
         </div>
-
-        <div className="flex gap-2 justify-end pt-2">
-          <button onClick={onClose} className="px-4 py-1.5 rounded-lg text-sm border"
-            style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>
-            Hủy
-          </button>
-          <button onClick={save} disabled={loading}
-            className="px-4 py-1.5 rounded-lg text-sm text-white font-medium disabled:opacity-60"
-            style={{ background: 'var(--primary-500)' }}>
-            {loading ? 'Đang lưu...' : 'Lưu'}
-          </button>
-        </div>
       </div>
-    </div>
+    </DetailDrawer>
   )
 }
 

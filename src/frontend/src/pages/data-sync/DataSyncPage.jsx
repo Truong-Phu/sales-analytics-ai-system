@@ -1,6 +1,7 @@
 ﻿import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import MockToast from '../../components/ui/MockToast'
+import DetailDrawer from '../../components/ui/DetailDrawer'
 import { getSyncStatus, triggerSync } from '../../api/syncApi'
 import { MOCK_DATA_SYNC } from '../../mockData/dataSync'
 import api from '../../api/axios'
@@ -1559,47 +1560,52 @@ function FacebookPostsModal({ onClose }) {
     })
   }
 
+  const drawerSubtitle = total > 0 ? `${total} bài đăng đã thu thập` : undefined
+  const drawerFooter = totalPages > 1 ? (
+    <div className="flex items-center justify-between w-full">
+      <button onClick={() => load(page - 1)} disabled={page <= 1 || loading}
+              className="lbtn !h-8 !px-3 text-xs disabled:opacity-40">
+        <span className="icon text-sm">chevron_left</span> Trước
+      </button>
+      <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>{page} / {totalPages}</span>
+      <button onClick={() => load(page + 1)} disabled={page >= totalPages || loading}
+              className="lbtn !h-8 !px-3 text-xs disabled:opacity-40">
+        Sau <span className="icon text-sm">chevron_right</span>
+      </button>
+    </div>
+  ) : null
+
   return (
-    /* Backdrop */
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-         style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}
-         onClick={e => e.target === e.currentTarget && onClose()}>
-
-      {/* Modal panel */}
-      <div className="flex flex-col w-full max-w-2xl rounded-2xl overflow-hidden shadow-2xl"
-           style={{ background: 'var(--bg-card)', maxHeight: '85vh' }}>
-
-        {/* Header */}
-        <div className="flex items-center gap-3 px-5 py-4 shrink-0"
-             style={{ borderBottom: '1px solid var(--border-default)' }}>
-          <div className="w-8 h-8 rounded-lg flex items-center justify-center"
+    <DetailDrawer
+      open={true}
+      onClose={onClose}
+      title="Bài đăng Facebook"
+      subtitle={drawerSubtitle}
+      width={580}
+      footer={drawerFooter}
+    >
+      {/* Refresh + header strip */}
+      <div className="flex items-center justify-between px-5 py-3 shrink-0"
+           style={{ borderBottom: '1px solid var(--border-default)', background: 'var(--bg-elevated)' }}>
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
                style={{ background: '#1877F2' }}>
             <span className="icon text-white text-sm">group</span>
           </div>
-          <div className="flex-1 min-w-0">
-            <h3 className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>
-              Bài đăng Facebook
-            </h3>
-            {total > 0 && (
-              <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                {total} bài đăng đã thu thập
-              </p>
-            )}
-          </div>
-          <button onClick={() => load(page)}
-                  className="lbtn !h-7 !px-2.5 text-xs gap-1"
-                  style={{ color: 'var(--text-secondary)', border: '1px solid var(--border-default)' }}>
-            <span className="icon text-sm">refresh</span>
-          </button>
-          <button onClick={onClose}
-                  className="lbtn !h-7 !w-7 !p-0 flex items-center justify-center"
-                  style={{ color: 'var(--text-tertiary)', border: '1px solid var(--border-default)' }}>
-            <span className="icon text-base">close</span>
-          </button>
+          <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
+            Facebook · Đã thu thập
+          </span>
         </div>
+        <button onClick={() => load(page)}
+                className="lbtn !h-7 !px-2.5 text-xs gap-1"
+                style={{ color: 'var(--text-secondary)', border: '1px solid var(--border-default)' }}>
+          <span className="icon text-sm">refresh</span>
+          Làm mới
+        </button>
+      </div>
 
-        {/* Content — scrollable */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+      {/* Content — scrollable */}
+      <div className="p-4 space-y-3">
           {loading ? (
             <div className="flex justify-center py-12">
               <span className="w-7 h-7 border-2 rounded-full"
@@ -1736,26 +1742,7 @@ function FacebookPostsModal({ onClose }) {
             )
           })}
         </div>
-
-        {/* Pagination footer */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-center gap-3 px-5 py-3 shrink-0"
-               style={{ borderTop: '1px solid var(--border-default)' }}>
-            <button onClick={() => load(page - 1)} disabled={page <= 1 || loading}
-                    className="lbtn !h-8 !px-3 text-xs disabled:opacity-40">
-              <span className="icon text-sm">chevron_left</span> Trước
-            </button>
-            <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-              {page} / {totalPages}
-            </span>
-            <button onClick={() => load(page + 1)} disabled={page >= totalPages || loading}
-                    className="lbtn !h-8 !px-3 text-xs disabled:opacity-40">
-              Sau <span className="icon text-sm">chevron_right</span>
-            </button>
-          </div>
-        )}
-      </div>
-    </div>
+    </DetailDrawer>
   )
 }
 

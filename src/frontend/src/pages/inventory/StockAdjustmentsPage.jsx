@@ -24,7 +24,7 @@ function CreateAdjustmentForm({ onCreated }) {
 
   useEffect(() => {
     api.get('/api/products', { params: { pageSize: 200 } })
-      .then(r => setProducts(r.data?.items ?? r.data ?? []))
+      .then(r => setProducts(r.data?.data ?? r.data?.items ?? []))
       .catch(() => setProducts([]))
   }, [])
 

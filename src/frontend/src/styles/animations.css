@@ -27,10 +27,16 @@
   to   { transform: rotate(360deg); }
 }
 
-.page-enter  { animation: pageEnter 220ms ease forwards; }
-.scale-in    { animation: scaleIn  180ms ease forwards; }
-.slide-up    { animation: slideUp  240ms ease forwards; }
-.fade-in     { animation: fadeIn   200ms ease forwards; }
+@keyframes slideInRight {
+  from { transform: translateX(100%); }
+  to   { transform: translateX(0); }
+}
+
+.page-enter    { animation: pageEnter   220ms ease         forwards; }
+.scale-in      { animation: scaleIn     180ms ease         forwards; }
+.slide-up      { animation: slideUp     240ms ease         forwards; }
+.fade-in       { animation: fadeIn      200ms ease         forwards; }
+.slide-in-right{ animation: slideInRight 220ms ease-out   forwards; }
 
 /* Skeleton shimmer */
 .skeleton {

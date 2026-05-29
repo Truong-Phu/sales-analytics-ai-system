@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import MockToast from '../../components/ui/MockToast'
+import DetailDrawer from '../../components/ui/DetailDrawer'
 import { getOltpProducts, createProduct, updateProduct, deleteProduct, getCategories, uploadProductImage, getChannelPrices, saveChannelPrice } from '../../api/dashboardApi'
 import { MOCK_PRODUCTS } from '../../mockData/products'
 import { useAuth } from '../../hooks/useAuth'
@@ -153,219 +154,209 @@ function ProductDetailModal({ product, canEdit, isMock, onClose, onSaved }) {
     label: c.level > 1 ? `  └ ${c.categoryName}` : c.categoryName,
   }))
 
+  const drawerFooter = mode === 'view' ? (
+    <>
+      <button onClick={onClose} className="lbtn lbtn-secondary flex-1 justify-center">Đóng</button>
+      {canEdit && !isMock && (product.oltpProductId ?? product.oltp_product_id ?? product.product_id) && (
+        <button onClick={enterEdit} className="lbtn lbtn-primary flex-1 justify-center">
+          <span className="icon text-sm">edit</span>Chỉnh sửa
+        </button>
+      )}
+    </>
+  ) : mode === 'channel' ? (
+    <button onClick={onClose} className="lbtn lbtn-secondary w-full justify-center">Đóng</button>
+  ) : (
+    <>
+      <button onClick={() => { setMode('view'); setErr('') }} className="lbtn lbtn-secondary flex-1 justify-center">Hủy</button>
+      <button onClick={handleSave} disabled={saving} className="lbtn lbtn-primary flex-1 justify-center">
+        {saving ? 'Đang lưu...' : 'Lưu thay đổi'}
+      </button>
+    </>
+  )
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-         style={{ background: 'rgba(0,0,0,0.6)' }} onClick={onClose}>
-      <div className="lcard w-full max-w-lg p-6 space-y-4 scale-in overflow-y-auto max-h-[90vh]"
-           onClick={e => e.stopPropagation()}>
-
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <h2 className="font-bold text-base" style={{ color: 'var(--text-primary)' }}>
-            {mode === 'edit' ? 'Chỉnh sửa sản phẩm' : mode === 'channel' ? 'Giá theo kênh' : 'Chi tiết sản phẩm'}
-          </h2>
-          <button onClick={onClose}
-                  className="w-8 h-8 flex items-center justify-center rounded-lg transition-colors"
-                  style={{ color: 'var(--text-secondary)' }}
-                  onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
-                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-            <span className="icon">close</span>
-          </button>
+    <DetailDrawer
+      open={true}
+      onClose={onClose}
+      title={mode === 'edit' ? 'Chỉnh sửa sản phẩm' : mode === 'channel' ? 'Giá theo kênh' : 'Chi tiết sản phẩm'}
+      subtitle={mode === 'view' && product.sku ? `SKU: ${product.sku}` : undefined}
+      width={560}
+      footer={drawerFooter}
+    >
+      {/* Tab strip — sticky trong vùng cuộn */}
+      {mode !== 'edit' && productId && !isMock && (
+        <div className="flex gap-0 px-5 pt-3"
+             style={{ position: 'sticky', top: 0, zIndex: 1, borderBottom: '1px solid var(--border)', background: 'var(--bg-card)' }}>
+          {[
+            { key: 'view',    label: 'Thông tin chung', icon: 'info' },
+            { key: 'channel', label: 'Giá theo kênh',   icon: 'price_change' },
+          ].map(tb => (
+            <button key={tb.key} onClick={() => { setMode(tb.key); setErr('') }}
+                    className="flex items-center gap-1.5 pb-2.5 px-3 text-xs font-medium transition-all"
+                    style={{
+                      borderBottom: `2px solid ${mode === tb.key ? 'var(--primary-500)' : 'transparent'}`,
+                      color: mode === tb.key ? 'var(--primary-500)' : 'var(--text-secondary)',
+                      marginBottom: -1,
+                    }}>
+              <span className="icon" style={{ fontSize: 15 }}>{tb.icon}</span>
+              {tb.label}
+            </button>
+          ))}
         </div>
+      )}
 
-        {/* Tabs — only in view/channel mode */}
-        {mode !== 'edit' && productId && !isMock && (
-          <div className="flex gap-0" style={{ borderBottom: '1px solid var(--border)', marginTop: -8 }}>
-            {[
-              { key: 'view',    label: 'Thông tin chung', icon: 'info' },
-              { key: 'channel', label: 'Giá theo kênh',   icon: 'price_change' },
-            ].map(tb => (
-              <button key={tb.key} onClick={() => { setMode(tb.key); setErr('') }}
-                      className="flex items-center gap-1.5 pb-2.5 px-3 text-xs font-medium transition-all"
-                      style={{
-                        borderBottom: `2px solid ${mode === tb.key ? 'var(--primary-500)' : 'transparent'}`,
-                        color: mode === tb.key ? 'var(--primary-500)' : 'var(--text-secondary)',
-                        marginBottom: -1,
-                      }}>
-                <span className="icon" style={{ fontSize: 15 }}>{tb.icon}</span>
-                {tb.label}
-              </button>
-            ))}
-          </div>
-        )}
-
+      <div className="p-5 space-y-4">
         {err && <p className="text-xs rounded-lg px-3 py-2" style={{ background: 'rgba(239,68,68,0.1)', color: '#EF4444' }}>{err}</p>}
 
         {/* ── VIEW MODE — layout 2 cột ── */}
         {mode === 'view' && (
-          <>
-            <div className="flex gap-5">
-              {/* Cột trái 40%: ảnh + badges */}
-              <div className="flex flex-col items-center gap-3 shrink-0" style={{ width: '38%' }}>
-                <div className="w-full rounded-xl overflow-hidden"
-                     style={{ aspectRatio: '1', border: '1px solid var(--border)' }}>
-                  {product.imageUrl
-                    ? <img src={product.imageUrl} alt="product" className="w-full h-full object-cover" />
-                    : <div className="w-full h-full flex flex-col items-center justify-center gap-2"
-                           style={{ background: 'var(--bg-elevated)', color: 'var(--text-tertiary)' }}>
-                        <span className="icon" style={{ fontSize: 36, opacity: 0.35 }}>image_not_supported</span>
-                        <p className="text-xs">Chưa có ảnh</p>
-                      </div>
-                  }
-                </div>
-                {/* Trạng thái */}
-                {!(product.isActive ?? true)
-                  ? <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium"
-                           style={{ background: 'rgba(107,114,128,0.1)', border: '1px solid rgba(107,114,128,0.3)', color: '#6B7280' }}>
-                      <span className="w-1.5 h-1.5 rounded-full bg-gray-500" />Ngừng bán
-                    </span>
-                  : (product.stock ?? product.stockQuantity ?? 0) === 0
-                    ? <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium"
-                             style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#EF4444' }}>
-                        <span className="w-1.5 h-1.5 rounded-full bg-red-500" />Hết hàng
-                      </span>
-                    : <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium"
-                             style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)', color: 'var(--accent-500)' }}>
-                        <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--accent-500)' }} />Đang bán
-                      </span>
+          <div className="flex gap-5">
+            {/* Cột trái 40%: ảnh + badges */}
+            <div className="flex flex-col items-center gap-3 shrink-0" style={{ width: '38%' }}>
+              <div className="w-full rounded-xl overflow-hidden"
+                   style={{ aspectRatio: '1', border: '1px solid var(--border)' }}>
+                {product.imageUrl
+                  ? <img src={product.imageUrl} alt="product" className="w-full h-full object-cover" />
+                  : <div className="w-full h-full flex flex-col items-center justify-center gap-2"
+                         style={{ background: 'var(--bg-elevated)', color: 'var(--text-tertiary)' }}>
+                      <span className="icon" style={{ fontSize: 36, opacity: 0.35 }}>image_not_supported</span>
+                      <p className="text-xs">Chưa có ảnh</p>
+                    </div>
                 }
-                {/* Badge danh mục */}
-                {product.category && (
-                  <span className="inline-flex px-3 py-1 rounded-full text-xs font-medium text-center"
-                        style={{ background: 'var(--bg-elevated)', color: 'var(--text-secondary)', border: '1px solid var(--border)' }}>
-                    {product.category}
+              </div>
+              {/* Trạng thái */}
+              {!(product.isActive ?? true)
+                ? <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium"
+                         style={{ background: 'rgba(107,114,128,0.1)', border: '1px solid rgba(107,114,128,0.3)', color: '#6B7280' }}>
+                    <span className="w-1.5 h-1.5 rounded-full bg-gray-500" />Ngừng bán
                   </span>
-                )}
+                : (product.stock ?? product.stockQuantity ?? 0) === 0
+                  ? <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium"
+                           style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#EF4444' }}>
+                      <span className="w-1.5 h-1.5 rounded-full bg-red-500" />Hết hàng
+                    </span>
+                  : <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium"
+                           style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)', color: 'var(--accent-500)' }}>
+                      <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--accent-500)' }} />Đang bán
+                    </span>
+              }
+              {/* Badge danh mục */}
+              {product.category && (
+                <span className="inline-flex px-3 py-1 rounded-full text-xs font-medium text-center"
+                      style={{ background: 'var(--bg-elevated)', color: 'var(--text-secondary)', border: '1px solid var(--border)' }}>
+                  {product.category}
+                </span>
+              )}
+            </div>
+
+            {/* Cột phải 60%: thông tin */}
+            <div className="flex-1 min-w-0 space-y-3">
+              <div>
+                <h3 className="font-bold text-base leading-snug" style={{ color: 'var(--text-primary)' }}>
+                  {product.product_name ?? product.name}
+                </h3>
+                <p className="text-sm font-mono mt-1" style={{ color: 'var(--text-secondary)' }}>
+                  {product.sku}
+                </p>
               </div>
 
-              {/* Cột phải 60%: thông tin */}
-              <div className="flex-1 min-w-0 space-y-3">
-                <div>
-                  <h3 className="font-bold text-base leading-snug" style={{ color: 'var(--text-primary)' }}>
-                    {product.product_name ?? product.name}
-                  </h3>
-                  <p className="text-sm font-mono mt-1" style={{ color: 'var(--text-secondary)' }}>
-                    {product.sku}
-                  </p>
-                </div>
+              <div style={{ borderTop: '1px solid var(--border)' }} />
 
-                <div style={{ borderTop: '1px solid var(--border)' }} />
+              {/* Grid 2 cột thông số */}
+              <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                {[
+                  ['Giá bán',     `${(product.unit_price ?? product.price ?? 0).toLocaleString('vi-VN')}₫`],
+                  ['Giá vốn',     `${(product.cost_price ?? product.costPrice ?? 0).toLocaleString('vi-VN')}₫`],
+                  ['Tồn kho',     (product.stock ?? 0).toLocaleString()],
+                  ['Danh mục',    product.category ?? product.categoryName ?? '—'],
+                  ['Thương hiệu', product.brand ?? '—'],
+                  ['Số đơn hàng', (product.total_orders ?? 0).toLocaleString()],
+                ].map(([label, value]) => (
+                  <div key={label}>
+                    <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{label}</p>
+                    <p className="font-semibold mt-0.5" style={{ color: 'var(--text-primary)' }}>{value}</p>
+                  </div>
+                ))}
+              </div>
 
-                {/* Grid 2 cột thông số */}
-                <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
-                  {[
-                    ['Giá bán',     `${(product.unit_price ?? product.price ?? 0).toLocaleString('vi-VN')}₫`],
-                    ['Giá vốn',     `${(product.cost_price ?? product.costPrice ?? 0).toLocaleString('vi-VN')}₫`],
-                    ['Tồn kho',     (product.stock ?? 0).toLocaleString()],
-                    ['Danh mục',    product.category ?? product.categoryName ?? '—'],
-                    ['Thương hiệu', product.brand ?? '—'],
-                    ['Số đơn hàng', (product.total_orders ?? 0).toLocaleString()],
-                  ].map(([label, value]) => (
-                    <div key={label}>
-                      <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{label}</p>
-                      <p className="font-semibold mt-0.5" style={{ color: 'var(--text-primary)' }}>{value}</p>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Nhà cung cấp */}
-                <div style={{ borderTop: '1px solid var(--border)', paddingTop: 8 }}>
-                  <p className="text-sm mb-1.5" style={{ color: 'var(--text-secondary)' }}>Nhà cung cấp</p>
-                  {suppliers.length === 0 ? (
-                    <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Chưa liên kết nhà cung cấp</p>
-                  ) : (
-                    <div className="space-y-1">
-                      {suppliers.map(s => (
-                        <div key={s.supplierId} className="flex items-center justify-between">
-                          <span className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>
-                            {s.supplierName}
-                            {s.supplierCode && (
-                              <span className="ml-1.5 text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
-                                {s.supplierCode}
-                              </span>
-                            )}
-                          </span>
-                          <span className="text-xs tabular-nums" style={{ color: 'var(--text-secondary)' }}>
-                            {s.importPrice > 0 ? `Giá nhập: ${s.importPrice.toLocaleString('vi-VN')}₫` : 'Chưa có giá'}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Mô tả */}
-                {product.description && (
-                  <div style={{ borderTop: '1px solid var(--border)', paddingTop: 8 }}>
-                    <p className="text-sm mb-1" style={{ color: 'var(--text-secondary)' }}>Mô tả</p>
-                    <p className="text-sm leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
-                      {product.description}
-                    </p>
+              {/* Nhà cung cấp */}
+              <div style={{ borderTop: '1px solid var(--border)', paddingTop: 8 }}>
+                <p className="text-sm mb-1.5" style={{ color: 'var(--text-secondary)' }}>Nhà cung cấp</p>
+                {suppliers.length === 0 ? (
+                  <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Chưa liên kết nhà cung cấp</p>
+                ) : (
+                  <div className="space-y-1">
+                    {suppliers.map(s => (
+                      <div key={s.supplierId} className="flex items-center justify-between">
+                        <span className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>
+                          {s.supplierName}
+                          {s.supplierCode && (
+                            <span className="ml-1.5 text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
+                              {s.supplierCode}
+                            </span>
+                          )}
+                        </span>
+                        <span className="text-xs tabular-nums" style={{ color: 'var(--text-secondary)' }}>
+                          {s.importPrice > 0 ? `Giá nhập: ${s.importPrice.toLocaleString('vi-VN')}₫` : 'Chưa có giá'}
+                        </span>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
-            </div>
 
-            {/* Footer view mode */}
-            <div className="flex gap-2 pt-2" style={{ borderTop: '1px solid var(--border)' }}>
-              <button onClick={onClose} className="lbtn lbtn-secondary flex-1 justify-center">
-                Đóng
-              </button>
-              {canEdit && !isMock && (product.oltpProductId ?? product.oltp_product_id ?? product.product_id) && (
-                <button onClick={enterEdit}
-                        className="lbtn lbtn-primary flex-1 justify-center">
-                  <span className="icon text-sm">edit</span>
-                  Chỉnh sửa
-                </button>
+              {/* Mô tả */}
+              {product.description && (
+                <div style={{ borderTop: '1px solid var(--border)', paddingTop: 8 }}>
+                  <p className="text-sm mb-1" style={{ color: 'var(--text-secondary)' }}>Mô tả</p>
+                  <p className="text-sm leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+                    {product.description}
+                  </p>
+                </div>
               )}
             </div>
-          </>
+          </div>
         )}
 
         {/* ── CHANNEL PRICES MODE ── */}
         {mode === 'channel' && (
-          <div className="space-y-3">
+          <div className="space-y-2">
             {chanLoading ? (
               <div className="py-8 flex items-center justify-center">
                 <span className="w-5 h-5 border-2 rounded-full"
                       style={{ borderColor: 'var(--border-strong)', borderTopColor: 'var(--primary-500)', animation: 'spin 0.8s linear infinite' }} />
               </div>
             ) : (
-              <div className="space-y-2">
-                {CHANNELS_LIST.map(ch => {
-                  const existing = chanPrices.find(r => r.channel === ch)
-                  const val      = chanEdit[ch] ?? (existing?.price ?? '')
-                  const saving   = chanSaving[ch]
-                  return (
-                    <div key={ch} className="flex items-center gap-2 p-2 rounded-lg"
-                         style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)' }}>
-                      <span className="flex-none text-sm font-medium w-28 truncate" style={{ color: 'var(--text-primary)' }}>{ch}</span>
-                      <input
-                        type="number" min={0} placeholder="Giá bán (₫)"
-                        className="linput !h-8 text-sm flex-1"
-                        value={val}
-                        onChange={e => setChanEdit(m => ({ ...m, [ch]: e.target.value }))}
-                        disabled={saving || !canEdit}
-                      />
-                      {canEdit && (
-                        <button
-                          onClick={() => handleSaveChanPrice(ch)}
-                          disabled={saving}
-                          className="lbtn lbtn-primary !h-8 !px-3 text-xs shrink-0">
-                          {saving
-                            ? <span className="w-3 h-3 border-2 rounded-full" style={{ borderColor: 'rgba(255,255,255,0.3)', borderTopColor: '#fff', animation: 'spin 0.8s linear infinite' }} />
-                            : 'Lưu'
-                          }
-                        </button>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
+              CHANNELS_LIST.map(ch => {
+                const existing = chanPrices.find(r => r.channel === ch)
+                const val      = chanEdit[ch] ?? (existing?.price ?? '')
+                const saving   = chanSaving[ch]
+                return (
+                  <div key={ch} className="flex items-center gap-2 p-2 rounded-lg"
+                       style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)' }}>
+                    <span className="flex-none text-sm font-medium w-28 truncate" style={{ color: 'var(--text-primary)' }}>{ch}</span>
+                    <input
+                      type="number" min={0} placeholder="Giá bán (₫)"
+                      className="linput !h-8 text-sm flex-1"
+                      value={val}
+                      onChange={e => setChanEdit(m => ({ ...m, [ch]: e.target.value }))}
+                      disabled={saving || !canEdit}
+                    />
+                    {canEdit && (
+                      <button
+                        onClick={() => handleSaveChanPrice(ch)}
+                        disabled={saving}
+                        className="lbtn lbtn-primary !h-8 !px-3 text-xs shrink-0">
+                        {saving
+                          ? <span className="w-3 h-3 border-2 rounded-full" style={{ borderColor: 'rgba(255,255,255,0.3)', borderTopColor: '#fff', animation: 'spin 0.8s linear infinite' }} />
+                          : 'Lưu'
+                        }
+                      </button>
+                    )}
+                  </div>
+                )
+              })
             )}
-            <div className="pt-2" style={{ borderTop: '1px solid var(--border)' }}>
-              <button onClick={onClose} className="lbtn lbtn-secondary w-full justify-center">Đóng</button>
-            </div>
           </div>
         )}
 
@@ -419,16 +410,12 @@ function ProductDetailModal({ product, canEdit, isMock, onClose, onSaved }) {
             </div>
             {/* Giá vốn: hiển thị read-only, lấy từ NCC */}
             <div>
-              <label className="block text-sm mb-1" style={{ color: 'var(--text-secondary)' }}>
-                Giá vốn (₫)
-              </label>
+              <label className="block text-sm mb-1" style={{ color: 'var(--text-secondary)' }}>Giá vốn (₫)</label>
               <div className="linput text-sm flex items-center justify-between"
                    style={{ background: 'var(--bg-elevated)', cursor: 'not-allowed', opacity: 0.7 }}>
                 <span>{(editData.costPrice || 0).toLocaleString('vi-VN')}</span>
                 <span className="text-xs ml-2" style={{ color: 'var(--text-tertiary)' }}>
-                  {suppliers.length > 0
-                    ? `Từ NCC (cập nhật tại trang NCC)`
-                    : 'Chỉ đọc'}
+                  {suppliers.length > 0 ? 'Từ NCC (cập nhật tại trang NCC)' : 'Chỉ đọc'}
                 </span>
               </div>
             </div>
@@ -438,21 +425,10 @@ function ProductDetailModal({ product, canEdit, isMock, onClose, onSaved }) {
               <textarea className="linput text-sm" rows={2} value={editData.description ?? ''}
                         onChange={set('description')} />
             </div>
-
-            <div className="flex gap-2 pt-1">
-              <button onClick={() => { setMode('view'); setErr('') }}
-                      className="lbtn lbtn-secondary flex-1 justify-center">
-                Hủy
-              </button>
-              <button onClick={handleSave} disabled={saving}
-                      className="lbtn lbtn-primary flex-1 justify-center">
-                {saving ? 'Đang lưu...' : 'Lưu thay đổi'}
-              </button>
-            </div>
           </>
         )}
       </div>
-    </div>
+    </DetailDrawer>
   )
 }
 
