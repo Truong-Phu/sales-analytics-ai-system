@@ -7,46 +7,109 @@ const MOCK_SUPPLIERS = [
   { supplierId: 2, supplierCode: 'NCC-002', supplierName: 'Cong ty CP Det May Mien Nam', contactName: 'Tran Thi B', phone: '0912345678', email: 'sales@detmaymn.com', isActive: true },
 ]
 
+// Phí sàn thương mại điện tử Việt Nam (tỷ lệ phổ biến)
+const PLATFORM_FEES = [
+  { name: 'Shopee',  icon: '🛒', rate: 0.025 + 0.015 }, // 2.5% platform + 1.5% payment
+  { name: 'TikTok',  icon: '📱', rate: 0.015 + 0.010 }, // 1.5% + 1%
+  { name: 'Lazada',  icon: '📦', rate: 0.030 + 0.010 }, // 3% + 1%
+  { name: 'Tự kinh doanh', icon: '🏪', rate: 0.010 },   // chi phí tối thiểu ~1%
+]
+
+function calcMinPrice(importPrice, feeRate) {
+  if (!importPrice || importPrice <= 0) return 0
+  return Math.ceil(importPrice / (1 - feeRate) / 1000) * 1000
+}
+
+function PriceAdvisor({ importPrice }) {
+  if (!importPrice || importPrice <= 0) return null
+  return (
+    <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
+      {PLATFORM_FEES.map(pf => (
+        <span key={pf.name} className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
+          {pf.icon} {pf.name} ≥ <strong style={{ color: 'var(--text-secondary)' }}>
+            {calcMinPrice(importPrice, pf.rate).toLocaleString('vi-VN')}đ
+          </strong>
+        </span>
+      ))}
+    </div>
+  )
+}
+
 function SupplierModal({ supplier, onClose, onSaved }) {
   const [form, setForm] = useState(supplier ?? {
     supplierCode: '', supplierName: '', contactName: '',
     phone: '', email: '', address: '', taxCode: '', note: '',
   })
-  const [allProducts,  setAllProducts]  = useState([])
-  const [selectedPids, setSelectedPids] = useState(new Set())
-  const [prodSearch,   setProdSearch]   = useState('')
-  const [loading,      setLoading]      = useState(false)
-  const [err,          setErr]          = useState('')
+  const [allProducts,   setAllProducts]   = useState([])
+  // Map: productId → importPrice (chỉ sản phẩm được chọn mới có entry)
+  const [selectedProds, setSelectedProds] = useState(new Map())
+  const [prodSearch,    setProdSearch]    = useState('')
+  const [loading,       setLoading]       = useState(false)
+  const [err,           setErr]           = useState('')
+  // Map: productId → 'updating' | 'done' | 'error'
+  const [priceUpdating, setPriceUpdating] = useState(new Map())
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
-  useEffect(() => {
-    // Tải tất cả sản phẩm
-    api.get('/api/products/oltp', { params: { pageSize: 200 } })
-       .then(r => setAllProducts(r.data.items ?? [])).catch(() => {})
+  const supplierId = supplier?.supplierId
 
-    // Nếu đang chỉnh sửa → tải SP hiện tại của NCC
-    if (supplier?.supplierId) {
-      api.get(`/api/suppliers/${supplier.supplierId}/products`)
-         .then(r => setSelectedPids(new Set((r.data ?? []).map(p => p.productId))))
+  useEffect(() => {
+    api.get('/api/products/oltp', { params: { pageSize: 200 } })
+       .then(r => setAllProducts(r.data.data ?? [])).catch(() => {})
+
+    if (supplierId) {
+      api.get(`/api/suppliers/${supplierId}/products`)
+         .then(r => {
+           const m = new Map()
+           ;(r.data ?? []).forEach(p => m.set(p.productId, p.importPrice ?? 0))
+           setSelectedProds(m)
+         })
          .catch(() => {})
     }
-  }, [])
+  }, [supplierId])
+
+  // Lookup basePrice/costPrice từ allProducts
+  const productMap = Object.fromEntries(allProducts.map(p => [p.productId, p]))
 
   const filteredProducts = allProducts.filter(p =>
     p.productName.toLowerCase().includes(prodSearch.toLowerCase())
   )
 
-  const toggleProduct = (pid) => setSelectedPids(prev => {
-    const next = new Set(prev)
-    if (next.has(pid)) next.delete(pid); else next.add(pid)
+  const toggleProduct = (pid) => setSelectedProds(prev => {
+    const next = new Map(prev)
+    if (next.has(pid)) { next.delete(pid) } else { next.set(pid, 0) }
     return next
   })
+
+  const setPrice = (pid, val) => setSelectedProds(prev => {
+    const next = new Map(prev)
+    next.set(pid, Number(val) || 0)
+    return next
+  })
+
+  // Cập nhật base_price và cost_price của sản phẩm khi giá nhập tăng
+  const updateProductPrice = async (pid, newBasePrice) => {
+    setPriceUpdating(prev => new Map(prev).set(pid, 'updating'))
+    try {
+      await api.put(`/api/products/oltp/${pid}`, {
+        basePrice: newBasePrice,
+        costPrice: selectedProds.get(pid) ?? 0,
+      })
+      // Cập nhật allProducts trong state để badge sáng lên
+      setAllProducts(prev => prev.map(p =>
+        p.productId === pid ? { ...p, basePrice: newBasePrice, costPrice: selectedProds.get(pid) ?? 0 } : p
+      ))
+      setPriceUpdating(prev => new Map(prev).set(pid, 'done'))
+    } catch {
+      setPriceUpdating(prev => new Map(prev).set(pid, 'error'))
+    }
+  }
 
   const save = async () => {
     if (!form.supplierName?.trim()) { setErr('Tên nhà cung cấp không được để trống.'); return }
     setLoading(true); setErr('')
     try {
+      const products = [...selectedProds.entries()].map(([productId, importPrice]) => ({ productId, importPrice }))
       const payload = {
         supplierCode: form.supplierCode || null,
         supplierName: form.supplierName,
@@ -56,7 +119,7 @@ function SupplierModal({ supplier, onClose, onSaved }) {
         address:      form.address      || null,
         taxCode:      form.taxCode      || null,
         note:         form.note         || null,
-        productIds:   [...selectedPids],
+        products,
       }
       if (supplier?.supplierId) {
         await api.put(`/api/suppliers/${supplier.supplierId}`, payload)
@@ -69,10 +132,12 @@ function SupplierModal({ supplier, onClose, onSaved }) {
     } finally { setLoading(false) }
   }
 
+  const selectedCount = selectedProds.size
+
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center p-4 overflow-y-auto"
          style={{ background: 'rgba(0,0,0,0.5)' }}>
-      <div className="w-full max-w-xl rounded-xl shadow-xl p-6 space-y-4 my-8"
+      <div className="w-full max-w-2xl rounded-xl shadow-xl p-6 space-y-4 my-8"
            style={{ background: 'var(--bg-card)' }}>
         <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
           {supplier?.supplierId ? 'Sửa nhà cung cấp' : 'Thêm nhà cung cấp'}
@@ -123,18 +188,23 @@ function SupplierModal({ supplier, onClose, onSaved }) {
           />
         </div>
 
-        {/* Sản phẩm NCC cung cấp */}
+        {/* Sản phẩm NCC cung cấp + Giá nhập */}
         <div>
           <div className="flex items-center justify-between mb-2">
-            <label className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-              Sản phẩm cung cấp
-              <span className="ml-2 text-xs font-normal" style={{ color: 'var(--text-tertiary)' }}>
-                {selectedPids.size > 0 ? `Đã chọn ${selectedPids.size} SP` : 'Chưa chọn'}
-              </span>
-            </label>
-            {selectedPids.size > 0 && (
-              <button onClick={() => setSelectedPids(new Set())}
-                className="text-xs" style={{ color: '#EF4444' }}>Bỏ chọn tất cả</button>
+            <div>
+              <label className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                Sản phẩm cung cấp
+                <span className="ml-2 text-xs font-normal" style={{ color: 'var(--text-tertiary)' }}>
+                  {selectedCount > 0 ? `Đã chọn ${selectedCount} SP` : 'Chưa chọn'}
+                </span>
+              </label>
+              <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
+                Nhập giá nhập → hệ thống tự tính giá bán tối thiểu theo từng sàn
+              </p>
+            </div>
+            {selectedCount > 0 && (
+              <button onClick={() => setSelectedProds(new Map())}
+                className="text-xs shrink-0" style={{ color: '#EF4444' }}>Bỏ chọn tất cả</button>
             )}
           </div>
           <input
@@ -143,23 +213,98 @@ function SupplierModal({ supplier, onClose, onSaved }) {
             className="w-full text-sm rounded-lg border px-3 py-1.5 mb-2"
             style={{ background: 'var(--bg-elevated)', borderColor: 'var(--border)', color: 'var(--text-primary)' }}
           />
+
           <div className="rounded-lg border overflow-y-auto" style={{
-            borderColor: 'var(--border)', maxHeight: '220px', background: 'var(--bg-elevated)'
+            borderColor: 'var(--border)', maxHeight: '320px', background: 'var(--bg-elevated)'
           }}>
+            {/* Header */}
+            <div className="grid grid-cols-[auto_1fr_160px] gap-2 px-3 py-2 text-[11px] font-medium sticky top-0"
+                 style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text-tertiary)' }}>
+              <span></span>
+              <span>Sản phẩm (giá bán hiện tại)</span>
+              <span className="text-right">Giá nhập NCC (đ)</span>
+            </div>
+
             {filteredProducts.length === 0 ? (
               <div className="text-xs py-3 text-center" style={{ color: 'var(--text-tertiary)' }}>
                 Không tìm thấy sản phẩm
               </div>
-            ) : filteredProducts.map(p => (
-              <label key={p.productId} className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:opacity-80"
-                style={{ borderBottom: '1px solid var(--border)' }}>
-                <input type="checkbox"
-                  checked={selectedPids.has(p.productId)}
-                  onChange={() => toggleProduct(p.productId)}
-                  className="w-4 h-4 rounded accent-blue-500" />
-                <span className="text-sm" style={{ color: 'var(--text-primary)' }}>{p.productName}</span>
-              </label>
-            ))}
+            ) : filteredProducts.map(p => {
+              const isChecked    = selectedProds.has(p.productId)
+              const importPrice  = selectedProds.get(p.productId) ?? 0
+              const currentBase  = productMap[p.productId]?.basePrice ?? p.basePrice ?? 0
+              // Cảnh báo lỗ: giá nhập >= giá bán hiện tại
+              const isLossRisk   = isChecked && importPrice > 0 && importPrice >= currentBase
+              // Giá bán tối thiểu gợi ý (Shopee 4%)
+              const suggestedPrice = calcMinPrice(importPrice, 0.04)
+              const updateState  = priceUpdating.get(p.productId)
+
+              return (
+                <div key={p.productId}
+                     style={{
+                       borderBottom: '1px solid var(--border)',
+                       background: isLossRisk ? 'rgba(239,68,68,0.04)' : isChecked ? 'rgba(59,130,246,0.04)' : 'transparent'
+                     }}>
+                  <div className="grid grid-cols-[auto_1fr_160px] gap-2 items-center px-3 py-2">
+                    <input type="checkbox" checked={isChecked} onChange={() => toggleProduct(p.productId)}
+                      className="w-4 h-4 rounded accent-blue-500 cursor-pointer" />
+                    <div>
+                      <span className="text-sm cursor-pointer" onClick={() => toggleProduct(p.productId)}
+                            style={{ color: 'var(--text-primary)' }}>
+                        {p.productName}
+                        {p.sku && <span className="ml-1 text-[10px]" style={{ color: 'var(--text-tertiary)' }}>{p.sku}</span>}
+                      </span>
+                      {currentBase > 0 && (
+                        <span className="ml-2 text-[11px]" style={{ color: isLossRisk ? '#EF4444' : 'var(--text-tertiary)' }}>
+                          Giá bán: {currentBase.toLocaleString('vi-VN')}đ
+                        </span>
+                      )}
+                    </div>
+                    <input
+                      type="number" min="0" step="1000"
+                      value={isChecked ? importPrice : ''}
+                      disabled={!isChecked}
+                      onChange={e => setPrice(p.productId, e.target.value)}
+                      placeholder={isChecked ? '0' : '—'}
+                      className="w-full text-xs rounded border px-2 py-1 text-right disabled:opacity-40"
+                      style={{
+                        background: 'var(--bg-card)',
+                        borderColor: isLossRisk ? '#EF4444' : 'var(--border)',
+                        color: 'var(--text-primary)'
+                      }}
+                    />
+                  </div>
+
+                  {isChecked && importPrice > 0 && (
+                    <div className="px-3 pb-2 space-y-1">
+                      {/* Cảnh báo lỗ */}
+                      {isLossRisk && (
+                        <div className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg"
+                             style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)' }}>
+                          <span className="text-[11px]" style={{ color: '#EF4444' }}>
+                            ⚠ Giá nhập ({importPrice.toLocaleString('vi-VN')}đ) ≥ giá bán ({currentBase.toLocaleString('vi-VN')}đ) — sẽ lỗ!
+                            &nbsp;Đề xuất giá bán mới: <strong>{suggestedPrice.toLocaleString('vi-VN')}đ</strong>
+                          </span>
+                          {updateState === 'done' ? (
+                            <span className="text-[11px] shrink-0" style={{ color: '#22C55E' }}>✓ Đã cập nhật</span>
+                          ) : (
+                            <button
+                              disabled={updateState === 'updating'}
+                              onClick={() => updateProductPrice(p.productId, suggestedPrice)}
+                              className="text-[11px] px-2 py-0.5 rounded shrink-0 disabled:opacity-60"
+                              style={{ background: '#EF4444', color: '#fff' }}>
+                              {updateState === 'updating' ? '...' : `Cập nhật → ${suggestedPrice.toLocaleString('vi-VN')}đ`}
+                            </button>
+                          )}
+                        </div>
+                      )}
+                      {/* Price advisor — giá bán tối thiểu các sàn */}
+                      <PriceAdvisor importPrice={importPrice} />
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
         </div>
 

@@ -2,6 +2,14 @@ import { useState, useEffect, useCallback } from 'react'
 import api from '../../api/axios'
 import MockToast from '../../components/ui/MockToast'
 
+// Phí sàn — dùng để tính giá bán tối thiểu tư vấn
+const PLATFORMS = [
+  { name: 'Shopee', rate: 0.040 },
+  { name: 'TikTok', rate: 0.025 },
+  { name: 'Lazada', rate: 0.040 },
+]
+const calcMin = (ip, rate) => ip > 0 ? Math.ceil(ip / (1 - rate) / 1000) * 1000 : 0
+
 const STATUS_CFG = {
   DRAFT:               { label: 'Nháp',          bg: 'rgba(100,116,139,0.1)', text: '#64748B' },
   PENDING:             { label: 'Chờ duyệt',     bg: 'rgba(245,158,11,0.1)', text: '#F59E0B' },
@@ -30,13 +38,14 @@ function CreateModal({ onClose, onSaved }) {
   const [loadingProds, setLoadingProds] = useState(false)
   const [err,          setErr]          = useState('')
 
-  const products = suppProducts ?? allProducts
+  // Ưu tiên SP của NCC; nếu NCC không có SP nào được liên kết thì hiện toàn bộ SP
+  const products = (suppProducts && suppProducts.length > 0) ? suppProducts : allProducts
 
   useEffect(() => {
     api.get('/api/suppliers', { params: { active: true, pageSize: 100 } })
        .then(r => setSuppliers(r.data.items ?? [])).catch(() => {})
     api.get('/api/products/oltp', { params: { pageSize: 200 } })
-       .then(r => setAllProducts(r.data.items ?? [])).catch(() => {})
+       .then(r => setAllProducts(r.data.data ?? [])).catch(() => {})
   }, [])
 
   // Khi chọn NCC → tải SP của NCC đó
@@ -51,9 +60,19 @@ function CreateModal({ onClose, onSaved }) {
        .finally(() => setLoadingProds(false))
   }, [suppId])
 
-  const addItem = () => setItems(it => [...it, { productId: '', quantity: 1, importPrice: 0 }])
+  const addItem    = () => setItems(it => [...it, { productId: '', quantity: 1, importPrice: 0 }])
   const removeItem = (i) => setItems(it => it.filter((_, j) => j !== i))
-  const setItem = (i, k, v) => setItems(it => it.map((x, j) => j === i ? { ...x, [k]: v } : x))
+  const setItem    = (i, k, v) => setItems(it => it.map((x, j) => j === i ? { ...x, [k]: v } : x))
+
+  // Khi chọn sản phẩm → auto-fill giá nhập từ import_price của NCC (ưu tiên), fallback cost_price
+  const handleProductChange = (i, productId) => {
+    const pool = (suppProducts && suppProducts.length > 0) ? suppProducts : allProducts
+    const prod = pool.find(p => String(p.productId) === String(productId))
+    const autoPrice = (prod?.importPrice > 0) ? prod.importPrice
+                    : (prod?.costPrice   > 0) ? prod.costPrice
+                    : 0
+    setItems(it => it.map((x, j) => j !== i ? x : { ...x, productId, importPrice: autoPrice }))
+  }
 
   const total = items.reduce((s, i) => s + (Number(i.quantity) || 0) * (Number(i.importPrice) || 0), 0)
 
@@ -117,7 +136,7 @@ function CreateModal({ onClose, onSaved }) {
           <div className="space-y-2">
             {items.map((it, i) => (
               <div key={i} className="flex gap-2 items-center">
-                <select value={it.productId} onChange={e => setItem(i, 'productId', e.target.value)}
+                <select value={it.productId} onChange={e => handleProductChange(i, e.target.value)}
                   disabled={loadingProds}
                   className="flex-1 text-sm rounded-lg border px-2 py-1.5"
                   style={{ background: 'var(--bg-elevated)', borderColor: 'var(--border)', color: 'var(--text-primary)' }}>
@@ -129,11 +148,24 @@ function CreateModal({ onClose, onSaved }) {
                   className="w-20 text-sm rounded-lg border px-2 py-1.5 text-center"
                   style={{ background: 'var(--bg-elevated)', borderColor: 'var(--border)', color: 'var(--text-primary)' }}
                   placeholder="SL" />
-                <input type="number" min="0" value={it.importPrice}
-                  onChange={e => setItem(i, 'importPrice', e.target.value)}
-                  className="w-28 text-sm rounded-lg border px-2 py-1.5 text-right"
-                  style={{ background: 'var(--bg-elevated)', borderColor: 'var(--border)', color: 'var(--text-primary)' }}
-                  placeholder="Giá nhập" />
+                <div className="flex flex-col gap-0.5">
+                  <input type="number" min="0" step="1000" value={it.importPrice}
+                    onChange={e => setItem(i, 'importPrice', e.target.value)}
+                    className="w-32 text-sm rounded-lg border px-2 py-1.5 text-right"
+                    style={{ background: 'var(--bg-elevated)', borderColor: 'var(--border)', color: 'var(--text-primary)' }}
+                    placeholder="Giá nhập" />
+                  {Number(it.importPrice) > 0 && (
+                    <div className="text-[10px] text-right space-y-0.5">
+                      {PLATFORMS.map(pf => (
+                        <div key={pf.name} style={{ color: 'var(--text-tertiary)' }}>
+                          {pf.name} ≥ <span style={{ color: '#3B82F6', fontWeight: 600 }}>
+                            {calcMin(Number(it.importPrice), pf.rate).toLocaleString('vi-VN')}đ
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
                 {items.length > 1 && (
                   <button onClick={() => removeItem(i)} className="text-xs" style={{ color: '#EF4444' }}>✕</button>
                 )}
@@ -151,7 +183,7 @@ function CreateModal({ onClose, onSaved }) {
           <button onClick={save} disabled={loading}
             className="px-4 py-1.5 rounded-lg text-sm text-white font-medium disabled:opacity-60"
             style={{ background: 'var(--primary-500)' }}>
-            {loading ? 'Đang lưu...' : 'Tạo phiếu'}
+            {loading ? 'Đang gửi...' : 'Tạo & Gửi NCC'}
           </button>
         </div>
       </div>
@@ -301,22 +333,6 @@ export default function PurchaseOrdersPage() {
                       <td className="px-4 py-3 text-xs" style={{ color: 'var(--text-tertiary)' }}>{fmtDate(po.createdAt)}</td>
                       <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                         <div className="flex gap-1 flex-wrap">
-                          {po.status === 'DRAFT' && (
-                            <button onClick={() => action(po.purchaseOrderId, 'submit', null)}
-                              disabled={actionLoading === po.purchaseOrderId + 'submit'}
-                              className="text-xs px-2 py-1 rounded border"
-                              style={{ borderColor: 'rgba(245,158,11,0.4)', color: '#F59E0B' }}>
-                              Gửi duyệt
-                            </button>
-                          )}
-                          {po.status === 'PENDING' && (
-                            <button onClick={() => action(po.purchaseOrderId, 'approve', 'Duyệt phiếu nhập này?')}
-                              disabled={actionLoading === po.purchaseOrderId + 'approve'}
-                              className="text-xs px-2 py-1 rounded border"
-                              style={{ borderColor: 'rgba(59,130,246,0.4)', color: '#3B82F6' }}>
-                              Duyệt
-                            </button>
-                          )}
                           {!['RECEIVED', 'CANCELLED', 'PARTIALLY_RECEIVED'].includes(po.status) && (
                             <button onClick={() => action(po.purchaseOrderId, 'cancel', 'Hủy phiếu nhập này?')}
                               disabled={actionLoading === po.purchaseOrderId + 'cancel'}

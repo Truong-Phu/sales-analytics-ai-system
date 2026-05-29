@@ -160,7 +160,8 @@ public class SuppliersController(
             await conn.OpenAsync();
 
             await using var cmd = new NpgsqlCommand("""
-                SELECT p.product_id, p.product_name, p.sku, p.base_price, p.stock_quantity
+                SELECT p.product_id, p.product_name, p.sku, p.base_price, p.cost_price,
+                       p.stock_quantity, sp.import_price
                 FROM public.supplier_products sp
                 JOIN public.products         p ON p.product_id  = sp.product_id
                 JOIN public.suppliers        s ON s.supplier_id = sp.supplier_id
@@ -175,11 +176,13 @@ public class SuppliersController(
             while (await r.ReadAsync())
                 list.Add(new
                 {
-                    productId    = r.GetInt32(0),
-                    productName  = r.GetString(1),
-                    sku          = r.IsDBNull(2) ? null : r.GetString(2),
-                    sellingPrice = r.IsDBNull(3) ? 0m : r.GetDecimal(3),
-                    stockQuantity= r.IsDBNull(4) ? 0  : r.GetInt32(4),
+                    productId     = r.GetInt32(0),
+                    productName   = r.GetString(1),
+                    sku           = r.IsDBNull(2) ? null : r.GetString(2),
+                    sellingPrice  = r.IsDBNull(3) ? 0m : r.GetDecimal(3),
+                    costPrice     = r.IsDBNull(4) ? 0m : r.GetDecimal(4),
+                    stockQuantity = r.IsDBNull(5) ? 0  : r.GetInt32(5),
+                    importPrice   = r.IsDBNull(6) ? 0m : r.GetDecimal(6),
                 });
 
             return Ok(list);
@@ -228,16 +231,18 @@ public class SuppliersController(
 
                 var newId = Convert.ToInt32(await cmd.ExecuteScalarAsync());
 
-                // Lưu danh sách sản phẩm NCC cung cấp
-                if (dto.ProductIds?.Count > 0)
-                    foreach (var pid in dto.ProductIds.Distinct())
+                // Lưu danh sách sản phẩm NCC cung cấp kèm giá nhập
+                if (dto.Products?.Count > 0)
+                    foreach (var p in dto.Products.DistinctBy(x => x.ProductId))
                     {
                         await using var sp = new NpgsqlCommand("""
-                            INSERT INTO public.supplier_products (supplier_id, product_id)
-                            VALUES (@sid, @pid) ON CONFLICT DO NOTHING
+                            INSERT INTO public.supplier_products (supplier_id, product_id, import_price)
+                            VALUES (@sid, @pid, @price)
+                            ON CONFLICT (supplier_id, product_id) DO UPDATE SET import_price = EXCLUDED.import_price
                             """, conn, tx);
-                        sp.Parameters.AddWithValue("sid", newId);
-                        sp.Parameters.AddWithValue("pid", pid);
+                        sp.Parameters.AddWithValue("sid",   newId);
+                        sp.Parameters.AddWithValue("pid",   p.ProductId);
+                        sp.Parameters.AddWithValue("price", p.ImportPrice);
                         await sp.ExecuteNonQueryAsync();
                     }
 
@@ -297,7 +302,7 @@ public class SuppliersController(
                 if (rows == 0) { await tx.RollbackAsync(); return NotFound(new { message = "Không tìm thấy nhà cung cấp." }); }
 
                 // Cập nhật danh sách SP (nếu được gửi kèm)
-                if (dto.ProductIds != null)
+                if (dto.Products != null)
                 {
                     await using var del = new NpgsqlCommand(
                         "DELETE FROM public.supplier_products WHERE supplier_id = @id",
@@ -305,14 +310,16 @@ public class SuppliersController(
                     del.Parameters.AddWithValue("id", id);
                     await del.ExecuteNonQueryAsync();
 
-                    foreach (var pid in dto.ProductIds.Distinct())
+                    foreach (var p in dto.Products.DistinctBy(x => x.ProductId))
                     {
                         await using var sp = new NpgsqlCommand("""
-                            INSERT INTO public.supplier_products (supplier_id, product_id)
-                            VALUES (@sid, @pid) ON CONFLICT DO NOTHING
+                            INSERT INTO public.supplier_products (supplier_id, product_id, import_price)
+                            VALUES (@sid, @pid, @price)
+                            ON CONFLICT (supplier_id, product_id) DO UPDATE SET import_price = EXCLUDED.import_price
                             """, conn, tx);
-                        sp.Parameters.AddWithValue("sid", id);
-                        sp.Parameters.AddWithValue("pid", pid);
+                        sp.Parameters.AddWithValue("sid",   id);
+                        sp.Parameters.AddWithValue("pid",   p.ProductId);
+                        sp.Parameters.AddWithValue("price", p.ImportPrice);
                         await sp.ExecuteNonQueryAsync();
                     }
                 }
@@ -371,13 +378,20 @@ public class SuppliersController(
 
 public class SupplierDto
 {
-    public string?      SupplierCode { get; set; }
-    public string       SupplierName { get; set; } = "";
-    public string?      ContactName  { get; set; }
-    public string?      Phone        { get; set; }
-    public string?      Email        { get; set; }
-    public string?      Address      { get; set; }
-    public string?      TaxCode      { get; set; }
-    public string?      Note         { get; set; }
-    public List<int>?   ProductIds   { get; set; }  // null = không thay đổi SP; [] = xóa hết
+    public string?                    SupplierCode { get; set; }
+    public string                     SupplierName { get; set; } = "";
+    public string?                    ContactName  { get; set; }
+    public string?                    Phone        { get; set; }
+    public string?                    Email        { get; set; }
+    public string?                    Address      { get; set; }
+    public string?                    TaxCode      { get; set; }
+    public string?                    Note         { get; set; }
+    // null = không thay đổi SP; [] = xóa hết
+    public List<SupplierProductDto>?  Products     { get; set; }
+}
+
+public class SupplierProductDto
+{
+    public int     ProductId   { get; set; }
+    public decimal ImportPrice { get; set; }
 }
