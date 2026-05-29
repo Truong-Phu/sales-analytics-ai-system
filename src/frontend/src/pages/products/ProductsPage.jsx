@@ -4,6 +4,7 @@ import MockToast from '../../components/ui/MockToast'
 import { getOltpProducts, createProduct, updateProduct, deleteProduct, getCategories, uploadProductImage, getChannelPrices, saveChannelPrice } from '../../api/dashboardApi'
 import { MOCK_PRODUCTS } from '../../mockData/products'
 import { useAuth } from '../../hooks/useAuth'
+import api from '../../api/axios'
 
 const PAGE_SIZE = 10
 
@@ -47,7 +48,9 @@ function ProductDetailModal({ product, canEdit, isMock, onClose, onSaved }) {
   const [chanPrices,    setChanPrices]    = useState([])
   const [chanLoading,   setChanLoading]   = useState(false)
   const [chanSaving,    setChanSaving]    = useState({})
-  const [chanEdit,      setChanEdit]      = useState({}) // { [channel]: price }
+  const [chanEdit,      setChanEdit]      = useState({})
+  // Suppliers cho sản phẩm này
+  const [suppliers,     setSuppliers]     = useState([])
   const fileRef = useRef(null)
 
   const productId = product.oltpProductId ?? product.oltp_product_id ?? product.product_id ?? product.productId ?? product.id
@@ -56,7 +59,7 @@ function ProductDetailModal({ product, canEdit, isMock, onClose, onSaved }) {
   useEffect(() => {
     if (mode === 'edit' && categories.length === 0)
       getCategories().then(setCategories).catch(() => setCategories([]))
-  }, [mode])
+  }, [mode, categories.length])
 
   // Tải giá theo kênh khi mở tab channel
   useEffect(() => {
@@ -72,6 +75,14 @@ function ProductDetailModal({ product, canEdit, isMock, onClose, onSaved }) {
       .catch(() => {})
       .finally(() => setChanLoading(false))
   }, [mode, productId, isMock])
+
+  // Tải danh sách NCC khi xem chi tiết
+  useEffect(() => {
+    if (!productId || isMock) return
+    api.get(`/api/suppliers/by-product/${productId}`)
+       .then(r => setSuppliers(r.data ?? []))
+       .catch(() => setSuppliers([]))
+  }, [productId, isMock])
 
   const handleSaveChanPrice = async (channel) => {
     if (!productId) return
@@ -244,7 +255,7 @@ function ProductDetailModal({ product, canEdit, isMock, onClose, onSaved }) {
                 <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
                   {[
                     ['Giá bán',     `${(product.unit_price ?? product.price ?? 0).toLocaleString('vi-VN')}₫`],
-                    ['Giá vốn',     `${(product.cost_price ?? 0).toLocaleString('vi-VN')}₫`],
+                    ['Giá vốn',     `${(product.cost_price ?? product.costPrice ?? 0).toLocaleString('vi-VN')}₫`],
                     ['Tồn kho',     (product.stock ?? 0).toLocaleString()],
                     ['Danh mục',    product.category ?? product.categoryName ?? '—'],
                     ['Thương hiệu', product.brand ?? '—'],
@@ -255,6 +266,32 @@ function ProductDetailModal({ product, canEdit, isMock, onClose, onSaved }) {
                       <p className="font-semibold mt-0.5" style={{ color: 'var(--text-primary)' }}>{value}</p>
                     </div>
                   ))}
+                </div>
+
+                {/* Nhà cung cấp */}
+                <div style={{ borderTop: '1px solid var(--border)', paddingTop: 8 }}>
+                  <p className="text-sm mb-1.5" style={{ color: 'var(--text-secondary)' }}>Nhà cung cấp</p>
+                  {suppliers.length === 0 ? (
+                    <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Chưa liên kết nhà cung cấp</p>
+                  ) : (
+                    <div className="space-y-1">
+                      {suppliers.map(s => (
+                        <div key={s.supplierId} className="flex items-center justify-between">
+                          <span className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>
+                            {s.supplierName}
+                            {s.supplierCode && (
+                              <span className="ml-1.5 text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
+                                {s.supplierCode}
+                              </span>
+                            )}
+                          </span>
+                          <span className="text-xs tabular-nums" style={{ color: 'var(--text-secondary)' }}>
+                            {s.importPrice > 0 ? `Giá nhập: ${s.importPrice.toLocaleString('vi-VN')}₫` : 'Chưa có giá'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 {/* Mô tả */}
@@ -364,7 +401,6 @@ function ProductDetailModal({ product, canEdit, isMock, onClose, onSaved }) {
                 ['SKU', 'sku', 'text'],
                 ['Tên sản phẩm', 'productName', 'text'],
                 ['Giá bán (₫)', 'basePrice', 'number'],
-                ['Giá vốn (₫)', 'costPrice', 'number'],
                 ['Tồn kho', 'stockQuantity', 'number'],
               ].map(([label, field, type]) => (
                 <div key={field}>
@@ -379,6 +415,21 @@ function ProductDetailModal({ product, canEdit, isMock, onClose, onSaved }) {
                   <option value="">-- Chọn danh mục --</option>
                   {catOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
+              </div>
+            </div>
+            {/* Giá vốn: hiển thị read-only, lấy từ NCC */}
+            <div>
+              <label className="block text-sm mb-1" style={{ color: 'var(--text-secondary)' }}>
+                Giá vốn (₫)
+              </label>
+              <div className="linput text-sm flex items-center justify-between"
+                   style={{ background: 'var(--bg-elevated)', cursor: 'not-allowed', opacity: 0.7 }}>
+                <span>{(editData.costPrice || 0).toLocaleString('vi-VN')}</span>
+                <span className="text-xs ml-2" style={{ color: 'var(--text-tertiary)' }}>
+                  {suppliers.length > 0
+                    ? `Từ NCC (cập nhật tại trang NCC)`
+                    : 'Chỉ đọc'}
+                </span>
               </div>
             </div>
 
@@ -530,7 +581,6 @@ function ProductFormModal({ initial, mode, onClose, onSaved }) {
           {inp('SKU', 'sku', 'text', true)}
           {inp('Tên sản phẩm', 'productName', 'text', true)}
           {inp('Giá bán (₫)', 'basePrice', 'number', true)}
-          {inp('Giá vốn (₫)', 'costPrice', 'number')}
           {inp('Tồn kho', 'stockQuantity', 'number')}
 
           {/* Dropdown danh mục */}

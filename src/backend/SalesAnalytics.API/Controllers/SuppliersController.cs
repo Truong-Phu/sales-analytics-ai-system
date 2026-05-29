@@ -194,6 +194,47 @@ public class SuppliersController(
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // GET /api/suppliers/by-product/{productId}  — NCC cung cấp sản phẩm này
+    // ─────────────────────────────────────────────────────────────────────────
+    [HttpGet("by-product/{productId:int}")]
+    [Authorize(Roles = "Owner,Manager,DataIT,SuperAdmin")]
+    public async Task<IActionResult> GetByProduct(int productId)
+    {
+        try
+        {
+            await using var conn = new NpgsqlConnection(_connStr);
+            await conn.OpenAsync();
+
+            await using var cmd = new NpgsqlCommand("""
+                SELECT s.supplier_id, s.supplier_name, s.supplier_code, sp.import_price
+                FROM public.supplier_products sp
+                JOIN public.suppliers s ON s.supplier_id = sp.supplier_id
+                WHERE sp.product_id = @pid AND s.company_id = @cid::uuid AND s.is_active = TRUE
+                ORDER BY sp.import_price ASC, s.supplier_name
+                """, conn);
+            cmd.Parameters.AddWithValue("pid", productId);
+            cmd.Parameters.AddWithValue("cid", tenant.CompanyId!.Value.ToString());
+
+            var list = new List<object>();
+            await using var r = await cmd.ExecuteReaderAsync();
+            while (await r.ReadAsync())
+                list.Add(new
+                {
+                    supplierId   = r.GetInt32(0),
+                    supplierName = r.GetString(1),
+                    supplierCode = r.IsDBNull(2) ? null : r.GetString(2),
+                    importPrice  = r.IsDBNull(3) ? 0m : r.GetDecimal(3),
+                });
+
+            return Ok(list);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(503, new { message = "Lỗi kết nối database.", detail = ex.Message });
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // POST /api/suppliers
     // ─────────────────────────────────────────────────────────────────────────
     [HttpPost]

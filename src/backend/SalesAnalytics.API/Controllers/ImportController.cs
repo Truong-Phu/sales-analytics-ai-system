@@ -695,8 +695,10 @@ public class ImportController(IConfiguration cfg, ITenantContext tenant, IAuditL
             customerId = Convert.ToInt32(cusIdObj);
         }
 
-        // Lấy hoặc tạo category mặc định "Nhập khẩu" cho đơn hàng từ sàn
-        int defaultCatId = await GetOrCreateCategoryAsync(conn, "Nhập khẩu", tenant.CompanyId!.Value);
+        // Detect category từ tên sản phẩm (thay vì để "Nhập khẩu")
+        int defaultCatId = GuessProductCategoryId(o.ProductName, conn, tenant.CompanyId!.Value);
+        if (defaultCatId == 0)
+            defaultCatId = await GetOrCreateCategoryAsync(conn, "Thời trang", tenant.CompanyId!.Value);
 
         // Tìm hoặc tạo product theo SKU (scope theo company để tránh xung đột multi-tenant)
         var productSql = """
@@ -840,6 +842,18 @@ public class ImportController(IConfiguration cfg, ITenantContext tenant, IAuditL
         }
 
         return orderAff;
+    }
+
+    // ── Helper: Detect category từ tên sản phẩm (keyword matching) ──────────
+    private static int GuessProductCategoryId(string? name, NpgsqlConnection _, Guid __)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return 0;
+        var n = name.ToLowerInvariant();
+        if (n.Contains("giày") || n.Contains("dép") || n.Contains("boot") || n.Contains("sneaker")) return 58;
+        if (n.Contains("túi") || n.Contains("balo") || n.Contains("ví clutch")) return 59;
+        if (n.Contains("mũ") || n.Contains("khăn") || n.Contains("vòng tay")) return 60;
+        if (n.Contains(" nữ") || n.Contains("đầm") || n.Contains("váy") || n.Contains("chân váy")) return 49;
+        return 48; // Thời trang nam mặc định
     }
 
     // ── Helper: Tìm hoặc tạo category theo tên + company ─────────────────────
