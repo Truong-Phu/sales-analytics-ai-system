@@ -1,7 +1,10 @@
 import { useState, useEffect, useCallback } from 'react'
 import api from '../../api/axios'
+import { useAuth } from '../../hooks/useAuth'
 import MockToast from '../../components/ui/MockToast'
 import DetailDrawer from '../../components/ui/DetailDrawer'
+import { exportToCsv } from '../../utils/format'
+import { useDebounce } from '../../hooks/useDebounce'
 
 const MOCK_SUPPLIERS = [
   { supplierId: 1, supplierCode: 'NCC-001', supplierName: 'Cong ty TNHH Nguyen Thanh', contactName: 'Nguyen Van A', phone: '0901234567', email: 'contact@nguyenthanh.vn', isActive: true },
@@ -315,21 +318,30 @@ function SupplierModal({ supplier, onClose, onSaved }) {
 }
 
 export default function SuppliersManagementPage() {
-  const [rows,       setRows]       = useState([])
-  const [total,      setTotal]      = useState(0)
-  const [page,       setPage]       = useState(1)
-  const [totalPages, setTotalPages] = useState(1)
-  const [loading,    setLoading]    = useState(true)
-  const [isMock,     setIsMock]     = useState(false)
-  const [search,     setSearch]     = useState('')
-  const [modal,      setModal]      = useState(null) // null | 'create' | {supplier}
+  const { user }                    = useAuth()
+  const canEdit                     = ['Owner', 'Manager'].includes(user?.role)
+  const [rows,         setRows]         = useState([])
+  const [total,        setTotal]        = useState(0)
+  const [page,         setPage]         = useState(1)
+  const [totalPages,   setTotalPages]   = useState(1)
+  const [loading,      setLoading]      = useState(true)
+  const [isMock,       setIsMock]       = useState(false)
+  const [search,       setSearch]       = useState('')
+  const [activeFilter, setActiveFilter] = useState('') // '' | 'true' | 'false'
+  const [modal,        setModal]        = useState(null) // null | 'create' | {supplier}
+  const [checkedIds,   setCheckedIds]   = useState(new Set())
+
+  const debouncedSearch = useDebounce(search, 350)
 
   const PAGE_SIZE = 20
 
   const load = useCallback(async (p = 1) => {
     setLoading(true)
     try {
-      const res = await api.get('/api/suppliers', { params: { page: p, pageSize: PAGE_SIZE, search: search || undefined } })
+      const params = { page: p, pageSize: PAGE_SIZE }
+      if (debouncedSearch) params.search = debouncedSearch
+      if (activeFilter !== '') params.active = activeFilter
+      const res = await api.get('/api/suppliers', { params })
       const d = res.data
       setRows(d.items ?? [])
       setTotal(d.total ?? 0)
@@ -343,7 +355,7 @@ export default function SuppliersManagementPage() {
       setPage(1)
       setIsMock(true)
     } finally { setLoading(false) }
-  }, [search])
+  }, [debouncedSearch, activeFilter])
 
   useEffect(() => { load(1) }, [load])
 
@@ -355,6 +367,37 @@ export default function SuppliersManagementPage() {
     } catch (e) {
       alert(e?.response?.data?.message ?? 'Lỗi khi xóa.')
     }
+  }
+
+  // ── Bulk select ───────────────────────────────────────────────────────────────
+  const toggleCheck = (id, e) => {
+    e.stopPropagation()
+    setCheckedIds(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
+  }
+  const toggleAll = () => {
+    const allChecked = rows.length > 0 && rows.every(r => checkedIds.has(r.supplierId))
+    setCheckedIds(allChecked ? new Set() : new Set(rows.map(r => r.supplierId)))
+  }
+  const handleBulkDeactivate = async () => {
+    if (!window.confirm(`Tắt ${checkedIds.size} nhà cung cấp đã chọn?`)) return
+    try {
+      await Promise.all([...checkedIds].map(id => api.delete(`/api/suppliers/${id}`)))
+      setCheckedIds(new Set())
+      load(page)
+    } catch { alert('Có lỗi khi tắt hàng loạt') }
+  }
+
+  // ── Export CSV ────────────────────────────────────────────────────────────────
+  const handleExport = () => {
+    exportToCsv(`nha_cung_cap_${new Date().toISOString().slice(0, 10)}.csv`, rows.map(s => ({
+      'Mã NCC':       s.supplierCode ?? '',
+      'Tên NCC':      s.supplierName ?? '',
+      'Người liên hệ': s.contactName ?? '',
+      'SĐT':          s.phone ?? '',
+      'Email':        s.email ?? '',
+      'Địa chỉ':      s.address ?? '',
+      'Trạng thái':   s.isActive ? 'Hoạt động' : 'Ngừng',
+    })))
   }
 
   return (
@@ -376,29 +419,76 @@ export default function SuppliersManagementPage() {
             Quản lý danh sách nhà cung cấp ({total})
           </p>
         </div>
-        <button onClick={() => setModal('create')}
-          className="px-4 py-2 rounded-lg text-sm text-white font-medium"
-          style={{ background: 'var(--primary-500)' }}>
-          + Thêm NCC
+        <button onClick={handleExport}
+          className="px-3 py-2 rounded-lg text-sm border flex items-center gap-1.5"
+          style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
+          title="Xuất CSV trang hiện tại">
+          <span className="icon text-base">download</span>
+          <span className="hidden sm:inline">Xuất CSV</span>
         </button>
+        {canEdit && (
+          <button onClick={() => setModal('create')}
+            className="px-4 py-2 rounded-lg text-sm text-white font-medium"
+            style={{ background: 'var(--primary-500)' }}>
+            + Thêm NCC
+          </button>
+        )}
       </div>
 
-      {/* Search */}
-      <div className="flex gap-3">
-        <input
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && load(1)}
-          placeholder="Tìm theo tên, SĐT, email..."
-          className="text-sm rounded-lg border px-3 py-1.5 w-72"
-          style={{ background: 'var(--bg-elevated)', borderColor: 'var(--border)', color: 'var(--text-primary)' }}
-        />
-        <button onClick={() => load(1)}
-          className="px-4 py-1.5 rounded-lg text-sm font-medium text-white"
-          style={{ background: 'var(--primary-500)' }}>
-          Tìm
-        </button>
+      {/* Search + filter */}
+      <div className="flex gap-2 flex-wrap items-center">
+        <div className="relative flex-1 min-w-[200px] max-w-sm">
+          <span className="icon absolute left-3 top-1/2 -translate-y-1/2 text-base"
+                style={{ color: 'var(--text-tertiary)' }}>search</span>
+          <input
+            value={search}
+            onChange={e => { setSearch(e.target.value); setPage(1) }}
+            placeholder="Tìm theo tên, SĐT, email..."
+            className="linput !pl-9 text-sm"
+          />
+        </div>
+        <select
+          value={activeFilter}
+          onChange={e => { setActiveFilter(e.target.value); setPage(1) }}
+          className="linput text-sm"
+          style={{ width: 160 }}
+        >
+          <option value="">Tất cả trạng thái</option>
+          <option value="true">Đang hoạt động</option>
+          <option value="false">Ngừng hoạt động</option>
+        </select>
+        {(search || activeFilter) && (
+          <button
+            onClick={() => { setSearch(''); setActiveFilter(''); setPage(1) }}
+            className="lbtn lbtn-secondary !h-9">
+            <span className="icon text-base">refresh</span>
+          </button>
+        )}
       </div>
+
+      {/* Bulk action bar */}
+      {checkedIds.size > 0 && (
+        <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm"
+             style={{ background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.25)' }}>
+          <span className="font-medium" style={{ color: 'var(--primary-600)' }}>
+            Đã chọn {checkedIds.size} nhà cung cấp
+          </span>
+          <div className="flex gap-2 ml-auto">
+            {canEdit && !isMock && (
+              <button onClick={handleBulkDeactivate}
+                      className="lbtn !h-8 !px-3 text-xs font-medium"
+                      style={{ background: 'rgba(239,68,68,0.1)', color: '#EF4444', border: '1px solid rgba(239,68,68,0.3)' }}>
+                <span className="icon text-sm">block</span>
+                Tắt {checkedIds.size} NCC
+              </button>
+            )}
+            <button onClick={() => setCheckedIds(new Set())}
+                    className="lbtn lbtn-secondary !h-8 !px-3 text-xs">
+              Bỏ chọn
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Table */}
       <div className="rounded-xl border overflow-x-auto" style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
@@ -415,6 +505,13 @@ export default function SuppliersManagementPage() {
           <table className="w-full text-sm">
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-elevated)' }}>
+                <th className="px-4 py-3 w-10">
+                  <input type="checkbox"
+                         checked={rows.length > 0 && rows.every(r => checkedIds.has(r.supplierId))}
+                         onChange={toggleAll}
+                         onClick={e => e.stopPropagation()}
+                         className="w-4 h-4 cursor-pointer" />
+                </th>
                 {['Mã NCC', 'Tên NCC', 'Người liên hệ', 'SĐT', 'Email', 'Trạng thái', ''].map(h => (
                   <th key={h} className="px-4 py-3 text-left text-xs font-medium"
                       style={{ color: 'var(--text-tertiary)' }}>{h}</th>
@@ -424,7 +521,12 @@ export default function SuppliersManagementPage() {
             <tbody>
               {rows.map((s, i) => (
                 <tr key={s.supplierId}
-                    style={{ borderBottom: i < rows.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                    style={{ borderBottom: i < rows.length - 1 ? '1px solid var(--border)' : 'none',
+                             background: checkedIds.has(s.supplierId) ? 'rgba(99,102,241,0.04)' : undefined }}>
+                  <td className="px-4 py-3 w-10" onClick={e => toggleCheck(s.supplierId, e)}>
+                    <input type="checkbox" checked={checkedIds.has(s.supplierId)} onChange={() => {}}
+                           className="w-4 h-4 cursor-pointer" />
+                  </td>
                   <td className="px-4 py-3 text-xs" style={{ color: 'var(--text-tertiary)' }}>
                     {s.supplierCode ?? '—'}
                   </td>
@@ -454,9 +556,9 @@ export default function SuppliersManagementPage() {
                       <button onClick={() => setModal(s)}
                         className="text-xs px-2 py-1 rounded border"
                         style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>
-                        Sửa
+                        {canEdit ? 'Sửa' : 'Xem'}
                       </button>
-                      {s.isActive && (
+                      {canEdit && s.isActive && (
                         <button onClick={() => softDelete(s.supplierId)}
                           className="text-xs px-2 py-1 rounded border"
                           style={{ borderColor: 'rgba(239,68,68,0.4)', color: '#EF4444' }}>

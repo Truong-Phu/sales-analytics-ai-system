@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react'
 import api from '../../api/axios'
 import MockToast from '../../components/ui/MockToast'
+import DetailDrawer from '../../components/ui/DetailDrawer'
 
-// ── Modal tạo phiếu nhập kho ──────────────────────────────────────────────────
-function CreateReceiptModal({ onClose, onSaved, initialPoId = '' }) {
+// ── Drawer tạo phiếu nhập kho ─────────────────────────────────────────────────
+function CreateReceiptDrawer({ open, onClose, onSaved, initialPoId = '' }) {
   const [approvedPOs, setApprovedPOs] = useState([])
   const [poId,        setPoId]        = useState(String(initialPoId))
   const [selectedPO,  setSelectedPO]  = useState(null)
@@ -32,7 +33,7 @@ function CreateReceiptModal({ onClose, onSaved, initialPoId = '' }) {
       const res = await api.get(`/api/purchase-orders/${id}`)
       setSelectedPO(res.data.order)
       const its = res.data.items ?? []
-      // Chỉ hiện item còn hàng chưa nhận đủ
+      // Chỉ hiện item còn chưa nhận đủ
       const pending = its.filter(i => (i.remainingQuantity ?? i.quantity - i.receivedQuantity) > 0)
       setPoItems(pending)
       const initQtys = {}
@@ -66,28 +67,51 @@ function CreateReceiptModal({ onClose, onSaved, initialPoId = '' }) {
     } finally { setLoading(false) }
   }
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center p-4 overflow-y-auto"
-         style={{ background: 'rgba(0,0,0,0.5)' }}>
-      <div className="w-full max-w-2xl rounded-xl shadow-xl p-6 space-y-4 my-8"
-           style={{ background: 'var(--bg-card)' }}>
-        <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
-          {selectedPO?.status === 'PARTIALLY_RECEIVED' ? 'Nhập kho đợt tiếp theo' : 'Tạo phiếu nhập kho'}
-        </h2>
+  const drawerTitle = selectedPO?.status === 'PARTIALLY_RECEIVED'
+    ? 'Nhập kho đợt tiếp theo'
+    : 'Tạo phiếu nhập kho'
 
+  const inputStyle = {
+    width: '100%', fontSize: 13, borderRadius: 8, border: '1px solid #e5e7eb',
+    padding: '8px 12px', background: '#f8fafc', color: '#0f172a', boxSizing: 'border-box',
+  }
+  const labelStyle = { display: 'block', fontSize: 12, fontWeight: 500, marginBottom: 6, color: '#64748b' }
+
+  return (
+    <DetailDrawer
+      open={open}
+      onClose={onClose}
+      title={drawerTitle}
+      width={600}
+      footer={
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', justifyContent: 'flex-end' }}>
+          <button onClick={onClose}
+            style={{ padding: '8px 16px', borderRadius: 8, fontSize: 13, border: '1px solid #e5e7eb',
+                     background: 'transparent', color: '#64748b', cursor: 'pointer' }}>
+            Hủy
+          </button>
+          <button onClick={save} disabled={loading || !poId}
+            style={{ padding: '8px 20px', borderRadius: 8, fontSize: 13, fontWeight: 600,
+                     color: '#fff', background: '#6366f1', border: 'none',
+                     cursor: (loading || !poId) ? 'default' : 'pointer',
+                     opacity: (loading || !poId) ? 0.6 : 1 }}>
+            {loading ? 'Đang lưu...' : 'Xác nhận nhập kho'}
+          </button>
+        </div>
+      }
+    >
+      <div style={{ padding: '20px 20px 24px' }}>
         {err && (
-          <div className="text-sm px-3 py-2 rounded-lg"
-               style={{ background: 'rgba(239,68,68,0.1)', color: '#EF4444' }}>{err}</div>
+          <div style={{ marginBottom: 16, padding: '8px 12px', borderRadius: 8,
+                        background: 'rgba(239,68,68,0.1)', color: '#EF4444', fontSize: 13 }}>
+            {err}
+          </div>
         )}
 
-        {/* Chọn PO */}
-        <div>
-          <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-tertiary)' }}>
-            Phiếu nhập hàng đã duyệt *
-          </label>
-          <select value={poId} onChange={e => handlePoChange(e.target.value)}
-            className="w-full text-sm rounded-lg border px-3 py-1.5"
-            style={{ background: 'var(--bg-elevated)', borderColor: 'var(--border)', color: 'var(--text-primary)' }}>
+        {/* Chọn phiếu nhập hàng đã duyệt */}
+        <div style={{ marginBottom: 20 }}>
+          <label style={labelStyle}>Phiếu nhập hàng đã duyệt <span style={{ color: '#EF4444' }}>*</span></label>
+          <select value={poId} onChange={e => handlePoChange(e.target.value)} style={inputStyle}>
             <option value="">-- Chọn phiếu nhập --</option>
             {approvedPOs.map(p => (
               <option key={p.purchaseOrderId} value={p.purchaseOrderId}>
@@ -100,17 +124,17 @@ function CreateReceiptModal({ onClose, onSaved, initialPoId = '' }) {
 
         {/* Danh sách sản phẩm còn thiếu */}
         {poItems.length > 0 && (
-          <div>
-            <p className="text-xs font-medium mb-2" style={{ color: 'var(--text-tertiary)' }}>
+          <div style={{ marginBottom: 20 }}>
+            <label style={labelStyle}>
               Sản phẩm còn thiếu — nhập số lượng thực nhận đợt này
-            </p>
-            <div className="rounded-lg border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
-              <table className="w-full text-xs">
+            </label>
+            <div style={{ border: '1px solid #e5e7eb', borderRadius: 10, overflow: 'hidden' }}>
+              <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>
                 <thead>
-                  <tr style={{ background: 'var(--bg-elevated)', borderBottom: '1px solid var(--border)' }}>
+                  <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e5e7eb' }}>
                     {['Sản phẩm', 'Còn thiếu', 'Nhận đợt này'].map(h => (
-                      <th key={h} className="px-3 py-2 text-left font-medium"
-                          style={{ color: 'var(--text-tertiary)' }}>{h}</th>
+                      <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontSize: 12,
+                                           fontWeight: 500, color: '#64748b' }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -119,20 +143,20 @@ function CreateReceiptModal({ onClose, onSaved, initialPoId = '' }) {
                     const remaining = item.remainingQuantity ?? (item.quantity - item.receivedQuantity)
                     return (
                       <tr key={item.purchaseOrderItemId}
-                          style={{ borderBottom: idx < poItems.length - 1 ? '1px solid var(--border)' : 'none' }}>
-                        <td className="px-3 py-2 font-medium" style={{ color: 'var(--text-primary)' }}>
+                          style={{ borderBottom: idx < poItems.length - 1 ? '1px solid #f1f5f9' : 'none' }}>
+                        <td style={{ padding: '10px 14px', fontWeight: 500, color: '#0f172a' }}>
                           {item.productName}
                         </td>
-                        <td className="px-3 py-2 tabular-nums font-semibold" style={{ color: '#F59E0B' }}>
+                        <td style={{ padding: '10px 14px', fontWeight: 600, color: '#F59E0B', tabularNums: true }}>
                           {remaining}
                         </td>
-                        <td className="px-3 py-2">
+                        <td style={{ padding: '8px 14px' }}>
                           <input
                             type="number" min="0" max={remaining}
                             value={receiveQtys[item.purchaseOrderItemId] ?? 0}
                             onChange={e => setReceiveQtys(q => ({ ...q, [item.purchaseOrderItemId]: e.target.value }))}
-                            className="w-20 text-sm rounded-lg border px-2 py-1 text-center"
-                            style={{ background: 'var(--bg-elevated)', borderColor: 'var(--border)', color: 'var(--text-primary)' }}
+                            style={{ width: 80, fontSize: 13, borderRadius: 7, border: '1px solid #e5e7eb',
+                                     padding: '6px 8px', background: '#ffffff', color: '#0f172a', textAlign: 'center' }}
                           />
                         </td>
                       </tr>
@@ -146,42 +170,31 @@ function CreateReceiptModal({ onClose, onSaved, initialPoId = '' }) {
 
         {/* Ghi chú */}
         <div>
-          <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-tertiary)' }}>Ghi chú</label>
+          <label style={labelStyle}>Ghi chú</label>
           <textarea rows={2} value={note} onChange={e => setNote(e.target.value)}
-            className="w-full text-sm rounded-lg border px-3 py-1.5 resize-none"
-            style={{ background: 'var(--bg-elevated)', borderColor: 'var(--border)', color: 'var(--text-primary)' }} />
-        </div>
-
-        <div className="flex gap-2 justify-end pt-2">
-          <button onClick={onClose} className="px-4 py-1.5 rounded-lg text-sm border"
-            style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>Hủy</button>
-          <button onClick={save} disabled={loading || !poId}
-            className="px-4 py-1.5 rounded-lg text-sm text-white font-medium disabled:opacity-60"
-            style={{ background: 'var(--primary-500)' }}>
-            {loading ? 'Đang lưu...' : 'Xác nhận nhập kho'}
-          </button>
+            style={{ ...inputStyle, resize: 'none' }} />
         </div>
       </div>
-    </div>
+    </DetailDrawer>
   )
 }
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function GoodsReceiptsPage() {
-  const [rows,         setRows]         = useState([])
-  const [total,        setTotal]        = useState(0)
-  const [page,         setPage]         = useState(1)
-  const [totalPages,   setTotalPages]   = useState(1)
-  const [loading,      setLoading]      = useState(true)
-  const [isMock,       setIsMock]       = useState(false)
-  const [showCreate,   setShowCreate]   = useState(false)
-  const [initialPoId,  setInitialPoId]  = useState('')
+  const [rows,          setRows]          = useState([])
+  const [total,         setTotal]         = useState(0)
+  const [page,          setPage]          = useState(1)
+  const [totalPages,    setTotalPages]    = useState(1)
+  const [loading,       setLoading]       = useState(true)
+  const [isMock,        setIsMock]        = useState(false)
+  const [showCreate,    setShowCreate]    = useState(false)
+  const [initialPoId,   setInitialPoId]   = useState('')
   // Expandable detail
-  const [expandedId,   setExpandedId]   = useState(null)
-  const [detailCache,  setDetailCache]  = useState({})
-  const [detailLoading,setDetailLoading]= useState(null)
+  const [expandedId,    setExpandedId]    = useState(null)
+  const [detailCache,   setDetailCache]   = useState({})
+  const [detailLoading, setDetailLoading] = useState(null)
   // POs chờ nhập
-  const [pendingPOs,   setPendingPOs]   = useState([])
+  const [pendingPOs,    setPendingPOs]    = useState([])
 
   const PAGE_SIZE = 20
 
@@ -202,9 +215,7 @@ export default function GoodsReceiptsPage() {
 
   const loadPendingPOs = useCallback(async () => {
     try {
-      const res = await api.get('/api/purchase-orders', {
-        params: { pageSize: 50 }
-      })
+      const res = await api.get('/api/purchase-orders', { params: { pageSize: 50 } })
       const pending = (res.data.items ?? []).filter(
         p => ['APPROVED', 'PARTIALLY_RECEIVED'].includes(p.status)
       )
@@ -231,18 +242,20 @@ export default function GoodsReceiptsPage() {
     setShowCreate(true)
   }
 
-  const fmtDate = (iso) => iso ? new Date(iso).toLocaleString('vi-VN', { dateStyle: 'short', timeStyle: 'short' }) : '—'
+  const fmtDate = (iso) => iso
+    ? new Date(iso).toLocaleString('vi-VN', { dateStyle: 'short', timeStyle: 'short' })
+    : '—'
 
   return (
     <div className="p-4 md:p-6 space-y-4">
       {isMock && <MockToast />}
-      {showCreate && (
-        <CreateReceiptModal
-          initialPoId={initialPoId}
-          onClose={() => setShowCreate(false)}
-          onSaved={() => { setShowCreate(false); load(1); loadPendingPOs() }}
-        />
-      )}
+
+      <CreateReceiptDrawer
+        open={showCreate}
+        initialPoId={initialPoId}
+        onClose={() => setShowCreate(false)}
+        onSaved={() => { setShowCreate(false); load(1); loadPendingPOs() }}
+      />
 
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-2">
@@ -259,7 +272,7 @@ export default function GoodsReceiptsPage() {
         </button>
       </div>
 
-      {/* ── Phiếu đặt hàng đang chờ nhập ── */}
+      {/* Phiếu đặt hàng đang chờ nhập */}
       {pendingPOs.length > 0 && (
         <div className="rounded-xl border p-4 space-y-2"
              style={{ borderColor: 'rgba(245,158,11,0.4)', background: 'rgba(245,158,11,0.04)' }}>
@@ -305,7 +318,7 @@ export default function GoodsReceiptsPage() {
         </div>
       )}
 
-      {/* ── Danh sách phiếu nhập kho ── */}
+      {/* Danh sách phiếu nhập kho */}
       <div className="rounded-xl border overflow-x-auto"
            style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
         {loading ? (
@@ -372,15 +385,15 @@ export default function GoodsReceiptsPage() {
                     {/* Detail row — sản phẩm đã nhận */}
                     {isExpanded && (
                       <tr key={`${gr.goodsReceiptId}-detail`}
-                          style={{ borderBottom: !isLast ? '1px solid var(--border)' : 'none',
-                                   background: 'var(--bg-elevated)' }}>
+                          style={{
+                            borderBottom: !isLast ? '1px solid var(--border)' : 'none',
+                            background: 'var(--bg-elevated)',
+                          }}>
                         <td colSpan={7} className="px-8 py-3">
                           {detailLoading === gr.goodsReceiptId ? (
                             <div className="text-xs py-2" style={{ color: 'var(--text-tertiary)' }}>Đang tải...</div>
                           ) : items.length === 0 ? (
-                            <div className="text-xs py-2" style={{ color: 'var(--text-tertiary)' }}>
-                              Không có chi tiết.
-                            </div>
+                            <div className="text-xs py-2" style={{ color: 'var(--text-tertiary)' }}>Không có chi tiết.</div>
                           ) : (
                             <table className="w-full text-xs">
                               <thead>
@@ -397,8 +410,7 @@ export default function GoodsReceiptsPage() {
                                     <td className="py-1.5 pr-4 font-medium" style={{ color: 'var(--text-primary)' }}>
                                       {it.productName}
                                     </td>
-                                    <td className="py-1.5 pr-4 tabular-nums font-semibold"
-                                        style={{ color: '#22C55E' }}>
+                                    <td className="py-1.5 pr-4 tabular-nums font-semibold" style={{ color: '#22C55E' }}>
                                       +{it.receivedQuantity}
                                     </td>
                                     <td className="py-1.5 pr-4 tabular-nums" style={{ color: 'var(--text-secondary)' }}>

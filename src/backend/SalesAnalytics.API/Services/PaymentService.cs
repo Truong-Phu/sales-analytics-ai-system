@@ -350,6 +350,70 @@ public class PaymentService
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // Xử lý webhook thật từ SePay (chuyển khoản thực tế)
+    // ─────────────────────────────────────────────────────────────────────────
+    public async Task<bool> ProcessRealSePayAsync(
+        string paymentCode, decimal amount, string? referenceCode, string sePayId)
+    {
+        var log = new PaymentWebhookLog
+        {
+            Provider        = "SEPAY_REAL",
+            Payload         = JsonSerializer.Serialize(new { paymentCode, amount, referenceCode, sePayId }),
+            ProcessedStatus = "PROCESSING",
+        };
+        _db.PaymentWebhookLogs.Add(log);
+
+        var tx = await _db.PaymentTransactions
+            .Include(t => t.Order)
+            .Include(t => t.Invoice)
+            .Where(t => t.PaymentCode == paymentCode)
+            .FirstOrDefaultAsync();
+
+        if (tx is null)
+        {
+            log.ProcessedStatus = "FAILED";
+            log.Notes           = "PaymentCode không tồn tại";
+            await _db.SaveChangesAsync();
+            return false;
+        }
+
+        if (tx.Status == PaymentStatus.Paid)
+        {
+            log.ProcessedStatus = "IGNORED";
+            log.Notes           = "Đã thanh toán trước đó (idempotency)";
+            await _db.SaveChangesAsync();
+            return true;
+        }
+
+        if (tx.Amount != amount)
+        {
+            log.ProcessedStatus = "FAILED";
+            log.Notes           = $"Số tiền không khớp: expected={tx.Amount}, got={amount}";
+            await _db.SaveChangesAsync();
+            return false;
+        }
+
+        tx.Status          = PaymentStatus.Paid;
+        tx.PaidAt          = DateTime.UtcNow;
+        tx.TransactionCode = referenceCode ?? sePayId;
+        tx.GatewayResponse = JsonSerializer.Serialize(
+            new { provider = "SEPAY", referenceCode, sePayId, amount });
+
+        if (tx.Order is not null)
+        {
+            tx.Order.PaymentStatus = "PAID";
+            tx.Order.PaidAt        = DateTime.UtcNow;
+            tx.Order.UpdatedAt     = DateTime.UtcNow;
+        }
+
+        log.ProcessedStatus = "SUCCESS";
+        await _db.SaveChangesAsync();
+
+        _logger.LogInformation("SePay webhook OK – paymentCode={Code}, sePayId={Id}", paymentCode, sePayId);
+        return true;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // Lấy giao dịch thanh toán hiện tại của đơn hàng
     // ─────────────────────────────────────────────────────────────────────────
     public async Task<PaymentTransactionDto?> GetByOrderIdAsync(int orderId, Guid tenantId)

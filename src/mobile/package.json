@@ -3,9 +3,7 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "get-ip": "node get-ip.js",
     "start": "node get-ip.js && npx expo start",
-    "start:tunnel": "node get-ip.js && npx expo start --tunnel",
     "android": "node get-ip.js && npx expo start --android",
     "ios": "node get-ip.js && npx expo start --ios",
     "web": "node get-ip.js && npx expo start --web"

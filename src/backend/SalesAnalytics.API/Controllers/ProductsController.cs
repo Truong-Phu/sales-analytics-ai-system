@@ -166,7 +166,10 @@ public class ProductsController(
                 FROM public.categories
                 WHERE is_active = TRUE
                   AND (company_id = @cid::uuid OR company_id IS NULL)
-                ORDER BY level, category_name
+                ORDER BY
+                    CASE WHEN parent_id IS NULL THEN category_id ELSE parent_id END,
+                    level,
+                    category_name
                 """;
 
             var cats = new List<object>();
@@ -194,6 +197,56 @@ public class ProductsController(
     // ══════════════════════════════════════════════════════════════════════════
     // 2. OLTP – CRUD qua Repository Pattern (public.products)
     // ══════════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// [OLTP] Lấy danh sách biến thể (size/màu) của một sản phẩm.
+    /// Dùng trong form tạo phiếu nhập hàng để chọn variation cụ thể.
+    /// </summary>
+    [HttpGet("{id:int}/variations")]
+    [Authorize(Roles = "Owner,Manager,Staff,DataIT,SuperAdmin")]
+    public async Task<IActionResult> GetVariations(int id)
+    {
+        var companyId = tenant.CompanyId;
+        if (companyId is null) return Forbid();
+
+        try
+        {
+            await using var conn = new NpgsqlConnection(_connStr);
+            await conn.OpenAsync();
+
+            await using var cmd = new NpgsqlCommand("""
+                SELECT id, sku, variation_name, attribute_color, attribute_size,
+                       sale_price, original_price, stock_quantity, image_url, is_active
+                FROM public.product_variations
+                WHERE product_id = @pid AND company_id = @cid::uuid AND is_active = TRUE
+                ORDER BY attribute_size, attribute_color, variation_name
+                """, conn);
+            cmd.Parameters.AddWithValue("pid", id);
+            cmd.Parameters.AddWithValue("cid", companyId.Value.ToString());
+
+            var list = new List<object>();
+            await using var r = await cmd.ExecuteReaderAsync();
+            while (await r.ReadAsync())
+                list.Add(new
+                {
+                    variationId    = r.GetInt32(0),
+                    sku            = r.GetString(1),
+                    variationName  = r.IsDBNull(2) ? null : r.GetString(2),
+                    color          = r.IsDBNull(3) ? null : r.GetString(3),
+                    size           = r.IsDBNull(4) ? null : r.GetString(4),
+                    salePrice      = r.IsDBNull(5) ? (decimal?)null : r.GetDecimal(5),
+                    originalPrice  = r.IsDBNull(6) ? (decimal?)null : r.GetDecimal(6),
+                    stockQuantity  = r.GetInt32(7),
+                    imageUrl       = r.IsDBNull(8) ? null : r.GetString(8),
+                });
+
+            return Ok(new { success = true, data = list });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(503, new { message = "Lỗi kết nối database.", detail = ex.Message });
+        }
+    }
 
     /// <summary>
     /// [OLTP] Danh sách sản phẩm với phân trang và tìm kiếm (EF Core, public schema).

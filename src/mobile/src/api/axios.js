@@ -8,7 +8,11 @@ const BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://192.168.1.10:5136'
 const api = axios.create({
   baseURL: BASE_URL,
   timeout: 30_000,
-  headers: { 'Content-Type': 'application/json' },
+  headers: {
+    'Content-Type': 'application/json',
+    // Bypass ngrok browser warning page khi dùng ngrok tunnel trong dev
+    'ngrok-skip-browser-warning': 'true',
+  },
 })
 
 // Đính kèm access token vào mọi request

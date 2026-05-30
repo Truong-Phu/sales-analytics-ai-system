@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import MockToast from '../../components/ui/MockToast'
 import { getInventoryIntelligence } from '../../api/aiApi'
 
@@ -13,6 +13,7 @@ const STATUS_CONFIG = {
 }
 
 export default function InventoryPage() {
+  const navigate = useNavigate()
   const [data,    setData]    = useState(null)
   const [loading, setLoading] = useState(true)
   const [isMock,  setIsMock]  = useState(false)
@@ -122,7 +123,7 @@ export default function InventoryPage() {
                     </div>
                     <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>{item.message}</p>
                   </div>
-                  <div className="flex gap-4 text-right text-sm shrink-0">
+                  <div className="flex items-center gap-4 text-right text-sm shrink-0">
                     {[
                       { label: 'Tồn kho', value: item.current_stock, colored: true },
                       { label: 'Bán/ngày', value: item.avg_daily_sales },
@@ -136,6 +137,14 @@ export default function InventoryPage() {
                         </div>
                       </div>
                     ))}
+                    {item.reorder_qty > 0 && (
+                      <button
+                        onClick={() => navigate(`/purchase-orders?productId=${item.product_id}&productName=${encodeURIComponent(item.product_name)}`)}
+                        className="text-xs px-3 py-1.5 rounded-lg font-medium whitespace-nowrap"
+                        style={{ background: 'rgba(99,102,241,0.12)', color: '#6366F1', border: '1px solid rgba(99,102,241,0.25)' }}>
+                        + Nhập hàng
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>

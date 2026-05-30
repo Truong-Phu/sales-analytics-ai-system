@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using SalesAnalytics.API.Services;
 using SalesAnalytics.Core.DTOs;
 using SalesAnalytics.Core.Enums;
@@ -23,6 +24,7 @@ public class PaymentController : ControllerBase
     private readonly ITenantContext             _tenant;
     private readonly AppDbContext               _db;
     private readonly ILogger<PaymentController> _logger;
+    private readonly IConfiguration             _config;
 
     public PaymentController(
         PaymentService payment,
@@ -30,7 +32,8 @@ public class PaymentController : ControllerBase
         VietQRService vietqr,
         ITenantContext tenant,
         AppDbContext db,
-        ILogger<PaymentController> logger)
+        ILogger<PaymentController> logger,
+        IConfiguration config)
     {
         _payment    = payment;
         _subPayment = subPayment;
@@ -38,6 +41,7 @@ public class PaymentController : ControllerBase
         _tenant     = tenant;
         _db         = db;
         _logger     = logger;
+        _config     = config;
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -207,6 +211,43 @@ public class PaymentController : ControllerBase
     {
         await _subPayment.ActivateAsync(txId);
         return Ok(new { success = true, message = "Đã kích hoạt gói dịch vụ" });
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // POST /api/payment/webhook/sepay
+    // Webhook thật từ SePay – AllowAnonymous, xác thực bằng API key header
+    // SePay gửi: Authorization: Apikey {SePay:ApiKey}
+    // ─────────────────────────────────────────────────────────────────────────
+    [HttpPost("webhook/sepay")]
+    [AllowAnonymous]
+    public async Task<IActionResult> SePayWebhook([FromBody] SepayWebhookPayload payload)
+    {
+        // Xác thực API key từ header Authorization
+        var authHeader  = Request.Headers["Authorization"].FirstOrDefault() ?? "";
+        var expectedKey = _config["SePay:ApiKey"];
+
+        if (string.IsNullOrEmpty(expectedKey) || authHeader != $"Apikey {expectedKey}")
+        {
+            _logger.LogWarning("SePay webhook – API key không hợp lệ: {Header}", authHeader);
+            return Unauthorized(new { success = false });
+        }
+
+        // Chỉ xử lý giao dịch tiền vào (in)
+        if (!string.Equals(payload.TransferType, "in", StringComparison.OrdinalIgnoreCase))
+            return Ok(new { success = true });
+
+        // Code = PaymentCode hệ thống (vd: "DH123")
+        if (string.IsNullOrEmpty(payload.Code))
+        {
+            _logger.LogWarning("SePay webhook – thiếu code trong payload, sePayId={Id}", payload.Id);
+            return Ok(new { success = true });
+        }
+
+        await _payment.ProcessRealSePayAsync(
+            payload.Code, payload.TransferAmount,
+            payload.ReferenceCode, payload.Id.ToString());
+
+        return Ok(new { success = true });
     }
 
     // ─────────────────────────────────────────────────────────────────────────

@@ -53,11 +53,12 @@ const normalizeOrder = (o) => ({
   })),
 })
 
-export const getOrders = async (params = {}) => {
+export const getOrders = async (params = {}, config = {}) => {
   // pageSize thay vì limit cho OLTP endpoint
   const { limit, ...rest } = params
   const res = await api.get('/api/orders/oltp', {
     params: { ...rest, pageSize: limit ?? 20 },
+    ...config, // forward signal để AbortController hoạt động
   }).then(r => r.data)
   return {
     items:      (res.data ?? res.items ?? []).map(normalizeOrder),

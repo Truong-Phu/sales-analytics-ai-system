@@ -421,6 +421,7 @@ public class OrdersController(
                 // Hoàn kho + ghi log inventory transaction (chỉ khi đơn đã trừ kho trước đó)
                 if (order.IsStockDeducted)
                 {
+                    // Hoàn kho sản phẩm tổng + ghi inventory_transaction
                     await using var stockCmd = new NpgsqlCommand("""
                         WITH upd AS (
                             UPDATE public.products p
@@ -445,6 +446,20 @@ public class OrdersController(
                     stockCmd.Parameters.AddWithValue("cid",       order.CompanyId!.Value.ToString());
                     stockCmd.Parameters.AddWithValue("createdBy", cancelUid);
                     await stockCmd.ExecuteNonQueryAsync();
+
+                    // Hoàn kho biến thể (variation) cho các item có variation_id
+                    await using var varStockCmd = new NpgsqlCommand("""
+                        UPDATE public.product_variations pv
+                        SET stock_quantity = pv.stock_quantity + oi.quantity,
+                            updated_at = NOW()
+                        FROM public.order_items oi
+                        WHERE oi.order_id = @orderId
+                          AND oi.variation_id = pv.id
+                          AND oi.variation_id IS NOT NULL
+                        """, conn, tx);
+                    varStockCmd.Parameters.AddWithValue("orderId", id);
+                    await varStockCmd.ExecuteNonQueryAsync();
+
                     stockRefunded = true;
                 }
 
@@ -523,6 +538,7 @@ public class OrdersController(
                 // Hoàn kho + ghi RETURN_REFUND (chỉ khi đơn đã trừ kho)
                 if (order.IsStockDeducted)
                 {
+                    // Hoàn kho sản phẩm tổng + ghi inventory_transaction
                     await using var stockCmd = new NpgsqlCommand("""
                         WITH upd AS (
                             UPDATE public.products p
@@ -547,6 +563,20 @@ public class OrdersController(
                     stockCmd.Parameters.AddWithValue("cid",       order.CompanyId!.Value.ToString());
                     stockCmd.Parameters.AddWithValue("createdBy", retUid);
                     await stockCmd.ExecuteNonQueryAsync();
+
+                    // Hoàn kho biến thể (variation) cho các item có variation_id
+                    await using var varStockCmd = new NpgsqlCommand("""
+                        UPDATE public.product_variations pv
+                        SET stock_quantity = pv.stock_quantity + oi.quantity,
+                            updated_at = NOW()
+                        FROM public.order_items oi
+                        WHERE oi.order_id = @orderId
+                          AND oi.variation_id = pv.id
+                          AND oi.variation_id IS NOT NULL
+                        """, conn, tx);
+                    varStockCmd.Parameters.AddWithValue("orderId", id);
+                    await varStockCmd.ExecuteNonQueryAsync();
+
                     stockRestored = true;
                 }
 

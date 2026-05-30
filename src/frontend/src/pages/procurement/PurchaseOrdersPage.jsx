@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import api from '../../api/axios'
 import MockToast from '../../components/ui/MockToast'
+import DetailDrawer from '../../components/ui/DetailDrawer'
 
-// Phí sàn — dùng để tính giá bán tối thiểu tư vấn
 const PLATFORMS = [
   { name: 'Shopee', rate: 0.040 },
   { name: 'TikTok', rate: 0.025 },
@@ -12,11 +13,11 @@ const calcMin = (ip, rate) => ip > 0 ? Math.ceil(ip / (1 - rate) / 1000) * 1000 
 
 const STATUS_CFG = {
   DRAFT:               { label: 'Nháp',          bg: 'rgba(100,116,139,0.1)', text: '#64748B' },
-  PENDING:             { label: 'Chờ duyệt',     bg: 'rgba(245,158,11,0.1)', text: '#F59E0B' },
-  APPROVED:            { label: 'Đã duyệt',      bg: 'rgba(59,130,246,0.1)', text: '#3B82F6' },
-  PARTIALLY_RECEIVED:  { label: 'Nhận một phần', bg: 'rgba(99,102,241,0.1)', text: '#6366F1' },
-  RECEIVED:            { label: 'Đã nhận đủ',   bg: 'rgba(34,197,94,0.1)',  text: '#22C55E' },
-  CANCELLED:           { label: 'Đã hủy',        bg: 'rgba(239,68,68,0.1)', text: '#EF4444' },
+  PENDING:             { label: 'Chờ duyệt',     bg: 'rgba(245,158,11,0.1)',  text: '#F59E0B' },
+  APPROVED:            { label: 'Đã duyệt',      bg: 'rgba(59,130,246,0.1)',  text: '#3B82F6' },
+  PARTIALLY_RECEIVED:  { label: 'Nhận một phần', bg: 'rgba(99,102,241,0.1)',  text: '#6366F1' },
+  RECEIVED:            { label: 'Đã nhận đủ',    bg: 'rgba(34,197,94,0.1)',   text: '#22C55E' },
+  CANCELLED:           { label: 'Đã hủy',        bg: 'rgba(239,68,68,0.1)',   text: '#EF4444' },
 }
 
 function StatusBadge({ status }) {
@@ -27,63 +28,120 @@ function StatusBadge({ status }) {
   )
 }
 
-function CreateModal({ onClose, onSaved }) {
-  const [suppliers,    setSuppliers]    = useState([])
-  const [allProducts,  setAllProducts]  = useState([])
-  const [suppProducts, setSuppProducts] = useState(null)   // null = chưa lọc
-  const [suppId,       setSuppId]       = useState('')
-  const [note,         setNote]         = useState('')
-  const [items,        setItems]        = useState([{ productId: '', quantity: 1, importPrice: 0 }])
-  const [loading,      setLoading]      = useState(false)
-  const [loadingProds, setLoadingProds] = useState(false)
-  const [err,          setErr]          = useState('')
+// ── Drawer tạo phiếu nhập hàng ────────────────────────────────────────────────
+// Flow mới: chọn sản phẩm trước → NCC tự lọc theo sản phẩm đã chọn
+function CreateDrawer({ open, onClose, onSaved, defaultProductId = '', defaultProductName = '' }) {
+  const [allProducts,   setAllProducts]   = useState([])
+  const [allSuppliers,  setAllSuppliers]  = useState([])
+  const [filteredSupps, setFilteredSupps] = useState(null)
+  const [variationsMap, setVariationsMap] = useState({}) // { productId: [variations] }
+  const [suppId,        setSuppId]        = useState('')
+  const [note,          setNote]          = useState('')
+  const [items,         setItems]         = useState([{ productId: '', variationId: '', quantity: 1, importPrice: 0 }])
+  const [loading,       setLoading]       = useState(false)
+  const [loadingSupps,  setLoadingSupps]  = useState(false)
+  const [err,           setErr]           = useState('')
 
-  // Ưu tiên SP của NCC; nếu NCC không có SP nào được liên kết thì hiện toàn bộ SP
-  const products = (suppProducts && suppProducts.length > 0) ? suppProducts : allProducts
-
+  // Load danh sách NCC + tất cả sản phẩm một lần khi mount
   useEffect(() => {
     api.get('/api/suppliers', { params: { active: true, pageSize: 100 } })
-       .then(r => setSuppliers(r.data.items ?? [])).catch(() => {})
+       .then(r => setAllSuppliers(r.data.items ?? [])).catch(() => {})
     api.get('/api/products/oltp', { params: { pageSize: 200 } })
        .then(r => setAllProducts(r.data.data ?? [])).catch(() => {})
   }, [])
 
-  // Khi chọn NCC → tải SP của NCC đó
+  // Reset / pre-fill khi drawer mở
   useEffect(() => {
-    if (!suppId) { setSuppProducts(null); return }
-    setLoadingProds(true)
-    setSuppProducts(null)
-    setItems([{ productId: '', quantity: 1, importPrice: 0 }])
-    api.get(`/api/suppliers/${suppId}/products`)
-       .then(r => setSuppProducts(r.data ?? []))
-       .catch(() => setSuppProducts(null))
-       .finally(() => setLoadingProds(false))
-  }, [suppId])
+    if (!open) return
+    const pid = defaultProductId ? String(defaultProductId) : ''
+    setItems([{ productId: pid, quantity: 1, importPrice: 0 }])
+    setSuppId('')
+    setNote('')
+    setErr('')
+    setFilteredSupps(null)
+  }, [open, defaultProductId])
 
-  const addItem    = () => setItems(it => [...it, { productId: '', quantity: 1, importPrice: 0 }])
+  // Sau khi allProducts load, auto-fill giá cho defaultProductId
+  useEffect(() => {
+    if (!defaultProductId || !allProducts.length) return
+    const prod = allProducts.find(p => String(p.productId) === String(defaultProductId))
+    if (!prod) return
+    const autoPrice = prod.importPrice > 0 ? prod.importPrice : prod.costPrice > 0 ? prod.costPrice : 0
+    if (!autoPrice) return
+    setItems(its => its.map((it, i) =>
+      i === 0 && String(it.productId) === String(defaultProductId) && it.importPrice === 0
+        ? { ...it, importPrice: autoPrice } : it
+    ))
+  }, [allProducts, defaultProductId])
+
+  // Khi sản phẩm đầu tiên thay đổi → fetch NCC cung cấp sản phẩm đó
+  const leadProductId = items[0]?.productId || ''
+  useEffect(() => {
+    if (!leadProductId) { setFilteredSupps(null); return }
+    setLoadingSupps(true)
+    api.get(`/api/suppliers/by-product/${leadProductId}`)
+       .then(r => setFilteredSupps(r.data ?? []))
+       .catch(() => setFilteredSupps(null))
+       .finally(() => setLoadingSupps(false))
+  }, [leadProductId])
+
+  const addItem    = () => setItems(it => [...it, { productId: '', variationId: '', quantity: 1, importPrice: 0 }])
   const removeItem = (i) => setItems(it => it.filter((_, j) => j !== i))
   const setItem    = (i, k, v) => setItems(it => it.map((x, j) => j === i ? { ...x, [k]: v } : x))
 
-  // Khi chọn sản phẩm → auto-fill giá nhập từ import_price của NCC (ưu tiên), fallback cost_price
+  // Khi chọn sản phẩm → auto-fill giá, reset variation, fetch variations
   const handleProductChange = (i, productId) => {
-    const pool = (suppProducts && suppProducts.length > 0) ? suppProducts : allProducts
-    const prod = pool.find(p => String(p.productId) === String(productId))
-    const autoPrice = (prod?.importPrice > 0) ? prod.importPrice
-                    : (prod?.costPrice   > 0) ? prod.costPrice
-                    : 0
-    setItems(it => it.map((x, j) => j !== i ? x : { ...x, productId, importPrice: autoPrice }))
+    const prod = allProducts.find(p => String(p.productId) === String(productId))
+    const autoPrice = prod?.importPrice > 0 ? prod.importPrice
+                    : prod?.costPrice   > 0 ? prod.costPrice : 0
+    setItems(it => it.map((x, j) => j !== i ? x : { ...x, productId, variationId: '', importPrice: autoPrice }))
+
+    // Fetch variations nếu chưa có
+    if (productId && !variationsMap[productId]) {
+      api.get(`/api/products/${productId}/variations`)
+         .then(r => setVariationsMap(m => ({ ...m, [productId]: r.data.data ?? [] })))
+         .catch(() => setVariationsMap(m => ({ ...m, [productId]: [] })))
+    }
   }
 
-  const total = items.reduce((s, i) => s + (Number(i.quantity) || 0) * (Number(i.importPrice) || 0), 0)
+  // Khi chọn NCC → nếu NCC có giá nhập riêng cho sản phẩm đầu → auto-fill giá
+  const handleSuppChange = (newSuppId) => {
+    setSuppId(newSuppId)
+    if (!newSuppId || !filteredSupps?.length) return
+    const suppData = filteredSupps.find(s => String(s.supplierId) === String(newSuppId))
+    if (suppData?.importPrice > 0)
+      setItems(its => its.map((it, idx) => idx === 0 ? { ...it, importPrice: suppData.importPrice } : it))
+  }
+
+  // NCC hiển thị: ưu tiên danh sách đã lọc; fallback toàn bộ NCC
+  const displaySuppliers = (filteredSupps && filteredSupps.length > 0) ? filteredSupps : allSuppliers
+
+  // Hint text bên cạnh label NCC
+  const suppHint = !leadProductId
+    ? 'Chọn sản phẩm trước để lọc NCC'
+    : loadingSupps
+      ? 'Đang tải...'
+      : filteredSupps === null || filteredSupps.length === 0
+        ? 'Hiển thị tất cả NCC'
+        : `${filteredSupps.length} NCC cung cấp SP này`
+
+  const suppHintColor = filteredSupps?.length > 0 ? '#22C55E' : '#94a3b8'
+
+  const total = items.reduce((s, it) => s + (Number(it.quantity) || 0) * (Number(it.importPrice) || 0), 0)
 
   const save = async () => {
     if (!suppId) { setErr('Chọn nhà cung cấp.'); return }
-    if (items.some(i => !i.productId || i.quantity <= 0)) { setErr('Kiểm tra lại sản phẩm và số lượng.'); return }
+    if (items.some(it => !it.productId || it.quantity <= 0)) { setErr('Kiểm tra lại sản phẩm và số lượng.'); return }
     setLoading(true); setErr('')
     try {
       await api.post('/api/purchase-orders', {
         supplierId: Number(suppId), note: note || null,
-        items: items.map(i => ({ productId: Number(i.productId), quantity: Number(i.quantity), importPrice: Number(i.importPrice) })),
+        items: items.map(it => ({
+          productId:   Number(it.productId),
+          variationId: it.variationId ? Number(it.variationId) : null,
+          quantity:    Number(it.quantity),
+          importPrice: Number(it.importPrice),
+        })),
       })
       onSaved()
     } catch (e) {
@@ -91,119 +149,201 @@ function CreateModal({ onClose, onSaved }) {
     } finally { setLoading(false) }
   }
 
+  const inputStyle = {
+    width: '100%', fontSize: 13, borderRadius: 8, border: '1px solid #e5e7eb',
+    padding: '8px 12px', background: '#f8fafc', color: '#0f172a', boxSizing: 'border-box',
+  }
+  const labelStyle = { display: 'block', fontSize: 12, fontWeight: 500, color: '#64748b' }
+
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center p-4 overflow-y-auto"
-         style={{ background: 'rgba(0,0,0,0.5)' }}>
-      <div className="w-full max-w-2xl rounded-xl shadow-xl p-6 space-y-4 my-8"
-           style={{ background: 'var(--bg-card)' }}>
-        <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>Tạo phiếu nhập hàng</h2>
-
-        {err && <div className="text-sm px-3 py-2 rounded-lg" style={{ background: 'rgba(239,68,68,0.1)', color: '#EF4444' }}>{err}</div>}
-
-        <div className="grid grid-cols-2 gap-3">
-          <div className="col-span-2">
-            <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-tertiary)' }}>Nhà cung cấp *</label>
-            <select value={suppId} onChange={e => setSuppId(e.target.value)}
-              className="w-full text-sm rounded-lg border px-3 py-1.5"
-              style={{ background: 'var(--bg-elevated)', borderColor: 'var(--border)', color: 'var(--text-primary)' }}>
-              <option value="">-- Chọn nhà cung cấp --</option>
-              {suppliers.map(s => <option key={s.supplierId} value={s.supplierId}>{s.supplierName}</option>)}
-            </select>
-          </div>
-          <div className="col-span-2">
-            <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-tertiary)' }}>Ghi chú</label>
-            <textarea rows={2} value={note} onChange={e => setNote(e.target.value)}
-              className="w-full text-sm rounded-lg border px-3 py-1.5 resize-none"
-              style={{ background: 'var(--bg-elevated)', borderColor: 'var(--border)', color: 'var(--text-primary)' }} />
-          </div>
-
+    <DetailDrawer
+      open={open}
+      onClose={onClose}
+      title={defaultProductName ? `Nhập hàng: ${defaultProductName}` : 'Tạo phiếu nhập hàng'}
+      width={640}
+      footer={
+        <div style={{ display: 'flex', alignItems: 'center', width: '100%', gap: 8 }}>
+          <span style={{ flex: 1, fontSize: 14, fontWeight: 700, color: '#0f172a' }}>
+            Tổng:{' '}
+            <span style={{ color: '#6366f1' }}>{total.toLocaleString('vi-VN')}đ</span>
+          </span>
+          <button onClick={onClose}
+            style={{ padding: '8px 16px', borderRadius: 8, fontSize: 13, border: '1px solid #e5e7eb',
+                     background: 'transparent', color: '#64748b', cursor: 'pointer' }}>
+            Hủy
+          </button>
+          <button onClick={save} disabled={loading}
+            style={{ padding: '8px 20px', borderRadius: 8, fontSize: 13, fontWeight: 600,
+                     color: '#fff', background: '#6366f1', border: 'none',
+                     cursor: loading ? 'default' : 'pointer', opacity: loading ? 0.6 : 1 }}>
+            {loading ? 'Đang gửi...' : 'Tạo & Gửi NCC'}
+          </button>
         </div>
-
-        {/* Items */}
-        <div>
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Sản phẩm</span>
-            <div className="flex items-center gap-3">
-              {suppId && (
-                <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                  {loadingProds ? 'Đang tải...' : suppProducts ? `${suppProducts.length} SP của NCC này` : 'Hiện tất cả SP'}
-                </span>
-              )}
-              <button onClick={addItem} className="text-xs px-2 py-1 rounded border"
-                style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>+ Thêm</button>
-            </div>
+      }
+    >
+      <div style={{ padding: '20px 20px 24px' }}>
+        {err && (
+          <div style={{ marginBottom: 16, padding: '8px 12px', borderRadius: 8,
+                        background: 'rgba(239,68,68,0.1)', color: '#EF4444', fontSize: 13 }}>
+            {err}
           </div>
-          <div className="space-y-2">
+        )}
+
+        {/* ① Sản phẩm nhập — chọn TRƯỚC để lọc NCC */}
+        <div style={{ marginBottom: 24 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: '#0f172a' }}>
+              ① Sản phẩm nhập <span style={{ color: '#EF4444' }}>*</span>
+            </span>
+            <button onClick={addItem}
+              style={{ fontSize: 12, padding: '5px 12px', borderRadius: 6, border: '1px solid #e5e7eb',
+                       background: 'transparent', color: '#6366f1', cursor: 'pointer', fontWeight: 500 }}>
+              + Thêm sản phẩm
+            </button>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {items.map((it, i) => (
-              <div key={i} className="flex gap-2 items-center">
-                <select value={it.productId} onChange={e => handleProductChange(i, e.target.value)}
-                  disabled={loadingProds}
-                  className="flex-1 text-sm rounded-lg border px-2 py-1.5"
-                  style={{ background: 'var(--bg-elevated)', borderColor: 'var(--border)', color: 'var(--text-primary)' }}>
-                  <option value="">{loadingProds ? 'Đang tải...' : '-- Sản phẩm --'}</option>
-                  {products.map(p => <option key={p.productId} value={p.productId}>{p.productName}</option>)}
-                </select>
-                <input type="number" min="1" value={it.quantity}
-                  onChange={e => setItem(i, 'quantity', e.target.value)}
-                  className="w-20 text-sm rounded-lg border px-2 py-1.5 text-center"
-                  style={{ background: 'var(--bg-elevated)', borderColor: 'var(--border)', color: 'var(--text-primary)' }}
-                  placeholder="SL" />
-                <div className="flex flex-col gap-0.5">
-                  <input type="number" min="0" step="1000" value={it.importPrice}
-                    onChange={e => setItem(i, 'importPrice', e.target.value)}
-                    className="w-32 text-sm rounded-lg border px-2 py-1.5 text-right"
-                    style={{ background: 'var(--bg-elevated)', borderColor: 'var(--border)', color: 'var(--text-primary)' }}
-                    placeholder="Giá nhập" />
-                  {Number(it.importPrice) > 0 && (
-                    <div className="text-[10px] text-right space-y-0.5">
-                      {PLATFORMS.map(pf => (
-                        <div key={pf.name} style={{ color: 'var(--text-tertiary)' }}>
-                          {pf.name} ≥ <span style={{ color: '#3B82F6', fontWeight: 600 }}>
-                            {calcMin(Number(it.importPrice), pf.rate).toLocaleString('vi-VN')}đ
-                          </span>
-                        </div>
-                      ))}
+              <div key={i} style={{ border: '1px solid #e5e7eb', borderRadius: 10, padding: '12px 14px', background: '#f8fafc' }}>
+                {/* Chọn sản phẩm */}
+                <div style={{ marginBottom: 8 }}>
+                  <select value={it.productId} onChange={e => handleProductChange(i, e.target.value)}
+                    style={{ width: '100%', fontSize: 13, borderRadius: 7, border: '1px solid #e5e7eb',
+                             padding: '7px 10px', background: '#ffffff', color: '#0f172a', boxSizing: 'border-box' }}>
+                    <option value="">-- Chọn sản phẩm --</option>
+                    {allProducts.map(p => <option key={p.productId} value={p.productId}>{p.productName}</option>)}
+                  </select>
+                </div>
+
+                {/* Chọn biến thể (size/màu) — chỉ hiện khi sản phẩm có variation */}
+                {it.productId && (variationsMap[it.productId]?.length > 0) && (
+                  <div style={{ marginBottom: 8 }}>
+                    <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 4 }}>Biến thể (size / màu)</div>
+                    <select value={it.variationId || ''} onChange={e => setItem(i, 'variationId', e.target.value)}
+                      style={{ width: '100%', fontSize: 13, borderRadius: 7,
+                               border: `1px solid ${it.variationId ? '#6366f1' : '#fbbf24'}`,
+                               padding: '7px 10px', background: '#ffffff', color: '#0f172a', boxSizing: 'border-box' }}>
+                      <option value="">-- Chọn size / màu sắc --</option>
+                      {variationsMap[it.productId].map(v => {
+                        const label = [v.size, v.color, v.variationName].filter(Boolean).join(' / ') || v.sku
+                        return (
+                          <option key={v.variationId} value={v.variationId}>
+                            {label} — SKU: {v.sku} (tồn: {v.stockQuantity ?? 0})
+                          </option>
+                        )
+                      })}
+                    </select>
+                    {!it.variationId && (
+                      <div style={{ fontSize: 11, color: '#F59E0B', marginTop: 3 }}>
+                        ⚠ Sản phẩm này có biến thể — vui lòng chọn size / màu
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
+                  <div style={{ flex: '0 0 90px' }}>
+                    <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 4 }}>Số lượng</div>
+                    <input type="number" min="1" value={it.quantity}
+                      onChange={e => setItem(i, 'quantity', e.target.value)}
+                      style={{ width: '100%', fontSize: 13, borderRadius: 7, border: '1px solid #e5e7eb',
+                               padding: '7px 8px', background: '#ffffff', color: '#0f172a', textAlign: 'center', boxSizing: 'border-box' }} />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 4 }}>Giá nhập (đ)</div>
+                    <input type="number" min="0" step="1000" value={it.importPrice}
+                      onChange={e => setItem(i, 'importPrice', e.target.value)}
+                      style={{ width: '100%', fontSize: 13, borderRadius: 7, border: '1px solid #e5e7eb',
+                               padding: '7px 10px', background: '#ffffff', color: '#0f172a', textAlign: 'right', boxSizing: 'border-box' }} />
+                  </div>
+                  <div style={{ flex: '0 0 120px', textAlign: 'right' }}>
+                    <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 4 }}>Thành tiền</div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#6366f1', height: 33, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+                      {((Number(it.quantity) || 0) * (Number(it.importPrice) || 0)).toLocaleString('vi-VN')}đ
                     </div>
+                  </div>
+                  {items.length > 1 && (
+                    <button onClick={() => removeItem(i)}
+                      style={{ flex: '0 0 30px', width: 30, height: 33, borderRadius: 7, border: '1px solid #fecaca',
+                               background: 'rgba(239,68,68,0.05)', color: '#EF4444', cursor: 'pointer',
+                               display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14 }}>
+                      ✕
+                    </button>
                   )}
                 </div>
-                {items.length > 1 && (
-                  <button onClick={() => removeItem(i)} className="text-xs" style={{ color: '#EF4444' }}>✕</button>
+                {Number(it.importPrice) > 0 && (
+                  <div style={{ marginTop: 8, display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+                    {PLATFORMS.map(pf => (
+                      <span key={pf.name} style={{ fontSize: 11, color: '#94a3b8' }}>
+                        {pf.name} ≥{' '}
+                        <span style={{ color: '#3B82F6', fontWeight: 600 }}>
+                          {calcMin(Number(it.importPrice), pf.rate).toLocaleString('vi-VN')}đ
+                        </span>
+                      </span>
+                    ))}
+                  </div>
                 )}
               </div>
             ))}
           </div>
-          <div className="text-right text-sm mt-2 font-medium" style={{ color: 'var(--text-primary)' }}>
-            Tổng: {total.toLocaleString('vi-VN')}đ
-          </div>
         </div>
 
-        <div className="flex gap-2 justify-end pt-2">
-          <button onClick={onClose} className="px-4 py-1.5 rounded-lg text-sm border"
-            style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>Hủy</button>
-          <button onClick={save} disabled={loading}
-            className="px-4 py-1.5 rounded-lg text-sm text-white font-medium disabled:opacity-60"
-            style={{ background: 'var(--primary-500)' }}>
-            {loading ? 'Đang gửi...' : 'Tạo & Gửi NCC'}
-          </button>
+        {/* ② Nhà cung cấp — lọc theo sản phẩm đã chọn */}
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+            <label style={labelStyle}>
+              ② Nhà cung cấp <span style={{ color: '#EF4444' }}>*</span>
+            </label>
+            <span style={{ fontSize: 11, color: suppHintColor,
+                           background: filteredSupps?.length > 0 ? 'rgba(34,197,94,0.08)' : 'rgba(100,116,139,0.06)',
+                           padding: '2px 8px', borderRadius: 99 }}>
+              {suppHint}
+            </span>
+          </div>
+          <select value={suppId} onChange={e => handleSuppChange(e.target.value)}
+            disabled={loadingSupps}
+            style={{ ...inputStyle, opacity: loadingSupps ? 0.6 : 1 }}>
+            <option value="">{loadingSupps ? 'Đang tải NCC...' : '-- Chọn nhà cung cấp --'}</option>
+            {displaySuppliers.map(s => (
+              <option key={s.supplierId} value={s.supplierId}>
+                {s.supplierName}{s.importPrice > 0 ? ` — ${s.importPrice.toLocaleString('vi-VN')}đ` : ''}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* ③ Ghi chú */}
+        <div>
+          <label style={{ ...labelStyle, marginBottom: 6 }}>③ Ghi chú</label>
+          <textarea rows={2} value={note} onChange={e => setNote(e.target.value)}
+            style={{ ...inputStyle, resize: 'none' }} />
         </div>
       </div>
-    </div>
+    </DetailDrawer>
   )
 }
 
+// ── Main page ─────────────────────────────────────────────────────────────────
 export default function PurchaseOrdersPage() {
-  const [rows,         setRows]         = useState([])
-  const [total,        setTotal]        = useState(0)
-  const [page,         setPage]         = useState(1)
-  const [totalPages,   setTotalPages]   = useState(1)
-  const [loading,      setLoading]      = useState(true)
-  const [isMock,       setIsMock]       = useState(false)
-  const [filterStatus, setFilterStatus] = useState('')
-  const [showCreate,   setShowCreate]   = useState(false)
-  const [actionLoading,setActionLoading]= useState(null)
-  const [expandedId,   setExpandedId]   = useState(null)
-  const [detailCache,  setDetailCache]  = useState({})   // po_id → items[]
-  const [detailLoading,setDetailLoading]= useState(null)
+  // Đọc URL params để pre-fill drawer khi navigate từ trang thông báo / tồn kho
+  const [searchParams] = useSearchParams()
+  const urlProductId   = searchParams.get('productId')   || ''
+  const urlProductName = searchParams.get('productName') || ''
+
+  const [rows,          setRows]          = useState([])
+  const [total,         setTotal]         = useState(0)
+  const [page,          setPage]          = useState(1)
+  const [totalPages,    setTotalPages]    = useState(1)
+  const [loading,       setLoading]       = useState(true)
+  const [isMock,        setIsMock]        = useState(false)
+  const [filterStatus,  setFilterStatus]  = useState('')
+  const [search,        setSearch]        = useState('')
+  // Tự mở drawer nếu URL có productId (navigate từ nút "Nhập hàng")
+  const [showCreate,    setShowCreate]    = useState(!!urlProductId)
+  const [actionLoading, setActionLoading] = useState(null)
+  const [expandedId,    setExpandedId]    = useState(null)
+  const [detailCache,   setDetailCache]   = useState({})
+  const [detailLoading, setDetailLoading] = useState(null)
 
   const toggleDetail = async (poId) => {
     if (expandedId === poId) { setExpandedId(null); return }
@@ -224,6 +364,7 @@ export default function PurchaseOrdersPage() {
     try {
       const params = { page: p, pageSize: PAGE_SIZE }
       if (filterStatus) params.status = filterStatus
+      if (search.trim()) params.search = search.trim()
       const res = await api.get('/api/purchase-orders', { params })
       const d = res.data
       setRows(d.items ?? [])
@@ -232,12 +373,9 @@ export default function PurchaseOrdersPage() {
       setPage(p)
       setIsMock(false)
     } catch {
-      setRows([])
-      setTotal(0)
-      setTotalPages(1)
-      setIsMock(true)
+      setRows([]); setTotal(0); setTotalPages(1); setIsMock(true)
     } finally { setLoading(false) }
-  }, [filterStatus])
+  }, [filterStatus, search])
 
   useEffect(() => { load(1) }, [load])
 
@@ -257,12 +395,22 @@ export default function PurchaseOrdersPage() {
   return (
     <div className="p-4 md:p-6 space-y-4">
       {isMock && <MockToast />}
-      {showCreate && <CreateModal onClose={() => setShowCreate(false)} onSaved={() => { setShowCreate(false); load(1) }} />}
 
+      <CreateDrawer
+        open={showCreate}
+        onClose={() => setShowCreate(false)}
+        onSaved={() => { setShowCreate(false); load(1) }}
+        defaultProductId={urlProductId}
+        defaultProductName={urlProductName}
+      />
+
+      {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h1 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>Phiếu nhập hàng</h1>
-          <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>Quản lý đặt hàng nhà cung cấp ({total})</p>
+          <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
+            Quản lý đặt hàng nhà cung cấp ({total})
+          </p>
         </div>
         <button onClick={() => setShowCreate(true)}
           className="px-4 py-2 rounded-lg text-sm text-white font-medium"
@@ -272,36 +420,57 @@ export default function PurchaseOrdersPage() {
       </div>
 
       {/* Filter */}
-      <div className="flex gap-2 flex-wrap">
-        {['', 'DRAFT', 'PENDING', 'APPROVED', 'PARTIALLY_RECEIVED', 'RECEIVED', 'CANCELLED'].map(s => (
-          <button key={s}
-            onClick={() => setFilterStatus(s)}
-            className="px-3 py-1 rounded-lg text-xs border"
-            style={{
-              background: filterStatus === s ? 'var(--primary-500)' : 'var(--bg-elevated)',
-              color:      filterStatus === s ? '#fff' : 'var(--text-secondary)',
-              borderColor:'var(--border)',
-            }}>
-            {s ? STATUS_CFG[s]?.label : 'Tất cả'}
+      <div className="flex gap-2 flex-wrap items-center">
+        <div className="relative flex-1 min-w-[200px] max-w-xs">
+          <span className="icon absolute left-3 top-1/2 -translate-y-1/2 text-base"
+                style={{ color: 'var(--text-tertiary)' }}>search</span>
+          <input
+            type="text"
+            className="linput !pl-9 text-sm"
+            placeholder="Tìm mã phiếu, nhà cung cấp..."
+            value={search}
+            onChange={e => { setSearch(e.target.value); setPage(1) }}
+          />
+        </div>
+        <select
+          value={filterStatus}
+          onChange={e => { setFilterStatus(e.target.value); setPage(1) }}
+          className="linput text-sm"
+          style={{ width: 180 }}
+        >
+          <option value="">Tất cả trạng thái</option>
+          {['DRAFT', 'PENDING', 'APPROVED', 'PARTIALLY_RECEIVED', 'RECEIVED', 'CANCELLED'].map(s => (
+            <option key={s} value={s}>{STATUS_CFG[s]?.label ?? s}</option>
+          ))}
+        </select>
+        {(search || filterStatus) && (
+          <button
+            onClick={() => { setSearch(''); setFilterStatus(''); setPage(1) }}
+            className="lbtn lbtn-secondary !h-9">
+            <span className="icon text-base">refresh</span>
           </button>
-        ))}
+        )}
       </div>
 
       {/* Table */}
-      <div className="rounded-xl border overflow-x-auto" style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
+      <div className="rounded-xl border overflow-x-auto"
+           style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
         {loading ? (
           <div className="flex items-center justify-center py-16">
             <div className="w-8 h-8 rounded-full border-2 animate-spin"
                  style={{ borderColor: 'var(--primary-500)', borderTopColor: 'transparent' }} />
           </div>
         ) : rows.length === 0 ? (
-          <div className="text-center py-12 text-sm" style={{ color: 'var(--text-tertiary)' }}>Không có phiếu nhập nào</div>
+          <div className="text-center py-12 text-sm" style={{ color: 'var(--text-tertiary)' }}>
+            Không có phiếu nhập nào
+          </div>
         ) : (
           <table className="w-full text-sm">
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-elevated)' }}>
                 {['', 'Mã phiếu', 'Nhà cung cấp', 'Tổng tiền', 'Trạng thái', 'Ngày tạo', 'Thao tác'].map(h => (
-                  <th key={h} className="px-4 py-3 text-left text-xs font-medium" style={{ color: 'var(--text-tertiary)' }}>{h}</th>
+                  <th key={h} className="px-4 py-3 text-left text-xs font-medium"
+                      style={{ color: 'var(--text-tertiary)' }}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -313,43 +482,55 @@ export default function PurchaseOrdersPage() {
                 return (
                   <>
                     <tr key={po.purchaseOrderId}
-                        style={{ borderBottom: (!isExpanded && !isLast) ? '1px solid var(--border)' : 'none',
-                                 cursor: 'pointer' }}
+                        style={{
+                          borderBottom: (!isExpanded && !isLast) ? '1px solid var(--border)' : 'none',
+                          cursor: 'pointer',
+                        }}
                         onClick={() => toggleDetail(po.purchaseOrderId)}>
-                      {/* Toggle icon */}
                       <td className="pl-4 pr-1 py-3 w-6">
-                        <span className="icon text-sm" style={{ color: 'var(--text-tertiary)',
-                          display: 'block', transition: 'transform 0.2s',
-                          transform: isExpanded ? 'rotate(90deg)' : 'none' }}>
+                        <span className="icon text-sm"
+                              style={{ color: 'var(--text-tertiary)', display: 'block',
+                                       transition: 'transform 0.2s',
+                                       transform: isExpanded ? 'rotate(90deg)' : 'none' }}>
                           chevron_right
                         </span>
                       </td>
-                      <td className="px-4 py-3 font-mono text-xs" style={{ color: 'var(--text-primary)' }}>{po.purchaseCode}</td>
-                      <td className="px-4 py-3 text-sm" style={{ color: 'var(--text-primary)' }}>{po.supplierName}</td>
+                      <td className="px-4 py-3 font-mono text-xs" style={{ color: 'var(--text-primary)' }}>
+                        {po.purchaseCode}
+                      </td>
+                      <td className="px-4 py-3 text-sm" style={{ color: 'var(--text-primary)' }}>
+                        {po.supplierName}
+                      </td>
                       <td className="px-4 py-3 tabular-nums text-sm" style={{ color: 'var(--text-secondary)' }}>
                         {Number(po.totalAmount).toLocaleString('vi-VN')}đ
                       </td>
                       <td className="px-4 py-3"><StatusBadge status={po.status} /></td>
-                      <td className="px-4 py-3 text-xs" style={{ color: 'var(--text-tertiary)' }}>{fmtDate(po.createdAt)}</td>
+                      <td className="px-4 py-3 text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                        {fmtDate(po.createdAt)}
+                      </td>
                       <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                         <div className="flex gap-1 flex-wrap">
+                          {/* Hủy — khi chưa nhận hàng */}
                           {!['RECEIVED', 'CANCELLED', 'PARTIALLY_RECEIVED'].includes(po.status) && (
-                            <button onClick={() => action(po.purchaseOrderId, 'cancel', 'Hủy phiếu nhập này?')}
+                            <button
+                              onClick={() => action(po.purchaseOrderId, 'cancel', 'Hủy phiếu nhập này?')}
                               disabled={actionLoading === po.purchaseOrderId + 'cancel'}
                               className="text-xs px-2 py-1 rounded border"
                               style={{ borderColor: 'rgba(239,68,68,0.4)', color: '#EF4444' }}>
-                              Hủy
+                              {actionLoading === po.purchaseOrderId + 'cancel' ? '...' : 'Hủy'}
                             </button>
                           )}
                         </div>
                       </td>
                     </tr>
 
-                    {/* ── Detail row — danh sách sản phẩm ── */}
+                    {/* Detail row — danh sách sản phẩm */}
                     {isExpanded && (
                       <tr key={`${po.purchaseOrderId}-detail`}
-                          style={{ borderBottom: !isLast ? '1px solid var(--border)' : 'none',
-                                   background: 'var(--bg-elevated)' }}>
+                          style={{
+                            borderBottom: !isLast ? '1px solid var(--border)' : 'none',
+                            background: 'var(--bg-elevated)',
+                          }}>
                         <td colSpan={7} className="px-8 py-3">
                           {detailLoading === po.purchaseOrderId ? (
                             <div className="text-xs py-2" style={{ color: 'var(--text-tertiary)' }}>Đang tải...</div>

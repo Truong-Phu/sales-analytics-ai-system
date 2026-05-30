@@ -477,71 +477,65 @@ export default function TopBar() {
   const canSeeOperations = ['DataIT', 'Owner'].includes(role)
   const canSeeAdmin      = role === 'Owner'
 
-  // ── Nhóm Phân tích AI (7 chức năng cốt lõi) ──────────────────────────────
-  // Các tính năng còn lại được tích hợp vào tab Dashboard tương ứng:
-  // geo/sentiment → tab Khách hàng | attribution → tab Đa kênh
-  // campaign → tab Marketing | supplier/inventory → tab Tồn kho & Vận hành
-  // leaderboard → tab Tổng quan
-  const aiMenuItems = [
-    { label: t('nav.forecast',       'Dự báo doanh thu'),      desc: 'Prophet AI – xu hướng & seasonality', icon: 'trending_up',   href: '/forecast' },
-    { label: t('nav.anomaly',        'Phát hiện bất thường'),  desc: 'Cảnh báo dữ liệu bất thường',         icon: 'crisis_alert',  href: '/anomaly' },
-    { label: t('nav.narrative',      'Nhận xét Thông minh'),   desc: 'Tự động sinh nhận xét ngôn ngữ tự nhiên', icon: 'auto_awesome', href: '/narrative' },
-    { label: t('nav.recommendations','Gợi ý hành động'),       desc: 'Khuyến nghị từ AI insights',          icon: 'psychology',    href: '/recommendations' },
-    { label: t('nav.churn',          'Dự báo Churn'),          desc: 'Churn prediction khách hàng',         icon: 'person_off',    href: '/churn' },
-    { label: t('nav.basket',         'Phân tích giỏ hàng'),    desc: 'Market basket analysis',              icon: 'shopping_bag',  href: '/basket' },
-    { label: t('nav.whatIf',         'Mô phỏng What-If'),      desc: 'What-if scenario simulation',         icon: 'science',       href: '/whatif' },
-    { label: t('nav.price',          'Thông minh Giá'),        desc: 'Tối ưu chiến lược định giá',          icon: 'price_check',   href: '/price' },
-  ]
-
-  // ── Nhóm Quản lý dữ liệu ──────────────────────────────────────────────────
-  // Khách hàng + RFM chỉ hiển thị với ANALYST_ROLES (Owner/Manager/DataIT)
-  // vì /customers route yêu cầu ANALYST_ROLES; Staff thấy item nhưng bị block → ẩn luôn
-  const dataMenuItems = [
-    { label: t('nav.orders',     'Đơn hàng'),  desc: 'Xem và quản lý đơn hàng',  icon: 'receipt_long', href: '/orders' },
-    { label: t('nav.products',   'Sản phẩm'),  desc: 'Quản lý kho sản phẩm',      icon: 'inventory_2',  href: '/products' },
-    { label: t('nav.categories', 'Danh mục'),  desc: 'Phân loại sản phẩm',        icon: 'category',     href: '/categories' },
-    ...(canSeeAI ? [
-      { label: t('nav.customers',   'Khách hàng'),    desc: 'Thông tin & phân tích KH',   icon: 'people',   href: '/customers' },
-      { label: t('nav.rfmAnalysis', 'Phân tích RFM'), desc: 'Phân khúc khách hàng RFM', icon: 'pie_chart', href: '/customers/rfm' },
+  // ── Nhóm Bán hàng: POS (canSeeSales) + CRUD + Khách hàng (canSeeAI) ────────
+  const salesMenuItems = [
+    ...(canSeeSales ? [
+      { label: t('nav.pos',        'Bán hàng (POS)'),  desc: 'Bán hàng trực tiếp tại quầy',     icon: 'point_of_sale', href: '/pos' },
     ] : []),
-  ]
-
-  // ── Nhóm Vận hành & ETL ───────────────────────────────────────────────────
-  const opsMenuItems = [
-    { label: t('nav.dataSync',   'Đồng bộ dữ liệu'), desc: 'Kết nối sàn TMĐT & nguồn dữ liệu', icon: 'sync',       href: '/data-sync' },
-    { label: t('nav.etlMonitor', 'Giám sát ETL'),     desc: 'Giám sát pipeline dữ liệu',         icon: 'monitoring', href: '/etl-monitor' },
+    { label: t('nav.orders',     'Đơn hàng'),          desc: 'Xem và quản lý đơn hàng',          icon: 'receipt_long',  href: '/orders' },
+    { label: t('nav.products',   'Sản phẩm'),          desc: 'Quản lý kho sản phẩm',              icon: 'inventory_2',   href: '/products' },
+    { label: t('nav.categories', 'Danh mục'),          desc: 'Phân loại sản phẩm',                icon: 'category',      href: '/categories' },
+    ...(canSeeAI ? [
+      { label: t('nav.customers',   'Khách hàng'),     desc: 'Thông tin & phân tích khách hàng',  icon: 'people',        href: '/customers' },
+      { label: t('nav.rfmAnalysis', 'Phân tích RFM'),  desc: 'Phân khúc khách hàng RFM',          icon: 'pie_chart',     href: '/customers/rfm' },
+    ] : []),
   ]
 
   // ── Nhóm Tồn kho & Mua hàng ──────────────────────────────────────────────
   const invMenuItems = [
-    { label: t('nav.invDashboard',   'Dashboard Tồn kho'),    desc: 'KPI, biến động kho, gợi ý nhập hàng',   icon: 'bar_chart',    href: '/inventory/dashboard' },
-    { label: t('nav.inventory',      'Thông minh Tồn kho'),   desc: 'Dự báo hết hàng & đặt thêm (AI)',       icon: 'inventory',    href: '/inventory' },
-    { label: t('nav.invTransactions','Lịch sử giao dịch'),    desc: 'Nhật ký nhập/xuất/chỉnh kho',           icon: 'history',      href: '/inventory/transactions' },
-    { label: t('nav.stockAdjust',    'Chỉnh kho thủ công'),   desc: 'Kiểm kê thực tế, điều chỉnh sai lệch', icon: 'tune',         href: '/stock-adjustments' },
-    { label: t('nav.suppliers',      'Nhà cung cấp'),         desc: 'Danh sách & thông tin liên hệ NCC',     icon: 'business',     href: '/suppliers' },
-    { label: t('nav.purchaseOrders', 'Phiếu đặt hàng'),       desc: 'Tạo và theo dõi đơn đặt hàng NCC',     icon: 'shopping_cart',href: '/purchase-orders' },
-    { label: t('nav.goodsReceipts',  'Phiếu nhập kho'),       desc: 'Xác nhận hàng về & cập nhật tồn kho',  icon: 'move_to_inbox',href: '/goods-receipts' },
-    { label: t('nav.supplier',       'Hiệu suất NCC (AI)'),   desc: 'Phân tích & đánh giá nhà cung cấp',    icon: 'local_shipping',href: '/supplier' },
+    { label: t('nav.invDashboard',   'Dashboard Tồn kho'),  desc: 'KPI, biến động kho, gợi ý nhập hàng',   icon: 'bar_chart',     href: '/inventory/dashboard' },
+    { label: t('nav.inventory',      'Thông minh Tồn kho'), desc: 'Dự báo hết hàng & đặt thêm (AI)',        icon: 'inventory',     href: '/inventory' },
+    { label: t('nav.invTransactions','Lịch sử giao dịch'),  desc: 'Nhật ký nhập/xuất/chỉnh kho',            icon: 'history',       href: '/inventory/transactions' },
+    { label: t('nav.stockAdjust',    'Chỉnh kho thủ công'), desc: 'Kiểm kê thực tế, điều chỉnh sai lệch',  icon: 'tune',          href: '/stock-adjustments' },
+    { label: t('nav.suppliers',      'Nhà cung cấp'),       desc: 'Danh sách & thông tin liên hệ NCC',      icon: 'business',      href: '/suppliers' },
+    { label: t('nav.purchaseOrders', 'Phiếu đặt hàng'),     desc: 'Tạo và theo dõi đơn đặt hàng NCC',      icon: 'shopping_cart', href: '/purchase-orders' },
+    { label: t('nav.goodsReceipts',  'Phiếu nhập kho'),     desc: 'Xác nhận hàng về & cập nhật tồn kho',   icon: 'move_to_inbox', href: '/goods-receipts' },
+    { label: t('nav.supplier',       'Hiệu suất NCC (AI)'), desc: 'Phân tích & đánh giá nhà cung cấp',     icon: 'local_shipping',href: '/supplier' },
   ]
 
-  // ── Build navTabs theo role ────────────────────────────────────────────────
+  // ── Nhóm Phân tích: AI + Tài chính + Báo cáo ─────────────────────────────
+  const analysisMenuItems = [
+    { label: t('nav.forecast',        'Dự báo doanh thu'),     desc: 'Prophet AI – xu hướng & seasonality',     icon: 'trending_up',            href: '/forecast' },
+    { label: t('nav.anomaly',         'Phát hiện bất thường'), desc: 'Cảnh báo dữ liệu bất thường',             icon: 'crisis_alert',           href: '/anomaly' },
+    { label: t('nav.narrative',       'Nhận xét Thông minh'),  desc: 'Tự động sinh nhận xét ngôn ngữ tự nhiên', icon: 'auto_awesome',           href: '/narrative' },
+    { label: t('nav.recommendations', 'Gợi ý hành động'),      desc: 'Khuyến nghị từ AI insights',              icon: 'psychology',             href: '/recommendations' },
+    { label: t('nav.churn',           'Dự báo Churn'),         desc: 'Churn prediction khách hàng',             icon: 'person_off',             href: '/churn' },
+    { label: t('nav.basket',          'Phân tích giỏ hàng'),   desc: 'Market basket analysis',                  icon: 'shopping_bag',           href: '/basket' },
+    { label: t('nav.whatIf',          'Mô phỏng What-If'),     desc: 'What-if scenario simulation',             icon: 'science',                href: '/whatif' },
+    { label: t('nav.price',           'Thông minh Giá'),       desc: 'Tối ưu chiến lược định giá',              icon: 'price_check',            href: '/price' },
+    { label: t('nav.finance',         'Lợi nhuận'),            desc: 'Doanh thu, COGS & biên lợi nhuận',        icon: 'account_balance_wallet', href: '/finance/profit' },
+    { label: t('nav.report',          'Báo cáo tổng hợp'),     desc: 'Xuất báo cáo PDF, Excel',                 icon: 'picture_as_pdf',         href: '/report' },
+  ]
+
+  // ── Nhóm Vận hành & Quản trị ─────────────────────────────────────────────
+  const opsMenuItems = [
+    { label: t('nav.dataSync',   'Đồng bộ dữ liệu'), desc: 'Kết nối sàn TMĐT & nguồn dữ liệu',      icon: 'sync',            href: '/data-sync' },
+    { label: t('nav.etlMonitor', 'Giám sát ETL'),     desc: 'Giám sát pipeline dữ liệu',              icon: 'monitoring',      href: '/etl-monitor' },
+    ...(canSeeAdmin ? [
+      { label: t('nav.admin', 'Quản trị hệ thống'),   desc: 'Quản lý người dùng & cấu hình hệ thống', icon: 'manage_accounts', href: '/admin' },
+    ] : []),
+  ]
+
+  // ── Build navTabs theo role (5 tab tối đa cho Owner) ─────────────────────
   const navTabs = [
     { href: '/dashboard', icon: 'dashboard', label: t('nav.dashboard', 'Tổng quan') },
-    ...(canSeeSales ? [{ href: '/pos', icon: 'point_of_sale', label: t('nav.pos', 'Bán hàng') }] : []),
-    ...(canSeeAI ? [{
-      href: '/forecast',
-      icon: 'auto_awesome',
-      label: t('nav.aiAnalysis', 'Phân tích AI'),
-      hasMega: true,
-      menuItems: aiMenuItems,
-      columns: 2,
-    }] : []),
     {
       href: '/orders',
-      icon: 'receipt_long',
-      label: t('nav.dataManagement', 'Dữ liệu'),
+      icon: 'storefront',
+      label: t('nav.sales', 'Bán hàng'),
       hasMega: true,
-      menuItems: dataMenuItems,
+      menuItems: salesMenuItems,
+      columns: canSeeAI ? 2 : 1,
     },
     ...(canSeeAI ? [{
       href: '/inventory/dashboard',
@@ -551,20 +545,26 @@ export default function TopBar() {
       menuItems: invMenuItems,
       columns: 2,
     }] : canSeeSales ? [{
-      // Staff chỉ có quyền xem /inventory (Smart Inventory), không có mega menu
+      // Staff: link đơn giản đến Smart Inventory
       href: '/inventory',
       icon: 'inventory_2',
       label: t('nav.inventory', 'Tồn kho'),
     }] : []),
-    ...(canSeeAI ? [{ href: '/report', icon: 'picture_as_pdf', label: t('nav.report', 'Báo cáo') }] : []),
+    ...(canSeeAI ? [{
+      href: '/forecast',
+      icon: 'auto_awesome',
+      label: t('nav.analysis', 'Phân tích'),
+      hasMega: true,
+      menuItems: analysisMenuItems,
+      columns: 2,
+    }] : []),
     ...(canSeeOperations ? [{
       href: '/data-sync',
-      icon: 'sync',
+      icon: 'settings',
       label: t('nav.operations', 'Vận hành'),
       hasMega: true,
       menuItems: opsMenuItems,
     }] : []),
-    ...(canSeeAdmin ? [{ href: '/admin', icon: 'manage_accounts', label: t('nav.admin', 'Quản trị hệ thống') }] : []),
   ]
 
   return (

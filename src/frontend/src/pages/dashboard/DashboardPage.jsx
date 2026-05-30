@@ -85,10 +85,10 @@ function generateMockData(from, to) {
   const totalOrders  = revenueByDay.reduce((s, d) => s + d.orderCount, 0)
 
   const channels = [
-    { channelName: 'Shopee',      pct: 0.35, adSpend: 12_000_000 },
-    { channelName: 'Lazada',      pct: 0.25, adSpend:  9_000_000 },
-    { channelName: 'TikTok Shop', pct: 0.20, adSpend: 15_000_000 },
-    { channelName: 'Facebook',    pct: 0.12, adSpend:  8_000_000 },
+    { channelName: 'Shopee',      pct: 0.38, adSpend: 12_000_000 },
+    { channelName: 'Lazada',      pct: 0.27, adSpend:  9_000_000 },
+    { channelName: 'TikTok Shop', pct: 0.22, adSpend: 15_000_000 },
+    { channelName: 'Offline',     pct: 0.13, adSpend:          0 },
   ]
 
   const monthlyByChannel = ['T1','T2','T3','T4','T5','T6'].map(month => {
@@ -119,7 +119,7 @@ function generateMockData(from, to) {
     { productName: 'Quần jeans Slim Fit',   channel: 'Lazada',      orders: 295, revenue: totalRevenue * 0.09 },
     { productName: 'Giày thể thao Nam',     channel: 'TikTok Shop', orders: 260, revenue: totalRevenue * 0.08 },
     { productName: 'Túi xách Nữ HQ',        channel: 'Shopee',      orders: 225, revenue: totalRevenue * 0.07 },
-    { productName: 'Đầm maxi Boho',         channel: 'Facebook',    orders: 190, revenue: totalRevenue * 0.06 },
+    { productName: 'Đầm maxi Boho',         channel: 'Offline',     orders: 190, revenue: totalRevenue * 0.06 },
   ]
   const totalTopRevenue = topProductsRaw.reduce((s, p) => s + p.revenue, 0)
   const topProducts = topProductsRaw.map(p => ({
@@ -264,15 +264,15 @@ const CHANNEL_COLOR = {
   shopee:   '#EE4D2D', // Shopee cam-đỏ chính thức
   lazada:   '#0F3DD1', // Lazada xanh dương chính thức
   tiktok:   '#2DD4BF', // TikTok teal (đảm bảo dark mode)
-  facebook: '#1877F2', // Facebook xanh
-  other:    '#6B7280', // Fallback
+  offline:  '#6B7280', // Offline / POS xám
+  other:    '#94A3B8', // Fallback
 }
 function getChannelColor(name = '') {
   const key = name.toLowerCase().replace(/\s+/g, '')
-  if (key.includes('shopee'))   return CHANNEL_COLOR.shopee
-  if (key.includes('lazada'))   return CHANNEL_COLOR.lazada
-  if (key.includes('tiktok'))   return CHANNEL_COLOR.tiktok
-  if (key.includes('facebook')) return CHANNEL_COLOR.facebook
+  if (key.includes('shopee'))  return CHANNEL_COLOR.shopee
+  if (key.includes('lazada'))  return CHANNEL_COLOR.lazada
+  if (key.includes('tiktok'))  return CHANNEL_COLOR.tiktok
+  if (key.includes('offline') || key.includes('pos')) return CHANNEL_COLOR.offline
   return CHANNEL_COLOR.other
 }
 
@@ -768,7 +768,6 @@ function TabSales({ data, compareMode, prevData, from, to }) {
   const [drillProduct,        setDrillProduct]        = useState(null)
   const [drillOrders,         setDrillOrders]         = useState([])
   const [drillLoading,        setDrillLoading]        = useState(false)
-  const [showChannelTopTable, setShowChannelTopTable] = useState(false)
   const maxFunnel = data?.funnel?.[0]?.value ?? 1
 
   // Dữ liệu theo tháng gộp kỳ này + kỳ trước (cho tab Sales)
@@ -813,7 +812,7 @@ function TabSales({ data, compareMode, prevData, from, to }) {
       setDrillOrders(Array.from({ length: 8 }, (_, i) => ({
         orderId: `ORD-${10000 + i}`,
         date:    `2025-${String(Math.ceil((i+1)/3)).padStart(2,'0')}-${String(10 + i * 3).padStart(2,'0')}`,
-        channel: ['Shopee','Lazada','TikTok Shop','Facebook'][i % 4],
+        channel: ['Shopee','Lazada','TikTok Shop','Offline'][i % 4],
         qty:     Math.round(1 + Math.random() * 4),
         revenue: Math.round(200_000 + Math.random() * 800_000),
         status:  'Hoàn thành',
@@ -905,7 +904,7 @@ function TabSales({ data, compareMode, prevData, from, to }) {
                 </tr>
               </thead>
               <tbody>
-                {data.topProducts.map((p, i) => (
+                {data.topProducts.slice(0, 5).map((p, i) => (
                   <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
                     <td className="py-2 px-1 max-w-[120px] truncate" style={{ color: 'var(--text-secondary)' }}
                       title={p.productName}>{p.productName}</td>
@@ -922,21 +921,10 @@ function TabSales({ data, compareMode, prevData, from, to }) {
         </div>
       </div>
 
-      {/* Bảng Top sản phẩm theo kênh — ẩn mặc định, toggle khi nhấn */}
+      {/* Bảng Top sản phẩm theo kênh */}
       <div className="lcard p-5">
-        <div className="flex items-center justify-between">
-          <SectionTitle>Top sản phẩm theo kênh</SectionTitle>
-          <button
-            onClick={() => setShowChannelTopTable(v => !v)}
-            className="lbtn lbtn-secondary text-xs"
-            style={{ height: 30, marginBottom: 16 }}
-          >
-            {showChannelTopTable ? 'Thu gọn ▲' : 'Xem chi tiết ▼'}
-          </button>
-        </div>
-        {/* Animation collapse/expand */}
-        <div style={{ maxHeight: showChannelTopTable ? '2000px' : 0, overflow: 'hidden', transition: 'max-height 0.3s ease' }}>
-          <div className="overflow-x-auto">
+        <SectionTitle>Top sản phẩm theo kênh</SectionTitle>
+        <div className="overflow-x-auto">
             <table className="w-full text-caption border-collapse">
               <thead>
                 <tr style={{ borderBottom: '2px solid var(--border)' }}>
@@ -965,7 +953,6 @@ function TabSales({ data, compareMode, prevData, from, to }) {
               </tbody>
             </table>
           </div>
-        </div>
       </div>
 
       {/* Phễu trạng thái đơn hàng (PENDING → DELIVERED) */}
@@ -1020,7 +1007,6 @@ function TabSales({ data, compareMode, prevData, from, to }) {
 // ── Tab: 3 — Multi-channel ────────────────────────────────────────────────────
 function TabMultiChannel({ data, wd = {}, wl = {} }) {
   const { t } = useTranslation()
-  const [showChannelDetailTable, setShowChannelDetailTable] = useState(false)
   const attrData    = wd.attribution ?? null
   const attrLoading = wl.attribution ?? false
 
@@ -1111,21 +1097,10 @@ function TabMultiChannel({ data, wd = {}, wl = {} }) {
         </div>
       </div>
 
-      {/* Bảng so sánh chi tiết — ẩn mặc định, toggle khi nhấn */}
+      {/* Bảng so sánh chi tiết theo kênh */}
       <div className="lcard p-5">
-        <div className="flex items-center justify-between">
-          <SectionTitle>Bảng so sánh chi tiết theo kênh</SectionTitle>
-          <button
-            onClick={() => setShowChannelDetailTable(v => !v)}
-            className="lbtn lbtn-secondary text-xs"
-            style={{ height: 30, marginBottom: 16 }}
-          >
-            {showChannelDetailTable ? 'Thu gọn ▲' : 'Xem chi tiết ▼'}
-          </button>
-        </div>
-        {/* Animation collapse/expand */}
-        <div style={{ maxHeight: showChannelDetailTable ? '2000px' : 0, overflow: 'hidden', transition: 'max-height 0.3s ease' }}>
-          <div className="overflow-x-auto">
+        <SectionTitle>Bảng so sánh chi tiết theo kênh</SectionTitle>
+        <div className="overflow-x-auto">
             <table className="w-full text-caption border-collapse">
               <thead>
                 <tr style={{ borderBottom: '2px solid var(--border)' }}>
@@ -1154,7 +1129,6 @@ function TabMultiChannel({ data, wd = {}, wl = {} }) {
               </tbody>
             </table>
           </div>
-        </div>
       </div>
 
       {/* ── Attribution mini-widget ── */}
@@ -1594,7 +1568,6 @@ function HeatmapGrid({ data = [] }) {
 // ── Tab: 5 — Marketing & ROI ──────────────────────────────────────────────────
 function TabMarketing({ data, fbAdsData, wd = {}, wl = {} }) {
   const { t } = useTranslation()
-  const [showMarketingTable, setShowMarketingTable] = useState(false)
   const campData    = wd.campaign ?? null
   const campLoading = wl.campaign ?? false
 
@@ -1671,20 +1644,10 @@ function TabMarketing({ data, fbAdsData, wd = {}, wl = {} }) {
         </div>
       </div>
 
-      {/* Bảng CAC | ROAS | ROAS mục tiêu | Đánh giá — ẩn mặc định */}
+      {/* Bảng CAC | ROAS | ROAS mục tiêu | Đánh giá */}
       <div className="lcard p-5">
-        <div className="flex items-center justify-between">
-          <SectionTitle>Bảng hiệu quả Marketing — CAC · ROAS · Mục tiêu</SectionTitle>
-          <button
-            onClick={() => setShowMarketingTable(v => !v)}
-            className="lbtn lbtn-secondary text-xs"
-            style={{ height: 30, marginBottom: 16 }}
-          >
-            {showMarketingTable ? 'Thu gọn ▲' : 'Xem chi tiết ▼'}
-          </button>
-        </div>
-        <div style={{ maxHeight: showMarketingTable ? '2000px' : 0, overflow: 'hidden', transition: 'max-height 0.3s ease' }}>
-          <div className="overflow-x-auto">
+        <SectionTitle>Bảng hiệu quả Marketing — CAC · ROAS · Mục tiêu</SectionTitle>
+        <div className="overflow-x-auto">
             <table className="w-full text-caption border-collapse">
               <thead>
                 <tr style={{ borderBottom: '2px solid var(--border)' }}>
@@ -1719,7 +1682,6 @@ function TabMarketing({ data, fbAdsData, wd = {}, wl = {} }) {
               </tbody>
             </table>
           </div>
-        </div>
       </div>
 
       {/* Chi phí theo loại quảng cáo */}
@@ -1891,7 +1853,7 @@ function TabInventory({ data, wd = {}, wl = {} }) {
   const { t }      = useTranslation()
   const navigate   = useNavigate()
   const invKpi = data.inventoryKpi || { avgDIO: 0, overstockRate: '0.0', stockoutRate: '0.0' }
-  const fmtPct = (v) => v != null ? `${Number(v).toFixed(1)}%` : '—'
+  const fmtPct = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? `${n.toFixed(1)}%` : '—' }
   const invKpis = [
     { label: 'Số ngày tồn kho (DIO)',    value: `${invKpi.avgDIO ?? '—'} ngày`, icon: 'hourglass_empty',      color: '#6366F1' },
     { label: 'Tỷ lệ tồn kho dư',         value: fmtPct(invKpi.overstockRate),   icon: 'inventory',             color: '#F59E0B' },
@@ -1914,11 +1876,24 @@ function TabInventory({ data, wd = {}, wl = {} }) {
     )
   }
 
-  const [returnTab,        setReturnTab]        = useState('product')
-  // Toggle ẩn/hiện bảng Top 5 tồn cao nhất và sắp hết — mặc định ẩn
-  const [showOverstockTable, setShowOverstockTable] = useState(false)
-  const [showLowStockTable,  setShowLowStockTable]  = useState(false)
+  // Gộp data.inventory theo tên sản phẩm, tính avg returnRate, top 10
+  const returnByProduct = (() => {
+    const map = {}
+    ;(data.inventory || []).forEach(item => {
+      const name = item.productName ?? item.product ?? '—'
+      const rate = parseFloat(item.returnRate ?? 0)
+      if (!map[name]) map[name] = { count: 0, total: 0 }
+      map[name].count += 1
+      map[name].total += Number.isFinite(rate) ? rate : 0
+    })
+    return Object.entries(map)
+      .map(([name, v]) => ({ product: name, returnRate: v.count > 0 ? v.total / v.count : 0 }))
+      .filter(p => p.returnRate > 0)
+      .sort((a, b) => b.returnRate - a.returnRate)
+      .slice(0, 10)
+  })()
 
+  const [returnTab, setReturnTab] = useState('product')
   return (
     <div className="space-y-5">
       {/* Header row — phân biệt analytics view vs. quản lý vận hành */}
@@ -1977,94 +1952,70 @@ function TabInventory({ data, wd = {}, wl = {} }) {
 
       {/* Top 5 tồn cao nhất và sắp hết hàng */}
       <div className="grid grid-cols-12 gap-4">
-        {/* Bảng Top 5 tồn cao nhất — ẩn mặc định */}
         <div className="lcard p-5 col-span-12 lg:col-span-6">
-          <div className="flex items-center justify-between">
-            <SectionTitle>Top 5 tồn kho cao nhất (nguy cơ ứ đọng)</SectionTitle>
-            <button
-              onClick={() => setShowOverstockTable(v => !v)}
-              className="lbtn lbtn-secondary text-xs"
-              style={{ height: 30, marginBottom: 16 }}
-            >
-              {showOverstockTable ? 'Thu gọn ▲' : 'Xem chi tiết ▼'}
-            </button>
+          <SectionTitle>Top 5 tồn kho cao nhất (nguy cơ ứ đọng)</SectionTitle>
+          <div className="overflow-x-auto">
+            <table className="w-full text-caption border-collapse">
+              <thead>
+                <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                  {['Sản phẩm','Tồn kho','Dự báo','% Chênh','DIO'].map(h => (
+                    <th key={h} className="text-right py-2 px-2 font-semibold first:text-left" style={{ color: 'var(--text-tertiary)' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {(data.top5Overstock || []).map((item, i) => (
+                  <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
+                    <td className="py-2 px-2" style={{ color: 'var(--text-secondary)' }}>{item.product}</td>
+                    <td className="py-2 px-2 text-right font-mono" style={{ color: 'var(--text-primary)' }}>{item.stock.toLocaleString('vi-VN')}</td>
+                    <td className="py-2 px-2 text-right font-mono" style={{ color: 'var(--text-tertiary)' }}>{item.forecast.toLocaleString('vi-VN')}</td>
+                    <td className="py-2 px-2 text-right font-mono"
+                      style={{ color: parseFloat(item.stockDiffPct) > 0 ? '#F59E0B' : 'var(--accent-500)' }}>
+                      {parseFloat(item.stockDiffPct) > 0 ? '+' : ''}{item.stockDiffPct}%
+                    </td>
+                    <td className="py-2 px-2 text-right font-mono" style={{ color: 'var(--text-primary)' }}>{item.daysOfStock}d</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-          <div style={{ maxHeight: showOverstockTable ? '2000px' : 0, overflow: 'hidden', transition: 'max-height 0.3s ease' }}>
+        </div>
+
+        <div className="lcard p-5 col-span-12 lg:col-span-6">
+          <SectionTitle>Top 5 sắp hết hàng (tồn &lt; 14 ngày bán)</SectionTitle>
+          {data.top5LowStock && data.top5LowStock.length > 0 ? (
             <div className="overflow-x-auto">
               <table className="w-full text-caption border-collapse">
                 <thead>
                   <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                    {['Sản phẩm','Tồn kho','Dự báo','% Chênh','DIO'].map(h => (
+                    {['Sản phẩm','Tồn kho','Bán/ngày','Còn (ngày)'].map(h => (
                       <th key={h} className="text-right py-2 px-2 font-semibold first:text-left" style={{ color: 'var(--text-tertiary)' }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {(data.top5Overstock || []).map((item, i) => (
-                    <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
-                      <td className="py-2 px-2" style={{ color: 'var(--text-secondary)' }}>{item.product}</td>
-                      <td className="py-2 px-2 text-right font-mono" style={{ color: 'var(--text-primary)' }}>{item.stock.toLocaleString('vi-VN')}</td>
-                      <td className="py-2 px-2 text-right font-mono" style={{ color: 'var(--text-tertiary)' }}>{item.forecast.toLocaleString('vi-VN')}</td>
-                      <td className="py-2 px-2 text-right font-mono"
-                        style={{ color: parseFloat(item.stockDiffPct) > 0 ? '#F59E0B' : 'var(--accent-500)' }}>
-                        {parseFloat(item.stockDiffPct) > 0 ? '+' : ''}{item.stockDiffPct}%
-                      </td>
-                      <td className="py-2 px-2 text-right font-mono" style={{ color: 'var(--text-primary)' }}>{item.daysOfStock}d</td>
-                    </tr>
-                  ))}
+                  {data.top5LowStock.map((item, i) => {
+                    const daysLeft = item.dailySales > 0 ? Math.round(item.stock / item.dailySales) : 999
+                    return (
+                      <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
+                        <td className="py-2 px-2" style={{ color: 'var(--text-secondary)' }}>{item.product}</td>
+                        <td className="py-2 px-2 text-right font-mono font-bold" style={{ color: 'var(--color-error)' }}>{item.stock}</td>
+                        <td className="py-2 px-2 text-right font-mono" style={{ color: 'var(--text-tertiary)' }}>{item.dailySales}</td>
+                        <td className="py-2 px-2 text-right font-mono font-bold"
+                          style={{ color: daysLeft <= 7 ? 'var(--color-error)' : '#F59E0B' }}>
+                          {daysLeft}d
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
-          </div>
-        </div>
-
-        {/* Bảng Top 5 sắp hết hàng — ẩn mặc định */}
-        <div className="lcard p-5 col-span-12 lg:col-span-6">
-          <div className="flex items-center justify-between">
-            <SectionTitle>Top 5 sắp hết hàng (tồn &lt; 14 ngày bán)</SectionTitle>
-            <button
-              onClick={() => setShowLowStockTable(v => !v)}
-              className="lbtn lbtn-secondary text-xs"
-              style={{ height: 30, marginBottom: 16 }}
-            >
-              {showLowStockTable ? 'Thu gọn ▲' : 'Xem chi tiết ▼'}
-            </button>
-          </div>
-          <div style={{ maxHeight: showLowStockTable ? '2000px' : 0, overflow: 'hidden', transition: 'max-height 0.3s ease' }}>
-            {data.top5LowStock && data.top5LowStock.length > 0 ? (
-              <div className="overflow-x-auto">
-                <table className="w-full text-caption border-collapse">
-                  <thead>
-                    <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                      {['Sản phẩm','Tồn kho','Bán/ngày','Còn (ngày)'].map(h => (
-                        <th key={h} className="text-right py-2 px-2 font-semibold first:text-left" style={{ color: 'var(--text-tertiary)' }}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.top5LowStock.map((item, i) => {
-                      const daysLeft = item.dailySales > 0 ? Math.round(item.stock / item.dailySales) : 999
-                      return (
-                        <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
-                          <td className="py-2 px-2" style={{ color: 'var(--text-secondary)' }}>{item.product}</td>
-                          <td className="py-2 px-2 text-right font-mono font-bold" style={{ color: 'var(--color-error)' }}>{item.stock}</td>
-                          <td className="py-2 px-2 text-right font-mono" style={{ color: 'var(--text-tertiary)' }}>{item.dailySales}</td>
-                          <td className="py-2 px-2 text-right font-mono font-bold"
-                            style={{ color: daysLeft <= 7 ? 'var(--color-error)' : '#F59E0B' }}>
-                            {daysLeft}d
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <p className="text-caption mt-4 text-center" style={{ color: 'var(--text-tertiary)' }}>
-                Tất cả sản phẩm đều còn tồn kho đủ
-              </p>
-            )}
-          </div>
+          ) : (
+            <p className="text-caption mt-4 text-center" style={{ color: 'var(--text-tertiary)' }}>
+              Tất cả sản phẩm đều còn tồn kho đủ
+            </p>
+          )}
         </div>
       </div>
 
@@ -2090,41 +2041,41 @@ function TabInventory({ data, wd = {}, wl = {} }) {
 
         {returnTab === 'product' ? (
           <div className="space-y-3">
-            {data.inventory.map((item, i) => (
+            {returnByProduct.length === 0 ? (
+              <p className="text-caption text-center py-4" style={{ color: 'var(--text-tertiary)' }}>Không có sản phẩm hoàn trả</p>
+            ) : returnByProduct.map((item, i) => {
+              const rate = parseFloat(item.returnRate.toFixed(1))
+              const barColor = rate > 20 ? 'var(--color-error)' : rate > 10 ? '#F59E0B' : 'var(--accent-500)'
+              return (
               <div key={i}>
                 <div className="flex justify-between text-caption mb-1" style={{ color: 'var(--text-secondary)' }}>
-                  <span>{item.product}</span>
-                  <span className="font-mono font-bold"
-                    style={{ color: item.returnRate > 4 ? 'var(--color-error)' : item.returnRate > 2.5 ? '#F59E0B' : 'var(--accent-500)' }}>
-                    {item.returnRate}%
-                  </span>
+                  <span className="truncate max-w-[70%]" title={item.product}>{item.product}</span>
+                  <span className="font-mono font-bold" style={{ color: barColor }}>{rate}%</span>
                 </div>
-                <div className="h-2 rounded-full" style={{ background: 'var(--bg-elevated)' }}>
+                <div className="h-2 rounded-full overflow-hidden" style={{ background: 'var(--bg-elevated)' }}>
                   <div className="h-full rounded-full"
-                    style={{ width: `${item.returnRate / 6 * 100}%`,
-                      background: item.returnRate > 4 ? 'var(--color-error)' : item.returnRate > 2.5 ? '#F59E0B' : 'var(--accent-500)' }} />
+                    style={{ width: `${Math.min(rate, 100)}%`, background: barColor }} />
                 </div>
               </div>
-            ))}
+            )})}
           </div>
         ) : (
           <div className="space-y-3">
-            {(data.returnByChannel || []).map((ch, i) => (
+            {(data.returnByChannel || []).map((ch, i) => {
+              const rate = parseFloat(ch.returnRate) || 0
+              const barColor = rate > 20 ? 'var(--color-error)' : rate > 10 ? '#F59E0B' : 'var(--accent-500)'
+              return (
               <div key={i}>
                 <div className="flex justify-between text-caption mb-1">
                   <span className="font-medium" style={{ color: getChannelColor(ch.channelName) }}>{ch.channelName}</span>
-                  <span className="font-mono font-bold"
-                    style={{ color: parseFloat(ch.returnRate) > 4 ? 'var(--color-error)' : parseFloat(ch.returnRate) > 2.5 ? '#F59E0B' : 'var(--accent-500)' }}>
-                    {ch.returnRate}%
-                  </span>
+                  <span className="font-mono font-bold" style={{ color: barColor }}>{rate.toFixed(1)}%</span>
                 </div>
-                <div className="h-2 rounded-full" style={{ background: 'var(--bg-elevated)' }}>
+                <div className="h-2 rounded-full overflow-hidden" style={{ background: 'var(--bg-elevated)' }}>
                   <div className="h-full rounded-full"
-                    style={{ width: `${parseFloat(ch.returnRate) / 6 * 100}%`,
-                      background: parseFloat(ch.returnRate) > 4 ? 'var(--color-error)' : parseFloat(ch.returnRate) > 2.5 ? '#F59E0B' : 'var(--accent-500)' }} />
+                    style={{ width: `${Math.min(rate, 100)}%`, background: barColor }} />
                 </div>
               </div>
-            ))}
+            )})}
           </div>
         )}
       </div>
@@ -2235,7 +2186,20 @@ export default function DashboardPage() {
         },
         revenueByDay:      resData.revenueByDay?.length     ? resData.revenueByDay     : mock.revenueByDay,
         revenueByChannel:  resData.revenueByChannel?.length ? resData.revenueByChannel : mock.revenueByChannel,
-        topProducts:       resData.topProducts?.length      ? resData.topProducts      : mock.topProducts,
+        topProducts: (() => {
+          const raw = resData.topProducts?.length ? resData.topProducts : mock.topProducts
+          // Gộp trùng tên sản phẩm, lấy top 5, tính % đóng góp
+          const byName = {}
+          raw.forEach(p => {
+            const key = p.productName
+            if (!byName[key]) byName[key] = { ...p, revenue: 0, orders: 0 }
+            byName[key].revenue += Number(p.revenue ?? 0)
+            byName[key].orders  += Number(p.orders  ?? 0)
+          })
+          const sorted    = Object.values(byName).sort((a, b) => b.revenue - a.revenue).slice(0, 5)
+          const grandTotal = sorted.reduce((s, p) => s + p.revenue, 0)
+          return sorted.map(p => ({ ...p, revContribPct: grandTotal > 0 ? ((p.revenue / grandTotal) * 100).toFixed(1) : '0.0' }))
+        })(),
         // Dữ liệu thật từ DB (thay mock nếu API thành công)
         monthlyByChannel:  monthlyReal.status === 'fulfilled' && monthlyReal.value?.length
                              ? monthlyReal.value : mock.monthlyByChannel,
@@ -2250,6 +2214,9 @@ export default function DashboardPage() {
         inventoryKpi: {
           ...mock.inventoryKpi,
           ...(invData?.inventoryKpi ?? {}),
+          // Safe parse — backend có thể trả NaN/null
+          overstockRate:   (() => { const n = parseFloat(invData?.inventoryKpi?.overstockRate ?? mock.inventoryKpi?.overstockRate); return Number.isFinite(n) ? n : 0 })(),
+          stockoutRate:    (() => { const n = parseFloat(invData?.inventoryKpi?.stockoutRate  ?? mock.inventoryKpi?.stockoutRate);  return Number.isFinite(n) ? n : 0 })(),
           // Ops KPI từ OLTP orders (ghi đè nếu có)
           returnRate:      Number(opsData?.returnRate      ?? mock.inventoryKpi?.returnRate      ?? 0),
           cancelRate:      Number(opsData?.cancelRate      ?? mock.inventoryKpi?.cancelRate      ?? 0),

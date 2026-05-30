@@ -7,6 +7,7 @@ export default defineConfig({
 
   server: {
     port: 5173,
+    allowedHosts: true,
     proxy: {
       // Mọi request /api/* từ React → chuyển sang backend ASP.NET Core
       '/api': {

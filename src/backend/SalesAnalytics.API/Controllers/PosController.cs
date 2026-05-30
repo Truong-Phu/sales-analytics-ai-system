@@ -403,32 +403,62 @@ public class PosController(IConfiguration cfg, ITenantContext tenant) : Controll
             // 6. Kiểm tra tồn kho TRƯỚC khi tạo đơn (FOR UPDATE để tránh race condition)
             foreach (var item in dto.Items)
             {
-                await using var chkCmd = new NpgsqlCommand("""
-                    SELECT product_name, stock_quantity
-                    FROM public.products
-                    WHERE product_id = @pid AND company_id = @cid::uuid
-                    FOR UPDATE
-                    """, conn, tx);
-                chkCmd.Parameters.AddWithValue("pid", item.ProductId);
-                chkCmd.Parameters.AddWithValue("cid", tenant.CompanyId!.Value.ToString());
-                await using var chkR = await chkCmd.ExecuteReaderAsync();
-                if (!await chkR.ReadAsync())
+                if (item.VariationId.HasValue)
                 {
-                    await chkR.CloseAsync();
-                    await tx.RollbackAsync();
-                    return BadRequest(new { message = $"Không tìm thấy sản phẩm ID {item.ProductId}." });
-                }
-                var pName  = chkR.GetString(0);
-                var pStock = chkR.GetInt32(1);
-                await chkR.CloseAsync();
-
-                if (pStock < item.Qty)
-                {
-                    await tx.RollbackAsync();
-                    return BadRequest(new
+                    // Kiểm tra tồn kho theo variation (size/màu cụ thể)
+                    await using var chkVarCmd = new NpgsqlCommand("""
+                        SELECT p.product_name, pv.stock_quantity, pv.variation_name, pv.attribute_color, pv.attribute_size
+                        FROM public.product_variations pv
+                        JOIN public.products p ON p.product_id = pv.product_id
+                        WHERE pv.id = @vid AND p.company_id = @cid::uuid
+                        FOR UPDATE OF pv
+                        """, conn, tx);
+                    chkVarCmd.Parameters.AddWithValue("vid", item.VariationId.Value);
+                    chkVarCmd.Parameters.AddWithValue("cid", tenant.CompanyId!.Value.ToString());
+                    await using var chkVarR = await chkVarCmd.ExecuteReaderAsync();
+                    if (!await chkVarR.ReadAsync())
                     {
-                        message = $"Sản phẩm \"{pName}\" không đủ hàng. Còn {pStock}, cần {item.Qty}."
-                    });
+                        await chkVarR.CloseAsync(); await tx.RollbackAsync();
+                        return BadRequest(new { message = $"Không tìm thấy biến thể sản phẩm ID {item.VariationId}." });
+                    }
+                    var vPname = chkVarR.GetString(0);
+                    var vStock = chkVarR.GetInt32(1);
+                    var vName  = new[] { chkVarR.IsDBNull(3) ? null : chkVarR.GetString(3),
+                                         chkVarR.IsDBNull(4) ? null : chkVarR.GetString(4) }
+                                 .Where(s => s != null).DefaultIfEmpty(chkVarR.IsDBNull(2) ? "" : chkVarR.GetString(2))
+                                 .FirstOrDefault() ?? "";
+                    await chkVarR.CloseAsync();
+                    if (vStock < item.Qty)
+                    {
+                        await tx.RollbackAsync();
+                        return BadRequest(new { message = $"Biến thể \"{vPname} ({vName})\" không đủ hàng. Còn {vStock}, cần {item.Qty}." });
+                    }
+                }
+                else
+                {
+                    // Kiểm tra tồn kho theo sản phẩm tổng
+                    await using var chkCmd = new NpgsqlCommand("""
+                        SELECT product_name, stock_quantity
+                        FROM public.products
+                        WHERE product_id = @pid AND company_id = @cid::uuid
+                        FOR UPDATE
+                        """, conn, tx);
+                    chkCmd.Parameters.AddWithValue("pid", item.ProductId);
+                    chkCmd.Parameters.AddWithValue("cid", tenant.CompanyId!.Value.ToString());
+                    await using var chkR = await chkCmd.ExecuteReaderAsync();
+                    if (!await chkR.ReadAsync())
+                    {
+                        await chkR.CloseAsync(); await tx.RollbackAsync();
+                        return BadRequest(new { message = $"Không tìm thấy sản phẩm ID {item.ProductId}." });
+                    }
+                    var pName  = chkR.GetString(0);
+                    var pStock = chkR.GetInt32(1);
+                    await chkR.CloseAsync();
+                    if (pStock < item.Qty)
+                    {
+                        await tx.RollbackAsync();
+                        return BadRequest(new { message = $"Sản phẩm \"{pName}\" không đủ hàng. Còn {pStock}, cần {item.Qty}." });
+                    }
                 }
             }
 
@@ -460,21 +490,43 @@ public class PosController(IConfiguration cfg, ITenantContext tenant) : Controll
             orCmd.Parameters.AddWithValue("note",      (object?)(dto.Note) ?? DBNull.Value);
             var orderId = Convert.ToInt32(await orCmd.ExecuteScalarAsync());
 
-            // 8. Insert order_items + trừ tồn kho (đã validate ở bước 6, dùng exact deduction)
+            // 8. Insert order_items + trừ tồn kho (đã validate ở bước 6, exact deduction)
+            var cid2 = tenant.CompanyId!.Value.ToString();
             foreach (var item in dto.Items)
             {
+                // Lấy thông tin variation để snapshot vào order_item
+                string? varName = null; string? varSku = null;
+                if (item.VariationId.HasValue)
+                {
+                    await using var varInfoCmd = new NpgsqlCommand(
+                        "SELECT variation_name, sku FROM public.product_variations WHERE id = @vid",
+                        conn, tx);
+                    varInfoCmd.Parameters.AddWithValue("vid", item.VariationId.Value);
+                    await using var varInfoR = await varInfoCmd.ExecuteReaderAsync();
+                    if (await varInfoR.ReadAsync())
+                    {
+                        varName = varInfoR.IsDBNull(0) ? null : varInfoR.GetString(0);
+                        varSku  = varInfoR.IsDBNull(1) ? null : varInfoR.GetString(1);
+                    }
+                }
+
                 await using var itmCmd = new NpgsqlCommand("""
                     INSERT INTO public.order_items
-                        (order_id, product_id, quantity, unit_price, subtotal, created_at)
-                    VALUES (@oid, @pid, @qty, @price, @sub, NOW())
+                        (order_id, product_id, variation_id, variation_name, sku,
+                         quantity, unit_price, subtotal, created_at)
+                    VALUES (@oid, @pid, @vid, @vname, @vsku, @qty, @price, @sub, NOW())
                     """, conn, tx);
                 itmCmd.Parameters.AddWithValue("oid",   orderId);
                 itmCmd.Parameters.AddWithValue("pid",   item.ProductId);
+                itmCmd.Parameters.AddWithValue("vid",   item.VariationId.HasValue ? (object)item.VariationId.Value : DBNull.Value);
+                itmCmd.Parameters.AddWithValue("vname", (object?)varName ?? DBNull.Value);
+                itmCmd.Parameters.AddWithValue("vsku",  (object?)varSku  ?? DBNull.Value);
                 itmCmd.Parameters.AddWithValue("qty",   item.Qty);
                 itmCmd.Parameters.AddWithValue("price", item.Price);
                 itmCmd.Parameters.AddWithValue("sub",   item.Price * item.Qty);
                 await itmCmd.ExecuteNonQueryAsync();
 
+                // Trừ tồn kho sản phẩm tổng + ghi inventory_transaction
                 await using var stockCmd = new NpgsqlCommand("""
                     WITH upd AS (
                         UPDATE public.products
@@ -492,10 +544,23 @@ public class PosController(IConfiguration cfg, ITenantContext tenant) : Controll
                     """, conn, tx);
                 stockCmd.Parameters.AddWithValue("qty",       item.Qty);
                 stockCmd.Parameters.AddWithValue("pid",       item.ProductId);
-                stockCmd.Parameters.AddWithValue("cid",       tenant.CompanyId!.Value.ToString());
+                stockCmd.Parameters.AddWithValue("cid",       cid2);
                 stockCmd.Parameters.AddWithValue("orderId",   (long)orderId);
                 stockCmd.Parameters.AddWithValue("createdBy", userId2 > 0 ? (object)userId2 : DBNull.Value);
                 await stockCmd.ExecuteNonQueryAsync();
+
+                // Trừ thêm tồn kho variation nếu có
+                if (item.VariationId.HasValue)
+                {
+                    await using var varStockCmd = new NpgsqlCommand("""
+                        UPDATE public.product_variations
+                        SET stock_quantity = stock_quantity - @qty, updated_at = NOW()
+                        WHERE id = @vid
+                        """, conn, tx);
+                    varStockCmd.Parameters.AddWithValue("qty", item.Qty);
+                    varStockCmd.Parameters.AddWithValue("vid", item.VariationId.Value);
+                    await varStockCmd.ExecuteNonQueryAsync();
+                }
             }
 
             // 8. Cộng điểm loyalty sau khi mua
@@ -752,7 +817,7 @@ public class PosController(IConfiguration cfg, ITenantContext tenant) : Controll
 
 // ── DTOs ──────────────────────────────────────────────────────────────────────
 
-public record PosOrderItem(int ProductId, int Qty, decimal Price);
+public record PosOrderItem(int ProductId, int? VariationId, int Qty, decimal Price);
 
 public record CreateOfflineOrderDto(
     int? CustomerId,

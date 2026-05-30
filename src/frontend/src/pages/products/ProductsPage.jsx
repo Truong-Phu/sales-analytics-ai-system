@@ -1,10 +1,12 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import MockToast from '../../components/ui/MockToast'
 import DetailDrawer from '../../components/ui/DetailDrawer'
 import { getOltpProducts, createProduct, updateProduct, deleteProduct, getCategories, uploadProductImage, getChannelPrices, saveChannelPrice } from '../../api/dashboardApi'
 import { MOCK_PRODUCTS } from '../../mockData/products'
 import { useAuth } from '../../hooks/useAuth'
+import { useDebounce } from '../../hooks/useDebounce'
+import { exportToCsv } from '../../utils/format'
 import api from '../../api/axios'
 
 const PAGE_SIZE = 10
@@ -595,31 +597,70 @@ function ProductFormModal({ initial, mode, onClose, onSaved }) {
 export default function ProductsPage() {
   const { t } = useTranslation()
   const { user } = useAuth()
-  const [data,     setData]     = useState(null)
-  const [loading,  setLoading]  = useState(true)
-  const [isMock,   setIsMock]   = useState(false)
-  const [search,   setSearch]   = useState('')
-  const [category, setCategory] = useState('')
-  const [page,     setPage]     = useState(1)
-  const [selected, setSelected] = useState(null)
-  const [view,     setView]     = useState('table') // 'table' | 'grid'
-  const [formMode, setFormMode] = useState(null)    // 'create' khi tạo mới
-  const [toast,    setToast]    = useState('')
+  const [data,            setData]            = useState(null)
+  const [loading,         setLoading]         = useState(true)
+  const [isMock,          setIsMock]          = useState(false)
+  const [search,      setSearch]      = useState('')
+  const [categoryId,  setCategoryId]  = useState('')  // string ID, '' = no filter
+  const [filterCats,  setFilterCats]  = useState([])
+  const [page,        setPage]        = useState(1)
+  const [selected,   setSelected]   = useState(null)
+  const [view,       setView]       = useState('table') // 'table' | 'grid'
+  const [formMode,   setFormMode]   = useState(null)    // 'create' khi tạo mới
+  const [toast,      setToast]      = useState('')
+  const [checkedIds, setCheckedIds] = useState(new Set())
+
+  const debouncedSearch = useDebounce(search, 350)
+
+  // Sắp xếp danh mục theo cây: cha → con ngay bên dưới; loại trùng theo (parentId, tên)
+  const sortedCats = useMemo(() => {
+    const seen = new Map()
+    filterCats.forEach(c => {
+      const key = `${c.parentId ?? 'null'}-${c.categoryName.toLowerCase().trim()}`
+      if (!seen.has(key) || seen.get(key).categoryId > c.categoryId)
+        seen.set(key, c)
+    })
+    const unique = [...seen.values()]
+    const parents = unique
+      .filter(c => !c.parentId)
+      .sort((a, b) => a.categoryName.localeCompare(b.categoryName, 'vi'))
+    const childrenMap = {}
+    unique.filter(c => c.parentId).forEach(c => {
+      if (!childrenMap[c.parentId]) childrenMap[c.parentId] = []
+      childrenMap[c.parentId].push(c)
+    })
+    const result = []
+    for (const parent of parents) {
+      result.push(parent)
+      ;(childrenMap[parent.categoryId] ?? [])
+        .sort((a, b) => a.categoryName.localeCompare(b.categoryName, 'vi'))
+        .forEach(c => result.push(c))
+    }
+    return result
+  }, [filterCats])
 
   const canEdit = ['Owner', 'Manager', 'DataIT'].includes(user?.role)
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 3000) }
+
+  // Load danh mục một lần để dùng cho filter dropdown
+  useEffect(() => {
+    getCategories().then(setFilterCats).catch(() => {})
+  }, [])
 
   const fetchData = useCallback(async () => {
     setLoading(true)
     setIsMock(false)
     try {
-      const searchParam = [search, category].filter(Boolean).join(' ') || undefined
-      setData(await getOltpProducts({ search: searchParam, page, limit: PAGE_SIZE }))
+      setData(await getOltpProducts({
+        search:     debouncedSearch || undefined,
+        categoryId: categoryId      ? Number(categoryId) : undefined,
+        page,
+        limit: PAGE_SIZE,
+      }))
     } catch {
       const filtered = MOCK_PRODUCTS.filter(p =>
-        (!search   || (p.name ?? p.product_name ?? '').toLowerCase().includes(search.toLowerCase()) ||
-                      (p.sku ?? '').toLowerCase().includes(search.toLowerCase())) &&
-        (!category || (p.category ?? '').toLowerCase().includes(category.toLowerCase()))
+        (!debouncedSearch || (p.name ?? p.product_name ?? '').toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+                             (p.sku ?? '').toLowerCase().includes(debouncedSearch.toLowerCase()))
       )
       const start = (page - 1) * PAGE_SIZE
       setData({ items: filtered.slice(start, start + PAGE_SIZE), total: filtered.length, page,
@@ -628,7 +669,7 @@ export default function ProductsPage() {
     } finally {
       setLoading(false)
     }
-  }, [search, category, page])
+  }, [debouncedSearch, categoryId, page])
 
   const openCreate = () => setFormMode('create')
 
@@ -671,6 +712,39 @@ export default function ProductsPage() {
       } : prev)
       showToast(err.response?.data?.message ?? 'Lỗi thay đổi trạng thái')
     }
+  }
+
+  // ── Bulk select ───────────────────────────────────────────────────────────────
+  const getPid = (p) => p.product_id ?? p.id
+  const toggleCheck = (id, e) => {
+    e.stopPropagation()
+    setCheckedIds(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
+  }
+  const toggleAll = (items) => {
+    const allChecked = items.length > 0 && items.every(p => checkedIds.has(getPid(p)))
+    setCheckedIds(allChecked ? new Set() : new Set(items.map(getPid)))
+  }
+  const handleBulkDelete = async (items) => {
+    if (!window.confirm(`Xóa ${checkedIds.size} sản phẩm đã chọn?`)) return
+    try {
+      await Promise.all([...checkedIds].map(id => deleteProduct(id)))
+      showToast(`Đã xóa ${checkedIds.size} sản phẩm`)
+      setCheckedIds(new Set())
+      fetchData()
+    } catch { showToast('Có lỗi khi xóa hàng loạt') }
+  }
+
+  // ── Export CSV ────────────────────────────────────────────────────────────────
+  const handleExport = (items) => {
+    exportToCsv(`san_pham_${new Date().toISOString().slice(0, 10)}.csv`, items.map(p => ({
+      'Tên sản phẩm': p.product_name ?? p.name ?? '',
+      'SKU':          p.sku ?? '',
+      'Danh mục':     p.category ?? '',
+      'Giá bán (₫)':  p.unit_price ?? p.price ?? 0,
+      'Giá vốn (₫)':  p.cost_price ?? p.costPrice ?? 0,
+      'Tồn kho':      p.stock ?? 0,
+      'Trạng thái':   (p.isActive ?? true) ? 'Đang bán' : 'Ngừng bán',
+    })))
   }
 
   useEffect(() => { fetchData() }, [fetchData])
@@ -726,6 +800,11 @@ export default function ProductsPage() {
               </button>
             ))}
           </div>
+          <button className="lbtn lbtn-secondary !h-9" onClick={() => handleExport(items)}
+                  title="Xuất CSV trang hiện tại">
+            <span className="icon text-base">download</span>
+            <span className="hidden sm:inline">Xuất CSV</span>
+          </button>
           {canEdit && (
             <button className="lbtn lbtn-primary !h-9" onClick={openCreate}>
               <span className="icon text-base">add</span>
@@ -744,14 +823,44 @@ export default function ProductsPage() {
                  placeholder={t('products.searchPlaceholder')}
                  value={search} onChange={e => { setSearch(e.target.value); setPage(1) }} />
         </div>
-        <input type="text" className="linput text-sm w-44"
-               placeholder={t('products.filterCategory')}
-               value={category} onChange={e => { setCategory(e.target.value); setPage(1) }} />
-        <button onClick={() => { setSearch(''); setCategory(''); setPage(1) }}
+        <select className="linput text-sm" style={{ width: 200 }}
+                value={categoryId} onChange={e => { setCategoryId(e.target.value); setPage(1) }}>
+          <option value="">{t('products.filterCategory')}</option>
+          {sortedCats.map(c => (
+            <option key={c.categoryId} value={c.categoryId}>
+              {c.parentId ? `  └ ${c.categoryName}` : c.categoryName}
+            </option>
+          ))}
+        </select>
+        <button onClick={() => { setSearch(''); setCategoryId(''); setPage(1) }}
                 className="lbtn lbtn-secondary !h-9">
           <span className="icon text-base">refresh</span>
         </button>
       </div>
+
+      {/* Bulk action bar */}
+      {checkedIds.size > 0 && (
+        <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm"
+             style={{ background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.25)' }}>
+          <span className="font-medium" style={{ color: 'var(--primary-600)' }}>
+            Đã chọn {checkedIds.size} sản phẩm
+          </span>
+          <div className="flex gap-2 ml-auto">
+            {canEdit && !isMock && (
+              <button onClick={() => handleBulkDelete(items)}
+                      className="lbtn !h-8 !px-3 text-xs font-medium"
+                      style={{ background: 'rgba(239,68,68,0.1)', color: '#EF4444', border: '1px solid rgba(239,68,68,0.3)' }}>
+                <span className="icon text-sm">delete</span>
+                Xóa {checkedIds.size} mục
+              </button>
+            )}
+            <button onClick={() => setCheckedIds(new Set())}
+                    className="lbtn lbtn-secondary !h-8 !px-3 text-xs">
+              Bỏ chọn
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Content */}
       {loading ? (
@@ -818,6 +927,13 @@ export default function ProductsPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-elevated)' }}>
+                  <th className="px-4 py-3 w-10">
+                    <input type="checkbox"
+                           checked={items.length > 0 && items.every(p => checkedIds.has(getPid(p)))}
+                           onChange={() => toggleAll(items)}
+                           onClick={e => e.stopPropagation()}
+                           className="w-4 h-4 cursor-pointer" />
+                  </th>
                   {['#', t('products.name'), 'SKU', t('products.category'), t('products.price'),
                     'Tồn kho', t('common.status'), 'Bán', ''].map(h => (
                     <th key={h} className="text-left px-4 py-3 text-sm font-semibold tracking-wide"
@@ -829,10 +945,14 @@ export default function ProductsPage() {
                 {items.map((p, i) => (
                   <tr key={p.product_id ?? p.id ?? i}
                       className="transition-colors cursor-pointer"
-                      style={{ borderBottom: '1px solid var(--border)' }}
+                      style={{ borderBottom: '1px solid var(--border)', background: checkedIds.has(getPid(p)) ? 'rgba(99,102,241,0.04)' : undefined }}
                       onClick={() => setSelected(p)}
-                      onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
-                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                      onMouseEnter={e => { if (!checkedIds.has(getPid(p))) e.currentTarget.style.background = 'var(--bg-elevated)' }}
+                      onMouseLeave={e => { e.currentTarget.style.background = checkedIds.has(getPid(p)) ? 'rgba(99,102,241,0.04)' : 'transparent' }}>
+                    <td className="px-4 py-3 w-10" onClick={e => toggleCheck(getPid(p), e)}>
+                      <input type="checkbox" checked={checkedIds.has(getPid(p))} onChange={() => {}}
+                             className="w-4 h-4 cursor-pointer" />
+                    </td>
                     <td className="px-4 py-3 text-sm tabular-nums" style={{ color: 'var(--text-secondary)' }}>
                       {(page - 1) * PAGE_SIZE + i + 1}
                     </td>

@@ -216,7 +216,7 @@
     "tourSlide1Title": "Dashboard Tổng quan",
     "tourSlide1Desc": "Xem toàn bộ KPI, doanh thu, đơn hàng từ nhiều kênh trong một màn hình.",
     "tourSlide2Title": "Phân tích Kênh",
-    "tourSlide2Desc": "So sánh hiệu suất Shopee, Lazada, TikTok, Facebook trên cùng biểu đồ.",
+    "tourSlide2Desc": "So sánh hiệu suất Shopee, Lazada, TikTok Shop và Offline trên cùng biểu đồ.",
     "tourSlide3Title": "AI Insight",
     "tourSlide3Desc": "Dự báo doanh thu 30 ngày tới, phát hiện bất thường và đề xuất hành động.",
     "tourSlide4Title": "Xuất Báo cáo",
@@ -242,7 +242,7 @@
     "customers": "Khách hàng",
     "rfmAnalysis": "Phân tích RFM",
     "dataSync": "Đồng bộ dữ liệu",
-    "etlMonitor": "ETL Monitor",
+    "etlMonitor": "Giám sát ETL",
     "report": "Báo cáo",
     "dwStatus": "Data Warehouse",
     "admin": "Quản trị hệ thống",
@@ -424,7 +424,7 @@
       "shopee": "Shopee",
       "lazada": "Lazada",
       "tiktok": "TikTok Shop",
-      "facebook": "Facebook",
+      "offline": "Offline / POS",
       "website": "Website"
     },
     "trend": {
@@ -642,7 +642,7 @@
     }
   },
   "sa": {
-    "title": "Super Admin Panel",
+    "title": "Bảng Quản trị Hệ thống",
     "mode": "Chế độ Super Admin",
     "backToApp": "Về ứng dụng",
     "nav": {

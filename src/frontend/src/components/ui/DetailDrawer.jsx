@@ -1,15 +1,18 @@
 import { useEffect } from 'react'
+import { createPortal } from 'react-dom'
 
 /**
- * Drawer trượt từ bên phải — dùng cho mọi màn hình xem chi tiết.
+ * Drawer trượt từ bên phải — render qua React Portal vào document.body
+ * để thoát khỏi mọi ancestor có transform/filter/contain (ví dụ: .page-enter).
+ *
  * Props:
  *   open     — boolean
  *   onClose  — () => void
  *   title    — string
- *   subtitle — string?  (hiển thị nhỏ dưới title)
- *   width    — number?  (default 520, tính bằng px)
- *   footer   — ReactNode? (cố định ở đáy, bọc sẵn trong flex gap-2)
- *   children — ReactNode  (vùng cuộn)
+ *   subtitle — string?
+ *   width    — number?  (default 520px)
+ *   footer   — ReactNode?
+ *   children — ReactNode
  */
 export default function DetailDrawer({ open, onClose, title, subtitle, width = 520, footer, children }) {
   // Khóa scroll body khi drawer đang mở
@@ -28,66 +31,130 @@ export default function DetailDrawer({ open, onClose, title, subtitle, width = 5
 
   if (!open) return null
 
-  return (
+  return createPortal(
     <>
-      {/* Overlay mờ */}
+      {/* Overlay — render trực tiếp trên document.body, z-index 1000 */}
       <div
-        className="fixed inset-0 z-40 fade-in"
-        style={{ background: 'rgba(0,0,0,0.38)', backdropFilter: 'blur(2px)' }}
+        className="fade-in"
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 1000,
+          background: 'rgba(15,23,42,0.35)',
+          backdropFilter: 'blur(2px)',
+          WebkitBackdropFilter: 'blur(2px)',
+        }}
         onClick={onClose}
       />
 
-      {/* Panel trượt từ phải */}
+      {/* Panel — z-index 1001, luôn cao hơn overlay và header (z-50 = 50) */}
       <div
-        className="fixed top-0 right-0 bottom-0 z-50 flex flex-col slide-in-right"
+        className="slide-in-right"
         style={{
+          position: 'fixed',
+          top: 0,
+          right: 0,
+          bottom: 0,
+          zIndex: 1001,
           width: `min(${width}px, 100vw)`,
-          background: 'var(--bg-card)',
-          borderLeft: '1px solid var(--border)',
-          boxShadow: '-8px 0 40px rgba(0,0,0,0.18)',
+          background: '#ffffff',
+          borderLeft: '1px solid #e5e7eb',
+          boxShadow: '-4px 0 32px rgba(15,23,42,0.15), -1px 0 8px rgba(15,23,42,0.08)',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
         }}
       >
-        {/* Header cố định */}
+        {/* Header */}
         <div
-          className="flex items-center gap-3 px-5 py-4 shrink-0"
-          style={{ borderBottom: '1px solid var(--border)' }}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            padding: '16px 20px',
+            flexShrink: 0,
+            background: '#ffffff',
+            borderBottom: '1px solid #e5e7eb',
+          }}
         >
-          <div className="flex-1 min-w-0">
-            <h2 className="font-bold text-base leading-tight" style={{ color: 'var(--text-primary)' }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <h2 style={{
+              fontWeight: 700,
+              fontSize: 15,
+              lineHeight: '1.3',
+              color: '#0f172a',
+              margin: 0,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}>
               {title}
             </h2>
             {subtitle && (
-              <p className="text-xs mt-0.5 truncate" style={{ color: 'var(--text-tertiary)' }}>
+              <p style={{
+                fontSize: 12,
+                marginTop: 2,
+                color: '#64748b',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                margin: '2px 0 0',
+              }}>
                 {subtitle}
               </p>
             )}
           </div>
           <button
             onClick={onClose}
-            className="w-8 h-8 flex items-center justify-center rounded-lg shrink-0"
-            style={{ color: 'var(--text-secondary)' }}
-            onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
-            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+            style={{
+              width: 32,
+              height: 32,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: 8,
+              flexShrink: 0,
+              background: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              color: '#64748b',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = '#f1f5f9'; e.currentTarget.style.color = '#0f172a' }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#64748b' }}
           >
-            <span className="icon">close</span>
+            <span className="icon" style={{ fontSize: 20 }}>close</span>
           </button>
         </div>
 
-        {/* Vùng nội dung — cuộn dọc */}
-        <div className="flex-1 overflow-y-auto overscroll-contain">
+        {/* Vùng nội dung cuộn — min-height: 0 bắt buộc để overflow-y hoạt động trong flex */}
+        <div
+          style={{
+            flex: 1,
+            minHeight: 0,
+            overflowY: 'auto',
+            background: '#ffffff',
+          }}
+        >
           {children}
         </div>
 
-        {/* Footer cố định (nếu có) */}
+        {/* Footer */}
         {footer && (
           <div
-            className="shrink-0 flex gap-2 px-5 py-3"
-            style={{ borderTop: '1px solid var(--border)' }}
+            style={{
+              flexShrink: 0,
+              display: 'flex',
+              gap: 8,
+              padding: '12px 20px',
+              background: '#ffffff',
+              borderTop: '1px solid #e5e7eb',
+            }}
           >
             {footer}
           </div>
         )}
       </div>
-    </>
+    </>,
+    document.body
   )
 }

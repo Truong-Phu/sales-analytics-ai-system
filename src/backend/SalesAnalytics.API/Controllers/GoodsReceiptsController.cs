@@ -263,9 +263,9 @@ public class GoodsReceiptsController(
                 // 4–7. Mỗi item: insert gri + update stock + log inventory_transaction
                 foreach (var item in dto.Items)
                 {
-                    // Lấy purchase_order_item_id
+                    // Lấy purchase_order_item_id + variation_id từ PO item
                     await using var poiCmd = new NpgsqlCommand("""
-                        SELECT purchase_order_item_id, import_price
+                        SELECT purchase_order_item_id, import_price, variation_id
                         FROM public.purchase_order_items
                         WHERE purchase_order_id = @poid AND product_id = @pid
                         """, conn, tx);
@@ -273,28 +273,30 @@ public class GoodsReceiptsController(
                     poiCmd.Parameters.AddWithValue("pid",  item.ProductId);
                     await using var poiR = await poiCmd.ExecuteReaderAsync();
                     await poiR.ReadAsync();
-                    var poiId      = poiR.GetInt64(0);
-                    var poiPrice   = poiR.GetDecimal(1);
+                    var poiId       = poiR.GetInt64(0);
+                    var poiPrice    = poiR.GetDecimal(1);
+                    var variationId = poiR.IsDBNull(2) ? (int?)null : poiR.GetInt32(2);
                     await poiR.CloseAsync();
 
                     var usedPrice = item.ImportPrice > 0 ? item.ImportPrice : poiPrice;
 
-                    // Insert goods_receipt_item
+                    // Insert goods_receipt_item (kèm variation_id nếu có)
                     await using var griCmd = new NpgsqlCommand("""
                         INSERT INTO public.goods_receipt_items
-                            (goods_receipt_id, purchase_order_item_id, product_id,
+                            (goods_receipt_id, purchase_order_item_id, product_id, variation_id,
                              received_quantity, import_price, total_price)
-                        VALUES (@gr, @poi, @pid, @qty, @price, @ttl)
+                        VALUES (@gr, @poi, @pid, @vid, @qty, @price, @ttl)
                         """, conn, tx);
                     griCmd.Parameters.AddWithValue("gr",    grId);
                     griCmd.Parameters.AddWithValue("poi",   poiId);
                     griCmd.Parameters.AddWithValue("pid",   item.ProductId);
+                    griCmd.Parameters.AddWithValue("vid",   variationId.HasValue ? (object)variationId.Value : DBNull.Value);
                     griCmd.Parameters.AddWithValue("qty",   item.ReceivedQuantity);
                     griCmd.Parameters.AddWithValue("price", usedPrice);
                     griCmd.Parameters.AddWithValue("ttl",   item.ReceivedQuantity * usedPrice);
                     await griCmd.ExecuteNonQueryAsync();
 
-                    // Tăng stock + ghi inventory_transaction trong 1 CTE
+                    // Tăng stock sản phẩm + ghi inventory_transaction
                     await using var stockCmd = new NpgsqlCommand("""
                         WITH upd AS (
                             UPDATE public.products
@@ -316,6 +318,19 @@ public class GoodsReceiptsController(
                     stockCmd.Parameters.AddWithValue("grId", grId);
                     stockCmd.Parameters.AddWithValue("uid",  UserId > 0 ? (object)UserId : DBNull.Value);
                     await stockCmd.ExecuteNonQueryAsync();
+
+                    // Tăng stock biến thể nếu PO item có variation_id
+                    if (variationId.HasValue)
+                    {
+                        await using var varStockCmd = new NpgsqlCommand("""
+                            UPDATE public.product_variations
+                            SET stock_quantity = stock_quantity + @qty, updated_at = NOW()
+                            WHERE id = @vid
+                            """, conn, tx);
+                        varStockCmd.Parameters.AddWithValue("qty", item.ReceivedQuantity);
+                        varStockCmd.Parameters.AddWithValue("vid", variationId.Value);
+                        await varStockCmd.ExecuteNonQueryAsync();
+                    }
 
                     // Cập nhật received_quantity trên purchase_order_items
                     await using var updPoi = new NpgsqlCommand("""

@@ -17,18 +17,20 @@ function formatMoney(v) {
   return n.toLocaleString('vi-VN')
 }
 
+const CHANNEL_COLORS = {
+  Shopee: '#EE4D2D', TikTok: '#2DD4BF', Lazada: '#0F3DD1',
+  Facebook: '#1877F2', Website: '#6366F1', Zalo: '#0068FF',
+}
+
 const PERIODS = [
   { label: '7 ngày',  days: 7  },
   { label: '30 ngày', days: 30 },
   { label: '90 ngày', days: 90 },
 ]
 
-const MOCK_REPORT = {
-  totalRevenue:   845_200_000,
-  totalOrders:    312,
-  totalCustomers: 89,
-  totalProfit:    253_560_000,
-  revenueTrend:   3.2,
+const MOCK_CURRENT = {
+  totalRevenue: 845_200_000, totalOrders: 312,
+  totalCustomers: 89,        totalProfit: 253_560_000,
   channels: [
     { name: 'Shopee',   revenue: 310_000_000, orders: 115, color: '#EE4D2D' },
     { name: 'TikTok',   revenue: 245_000_000, orders: 87,  color: '#69C9D0' },
@@ -37,29 +39,39 @@ const MOCK_REPORT = {
     { name: 'Website',  revenue: 20_200_000,  orders: 13,  color: '#4AE176' },
   ],
   topProducts: [
-    { name: 'Áo thun Unisex oversize',  revenue: 125_000_000, orders: 48 },
-    { name: 'Quần jogger cotton',        revenue: 98_000_000,  orders: 37 },
-    { name: 'Váy hoa midi',             revenue: 76_000_000,  orders: 29 },
-    { name: 'Áo khoác dù',             revenue: 65_000_000,  orders: 24 },
-    { name: 'Giày sneaker trắng',        revenue: 52_000_000,  orders: 19 },
+    { name: 'Áo thun Unisex oversize', revenue: 125_000_000, orders: 48 },
+    { name: 'Quần jogger cotton',       revenue: 98_000_000,  orders: 37 },
+    { name: 'Váy hoa midi',            revenue: 76_000_000,  orders: 29 },
+    { name: 'Áo khoác dù',            revenue: 65_000_000,  orders: 24 },
+    { name: 'Giày sneaker trắng',       revenue: 52_000_000,  orders: 19 },
   ],
 }
 
-function ProGateView({ s, colors }) {
+const MOCK_PREV = {
+  totalRevenue: 732_800_000, totalOrders: 288,
+  totalCustomers: 74,        totalProfit: 219_840_000,
+}
+
+function delta(cur, prev) {
+  if (!prev || prev === 0) return null
+  return ((cur - prev) / prev) * 100
+}
+
+function ProGateView({ s }) {
   return (
     <View style={s.proGate}>
       <Text style={s.proGateIcon}>📊</Text>
       <Text style={s.proGateTitle}>Tính năng dành cho gói Pro</Text>
       <Text style={s.proGateDesc}>
-        Báo cáo nhanh, phân tích theo kênh và sản phẩm top chỉ khả dụng với gói{' '}
+        Báo cáo so sánh kỳ, phân tích theo kênh và sản phẩm top chỉ khả dụng với gói{' '}
         <Text style={{ color: '#4ae176', fontWeight: '700' }}>Pro</Text> trở lên.
       </Text>
       <View style={s.proFeatureList}>
         {[
-          'Tổng hợp KPI theo kỳ (7/30/90 ngày)',
-          'Doanh thu chi tiết theo kênh bán hàng',
-          'Top 5 sản phẩm bán chạy',
-          'So sánh tăng trưởng so với kỳ trước',
+          'So sánh kỳ này vs kỳ trước (7/30/90 ngày)',
+          'Tỷ trọng doanh thu theo kênh bán hàng',
+          'Top 5 sản phẩm bán chạy với % tổng doanh thu',
+          'Tăng trưởng doanh thu, đơn hàng, lợi nhuận',
         ].map((f, i) => (
           <View key={i} style={s.proFeatureItem}>
             <Text style={s.proFeatureCheck}>✓</Text>
@@ -81,42 +93,103 @@ function ProGateView({ s, colors }) {
   )
 }
 
+// So sánh 1 chỉ số: giá trị kỳ này, kỳ trước, % tăng trưởng
+function CompareRow({ label, emoji, curVal, prevVal, formatFn, colors }) {
+  const d    = delta(curVal, prevVal)
+  const isUp = d !== null && d >= 0
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 10,
+                   borderBottomWidth: 1, borderBottomColor: colors.outlineVariant }}>
+      <Text style={{ fontSize: 18, width: 32 }}>{emoji}</Text>
+      <View style={{ flex: 1 }}>
+        <Text style={{ fontSize: 13, color: colors.onSurface, fontWeight: '600' }}>{label}</Text>
+        <Text style={{ fontSize: 11, color: colors.outline, marginTop: 2 }}>
+          Kỳ trước: {formatFn(prevVal)}
+        </Text>
+      </View>
+      <View style={{ alignItems: 'flex-end' }}>
+        <Text style={{ fontSize: 15, fontWeight: '700', color: colors.onSurface }}>
+          {formatFn(curVal)}
+        </Text>
+        {d !== null && (
+          <Text style={{ fontSize: 12, fontWeight: '700',
+                         color: isUp ? '#4ae176' : '#ef4444', marginTop: 2 }}>
+            {isUp ? '▲' : '▼'} {Math.abs(d).toFixed(1)}%
+          </Text>
+        )}
+      </View>
+    </View>
+  )
+}
+
 export default function QuickReportScreen({ navigation }) {
-  const { isFree }  = usePlan()
-  const { colors }  = useTheme()
-  const s           = useMemo(() => makeStyles(colors), [colors])
+  const { isFree } = usePlan()
+  const { colors } = useTheme()
+  const s          = useMemo(() => makeStyles(colors), [colors])
 
   const [selectedPeriod, setSelectedPeriod] = useState(1)
-  const [report,    setReport]    = useState(null)
-  const [loading,   setLoading]   = useState(true)
-  const [refreshing,setRefreshing]= useState(false)
-  const [isMock,    setIsMock]    = useState(false)
+  const [current,  setCurrent]  = useState(null)
+  const [prev,     setPrev]     = useState(null)
+  const [loading,  setLoading]  = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+  const [isMock,   setIsMock]   = useState(false)
 
   const fetchReport = useCallback(async (days) => {
     try {
-      const to   = new Date()
-      const from = new Date(Date.now() - days * 86_400_000)
-      const res  = await api.get('/api/dashboard', {
-        params: {
-          from: from.toISOString().slice(0, 10),
-          to:   to.toISOString().slice(0, 10),
-          channel: 'all',
-        },
+      const to      = new Date()
+      const fromCur = new Date(Date.now() - days * 86_400_000)
+      const fromPrv = new Date(Date.now() - days * 2 * 86_400_000)
+
+      const [resCur, resPrv] = await Promise.all([
+        api.get('/api/dashboard', {
+          params: { from: fromCur.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) },
+        }),
+        api.get('/api/dashboard', {
+          params: {
+            from: fromPrv.toISOString().slice(0, 10),
+            to:   fromCur.toISOString().slice(0, 10),
+          },
+        }),
+      ])
+
+      const rawCur = resCur.data?.data ?? resCur.data
+      const rawPrv = resPrv.data?.data ?? resPrv.data
+      const kpiCur = rawCur?.kpi ?? rawCur
+      const kpiPrv = rawPrv?.kpi ?? rawPrv
+
+      // Map channels: backend trả về revenueByChannel với field channelName
+      const channels = (rawCur?.revenueByChannel ?? rawCur?.channels ?? []).map(c => ({
+        name:    c.channelName ?? c.name ?? '',
+        revenue: c.revenue     ?? 0,
+        orders:  c.orders      ?? 0,
+        color:   CHANNEL_COLORS[c.channelName ?? c.name] ?? '#adc6ff',
+      }))
+
+      // Map topProducts: backend trả về productName, giới hạn 5
+      const topProducts = (rawCur?.topProducts ?? []).slice(0, 5).map(p => ({
+        name:    p.productName ?? p.name ?? 'Sản phẩm',
+        orders:  p.totalOrders ?? p.qtySold ?? p.orders ?? 0,
+        revenue: p.revenue     ?? 0,
+      }))
+
+      setCurrent({
+        totalRevenue:   kpiCur?.totalRevenue   ?? MOCK_CURRENT.totalRevenue,
+        totalOrders:    kpiCur?.totalOrders    ?? MOCK_CURRENT.totalOrders,
+        totalCustomers: kpiCur?.newCustomers   ?? MOCK_CURRENT.totalCustomers,
+        totalProfit:    kpiCur?.totalProfit    ?? MOCK_CURRENT.totalProfit,
+        channels:       channels.length > 0   ? channels    : MOCK_CURRENT.channels,
+        topProducts:    topProducts.length > 0 ? topProducts : MOCK_CURRENT.topProducts,
       })
-      const raw = res.data?.data ?? res.data
-      const r = {
-        totalRevenue:   raw?.kpi?.totalRevenue   ?? raw?.totalRevenue   ?? MOCK_REPORT.totalRevenue,
-        totalOrders:    raw?.kpi?.totalOrders    ?? raw?.totalOrders    ?? MOCK_REPORT.totalOrders,
-        totalCustomers: raw?.kpi?.newCustomers   ?? raw?.newCustomers   ?? MOCK_REPORT.totalCustomers,
-        totalProfit:    raw?.kpi?.totalProfit    ?? raw?.totalProfit    ?? MOCK_REPORT.totalProfit,
-        revenueTrend:   raw?.kpi?.revenueTrend   ?? raw?.revenueTrend   ?? 0,
-        channels:       raw?.channels            ?? MOCK_REPORT.channels,
-        topProducts:    raw?.topProducts         ?? MOCK_REPORT.topProducts,
-      }
-      setReport(r)
+      setPrev({
+        totalRevenue:   kpiPrv?.totalRevenue   ?? MOCK_PREV.totalRevenue,
+        totalOrders:    kpiPrv?.totalOrders    ?? MOCK_PREV.totalOrders,
+        totalCustomers: kpiPrv?.newCustomers   ?? MOCK_PREV.totalCustomers,
+        totalProfit:    kpiPrv?.totalProfit    ?? MOCK_PREV.totalProfit,
+      })
       setIsMock(false)
     } catch {
-      setReport(MOCK_REPORT)
+      setCurrent(MOCK_CURRENT)
+      setPrev(MOCK_PREV)
       setIsMock(true)
     }
   }, [])
@@ -140,10 +213,14 @@ export default function QuickReportScreen({ navigation }) {
     fetchReport(PERIODS[idx].days).finally(() => setLoading(false))
   }
 
-  if (isFree) return <ProGateView s={s} colors={colors} />
+  if (isFree) return <ProGateView s={s} />
 
-  const r = report ?? MOCK_REPORT
-  const maxChannelRevenue = Math.max(...(r.channels ?? []).map(c => c.revenue), 1)
+  const cur = current ?? MOCK_CURRENT
+  const prv = prev    ?? MOCK_PREV
+
+  // Tính tổng doanh thu để tính % tỷ trọng kênh
+  const totalChannelRevenue = (cur.channels ?? []).reduce((s, c) => s + c.revenue, 0) || 1
+  const totalProductRevenue = (cur.topProducts ?? []).reduce((s, p) => s + p.revenue, 0) || 1
 
   return (
     <ScrollView
@@ -152,7 +229,7 @@ export default function QuickReportScreen({ navigation }) {
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
       }
     >
-      {/* Bộ lọc kỳ báo cáo */}
+      {/* ── Bộ lọc kỳ ── */}
       <View style={s.periodRow}>
         {PERIODS.map((p, i) => (
           <TouchableOpacity
@@ -167,7 +244,6 @@ export default function QuickReportScreen({ navigation }) {
         ))}
       </View>
 
-      {/* Banner mock */}
       {isMock && (
         <View style={s.mockBanner}>
           <Text style={s.mockBannerText}>⚠ Đang dùng dữ liệu mẫu</Text>
@@ -180,76 +256,85 @@ export default function QuickReportScreen({ navigation }) {
         </View>
       ) : (
         <>
-          {/* ── KPI Cards ─────────────────────────────────────────────────── */}
-          <View style={s.kpiGrid}>
-            {[
-              { label: 'Doanh thu',   value: `₫${formatMoney(r.totalRevenue)}`,  emoji: '💰', sub: r.revenueTrend !== 0 ? `${r.revenueTrend > 0 ? '▲' : '▼'} ${Math.abs(r.revenueTrend).toFixed(1)}%` : null },
-              { label: 'Đơn hàng',   value: String(r.totalOrders),               emoji: '🛒' },
-              { label: 'Khách hàng', value: String(r.totalCustomers),             emoji: '👤' },
-              { label: 'Lợi nhuận',  value: `₫${formatMoney(r.totalProfit)}`,    emoji: '📈' },
-            ].map((kpi, i) => (
-              <View key={i} style={s.kpiCard}>
-                <Text style={s.kpiEmoji}>{kpi.emoji}</Text>
-                <Text style={s.kpiLabel}>{kpi.label}</Text>
-                <Text style={s.kpiValue}>{kpi.value}</Text>
-                {kpi.sub && (
-                  <Text style={[s.kpiSub, { color: r.revenueTrend >= 0 ? '#4ae176' : colors.error }]}>
-                    {kpi.sub}
-                  </Text>
-                )}
-              </View>
-            ))}
+          {/* ── Section 1: So sánh kỳ này vs kỳ trước ── */}
+          <View style={s.section}>
+            <Text style={s.sectionLabel}>
+              SO SÁNH KỲ NÀY VS KỲ TRƯỚC ({PERIODS[selectedPeriod].label})
+            </Text>
+            <CompareRow
+              label="Doanh thu" emoji="💰"
+              curVal={cur.totalRevenue}  prevVal={prv.totalRevenue}
+              formatFn={v => `₫${formatMoney(v)}`} colors={colors}
+            />
+            <CompareRow
+              label="Đơn hàng" emoji="🛒"
+              curVal={cur.totalOrders}   prevVal={prv.totalOrders}
+              formatFn={v => String(v)}  colors={colors}
+            />
+            <CompareRow
+              label="Khách hàng mới" emoji="👤"
+              curVal={cur.totalCustomers} prevVal={prv.totalCustomers}
+              formatFn={v => String(v)}   colors={colors}
+            />
+            <CompareRow
+              label="Lợi nhuận" emoji="📈"
+              curVal={cur.totalProfit}   prevVal={prv.totalProfit}
+              formatFn={v => `₫${formatMoney(v)}`} colors={colors}
+            />
           </View>
 
-          {/* ── Doanh thu theo kênh ──────────────────────────────────────── */}
-          {r.channels?.length > 0 && (
+          {/* ── Section 2: Tỷ trọng doanh thu theo kênh ── */}
+          {(cur.channels?.length ?? 0) > 0 && (
             <View style={s.section}>
-              <Text style={s.sectionLabel}>DOANH THU THEO KÊNH</Text>
-              {r.channels.map((ch, i) => (
-                <View key={i} style={{ marginBottom: i < r.channels.length - 1 ? 14 : 0 }}>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 5 }}>
-                    <Text style={s.channelName}>{ch.name}</Text>
-                    <View style={{ alignItems: 'flex-end' }}>
-                      <Text style={s.channelRevenue}>₫{formatMoney(ch.revenue)}</Text>
-                      <Text style={s.channelOrders}>{ch.orders} đơn</Text>
+              <Text style={s.sectionLabel}>TỶ TRỌNG THEO KÊNH</Text>
+              {cur.channels.map((ch, i) => {
+                const pct = Math.round((ch.revenue / totalChannelRevenue) * 100)
+                return (
+                  <View key={i} style={{ marginBottom: i < cur.channels.length - 1 ? 14 : 0 }}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <Text style={s.channelName}>{ch.name}</Text>
+                      <View style={{ alignItems: 'flex-end' }}>
+                        <Text style={s.channelRevenue}>₫{formatMoney(ch.revenue)}</Text>
+                        <Text style={s.channelPct}>{pct}% tổng · {ch.orders} đơn</Text>
+                      </View>
+                    </View>
+                    <View style={s.barBg}>
+                      <View
+                        style={[s.barFill, {
+                          width: `${pct}%`,
+                          backgroundColor: ch.color ?? colors.primary,
+                        }]}
+                      />
                     </View>
                   </View>
-                  <View style={s.barBg}>
-                    <View
-                      style={[
-                        s.barFill,
-                        {
-                          width: `${Math.round((ch.revenue / maxChannelRevenue) * 100)}%`,
-                          backgroundColor: ch.color ?? colors.primary,
-                        },
-                      ]}
-                    />
-                  </View>
-                </View>
-              ))}
+                )
+              })}
             </View>
           )}
 
-          {/* ── Top 5 sản phẩm ───────────────────────────────────────────── */}
-          {r.topProducts?.length > 0 && (
+          {/* ── Section 3: Top 5 sản phẩm với % tổng doanh thu ── */}
+          {(cur.topProducts?.length ?? 0) > 0 && (
             <View style={s.section}>
-              <Text style={s.sectionLabel}>TOP 5 SẢN PHẨM</Text>
-              {r.topProducts.map((p, i) => (
-                <View key={i} style={[s.productRow, i > 0 && s.productRowBorder]}>
-                  <Text style={s.productRank}>
-                    {i === 0 ? '🏆' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`}
-                  </Text>
-                  <View style={{ flex: 1, marginHorizontal: 10 }}>
-                    <Text style={s.productName} numberOfLines={1}>{p.name}</Text>
-                    <Text style={s.productOrders}>{p.orders} đơn</Text>
+              <Text style={s.sectionLabel}>TOP 5 SẢN PHẨM TRONG KỲ</Text>
+              {cur.topProducts.map((p, i) => {
+                const pct = ((p.revenue / totalProductRevenue) * 100).toFixed(1)
+                return (
+                  <View key={i} style={[s.productRow, i > 0 && s.productRowBorder]}>
+                    <Text style={s.productRank}>
+                      {i === 0 ? '🏆' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`}
+                    </Text>
+                    <View style={{ flex: 1, marginHorizontal: 10 }}>
+                      <Text style={s.productName} numberOfLines={1}>{p.name}</Text>
+                      <Text style={s.productOrders}>{p.orders} đơn · {pct}% tổng DT</Text>
+                    </View>
+                    <Text style={s.productRevenue}>₫{formatMoney(p.revenue)}</Text>
                   </View>
-                  <Text style={s.productRevenue}>₫{formatMoney(p.revenue)}</Text>
-                </View>
-              ))}
+                )
+              })}
             </View>
           )}
 
-          {/* ── Link đến Danh sách khách hàng ───────────────────────────── */}
+          {/* ── Link đến danh sách khách hàng ── */}
           <TouchableOpacity
             style={s.customerLink}
             onPress={() => navigation?.navigate('Customers')}
@@ -286,61 +371,48 @@ const makeStyles = (c) => StyleSheet.create({
   },
   mockBannerText: { color: '#ffb400', fontSize: 11, textAlign: 'center' },
 
-  kpiGrid: { flexDirection: 'row', flexWrap: 'wrap', padding: 8 },
-  kpiCard: {
-    width: '47%', margin: '1.5%',
-    backgroundColor: c.surfaceContainerLow,
-    borderRadius: radius.md, padding: 14,
+  section: {
+    backgroundColor: c.card ?? c.surfaceContainerLow,
+    borderRadius: radius.md, margin: 12, marginTop: 8, padding: 16,
     borderWidth: 1, borderColor: c.outlineVariant,
   },
-  kpiEmoji: { fontSize: 22, marginBottom: 8 },
-  kpiLabel: { fontSize: 11, color: c.outline },
-  kpiValue: { fontSize: 17, fontWeight: '700', color: c.onSurface, marginTop: 2 },
-  kpiSub:   { fontSize: 11, marginTop: 4, fontWeight: '600' },
-
-  section: {
-    backgroundColor: c.card,
-    borderRadius: radius.md, margin: 12, marginTop: 0, padding: 16,
-  },
   sectionLabel: {
-    fontSize: 11, fontWeight: '700', color: c.textSecondary,
-    letterSpacing: 1, textTransform: 'uppercase', marginBottom: 14,
+    fontSize: 11, fontWeight: '700', color: c.outline,
+    letterSpacing: 1, textTransform: 'uppercase', marginBottom: 12,
   },
-  channelName:    { fontSize: 13, color: c.textPrimary, fontWeight: '600' },
+
+  channelName:    { fontSize: 13, color: c.onSurface, fontWeight: '600' },
   channelRevenue: { fontSize: 13, color: c.primary, fontWeight: '700' },
-  channelOrders:  { fontSize: 11, color: c.textSecondary },
-  barBg:   { height: 6, backgroundColor: c.cardBorder, borderRadius: 3 },
+  channelPct:     { fontSize: 11, color: c.outline, marginTop: 2 },
+  barBg:   { height: 6, backgroundColor: c.outlineVariant, borderRadius: 3 },
   barFill: { height: 6, borderRadius: 3 },
 
   productRow:       { flexDirection: 'row', alignItems: 'center', paddingVertical: 10 },
-  productRowBorder: { borderTopWidth: 1, borderTopColor: c.cardBorder },
+  productRowBorder: { borderTopWidth: 1, borderTopColor: c.outlineVariant },
   productRank:      { fontSize: 18, width: 30 },
-  productName:      { fontSize: 13, color: c.textPrimary, fontWeight: '600' },
-  productOrders:    { fontSize: 11, color: c.textSecondary, marginTop: 2 },
+  productName:      { fontSize: 13, color: c.onSurface, fontWeight: '600' },
+  productOrders:    { fontSize: 11, color: c.outline, marginTop: 2 },
   productRevenue:   { fontSize: 13, color: c.primary, fontWeight: '700' },
 
   customerLink: {
-    backgroundColor: c.surfaceContainerLow,
+    backgroundColor: c.surfaceContainerLow ?? c.surface,
     borderRadius: radius.md, margin: 12, marginTop: 0,
     padding: 14, borderWidth: 1, borderColor: c.outlineVariant,
     alignItems: 'center',
   },
   customerLinkText: { fontSize: 14, color: c.primary, fontWeight: '600' },
 
-  proGate: {
-    flex: 1, alignItems: 'center', justifyContent: 'center',
-    padding: 32, backgroundColor: c.surface,
-  },
-  proGateIcon:    { fontSize: 56, marginBottom: 20 },
-  proGateTitle:   { fontSize: 18, fontWeight: '700', color: c.onSurface, marginBottom: 12, textAlign: 'center' },
-  proGateDesc:    { fontSize: 14, color: c.outline, textAlign: 'center', lineHeight: 22, marginBottom: 24 },
+  proGate:      { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32, backgroundColor: c.surface },
+  proGateIcon:  { fontSize: 56, marginBottom: 20 },
+  proGateTitle: { fontSize: 18, fontWeight: '700', color: c.onSurface, marginBottom: 12, textAlign: 'center' },
+  proGateDesc:  { fontSize: 14, color: c.outline, textAlign: 'center', lineHeight: 22, marginBottom: 24 },
   proFeatureList: { alignSelf: 'stretch', marginBottom: 28 },
   proFeatureItem: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
   proFeatureCheck:{ fontSize: 15, color: '#4ae176', marginRight: 10, fontWeight: '700' },
   proFeatureText: { fontSize: 14, color: c.onSurface },
   upgradeBtn: {
-    backgroundColor: '#4ae176',
-    borderRadius: radius.md, paddingVertical: 14, paddingHorizontal: 24,
+    backgroundColor: '#4ae176', borderRadius: radius.md,
+    paddingVertical: 14, paddingHorizontal: 24,
     alignSelf: 'stretch', alignItems: 'center',
   },
   upgradeBtnText: { color: '#0a1a0f', fontSize: 14, fontWeight: '700' },

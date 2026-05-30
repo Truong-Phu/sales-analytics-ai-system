@@ -5,6 +5,8 @@ import DetailDrawer from '../../components/ui/DetailDrawer'
 import { getCustomers, createCustomer, updateCustomer, deactivateCustomer, getCustomerOrderHistory, getOltpCustomer } from '../../api/dashboardApi'
 import { MOCK_CUSTOMERS } from '../../mockData/customers'
 import { useAuth } from '../../hooks/useAuth'
+import { useDebounce } from '../../hooks/useDebounce'
+import { exportToCsv } from '../../utils/format'
 import i18n from '../../i18n'
 
 // Xử lý segment_label có thể là string hoặc object {vi, en}
@@ -160,6 +162,9 @@ export default function CustomersPage() {
   const [toast,         setToast]         = useState('')
   const [selOrders,     setSelOrders]     = useState(null)   // lịch sử đơn KH đang xem
   const [selOrdersLoad, setSelOrdersLoad] = useState(false)
+  const [checkedIds,    setCheckedIds]    = useState(new Set())
+
+  const debouncedSearch = useDebounce(search, 350)
 
   const canEdit = ['Owner', 'Manager', 'Staff'].includes(user?.role)
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 3000) }
@@ -180,11 +185,11 @@ export default function CustomersPage() {
     setLoading(true)
     setIsMock(false)
     try {
-      setData(await getCustomers({ search, segment: segment === 'all' ? '' : segment, page, limit: PAGE_SIZE }))
+      setData(await getCustomers({ search: debouncedSearch, segment: segment === 'all' ? '' : segment, page, limit: PAGE_SIZE }))
     } catch {
       const filtered = MOCK_CUSTOMERS.filter(c =>
-        (!search  || (c.full_name ?? '').toLowerCase().includes(search.toLowerCase()) ||
-                     (c.customer_code ?? '').toLowerCase().includes(search.toLowerCase())) &&
+        (!debouncedSearch  || (c.full_name ?? '').toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+                              (c.customer_code ?? '').toLowerCase().includes(debouncedSearch.toLowerCase())) &&
         (segment === 'all' || c.segment_label === segment)
       )
       const start = (page - 1) * PAGE_SIZE
@@ -194,7 +199,7 @@ export default function CustomersPage() {
     } finally {
       setLoading(false)
     }
-  }, [search, segment, page])
+  }, [debouncedSearch, segment, page])
 
   const openCreate = () => { setFormInit(null); setFormMode('create') }
 
@@ -229,6 +234,42 @@ export default function CustomersPage() {
     } catch (err) {
       showToast(err.response?.data?.message ?? 'Lỗi ẩn khách hàng')
     }
+  }
+
+  // ── Bulk select ───────────────────────────────────────────────────────────────
+  const getCid = (c) => c.customer_id ?? c.id
+  const toggleCheck = (id, e) => {
+    e.stopPropagation()
+    setCheckedIds(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
+  }
+  const toggleAll = (items) => {
+    const allChecked = items.length > 0 && items.every(c => checkedIds.has(getCid(c)))
+    setCheckedIds(allChecked ? new Set() : new Set(items.map(getCid)))
+  }
+  const handleBulkDeactivate = async () => {
+    if (!window.confirm(`Ẩn ${checkedIds.size} khách hàng đã chọn?`)) return
+    try {
+      await Promise.all([...checkedIds].map(id => deactivateCustomer(id)))
+      showToast(`Đã ẩn ${checkedIds.size} khách hàng`)
+      setCheckedIds(new Set())
+      fetchData()
+    } catch { showToast('Có lỗi khi ẩn hàng loạt') }
+  }
+
+  // ── Export CSV ────────────────────────────────────────────────────────────────
+  const handleExport = (items) => {
+    exportToCsv(`khach_hang_${new Date().toISOString().slice(0, 10)}.csv`, items.map(c => ({
+      'Mã KH':         c.customer_code ?? '',
+      'Tên khách hàng': c.full_name ?? c.fullName ?? '',
+      'SĐT':           c.phone ?? c.phone_number ?? '',
+      'Email':         c.email ?? '',
+      'Tỉnh/thành':    c.province ?? '',
+      'Phân khúc':     c.rfm_segment ?? c.segment_label ?? '',
+      'Số đơn hàng':   c.total_orders ?? c.totalOrders ?? 0,
+      'Tổng chi tiêu (₫)': c.total_spent ?? c.total_revenue ?? 0,
+      'Điểm tích lũy': c.loyalty_points ?? 0,
+      'Kênh chính':    c.primary_channel ?? '',
+    })))
   }
 
   useEffect(() => { fetchData() }, [fetchData])
@@ -274,13 +315,42 @@ export default function CustomersPage() {
               Thêm khách hàng
             </button>
           )}
+          <button className="lbtn lbtn-secondary !h-9" onClick={() => handleExport(items)}
+                  title="Xuất CSV trang hiện tại">
+            <span className="icon text-base">download</span>
+            <span className="hidden sm:inline">Xuất CSV</span>
+          </button>
           <button onClick={fetchData} className="lbtn lbtn-secondary !h-9" disabled={loading}>
             <span className="icon text-base" style={{ ...(loading && { animation: 'spin 1s linear infinite' }) }}>refresh</span>
           </button>
         </div>
       </div>
 
-      {/* Segment tab filter */}
+      {/* Bulk action bar */}
+      {checkedIds.size > 0 && (
+        <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm"
+             style={{ background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.25)' }}>
+          <span className="font-medium" style={{ color: 'var(--primary-600)' }}>
+            Đã chọn {checkedIds.size} khách hàng
+          </span>
+          <div className="flex gap-2 ml-auto">
+            {canEdit && !isMock && (
+              <button onClick={handleBulkDeactivate}
+                      className="lbtn !h-8 !px-3 text-xs font-medium"
+                      style={{ background: 'rgba(239,68,68,0.1)', color: '#EF4444', border: '1px solid rgba(239,68,68,0.3)' }}>
+                <span className="icon text-sm">visibility_off</span>
+                Ẩn {checkedIds.size} KH
+              </button>
+            )}
+            <button onClick={() => setCheckedIds(new Set())}
+                    className="lbtn lbtn-secondary !h-8 !px-3 text-xs">
+              Bỏ chọn
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Filter: search + segment dropdown */}
       <div className="flex items-center gap-2 flex-wrap">
         <div className="relative flex-1 min-w-[200px] max-w-sm">
           <span className="icon absolute left-3 top-1/2 -translate-y-1/2 text-base"
@@ -289,26 +359,21 @@ export default function CustomersPage() {
                  placeholder={t('customers.searchPlaceholder')}
                  value={search} onChange={e => { setSearch(e.target.value); setPage(1) }} />
         </div>
-        <div className="flex p-1 rounded-xl gap-1" style={{ background: 'var(--bg-elevated)' }}>
+        <select
+          value={segment}
+          onChange={e => { setSegment(e.target.value); setPage(1) }}
+          className="linput text-sm"
+          style={{ width: 160 }}
+        >
           {SEGMENTS.map(s => {
             const cfg = SEGMENT_CFG[s]
             return (
-              <button
-                key={s}
-                onClick={() => { setSegment(s); setPage(1) }}
-                className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1"
-                style={{
-                  background: segment === s ? (cfg ? cfg.bg : 'var(--bg-surface)') : 'transparent',
-                  color: segment === s ? (cfg ? cfg.color : 'var(--text-primary)') : 'var(--text-secondary)',
-                  border: segment === s ? `1px solid ${cfg ? cfg.border : 'var(--border)'}` : '1px solid transparent',
-                }}
-              >
-                {cfg && <span className="icon" style={{ fontSize: 12 }}>{cfg.icon}</span>}
+              <option key={s} value={s}>
                 {s === 'all' ? t('common.all') : t(`customers.segment.${s}`, s)}
-              </button>
+              </option>
             )
           })}
-        </div>
+        </select>
       </div>
 
       {/* Table */}
@@ -328,6 +393,13 @@ export default function CustomersPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-elevated)' }}>
+                  <th className="px-4 py-3 w-10">
+                    <input type="checkbox"
+                           checked={items.length > 0 && items.every(c => checkedIds.has(getCid(c)))}
+                           onChange={() => toggleAll(items)}
+                           onClick={e => e.stopPropagation()}
+                           className="w-4 h-4 cursor-pointer" />
+                  </th>
                   {[t('customers.fullName'), t('customers.province'),
                     t('customers.totalOrders'), t('customers.totalRevenue'),
                     'TB/đơn', 'Điểm tích lũy', 'Kênh chính', t('customers.lastOrder'), t('customers.segmentLabel'), ''].map(h => (
@@ -340,10 +412,14 @@ export default function CustomersPage() {
                 {items.map((c, i) => (
                   <tr key={c.customer_id ?? c.id ?? i}
                       className="transition-colors cursor-pointer"
-                      style={{ borderBottom: '1px solid var(--border)' }}
+                      style={{ borderBottom: '1px solid var(--border)', background: checkedIds.has(getCid(c)) ? 'rgba(99,102,241,0.04)' : undefined }}
                       onClick={() => setSelected(c)}
-                      onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
-                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                      onMouseEnter={e => { if (!checkedIds.has(getCid(c))) e.currentTarget.style.background = 'var(--bg-elevated)' }}
+                      onMouseLeave={e => { e.currentTarget.style.background = checkedIds.has(getCid(c)) ? 'rgba(99,102,241,0.04)' : 'transparent' }}>
+                    <td className="px-4 py-3 w-10" onClick={e => toggleCheck(getCid(c), e)}>
+                      <input type="checkbox" checked={checkedIds.has(getCid(c))} onChange={() => {}}
+                             className="w-4 h-4 cursor-pointer" />
+                    </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <Avatar name={c.full_name ?? c.fullName} />

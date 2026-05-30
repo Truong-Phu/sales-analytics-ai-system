@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback, Fragment } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef, memo, Fragment } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import MockToast from '../../components/ui/MockToast'
+import { SkeletonTableBody } from '../../components/ui/Skeleton'
 import FilterPill from '../../components/ui/FilterPill'
 import { getOrders, updateOrderStatus, cancelOrder, getOrderNotes, addOrderNote, deleteOrderNote } from '../../api/dashboardApi'
 import api from '../../api/axios'
@@ -147,7 +148,8 @@ function UpdateOrderModal({ order, onClose, onSaved }) {
 }
 
 // ── Ghi chú nội bộ đơn hàng ──────────────────────────────────────────────────
-function OrderNotes({ orderId, canDelete }) {
+// memo: không re-render khi parent thay đổi state khác (vd: paymentTxCache)
+const OrderNotes = memo(function OrderNotes({ orderId, canDelete }) {
   const [notes,    setNotes]    = useState([])
   const [text,     setText]     = useState('')
   const [loading,  setLoading]  = useState(true)
@@ -240,10 +242,11 @@ function OrderNotes({ orderId, canDelete }) {
       </div>
     </div>
   )
-}
+})
 
 // ─── Order detail panel (fetches details on mount) ───────────────────────────
-function OrderDetailPanel({ order }) {
+// memo: không re-render khi parent re-render do state khác thay đổi
+const OrderDetailPanel = memo(function OrderDetailPanel({ order }) {
   const [detail, setDetail] = useState(null)
   const [loading, setLoading] = useState(true)
 
@@ -357,7 +360,7 @@ function OrderDetailPanel({ order }) {
       ) : null}
     </div>
   )
-}
+})
 
 export default function OrdersPage() {
   const { t }    = useTranslation()
@@ -383,6 +386,9 @@ export default function OrdersPage() {
   const [confirmTx,      setConfirmTx]      = useState(null)  // transaction cần confirm thủ công
   const [mockPayTx,      setMockPayTx]      = useState(null)  // { tx, provider }
   const [paymentTxCache, setPaymentTxCache] = useState({})    // orderId → tx
+
+  // Ref giữ AbortController của request hiện tại — hủy khi filter thay đổi
+  const abortRef = useRef(null)
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 3000) }
 
@@ -417,16 +423,24 @@ export default function OrdersPage() {
   }, [paymentOrder, isAdminDemo]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchData = useCallback(async () => {
+    // Hủy request cũ nếu đang chạy (tránh dữ liệu cũ về sau dữ liệu mới)
+    abortRef.current?.abort()
+    abortRef.current = new AbortController()
+
     setLoading(true)
     setIsMock(false)
     try {
-      const res = await getOrders({ search, status: status === 'all' ? '' : status, page, limit: 20 })
+      const res = await getOrders(
+        { search, status: status === 'all' ? '' : status, page, limit: 20 },
+        { signal: abortRef.current.signal }
+      )
       setData(res)
-    } catch {
+    } catch (err) {
+      if (err.name === 'AbortError' || err.code === 'ERR_CANCELED') return
       setData(MOCK_ORDERS)
       setIsMock(true)
     } finally {
-      setLoading(false)
+      if (!abortRef.current?.signal.aborted) setLoading(false)
     }
   }, [search, status, page])
 
@@ -450,7 +464,11 @@ export default function OrdersPage() {
     ...CHANNELS.map(c => ({ value: c, label: c.charAt(0).toUpperCase() + c.slice(1) }))]
 
   const items = data?.items ?? []
-  const filtered = channel === 'all' ? items : items.filter(o => o.channel === channel)
+  // useMemo: chỉ tính lại khi items hoặc channel thay đổi, tránh filter mỗi render
+  const filtered = useMemo(
+    () => channel === 'all' ? items : items.filter(o => o.channel === channel),
+    [items, channel]
+  )
 
   return (
     <div className="space-y-4">
@@ -543,9 +561,21 @@ export default function OrdersPage() {
       {/* Table */}
       <div className="lcard overflow-hidden">
         {loading ? (
-          <div className="p-16 flex items-center justify-center">
-            <span className="w-7 h-7 border-2 rounded-full"
-                  style={{ borderColor: 'var(--border-strong)', borderTopColor: 'var(--primary-500)', animation: 'spin 0.8s linear infinite' }} />
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-elevated)' }}>
+                  {['Mã đơn', 'Kênh', 'Khách hàng', 'Tổng tiền', 'Vận chuyển', 'Trạng thái', 'Thanh toán', 'Ngày', ''].map(h => (
+                    <th key={h} className="text-left px-4 py-3 text-sm font-semibold"
+                        style={{ color: 'var(--text-secondary)' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                <SkeletonTableBody rows={8} cols={9}
+                  widths={['w-24','w-16','w-32','w-20','w-24','w-20','w-16','w-16','w-8']} />
+              </tbody>
+            </table>
           </div>
         ) : filtered.length === 0 ? (
           <div className="p-16 flex flex-col items-center gap-3" style={{ color: 'var(--text-tertiary)' }}>

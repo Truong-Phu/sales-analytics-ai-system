@@ -50,9 +50,33 @@ public class ProductRepository(AppDbContext db)
         if (isActive.HasValue)
             query = query.Where(p => p.IsActive == isActive.Value);
 
-        // Lọc theo danh mục
+        // Lọc theo danh mục — bao gồm danh mục con, xử lý cả duplicate global/company
         if (categoryId.HasValue)
-            query = query.Where(p => p.CategoryId == categoryId.Value);
+        {
+            // 1. Lấy tên của danh mục được chọn
+            var selectedName = await _db.Set<Category>()
+                .Where(c => c.CategoryId == categoryId.Value)
+                .Select(c => c.CategoryName)
+                .FirstOrDefaultAsync();
+
+            if (selectedName != null)
+            {
+                // 2. Tìm tất cả ID có cùng tên (global + company duplicate)
+                var sameNameIds = await _db.Set<Category>()
+                    .Where(c => c.CategoryName == selectedName)
+                    .Select(c => c.CategoryId)
+                    .ToListAsync();
+
+                // 3. Bao gồm chính nó + tất cả con của bất kỳ danh mục cùng tên
+                var allIds = await _db.Set<Category>()
+                    .Where(c => sameNameIds.Contains(c.CategoryId)
+                             || (c.ParentId.HasValue && sameNameIds.Contains(c.ParentId.Value)))
+                    .Select(c => c.CategoryId)
+                    .ToListAsync();
+
+                query = query.Where(p => allIds.Contains(p.CategoryId));
+            }
+        }
 
         // Tìm kiếm theo tên hoặc SKU
         if (!string.IsNullOrWhiteSpace(search))

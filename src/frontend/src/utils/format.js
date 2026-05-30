@@ -68,3 +68,22 @@ export function splitFmt(str) {
   if (!m) return { sym: '', num: s, unit: '' }
   return { sym: m[1], num: m[2], unit: m[3] ?? '' }
 }
+
+/**
+ * Xuất mảng object ra file CSV và trigger download trình duyệt.
+ * Thêm BOM UTF-8 để Excel Việt Nam hiển thị đúng tiếng Việt.
+ *
+ * @param {string} filename   Tên file, ví dụ: 'san_pham_2026-05-29.csv'
+ * @param {object[]} rows     Mảng object — keys là tên cột
+ */
+export function exportToCsv(filename, rows) {
+  if (!rows?.length) return
+  const headers = Object.keys(rows[0])
+  const escape  = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`
+  const csv = [headers.map(escape).join(','), ...rows.map(r => headers.map(h => escape(r[h])).join(','))].join('\r\n')
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })
+  const url  = URL.createObjectURL(blob)
+  const a    = Object.assign(document.createElement('a'), { href: url, download: filename })
+  document.body.appendChild(a); a.click()
+  document.body.removeChild(a); URL.revokeObjectURL(url)
+}

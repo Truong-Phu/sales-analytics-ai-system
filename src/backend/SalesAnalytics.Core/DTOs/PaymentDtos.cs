@@ -98,6 +98,22 @@ public record PaymentMethodConfigDto(
     DateTime UpdatedAt
 );
 
+/// <summary>Payload webhook thật từ SePay – POST tới /api/payment/webhook/sepay</summary>
+public record SepayWebhookPayload(
+    int      Id,
+    string   Gateway,
+    string   TransactionDate,
+    string   AccountNumber,
+    string?  SubAccount,
+    string?  Code,            // = PaymentCode của hệ thống (vd: "DH123")
+    string   Content,
+    string   TransferType,    // "in" | "out"
+    decimal  TransferAmount,
+    decimal  Accumulated,
+    string?  ReferenceCode,
+    string?  Description
+);
+
 /// <summary>Tóm tắt tổng quan payment cho SuperAdmin</summary>
 public record PaymentSummaryDto(
     int TotalTransactions,

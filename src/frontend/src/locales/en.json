@@ -216,7 +216,7 @@
     "tourSlide1Title": "Overview Dashboard",
     "tourSlide1Desc": "View all KPIs, revenue, and orders from multiple channels in one screen.",
     "tourSlide2Title": "Channel Analysis",
-    "tourSlide2Desc": "Compare performance across Shopee, Lazada, TikTok, Facebook on the same chart.",
+    "tourSlide2Desc": "Compare performance across Shopee, Lazada, TikTok Shop and Offline on the same chart.",
     "tourSlide3Title": "AI Insights",
     "tourSlide3Desc": "Forecast revenue for the next 30 days, detect anomalies and get action recommendations.",
     "tourSlide4Title": "Export Reports",
@@ -424,7 +424,7 @@
       "shopee": "Shopee",
       "lazada": "Lazada",
       "tiktok": "TikTok Shop",
-      "facebook": "Facebook",
+      "offline": "Offline / POS",
       "website": "Website"
     },
     "trend": {

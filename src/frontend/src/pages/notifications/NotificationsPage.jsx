@@ -98,21 +98,18 @@ export default function NotificationsPage() {
         )}
       </div>
 
-      {/* Filter Tabs */}
-      <div className="flex gap-1 flex-wrap">
-        {FILTERS.map(f => (
-          <button key={f}
-            onClick={() => setFilter(f)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-              filter === f ? 'text-white' : ''
-            }`}
-            style={{
-              background: filter === f ? 'var(--primary-500)' : 'var(--bg-elevated)',
-              color:       filter === f ? 'white' : 'var(--text-secondary)',
-            }}>
-            {filterLabel[f]}
-          </button>
-        ))}
+      {/* Filter dropdown */}
+      <div className="flex items-center gap-2">
+        <select
+          value={filter}
+          onChange={e => setFilter(e.target.value)}
+          className="linput text-sm"
+          style={{ width: 200 }}
+        >
+          {FILTERS.map(f => (
+            <option key={f} value={f}>{filterLabel[f]}</option>
+          ))}
+        </select>
       </div>
 
       {/* List */}

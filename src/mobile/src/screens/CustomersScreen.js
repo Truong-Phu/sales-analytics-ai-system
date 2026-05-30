@@ -110,12 +110,12 @@ export default function CustomersScreen() {
       const raw  = res.data?.data ?? res.data
       const list = Array.isArray(raw) ? raw : (raw?.items ?? [])
       setData(list.map(c => ({
-        id:          c.id         ?? c.customerId ?? c.customer_id,
-        name:        c.name       ?? c.customerName ?? c.customer_name ?? 'Khách hàng',
-        phone:       c.phone      ?? c.phoneNumber ?? c.phone_number ?? '',
+        id:          c.customerId  ?? c.id          ?? c.customer_id,
+        name:        c.fullName    ?? c.name        ?? c.customerName ?? c.customer_name ?? 'Khách hàng',
+        phone:       c.phone       ?? c.phoneNumber ?? c.phone_number ?? '',
         totalOrders: c.totalOrders ?? c.total_orders ?? 0,
         totalSpent:  c.totalSpent  ?? c.total_spent  ?? 0,
-        segment:     c.segment    ?? c.rfmSegment   ?? '',
+        segment:     c.segment     ?? c.rfmSegment   ?? '',
       })))
       setIsMock(false)
     } catch {
@@ -208,7 +208,7 @@ export default function CustomersScreen() {
       ) : (
         <FlatList
           data={data}
-          keyExtractor={(item, i) => `${item.id ?? i}`}
+          keyExtractor={(item, i) => `customer_${item.id ?? 'x'}_${i}`}
           renderItem={({ item }) => <CustomerCard item={item} s={s} colors={colors} />}
           contentContainerStyle={s.list}
           refreshControl={

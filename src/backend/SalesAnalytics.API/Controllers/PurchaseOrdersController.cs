@@ -19,7 +19,9 @@ public class PurchaseOrdersController(
     ITenantContext tenant,
     IEmailService emailService) : ControllerBase
 {
-    private readonly string _connStr = cfg.GetConnectionString("Default")!;
+    private readonly string _connStr   = cfg.GetConnectionString("Default")!;
+    private readonly string _baseUrl   = cfg["AppBaseUrl"] ?? "http://localhost:5173";
+
 
     private int UserId =>
         int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var v) ? v : 0;
@@ -160,9 +162,11 @@ public class PurchaseOrdersController(
             // Lấy items
             await using var iCmd = new NpgsqlCommand("""
                 SELECT poi.purchase_order_item_id, poi.product_id, p.product_name,
-                       poi.quantity, poi.received_quantity, poi.import_price, poi.total_price
+                       poi.quantity, poi.received_quantity, poi.import_price, poi.total_price,
+                       poi.variation_id, pv.variation_name, pv.attribute_color, pv.attribute_size, pv.sku
                 FROM public.purchase_order_items poi
                 JOIN public.products p ON p.product_id = poi.product_id
+                LEFT JOIN public.product_variations pv ON pv.id = poi.variation_id
                 WHERE poi.purchase_order_id = @id
                 ORDER BY poi.purchase_order_item_id
                 """, conn);
@@ -181,6 +185,11 @@ public class PurchaseOrdersController(
                     remainingQuantity   = ir.GetInt32(3) - ir.GetInt32(4),
                     importPrice         = ir.GetDecimal(5),
                     totalPrice          = ir.GetDecimal(6),
+                    variationId         = ir.IsDBNull(7)  ? (int?)null    : ir.GetInt32(7),
+                    variationName       = ir.IsDBNull(8)  ? null          : ir.GetString(8),
+                    color               = ir.IsDBNull(9)  ? null          : ir.GetString(9),
+                    size                = ir.IsDBNull(10) ? null          : ir.GetString(10),
+                    variationSku        = ir.IsDBNull(11) ? null          : ir.GetString(11),
                 });
 
             return Ok(new { order = po, items = its });
@@ -192,7 +201,7 @@ public class PurchaseOrdersController(
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // POST /api/purchase-orders  (tạo DRAFT)
+    // POST /api/purchase-orders  (tạo APPROVED + gửi email thông báo NCC)
     // ─────────────────────────────────────────────────────────────────────────
     [HttpPost]
     [Authorize(Roles = "Owner,Manager")]
@@ -205,42 +214,68 @@ public class PurchaseOrdersController(
         if (dto.Items.Any(i => i.Quantity <= 0))
             return BadRequest(new { message = "Số lượng sản phẩm phải > 0." });
 
+        var cid = tenant.CompanyId!.Value.ToString();
+
         try
         {
             await using var conn = new NpgsqlConnection(_connStr);
             await conn.OpenAsync();
+
+            // Lấy thông tin NCC + tên công ty để gửi email
+            await using var infoCmd = new NpgsqlCommand("""
+                SELECT s.supplier_name, s.email, c.name
+                FROM public.suppliers s
+                JOIN public.companies c ON c.id = s.company_id
+                WHERE s.supplier_id = @sid AND s.company_id = @cid::uuid
+                """, conn);
+            infoCmd.Parameters.AddWithValue("sid", dto.SupplierId);
+            infoCmd.Parameters.AddWithValue("cid", cid);
+            await using var infoR = await infoCmd.ExecuteReaderAsync();
+            string supplierName = "", supplierEmail = "", companyName = "Công ty";
+            if (await infoR.ReadAsync())
+            {
+                supplierName  = infoR.GetString(0);
+                supplierEmail = infoR.IsDBNull(1) ? "" : infoR.GetString(1);
+                companyName   = infoR.IsDBNull(2) ? "Công ty" : infoR.GetString(2);
+            }
+            await infoR.CloseAsync();
+
             await using var tx = await conn.BeginTransactionAsync();
             try
             {
                 var code  = $"PO-{DateTime.Now:yyyyMMdd-HHmmss}";
                 var total = dto.Items.Sum(i => i.Quantity * i.ImportPrice);
+                var token = Guid.NewGuid();
 
                 await using var poCmd = new NpgsqlCommand("""
                     INSERT INTO public.purchase_orders
                         (company_id, supplier_id, purchase_code, status, total_amount, note,
-                         created_by, created_at)
+                         created_by, created_at, confirmation_token)
                     VALUES
-                        (@cid::uuid, @sup, @code, 'DRAFT', @total, @note, @createdBy, NOW())
+                        (@cid::uuid, @sup, @code, 'PENDING', @total, @note,
+                         @uid, NOW(), @token)
                     RETURNING purchase_order_id
                     """, conn, tx);
-                poCmd.Parameters.AddWithValue("cid",       tenant.CompanyId!.Value.ToString());
-                poCmd.Parameters.AddWithValue("sup",       dto.SupplierId);
-                poCmd.Parameters.AddWithValue("code",      code);
-                poCmd.Parameters.AddWithValue("total",     total);
-                poCmd.Parameters.AddWithValue("note",      (object?)dto.Note ?? DBNull.Value);
-                poCmd.Parameters.AddWithValue("createdBy", UserId > 0 ? (object)UserId : DBNull.Value);
+                poCmd.Parameters.AddWithValue("cid",   cid);
+                poCmd.Parameters.AddWithValue("sup",   dto.SupplierId);
+                poCmd.Parameters.AddWithValue("code",  code);
+                poCmd.Parameters.AddWithValue("total", total);
+                poCmd.Parameters.AddWithValue("note",  (object?)dto.Note ?? DBNull.Value);
+                poCmd.Parameters.AddWithValue("uid",   UserId > 0 ? (object)UserId : DBNull.Value);
+                poCmd.Parameters.AddWithValue("token", token);
                 var poId = Convert.ToInt64(await poCmd.ExecuteScalarAsync());
 
                 foreach (var item in dto.Items)
                 {
                     await using var iCmd = new NpgsqlCommand("""
                         INSERT INTO public.purchase_order_items
-                            (purchase_order_id, product_id, quantity, received_quantity,
-                             import_price, total_price)
-                        VALUES (@po, @pid, @qty, 0, @price, @total)
+                            (purchase_order_id, product_id, variation_id, quantity,
+                             received_quantity, import_price, total_price)
+                        VALUES (@po, @pid, @vid, @qty, 0, @price, @total)
                         """, conn, tx);
                     iCmd.Parameters.AddWithValue("po",    poId);
                     iCmd.Parameters.AddWithValue("pid",   item.ProductId);
+                    iCmd.Parameters.AddWithValue("vid",   item.VariationId.HasValue ? (object)item.VariationId.Value : DBNull.Value);
                     iCmd.Parameters.AddWithValue("qty",   item.Quantity);
                     iCmd.Parameters.AddWithValue("price", item.ImportPrice);
                     iCmd.Parameters.AddWithValue("total", item.Quantity * item.ImportPrice);
@@ -248,7 +283,45 @@ public class PurchaseOrdersController(
                 }
 
                 await tx.CommitAsync();
-                return Ok(new { purchaseOrderId = poId, purchaseCode = code, message = "Tạo phiếu nhập thành công." });
+
+                // Gửi email + link duyệt cho NCC (fire-and-forget)
+                if (!string.IsNullOrEmpty(supplierEmail))
+                {
+                    // Lấy tên sản phẩm thật từ DB thay vì dùng ID
+                    var pidList  = dto.Items.Select(i => i.ProductId).Distinct().ToList();
+                    var nameMap  = new Dictionary<int, string>();
+                    await using var pnCmd = new NpgsqlConnection(_connStr);
+                    await pnCmd.OpenAsync();
+                    await using var pnQ = new NpgsqlCommand(
+                        $"SELECT product_id, product_name FROM public.products WHERE product_id = ANY(@ids)",
+                        pnCmd);
+                    pnQ.Parameters.AddWithValue("ids", pidList.ToArray());
+                    await using var pnR = await pnQ.ExecuteReaderAsync();
+                    while (await pnR.ReadAsync())
+                        nameMap[pnR.GetInt32(0)] = pnR.GetString(1);
+
+                    var poItems     = dto.Items
+                        .Select(i => (
+                            ProductName: nameMap.GetValueOrDefault(i.ProductId, $"Sản phẩm #{i.ProductId}"),
+                            Qty:   i.Quantity,
+                            Price: i.ImportPrice))
+                        .ToList();
+                    var approvalUrl = $"{_baseUrl}/api/purchase-orders/supplier-approve/{token}";
+                    _ = emailService.SendPurchaseOrderAsync(
+                        supplierEmail, supplierName, code, total, poItems, companyName, approvalUrl);
+                }
+
+                var emailNote = string.IsNullOrEmpty(supplierEmail)
+                    ? " (NCC chưa có email — không gửi được thông báo)"
+                    : $" Email + link duyệt đã gửi đến {supplierEmail}.";
+
+                return Ok(new
+                {
+                    purchaseOrderId = poId,
+                    purchaseCode    = code,
+                    status          = "PENDING",
+                    message         = $"Đã tạo phiếu nhập, chờ NCC duyệt.{emailNote}",
+                });
             }
             catch
             {
@@ -345,7 +418,7 @@ public class PurchaseOrdersController(
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // POST /api/purchase-orders/{id}/submit  (DRAFT → PENDING + email NCC)
+    // POST /api/purchase-orders/{id}/submit  (DRAFT → PENDING + email thông báo NCC)
     // ─────────────────────────────────────────────────────────────────────────
     [HttpPost("{id:long}/submit")]
     [Authorize(Roles = "Owner,Manager")]
@@ -360,7 +433,7 @@ public class PurchaseOrdersController(
             await using var infoCmd = new NpgsqlCommand("""
                 SELECT po.status, po.purchase_code, po.total_amount,
                        s.supplier_name, s.email AS supplier_email,
-                       c.company_name
+                       c.name AS company_name
                 FROM public.purchase_orders po
                 JOIN public.suppliers  s ON s.supplier_id  = po.supplier_id
                 JOIN public.companies  c ON c.id           = po.company_id
@@ -408,7 +481,7 @@ public class PurchaseOrdersController(
             while (await iR.ReadAsync())
                 poItems.Add((iR.GetString(0), iR.GetInt32(1), iR.GetDecimal(2)));
 
-            // Gửi email đến NCC (fire-and-forget, không block response)
+            // Gửi email thông báo NCC (fire-and-forget)
             if (!string.IsNullOrEmpty(supplierEmail))
                 _ = emailService.SendPurchaseOrderAsync(
                     supplierEmail, supplierName, poCode, totalAmount, poItems, companyName);
@@ -507,6 +580,91 @@ public class PurchaseOrdersController(
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // GET /api/purchase-orders/supplier-approve/{token}
+    // NCC click link trong email → duyệt phiếu → trả về HTML xác nhận
+    // AllowAnonymous vì NCC không có tài khoản trong hệ thống
+    // ─────────────────────────────────────────────────────────────────────────
+    [HttpGet("supplier-approve/{token:guid}")]
+    [AllowAnonymous]
+    public async Task<IActionResult> SupplierApprove(Guid token)
+    {
+        try
+        {
+            await using var conn = new NpgsqlConnection(_connStr);
+            await conn.OpenAsync();
+
+            await using var chk = new NpgsqlCommand("""
+                SELECT po.purchase_order_id, po.status, po.purchase_code,
+                       s.supplier_name, c.name AS company_name
+                FROM public.purchase_orders po
+                JOIN public.suppliers s ON s.supplier_id = po.supplier_id
+                JOIN public.companies c ON c.id = po.company_id
+                WHERE po.confirmation_token = @token
+                """, conn);
+            chk.Parameters.AddWithValue("token", token);
+
+            await using var r = await chk.ExecuteReaderAsync();
+            if (!await r.ReadAsync())
+                return Content(HtmlResult("❌ Link không hợp lệ", "Link duyệt không tồn tại hoặc đã hết hiệu lực.", false), "text/html");
+
+            var poId         = r.GetInt64(0);
+            var status       = r.GetString(1);
+            var poCode       = r.GetString(2);
+            var supplierName = r.GetString(3);
+            var companyName  = r.GetString(4);
+            await r.CloseAsync();
+
+            if (status == "APPROVED")
+                return Content(HtmlResult("✅ Đã duyệt trước đó", $"Phiếu <strong>{poCode}</strong> đã được xác nhận trước đó. Cảm ơn {supplierName}!", true), "text/html");
+
+            if (status != "PENDING")
+                return Content(HtmlResult("⚠️ Không thể duyệt", $"Phiếu <strong>{poCode}</strong> đang ở trạng thái {status}, không thể duyệt.", false), "text/html");
+
+            // Duyệt phiếu + xóa token
+            await using var upd = new NpgsqlCommand("""
+                UPDATE public.purchase_orders
+                SET status = 'APPROVED', approved_at = NOW(), updated_at = NOW(),
+                    confirmation_token = NULL
+                WHERE purchase_order_id = @id
+                """, conn);
+            upd.Parameters.AddWithValue("id", poId);
+            await upd.ExecuteNonQueryAsync();
+
+            return Content(HtmlResult(
+                "✅ Xác nhận thành công!",
+                $"Cảm ơn <strong>{supplierName}</strong>!<br>Phiếu đặt hàng <strong>{poCode}</strong> của <strong>{companyName}</strong> đã được xác nhận.<br>Chúng tôi sẽ liên hệ để sắp xếp giao hàng.",
+                true), "text/html");
+        }
+        catch (Exception ex)
+        {
+            return Content(HtmlResult("❌ Lỗi hệ thống", ex.Message, false), "text/html");
+        }
+    }
+
+    private static string HtmlResult(string title, string body, bool success) => $"""
+        <!DOCTYPE html>
+        <html lang="vi">
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <title>{title}</title>
+        </head>
+        <body style="margin:0;padding:0;background:#f4f6f8;font-family:'Segoe UI',Arial,sans-serif;
+                     display:flex;align-items:center;justify-content:center;min-height:100vh">
+          <div style="background:#fff;border-radius:16px;padding:48px 40px;max-width:480px;width:90%;
+                      box-shadow:0 4px 24px rgba(0,0,0,0.08);text-align:center">
+            <div style="font-size:56px;margin-bottom:20px">{(success ? "✅" : "❌")}</div>
+            <h1 style="margin:0 0 16px;font-size:22px;color:{(success ? "#166534" : "#991B1B")}">{title}</h1>
+            <p style="margin:0;font-size:15px;color:#475569;line-height:1.7">{body}</p>
+            <p style="margin:32px 0 0;font-size:12px;color:#94a3b8">
+              MSAS — Hệ thống phân tích bán hàng đa kênh
+            </p>
+          </div>
+        </body>
+        </html>
+        """;
+
+    // ─────────────────────────────────────────────────────────────────────────
     private async Task<IActionResult> ChangeStatus(long id, string fromStatus, string toStatus,
         string? extraSql, string blockedMsg)
     {
@@ -555,6 +713,7 @@ public class CreatePurchaseOrderDto
 public class PurchaseOrderItemDto
 {
     public int     ProductId   { get; set; }
+    public int?    VariationId { get; set; }  // null nếu sản phẩm không có biến thể
     public int     Quantity    { get; set; }
     public decimal ImportPrice { get; set; }
 }
