@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import MockToast from '../../components/ui/MockToast'
 import { getInventoryIntelligence } from '../../api/aiApi'
+import api from '../../api/axios'
 
 const STATUS_CONFIG = {
   CRITICAL:    { textColor: '#EF4444', bg: 'rgba(239,68,68,0.08)',  border: 'rgba(239,68,68,0.25)',  icon: '🔴', label: 'Khẩn cấp' },
@@ -14,11 +15,14 @@ const STATUS_CONFIG = {
 
 export default function InventoryPage() {
   const navigate = useNavigate()
-  const [data,    setData]    = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [isMock,  setIsMock]  = useState(false)
-  const [filter,  setFilter]  = useState('ALL')
-  const [days,    setDays]    = useState(30)
+  const [data,         setData]         = useState(null)
+  const [loading,      setLoading]      = useState(true)
+  const [isMock,       setIsMock]       = useState(false)
+  const [filter,       setFilter]       = useState('ALL')
+  const [days,         setDays]         = useState(30)
+  const [expandedIds,  setExpandedIds]  = useState(new Set())
+  const [varCache,     setVarCache]     = useState({})
+  const [varLoading,   setVarLoading]   = useState(new Set())
 
   const load = async () => {
     setLoading(true)
@@ -42,6 +46,25 @@ export default function InventoryPage() {
   }
 
   useEffect(() => { load() }, [days])
+
+  const toggleVariations = async (productId) => {
+    setExpandedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(productId)) { next.delete(productId); return next }
+      next.add(productId)
+      return next
+    })
+    if (varCache[productId] !== undefined) return
+    setVarLoading(prev => new Set(prev).add(productId))
+    try {
+      const r = await api.get(`/api/products/${productId}/variations`)
+      setVarCache(c => ({ ...c, [productId]: r.data ?? [] }))
+    } catch {
+      setVarCache(c => ({ ...c, [productId]: [] }))
+    } finally {
+      setVarLoading(prev => { const s = new Set(prev); s.delete(productId); return s })
+    }
+  }
 
   const filtered = (data?.items ?? []).filter(i => filter === 'ALL' || i.status === filter)
 
@@ -110,43 +133,93 @@ export default function InventoryPage() {
       ) : (
         <div className="space-y-3">
           {filtered.map(item => {
-            const cfg = STATUS_CONFIG[item.status] ?? STATUS_CONFIG.OK
+            const cfg        = STATUS_CONFIG[item.status] ?? STATUS_CONFIG.OK
+            const isExpanded = expandedIds.has(item.product_id)
+            const vars       = varCache[item.product_id]
+            const isVarLoading = varLoading.has(item.product_id)
             return (
-              <div key={item.product_id} className="rounded-xl p-4"
-                style={{ background: cfg.bg, border: `1px solid ${cfg.border}` }}>
-                <div className="flex items-start justify-between gap-4 flex-wrap">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span>{cfg.icon}</span>
-                      <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>{item.product_name}</span>
-                      <span className="text-xs font-medium" style={{ color: cfg.textColor }}>{cfg.label}</span>
-                    </div>
-                    <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>{item.message}</p>
-                  </div>
-                  <div className="flex items-center gap-4 text-right text-sm shrink-0">
-                    {[
-                      { label: 'Tồn kho', value: item.current_stock, colored: true },
-                      { label: 'Bán/ngày', value: item.avg_daily_sales },
-                      { label: 'Còn lại', value: item.days_until_stockout >= 999 ? '∞' : `${item.days_until_stockout}d`, colored: true },
-                      ...(item.reorder_qty > 0 ? [{ label: 'Cần đặt', value: item.reorder_qty, special: '#F97316' }] : []),
-                    ].map((col, ci) => (
-                      <div key={ci}>
-                        <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{col.label}</div>
-                        <div className="font-bold" style={{ color: col.special ?? (col.colored ? cfg.textColor : 'var(--text-primary)') }}>
-                          {col.value}
-                        </div>
+              <div key={item.product_id} className="rounded-xl overflow-hidden"
+                style={{ border: `1px solid ${cfg.border}` }}>
+                <div className="p-4" style={{ background: cfg.bg }}>
+                  <div className="flex items-start justify-between gap-4 flex-wrap">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span>{cfg.icon}</span>
+                        <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>{item.product_name}</span>
+                        <span className="text-xs font-medium" style={{ color: cfg.textColor }}>{cfg.label}</span>
                       </div>
-                    ))}
-                    {item.reorder_qty > 0 && (
-                      <button
-                        onClick={() => navigate(`/purchase-orders?productId=${item.product_id}&productName=${encodeURIComponent(item.product_name)}`)}
-                        className="text-xs px-3 py-1.5 rounded-lg font-medium whitespace-nowrap"
-                        style={{ background: 'rgba(99,102,241,0.12)', color: '#6366F1', border: '1px solid rgba(99,102,241,0.25)' }}>
-                        + Nhập hàng
-                      </button>
-                    )}
+                      <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>{item.message}</p>
+                    </div>
+                    <div className="flex items-center gap-4 text-right text-sm shrink-0">
+                      {[
+                        { label: 'Tồn kho', value: item.current_stock, colored: true },
+                        { label: 'Bán/ngày', value: item.avg_daily_sales },
+                        { label: 'Còn lại', value: item.days_until_stockout >= 999 ? '∞' : `${item.days_until_stockout}d`, colored: true },
+                        ...(item.reorder_qty > 0 ? [{ label: 'Cần đặt', value: item.reorder_qty, special: '#F97316' }] : []),
+                      ].map((col, ci) => (
+                        <div key={ci}>
+                          <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{col.label}</div>
+                          <div className="font-bold" style={{ color: col.special ?? (col.colored ? cfg.textColor : 'var(--text-primary)') }}>
+                            {col.value}
+                          </div>
+                        </div>
+                      ))}
+                      {item.reorder_qty > 0 && (
+                        <button
+                          onClick={() => navigate(`/purchase-orders?productId=${item.product_id}&productName=${encodeURIComponent(item.product_name)}`)}
+                          className="text-xs px-3 py-1.5 rounded-lg font-medium whitespace-nowrap"
+                          style={{ background: 'rgba(99,102,241,0.12)', color: '#6366F1', border: '1px solid rgba(99,102,241,0.25)' }}>
+                          + Nhập hàng
+                        </button>
+                      )}
+                      {!isMock && (
+                        <button
+                          onClick={() => toggleVariations(item.product_id)}
+                          className="text-xs px-2 py-1.5 rounded-lg font-medium"
+                          style={{ background: 'rgba(100,116,139,0.12)', color: 'var(--text-secondary)', border: '1px solid rgba(100,116,139,0.2)' }}>
+                          <span className="icon text-sm" style={{ display: 'block', transition: 'transform 0.2s', transform: isExpanded ? 'rotate(90deg)' : 'none' }}>
+                            chevron_right
+                          </span>
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
+
+                {/* Sub-rows biến thể */}
+                {isExpanded && (
+                  <div style={{ background: 'var(--bg-elevated)', borderTop: `1px solid ${cfg.border}` }}>
+                    {isVarLoading ? (
+                      <div className="px-6 py-3 text-xs" style={{ color: 'var(--text-tertiary)' }}>Đang tải biến thể...</div>
+                    ) : !vars || vars.length === 0 ? (
+                      <div className="px-6 py-3 text-xs" style={{ color: 'var(--text-tertiary)' }}>Sản phẩm không có biến thể</div>
+                    ) : (
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                            {['SKU', 'Màu', 'Size', 'Tồn kho'].map(h => (
+                              <th key={h} className="px-6 py-2 text-left font-medium"
+                                  style={{ color: 'var(--text-tertiary)' }}>{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {vars.map(v => (
+                            <tr key={v.variationId} style={{ borderBottom: '1px solid var(--border)' }}>
+                              <td className="px-6 py-2 font-mono" style={{ color: 'var(--text-secondary)' }}>{v.sku ?? '—'}</td>
+                              <td className="px-6 py-2" style={{ color: 'var(--text-primary)' }}>{v.color ?? '—'}</td>
+                              <td className="px-6 py-2" style={{ color: 'var(--text-primary)' }}>{v.size ?? '—'}</td>
+                              <td className="px-6 py-2 font-semibold"
+                                  style={{ color: (v.stockQuantity ?? 0) === 0 ? '#EF4444' : 'var(--text-primary)' }}>
+                                {v.stockQuantity ?? 0}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                )}
               </div>
             )
           })}

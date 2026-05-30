@@ -141,11 +141,21 @@ function CreateReceiptDrawer({ open, onClose, onSaved, initialPoId = '' }) {
                 <tbody>
                   {poItems.map((item, idx) => {
                     const remaining = item.remainingQuantity ?? (item.quantity - item.receivedQuantity)
+                    const variationLabel = item.variationId
+                      ? [item.color, item.size].filter(Boolean).join(' · ') || item.variationName
+                      : null
                     return (
                       <tr key={item.purchaseOrderItemId}
                           style={{ borderBottom: idx < poItems.length - 1 ? '1px solid #f1f5f9' : 'none' }}>
                         <td style={{ padding: '10px 14px', fontWeight: 500, color: '#0f172a' }}>
                           {item.productName}
+                          {variationLabel && (
+                            <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 400,
+                                           color: '#64748b', background: '#f1f5f9',
+                                           padding: '1px 6px', borderRadius: 4 }}>
+                              {variationLabel}
+                            </span>
+                          )}
                         </td>
                         <td style={{ padding: '10px 14px', fontWeight: 600, color: '#F59E0B', tabularNums: true }}>
                           {remaining}
@@ -405,10 +415,21 @@ export default function GoodsReceiptsPage() {
                                 </tr>
                               </thead>
                               <tbody>
-                                {items.map(it => (
+                                {items.map(it => {
+                                  const varLabel = it.variationId
+                                    ? [it.color, it.size].filter(Boolean).join(' · ') || it.variationName
+                                    : null
+                                  return (
                                   <tr key={it.goodsReceiptItemId}>
                                     <td className="py-1.5 pr-4 font-medium" style={{ color: 'var(--text-primary)' }}>
                                       {it.productName}
+                                      {varLabel && (
+                                        <span className="ml-1.5"
+                                              style={{ fontSize: 10, fontWeight: 400, color: 'var(--text-tertiary)',
+                                                       background: 'var(--bg-elevated)', padding: '1px 5px', borderRadius: 4 }}>
+                                          {varLabel}
+                                        </span>
+                                      )}
                                     </td>
                                     <td className="py-1.5 pr-4 tabular-nums font-semibold" style={{ color: '#22C55E' }}>
                                       +{it.receivedQuantity}
@@ -420,7 +441,8 @@ export default function GoodsReceiptsPage() {
                                       {Number(it.totalPrice).toLocaleString('vi-VN')}đ
                                     </td>
                                   </tr>
-                                ))}
+                                  )
+                                })}
                               </tbody>
                             </table>
                           )}

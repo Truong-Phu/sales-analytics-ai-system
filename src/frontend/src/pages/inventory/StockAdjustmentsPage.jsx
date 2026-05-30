@@ -17,6 +17,8 @@ function ErrorState({ message }) {
 function AdjustmentFormContent({ onCreated, onClose }) {
   const [products,    setProducts]    = useState([])
   const [productId,   setProductId]   = useState('')
+  const [variationId, setVariationId] = useState('')
+  const [variations,  setVariations]  = useState([])
   const [newQuantity, setNewQuantity] = useState('')
   const [reason,      setReason]      = useState('')
   const [note,        setNote]        = useState('')
@@ -30,8 +32,11 @@ function AdjustmentFormContent({ onCreated, onClose }) {
       .catch(() => setProducts([]))
   }, [])
 
-  const selectedProduct = products.find(p => p.productId == productId || p.product_id == productId)
-  const currentStock = selectedProduct?.stockQuantity ?? selectedProduct?.stock_quantity ?? null
+  const selectedProduct  = products.find(p => p.productId == productId || p.product_id == productId)
+  const selectedVariation = variations.find(v => v.variationId == variationId)
+  const currentStock = selectedVariation
+    ? selectedVariation.stockQuantity
+    : (selectedProduct?.stockQuantity ?? selectedProduct?.stock_quantity ?? null)
 
   const handleQtyChange = (v) => {
     setNewQuantity(v)
@@ -42,8 +47,21 @@ function AdjustmentFormContent({ onCreated, onClose }) {
     }
   }
 
-  const handleProductChange = (pid) => {
+  const handleProductChange = async (pid) => {
     setProductId(pid)
+    setVariationId('')
+    setVariations([])
+    setNewQuantity('')
+    setPreview(null)
+    if (!pid) return
+    try {
+      const r = await api.get(`/api/products/${pid}/variations`)
+      setVariations(r.data ?? [])
+    } catch { setVariations([]) }
+  }
+
+  const handleVariationChange = (vid) => {
+    setVariationId(vid)
     setNewQuantity('')
     setPreview(null)
   }
@@ -55,6 +73,7 @@ function AdjustmentFormContent({ onCreated, onClose }) {
     try {
       const r = await api.post('/api/stock-adjustments', {
         productId:   +productId,
+        variationId: variationId ? +variationId : null,
         newQuantity: +newQuantity,
         reason:      reason.trim(),
         note:        note.trim() || null,
@@ -91,6 +110,24 @@ function AdjustmentFormContent({ onCreated, onClose }) {
           ))}
         </select>
       </div>
+
+      {/* Biến thể (nếu có) */}
+      {variations.length > 0 && (
+        <div>
+          <label style={labelStyle}>Biến thể</label>
+          <select value={variationId} onChange={e => handleVariationChange(e.target.value)} style={inputStyle}>
+            <option value="">-- Tất cả biến thể --</option>
+            {variations.map(v => (
+              <option key={v.variationId} value={v.variationId}>
+                {v.variationName}
+                {v.color ? ` · ${v.color}` : ''}
+                {v.size  ? ` · ${v.size}`  : ''}
+                {' '}— Tồn: {v.stockQuantity}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {/* Số lượng thực tế mới */}
       <div>
@@ -256,7 +293,7 @@ export default function StockAdjustmentsPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                    {['Thời gian', 'Sản phẩm', 'SKU', 'Trước', 'Sau', 'Chênh lệch', 'Lý do', 'Người thực hiện'].map(h => (
+                    {['Thời gian', 'Sản phẩm', 'Biến thể', 'SKU', 'Trước', 'Sau', 'Chênh lệch', 'Lý do', 'Người thực hiện'].map(h => (
                       <th key={h} className="text-left px-3 py-2 text-xs font-medium whitespace-nowrap"
                         style={{ color: 'var(--text-tertiary)' }}>{h}</th>
                     ))}
@@ -270,6 +307,11 @@ export default function StockAdjustmentsPage() {
                       </td>
                       <td className="px-3 py-2 font-medium" style={{ color: 'var(--text-primary)' }}>
                         {item.productName}
+                      </td>
+                      <td className="px-3 py-2 text-xs" style={{ color: 'var(--text-secondary)' }}>
+                        {item.variationId
+                          ? [item.color, item.size].filter(Boolean).join(' · ') || item.variationName || '—'
+                          : '—'}
                       </td>
                       <td className="px-3 py-2 font-mono text-xs" style={{ color: 'var(--text-tertiary)' }}>
                         {item.sku ?? '—'}

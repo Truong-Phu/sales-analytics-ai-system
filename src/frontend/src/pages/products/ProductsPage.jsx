@@ -40,7 +40,7 @@ const EMPTY_FORM = { sku: '', productName: '', description: '', basePrice: '', c
 const CHANNELS_LIST = ['Shopee', 'Lazada', 'TikTok Shop', 'Facebook', 'Website', 'Khác']
 
 function ProductDetailModal({ product, canEdit, isMock, onClose, onSaved }) {
-  const [mode,          setMode]          = useState('view') // 'view' | 'edit' | 'channel'
+  const [mode,          setMode]          = useState('view') // 'view' | 'edit' | 'channel' | 'variations'
   const [editData,      setEditData]      = useState(null)
   const [categories,    setCategories]    = useState([])
   const [imgFile,       setImgFile]       = useState(null)
@@ -54,6 +54,9 @@ function ProductDetailModal({ product, canEdit, isMock, onClose, onSaved }) {
   const [chanEdit,      setChanEdit]      = useState({})
   // Suppliers cho sản phẩm này
   const [suppliers,     setSuppliers]     = useState([])
+  // Biến thể sản phẩm
+  const [variations,    setVariations]    = useState([])
+  const [varLoading,    setVarLoading]    = useState(false)
   const fileRef = useRef(null)
 
   const productId = product.oltpProductId ?? product.oltp_product_id ?? product.product_id ?? product.productId ?? product.id
@@ -86,6 +89,16 @@ function ProductDetailModal({ product, canEdit, isMock, onClose, onSaved }) {
        .then(r => setSuppliers(r.data ?? []))
        .catch(() => setSuppliers([]))
   }, [productId, isMock])
+
+  // Tải biến thể khi mở tab variations
+  useEffect(() => {
+    if (mode !== 'variations' || !productId || isMock) return
+    setVarLoading(true)
+    api.get(`/api/products/${productId}/variations`)
+       .then(r => setVariations(r.data ?? []))
+       .catch(() => setVariations([]))
+       .finally(() => setVarLoading(false))
+  }, [mode, productId, isMock])
 
   const handleSaveChanPrice = async (channel) => {
     if (!productId) return
@@ -165,7 +178,7 @@ function ProductDetailModal({ product, canEdit, isMock, onClose, onSaved }) {
         </button>
       )}
     </>
-  ) : mode === 'channel' ? (
+  ) : mode === 'channel' || mode === 'variations' ? (
     <button onClick={onClose} className="lbtn lbtn-secondary w-full justify-center">Đóng</button>
   ) : (
     <>
@@ -190,8 +203,9 @@ function ProductDetailModal({ product, canEdit, isMock, onClose, onSaved }) {
         <div className="flex gap-0 px-5 pt-3"
              style={{ position: 'sticky', top: 0, zIndex: 1, borderBottom: '1px solid var(--border)', background: 'var(--bg-card)' }}>
           {[
-            { key: 'view',    label: 'Thông tin chung', icon: 'info' },
-            { key: 'channel', label: 'Giá theo kênh',   icon: 'price_change' },
+            { key: 'view',       label: 'Thông tin chung', icon: 'info'         },
+            { key: 'variations', label: 'Biến thể',         icon: 'style'        },
+            { key: 'channel',    label: 'Giá theo kênh',   icon: 'price_change' },
           ].map(tb => (
             <button key={tb.key} onClick={() => { setMode(tb.key); setErr('') }}
                     className="flex items-center gap-1.5 pb-2.5 px-3 text-xs font-medium transition-all"
@@ -358,6 +372,57 @@ function ProductDetailModal({ product, canEdit, isMock, onClose, onSaved }) {
                   </div>
                 )
               })
+            )}
+          </div>
+        )}
+
+        {/* ── VARIATIONS MODE ── */}
+        {mode === 'variations' && (
+          <div>
+            {varLoading ? (
+              <div className="py-8 flex items-center justify-center">
+                <span className="w-5 h-5 border-2 rounded-full"
+                      style={{ borderColor: 'var(--border-strong)', borderTopColor: 'var(--primary-500)', animation: 'spin 0.8s linear infinite' }} />
+              </div>
+            ) : variations.length === 0 ? (
+              <p className="text-sm py-4 text-center" style={{ color: 'var(--text-tertiary)' }}>
+                Sản phẩm không có biến thể
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                      {['SKU', 'Màu', 'Size', 'Giá bán', 'Tồn kho'].map(h => (
+                        <th key={h} className="text-left px-3 py-2 text-xs font-medium"
+                            style={{ color: 'var(--text-tertiary)' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {variations.map(v => (
+                      <tr key={v.variationId} style={{ borderBottom: '1px solid var(--border)' }}>
+                        <td className="px-3 py-2 font-mono text-xs" style={{ color: 'var(--text-secondary)' }}>
+                          {v.sku ?? '—'}
+                        </td>
+                        <td className="px-3 py-2 text-xs" style={{ color: 'var(--text-primary)' }}>
+                          {v.color ?? '—'}
+                        </td>
+                        <td className="px-3 py-2 text-xs" style={{ color: 'var(--text-primary)' }}>
+                          {v.size ?? '—'}
+                        </td>
+                        <td className="px-3 py-2 font-mono text-xs tabular-nums" style={{ color: 'var(--text-primary)' }}>
+                          {(v.salePrice ?? 0).toLocaleString('vi-VN')}₫
+                        </td>
+                        <td className="px-3 py-2 text-center font-semibold text-xs"
+                            style={{ color: (v.stockQuantity ?? 0) === 0 ? '#EF4444' : 'var(--text-primary)' }}>
+                          {v.stockQuantity ?? 0}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
         )}

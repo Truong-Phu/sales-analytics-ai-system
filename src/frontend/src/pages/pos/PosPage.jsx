@@ -12,12 +12,73 @@ const createOrder = dto => api.post('/api/pos/orders', dto).then(r => r.data)
 
 const fmtVND = n => new Intl.NumberFormat('vi-VN').format(Math.round(n)) + 'đ'
 
+// ── Modal chọn biến thể ───────────────────────────────────────────────────────
+function VariationModal({ product, variations, onSelect, onClose }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+         style={{ background: 'rgba(0,0,0,0.55)' }} onClick={onClose}>
+      <div className="lcard w-full max-w-sm p-5 space-y-4"
+           onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>
+              Chọn biến thể
+            </h3>
+            <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>{product.name}</p>
+          </div>
+          <button onClick={onClose} className="w-7 h-7 flex items-center justify-center rounded-lg"
+                  style={{ color: 'var(--text-tertiary)' }}>
+            <span className="icon text-base">close</span>
+          </button>
+        </div>
+        <div className="space-y-2 max-h-72 overflow-y-auto">
+          {variations.map(v => {
+            const oos = (v.stockQuantity ?? 0) <= 0
+            return (
+              <button
+                key={v.variationId}
+                onClick={() => !oos && onSelect(v)}
+                disabled={oos}
+                className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl border text-sm transition-colors"
+                style={{
+                  borderColor: 'var(--border)',
+                  background: 'var(--bg-elevated)',
+                  opacity: oos ? 0.5 : 1,
+                  cursor: oos ? 'default' : 'pointer',
+                }}
+                onMouseEnter={e => !oos && (e.currentTarget.style.borderColor = 'var(--primary-500)')}
+                onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border)')}
+              >
+                <div className="text-left">
+                  <div className="font-medium" style={{ color: 'var(--text-primary)' }}>
+                    {v.variationName}
+                    {v.color ? ` · ${v.color}` : ''}
+                    {v.size  ? ` · ${v.size}`  : ''}
+                  </div>
+                  <div className="text-xs mt-0.5" style={{ color: oos ? '#EF4444' : 'var(--text-tertiary)' }}>
+                    {oos ? 'Hết hàng' : `Còn ${v.stockQuantity}`}
+                    {v.sku ? ` · SKU: ${v.sku}` : ''}
+                  </div>
+                </div>
+                <div className="font-bold shrink-0 ml-3" style={{ color: 'var(--primary-500)' }}>
+                  {fmtVND(v.salePrice ?? 0)}
+                </div>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Tìm kiếm sản phẩm với dropdown ──────────────────────────────────────────
 function ProductSearch({ onAdd }) {
-  const [q,        setQ]       = useState('')
-  const [results,  setResults] = useState([])
-  const [loading,  setLoading] = useState(false)
-  const [open,     setOpen]    = useState(false)
+  const [q,          setQ]          = useState('')
+  const [results,    setResults]    = useState([])
+  const [loading,    setLoading]    = useState(false)
+  const [open,       setOpen]       = useState(false)
+  const [varModal,   setVarModal]   = useState(null) // { product, variations }
   const timer  = useRef(null)
   const wrapRef = useRef(null)
 
@@ -48,11 +109,35 @@ function ProductSearch({ onAdd }) {
     timer.current = setTimeout(() => doSearch(val), 280)
   }
 
-  const pick = (p) => {
+  const pick = async (p) => {
+    setOpen(false)
+    try {
+      const vars = await api.get(`/api/products/${p.id}/variations`).then(r => r.data ?? [])
+      if (vars.length > 0) {
+        setVarModal({ product: p, variations: vars })
+        return
+      }
+    } catch { /* không có variations → thêm thẳng */ }
     onAdd(p)
     setQ('')
     setResults([])
-    setOpen(false)
+  }
+
+  const handleVariationSelect = (variation) => {
+    const p = varModal.product
+    onAdd({
+      ...p,
+      price:         variation.salePrice ?? p.salePrice ?? p.price ?? 0,
+      variationId:   variation.variationId,
+      variationName: variation.variationName,
+      color:         variation.color,
+      size:          variation.size,
+      // key duy nhất = productId + variationId để phân biệt các biến thể khác nhau trong giỏ
+      _cartKey: `${p.id}-${variation.variationId}`,
+    })
+    setVarModal(null)
+    setQ('')
+    setResults([])
   }
 
   // Đóng dropdown khi click ngoài
@@ -63,6 +148,15 @@ function ProductSearch({ onAdd }) {
   }, [])
 
   return (
+    <>
+    {varModal && (
+      <VariationModal
+        product={varModal.product}
+        variations={varModal.variations}
+        onSelect={handleVariationSelect}
+        onClose={() => setVarModal(null)}
+      />
+    )}
     <div ref={wrapRef} className="relative">
       <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl border"
            style={{ borderColor: 'var(--border)', background: 'var(--bg-elevated)' }}>
@@ -125,33 +219,41 @@ function ProductSearch({ onAdd }) {
         </div>
       )}
     </div>
+    </>
   )
 }
 
 // ── Giỏ hàng ─────────────────────────────────────────────────────────────────
 function CartItem({ item, onQty, onRemove }) {
+  const variationLabel = [item.color, item.size].filter(Boolean).join(' · ') || item.variationName
   return (
     <div className="flex items-center gap-3 py-2.5"
          style={{ borderBottom: '1px solid var(--border)' }}>
       <div className="flex-1 min-w-0">
         <div className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{item.name}</div>
         <div className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
+          {variationLabel && (
+            <span className="mr-1.5 px-1.5 py-0.5 rounded"
+                  style={{ background: 'var(--bg-elevated)', color: 'var(--text-secondary)' }}>
+              {variationLabel}
+            </span>
+          )}
           {fmtVND(item.price)} × {item.qty}
         </div>
       </div>
       <div className="flex items-center gap-1 shrink-0">
-        <button onClick={() => onQty(item.id, item.qty - 1)}
+        <button onClick={() => onQty(item._cartKey, item.qty - 1)}
                 className="w-7 h-7 rounded-lg flex items-center justify-center text-sm font-bold"
                 style={{ background: 'var(--bg-elevated)', color: 'var(--text-secondary)' }}>−</button>
         <span className="w-7 text-center text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{item.qty}</span>
-        <button onClick={() => onQty(item.id, item.qty + 1)}
+        <button onClick={() => onQty(item._cartKey, item.qty + 1)}
                 className="w-7 h-7 rounded-lg flex items-center justify-center text-sm font-bold"
                 style={{ background: 'var(--bg-elevated)', color: 'var(--text-secondary)' }}>+</button>
       </div>
       <div className="w-20 text-right text-sm font-bold shrink-0" style={{ color: 'var(--text-primary)' }}>
         {fmtVND(item.price * item.qty)}
       </div>
-      <button onClick={() => onRemove(item.id)}
+      <button onClick={() => onRemove(item._cartKey)}
               className="w-6 h-6 flex items-center justify-center rounded shrink-0"
               style={{ color: '#EF4444' }}>
         <span className="icon" style={{ fontSize: 16 }}>close</span>
@@ -197,19 +299,31 @@ export default function PosPage() {
 
   // ── Giỏ hàng ──────────────────────────────────────────────────────────────
   const addToCart = (product) => {
+    const cartKey = product._cartKey ?? String(product.id)
     setCart(prev => {
-      const existing = prev.find(i => i.id === product.id)
-      if (existing) return prev.map(i => i.id === product.id ? { ...i, qty: i.qty + 1 } : i)
-      return [...prev, { id: product.id, name: product.name, price: product.salePrice ?? product.price ?? 0, qty: 1, imageUrl: product.imageUrl }]
+      const existing = prev.find(i => i._cartKey === cartKey)
+      if (existing) return prev.map(i => i._cartKey === cartKey ? { ...i, qty: i.qty + 1 } : i)
+      return [...prev, {
+        id:            product.id,
+        _cartKey:      cartKey,
+        name:          product.name,
+        price:         product.salePrice ?? product.price ?? 0,
+        qty:           1,
+        imageUrl:      product.imageUrl,
+        variationId:   product.variationId   ?? null,
+        variationName: product.variationName ?? null,
+        color:         product.color         ?? null,
+        size:          product.size          ?? null,
+      }]
     })
   }
 
-  const setQty = (id, qty) => {
-    if (qty <= 0) setCart(prev => prev.filter(i => i.id !== id))
-    else setCart(prev => prev.map(i => i.id === id ? { ...i, qty } : i))
+  const setQty = (cartKey, qty) => {
+    if (qty <= 0) setCart(prev => prev.filter(i => i._cartKey !== cartKey))
+    else setCart(prev => prev.map(i => i._cartKey === cartKey ? { ...i, qty } : i))
   }
 
-  const removeFromCart = id => setCart(prev => prev.filter(i => i.id !== id))
+  const removeFromCart = cartKey => setCart(prev => prev.filter(i => i._cartKey !== cartKey))
 
   const clearCart = () => {
     setCart([]); setCustomer(null); setCusSearch(''); setLoyalty(null)
@@ -264,7 +378,7 @@ export default function PosPage() {
         customerId:    customer?.id ?? null,
         customerName:  customer?.name ?? null,
         customerPhone: customer?.phone ?? null,
-        items: cart.map(i => ({ productId: i.id, qty: i.qty, price: i.price })),
+        items: cart.map(i => ({ productId: i.id, variationId: i.variationId ?? null, qty: i.qty, price: i.price })),
         paymentMethod: payMethod,
         voucherCode:   voucherInfo ? voucherCode.trim() : null,
         usePoints:     customer ? usePoints : 0,
@@ -325,7 +439,7 @@ export default function PosPage() {
           ) : (
             <div className="flex-1 overflow-y-auto px-4 pb-4">
               {cart.map(item => (
-                <CartItem key={item.id} item={item} onQty={setQty} onRemove={removeFromCart} />
+                <CartItem key={item._cartKey} item={item} onQty={setQty} onRemove={removeFromCart} />
               ))}
             </div>
           )}
