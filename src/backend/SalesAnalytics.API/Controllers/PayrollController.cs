@@ -43,18 +43,20 @@ public class PayrollController(
             await using var conn = new NpgsqlConnection(_connStr);
             await conn.OpenAsync();
 
+            // Subquery cho new_customers tránh cartesian product (company-wide per period)
             const string sql = """
+                WITH new_cust AS (
+                    SELECT COUNT(DISTINCT customer_id) AS cnt
+                    FROM public.customers
+                    WHERE company_id = @cid::uuid
+                      AND created_at BETWEEN @start AND @end
+                )
                 SELECT
                     u.user_id, u.full_name, u.email, u.role,
-                    -- Actuals (query-time từ DB thật)
-                    COUNT(DISTINCT o.order_id)                                     AS actual_orders,
-                    COALESCE(SUM(o.total_amount), 0)                               AS actual_revenue,
-                    COUNT(DISTINCT CASE
-                        WHEN c.created_at BETWEEN @start AND @end THEN c.customer_id
-                    END)                                                           AS actual_new_customers,
-                    -- KPI targets
+                    COUNT(DISTINCT o.order_id)           AS actual_orders,
+                    COALESCE(SUM(o.total_amount), 0)     AS actual_revenue,
+                    (SELECT cnt FROM new_cust)            AS actual_new_customers,
                     t.revenue_target, t.order_count_target, t.new_customer_target,
-                    -- Payroll
                     p.payroll_id, p.base_salary, p.bonus_amount, p.penalty_amount,
                     p.note, p.status, p.approved_by, p.approved_at,
                     p.paid_at, p.email_sent_at,
@@ -64,15 +66,13 @@ public class PayrollController(
                     ON  o.created_by_user_id = u.user_id
                     AND o.order_date BETWEEN @start AND @end
                     AND o.company_id = @cid::uuid
-                LEFT JOIN public.customers c
-                    ON  c.company_id = @cid::uuid
                 LEFT JOIN public.staff_kpi_targets t
-                    ON  t.user_id     = u.user_id
-                    AND t.period_type = 'MONTHLY'
+                    ON  t.user_id      = u.user_id
+                    AND t.period_type  = 'MONTHLY'
                     AND t.period_start = DATE_TRUNC('month', @start)
                 LEFT JOIN public.employee_payroll p
-                    ON  p.user_id     = u.user_id
-                    AND p.company_id  = @cid::uuid
+                    ON  p.user_id    = u.user_id
+                    AND p.company_id = @cid::uuid
                     AND p.year = @year AND p.month = @month
                 LEFT JOIN public.users ab ON ab.user_id = p.approved_by
                 WHERE u.company_id = @cid::uuid
