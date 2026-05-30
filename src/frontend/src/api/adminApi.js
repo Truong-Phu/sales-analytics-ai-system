@@ -23,3 +23,25 @@ export const changeRole  = (id, role)     => api.patch(`/api/admin/users/${id}/r
 
 export const getAuditLogs = (params = {}) =>
   api.get('/api/admin/audit-logs', { params }).then(r => r.data)
+
+// ── Payroll API ───────────────────────────────────────────────────────────────
+export const getPayroll        = (year, month)    =>
+  api.get('/api/payroll', { params: { year, month } }).then(r => r.data)
+
+export const upsertPayroll     = (dto)            =>
+  api.post('/api/payroll', dto).then(r => r.data)
+
+export const approvePayroll    = (id)             =>
+  api.post(`/api/payroll/${id}/approve`).then(r => r.data)
+
+export const unlockPayroll     = (id)             =>
+  api.post(`/api/payroll/${id}/unlock`).then(r => r.data)
+
+export const payPayroll        = (id)             =>
+  api.post(`/api/payroll/${id}/pay`).then(r => r.data)
+
+export const sendPayslip       = (id)             =>
+  api.post(`/api/payroll/${id}/send-email`).then(r => r.data)
+
+export const getPayrollSalarySummary = (year, month) =>
+  api.get('/api/payroll/salary-summary', { params: { year, month } }).then(r => r.data)

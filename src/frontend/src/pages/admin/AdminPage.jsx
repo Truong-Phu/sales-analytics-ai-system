@@ -3,6 +3,8 @@ import { useTranslation } from 'react-i18next'
 import {
   getUsers, deactivate, activate, getAuditLogs,
   createUser, updateUser, deleteUser,
+  getPayroll, upsertPayroll, approvePayroll, unlockPayroll,
+  payPayroll, sendPayslip,
 } from '../../api/adminApi'
 import { useAuth } from '../../hooks/useAuth'
 import api from '../../api/axios'
@@ -271,6 +273,128 @@ function EditUserModal({ user: u, onClose, onSaved }) {
   )
 }
 
+// ─── Payroll helpers ──────────────────────────────────────────────────────────
+const fmtVND = v => (v == null ? '—' : Number(v).toLocaleString('vi-VN') + ' ₫')
+const fmtVNDShort = v => {
+  if (v == null) return '—'
+  const n = Number(v)
+  if (n >= 1_000_000_000) return (n / 1_000_000_000).toFixed(1) + ' tỷ'
+  if (n >= 1_000_000)     return (n / 1_000_000).toFixed(1) + ' tr'
+  return n.toLocaleString('vi-VN')
+}
+
+const PAYROLL_STATUS_CFG = {
+  Draft:     { label: 'Nháp',       color: '#94A3B8', bg: 'rgba(148,163,184,0.1)' },
+  Active:    { label: 'Đang xử lý', color: '#3B82F6', bg: 'rgba(59,130,246,0.1)'  },
+  Completed: { label: 'Hoàn thành', color: '#10B981', bg: 'rgba(16,185,129,0.1)'  },
+  Approved:  { label: 'Đã duyệt',   color: '#6366F1', bg: 'rgba(99,102,241,0.1)'  },
+  Paid:      { label: 'Đã trả',     color: '#F59E0B', bg: 'rgba(245,158,11,0.1)'  },
+}
+
+function PayrollStatusBadge({ status }) {
+  const c = PAYROLL_STATUS_CFG[status] ?? PAYROLL_STATUS_CFG.Draft
+  return (
+    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold"
+          style={{ background: c.bg, color: c.color }}>
+      {c.label}
+    </span>
+  )
+}
+
+// ─── Modal cài lương nhân viên ───────────────────────────────────────────────
+function PayrollModal({ staff, year, month, onClose, onSaved }) {
+  const [form, setForm] = useState({
+    baseSalary:    String(staff.baseSalary    ?? ''),
+    bonusAmount:   String(staff.bonusAmount   ?? ''),
+    penaltyAmount: String(staff.penaltyAmount ?? ''),
+    note:          staff.note ?? '',
+  })
+  const [saving, setSaving] = useState(false)
+  const [err,    setErr]    = useState('')
+
+  const f = (k, v) => setForm(p => ({ ...p, [k]: v }))
+
+  const handleSave = async () => {
+    const base    = parseFloat(form.baseSalary)    || 0
+    const bonus   = parseFloat(form.bonusAmount)   || 0
+    const penalty = parseFloat(form.penaltyAmount) || 0
+    if (base < 0 || bonus < 0 || penalty < 0) { setErr('Giá trị không được âm'); return }
+
+    setSaving(true); setErr('')
+    try {
+      await upsertPayroll({
+        userId: staff.userId, year, month,
+        baseSalary: base, bonusAmount: bonus, penaltyAmount: penalty,
+        note: form.note || null,
+      })
+      onSaved()
+    } catch (e) {
+      setErr(e?.response?.data?.error ?? 'Lưu thất bại')
+    } finally { setSaving(false) }
+  }
+
+  const totalPreview = Math.max(0,
+    staff.isKpiAchieved
+      ? (parseFloat(form.baseSalary) || 0) + (parseFloat(form.bonusAmount) || 0) - (parseFloat(form.penaltyAmount) || 0)
+      : (parseFloat(form.baseSalary) || 0) - (parseFloat(form.penaltyAmount) || 0)
+  )
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="lcard w-full max-w-sm p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>
+            Cài lương — {staff.fullName}
+          </h3>
+          <button onClick={onClose} className="icon text-xl" style={{ color: 'var(--text-tertiary)' }}>close</button>
+        </div>
+        <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+          Tháng {month}/{year} ·{' '}
+          <span style={{ color: staff.isKpiAchieved ? '#10B981' : '#F59E0B', fontWeight: 600 }}>
+            {staff.isKpiAchieved ? '✅ KPI đạt — thưởng được cộng' : '⚠ KPI chưa đạt — thưởng không cộng'}
+          </span>
+        </p>
+
+        {[
+          { label: 'Lương cơ bản (₫)',  key: 'baseSalary',    ph: 'VD: 8000000' },
+          { label: 'Thưởng KPI (₫)',    key: 'bonusAmount',   ph: 'VD: 2000000' },
+          { label: 'Khấu trừ (₫)',      key: 'penaltyAmount', ph: 'VD: 0' },
+        ].map(fd => (
+          <div key={fd.key}>
+            <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>{fd.label}</label>
+            <input type="number" min="0" step="100000" value={form[fd.key]}
+                   onChange={e => f(fd.key, e.target.value)}
+                   placeholder={fd.ph} className="linput !h-9 text-sm w-full" style={{ fontFamily: 'monospace' }} />
+          </div>
+        ))}
+
+        <div>
+          <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>Ghi chú</label>
+          <input type="text" value={form.note} onChange={e => f('note', e.target.value)}
+                 placeholder="Ghi chú (tuỳ chọn)" className="linput !h-9 text-sm w-full" />
+        </div>
+
+        {/* Preview tổng lương */}
+        <div className="rounded-lg px-3 py-2 flex items-center justify-between"
+             style={{ background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.2)' }}>
+          <span className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>Tổng lương dự kiến</span>
+          <span className="text-base font-bold font-mono" style={{ color: '#6366F1' }}>
+            {totalPreview.toLocaleString('vi-VN')} ₫
+          </span>
+        </div>
+
+        {err && <p className="text-xs" style={{ color: '#EF4444' }}>{err}</p>}
+        <div className="flex gap-2 pt-1">
+          <button onClick={onClose} className="lbtn lbtn-secondary flex-1">Hủy</button>
+          <button onClick={handleSave} disabled={saving} className="lbtn lbtn-primary flex-1">
+            {saving ? 'Đang lưu...' : 'Lưu lương'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── KPI Progress bar ────────────────────────────────────────────────────────
 function KpiBar({ actual, target, color = 'var(--primary-500)' }) {
   if (!target) return <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Chưa đặt mục tiêu</span>
@@ -353,7 +477,7 @@ function KpiTab() {
   const [data,   setData]   = useState([])
   const [loading,setLoading]= useState(false)
   const [error,  setError]  = useState(false)
-  const [target, setTarget] = useState(null) // staff row being edited
+  const [target, setTarget] = useState(null)
 
   const fetch = useCallback(async () => {
     setLoading(true); setError(false)
@@ -375,8 +499,6 @@ function KpiTab() {
         <SetTargetModal staff={target} period={period} onClose={() => setTarget(null)}
                         onSaved={() => { setTarget(null); fetch() }} />
       )}
-
-      {/* Controls */}
       <div className="lcard p-3 flex flex-wrap gap-3 items-center">
         <div className="flex flex-col gap-1">
           <label className="text-xs" style={{ color: 'var(--text-secondary)' }}>Kỳ (tháng/năm)</label>
@@ -388,11 +510,10 @@ function KpiTab() {
           Tải lại
         </button>
         <p className="text-xs ml-auto" style={{ color: 'var(--text-tertiary)' }}>
-          Kỳ {period} — {data.length} nhân viên
+          {data.length} nhân viên — {period}
         </p>
       </div>
 
-      {/* Table */}
       <div className="lcard overflow-hidden">
         {loading ? (
           <div className="p-16 flex items-center justify-center">
@@ -410,55 +531,285 @@ function KpiTab() {
             <table className="w-full text-sm">
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-elevated)' }}>
-                  {['Nhân viên', 'Vai trò', 'Doanh thu thực tế', 'Mục tiêu DT', 'Tiến độ DT',
-                    'Số đơn', 'Mục tiêu đơn', 'KH mới', ''].map(h => (
-                    <th key={h} className="text-left px-4 py-3 text-xs font-semibold tracking-wide"
+                  {['Nhân viên','Vai trò','Doanh thu / Mục tiêu','Tiến độ DT','Đơn / Mục tiêu','KH mới / Mục tiêu','KPI',''].map(h => (
+                    <th key={h} className="text-left px-4 py-2.5 text-xs font-semibold"
                         style={{ color: 'var(--text-tertiary)' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {data.length === 0 ? (
-                  <tr><td colSpan={9} className="py-12 text-center text-sm" style={{ color: 'var(--text-tertiary)' }}>
+                  <tr><td colSpan={8} className="py-12 text-center text-sm" style={{ color: 'var(--text-tertiary)' }}>
                     Chưa có dữ liệu nhân viên cho kỳ này
                   </td></tr>
-                ) : data.map(s => (
-                  <tr key={s.userId} style={{ borderBottom: '1px solid var(--border)' }}
-                      onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
-                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                    <td className="px-4 py-2.5 font-medium" style={{ color: 'var(--text-primary)' }}>{s.fullName}</td>
-                    <td className="px-4 py-2.5"><RoleBadge role={s.role} /></td>
-                    <td className="px-4 py-2.5 font-mono text-xs" style={{ color: 'var(--text-primary)' }}>
-                      {fmt(s.revenue)} ₫
-                    </td>
-                    <td className="px-4 py-2.5 font-mono text-xs" style={{ color: 'var(--text-secondary)' }}>
-                      {s.revTarget ? `${fmt(s.revTarget)} ₫` : '—'}
-                    </td>
-                    <td className="px-4 py-2.5">
-                      <KpiBar actual={Number(s.revenue)} target={s.revTarget ? Number(s.revTarget) : null} />
-                    </td>
-                    <td className="px-4 py-2.5 font-mono text-xs text-center" style={{ color: 'var(--text-primary)' }}>
-                      {fmt(s.orderCount)}
-                    </td>
-                    <td className="px-4 py-2.5 font-mono text-xs text-center" style={{ color: 'var(--text-secondary)' }}>
-                      {s.ordTarget ?? '—'}
-                    </td>
-                    <td className="px-4 py-2.5 font-mono text-xs text-center" style={{ color: 'var(--text-primary)' }}>
-                      {fmt(s.newCustomers)}
-                    </td>
-                    <td className="px-4 py-2.5">
-                      <button onClick={() => setTarget(s)}
-                              className="lbtn lbtn-secondary !h-7 !px-3 text-xs gap-1">
-                        <span className="icon" style={{ fontSize: 14 }}>edit</span>
-                        Đặt KPI
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                ) : data.map(s => {
+                  const revPct = s.revTarget ? Math.min(150, Math.round(s.revenue / s.revTarget * 100)) : null
+                  const kpiOk  = s.revTarget && s.revenue >= s.revTarget
+                  return (
+                    <tr key={s.userId} style={{ borderBottom: '1px solid var(--border)' }}
+                        onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                      <td className="px-4 py-2.5 font-medium" style={{ color: 'var(--text-primary)' }}>{s.fullName}</td>
+                      <td className="px-4 py-2.5"><RoleBadge role={s.role} /></td>
+                      <td className="px-4 py-2.5">
+                        <div className="text-xs font-mono" style={{ color: 'var(--text-primary)' }}>{fmt(s.revenue)} ₫</div>
+                        {s.revTarget && <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>/ {fmt(s.revTarget)} ₫</div>}
+                      </td>
+                      <td className="px-4 py-2.5 min-w-[120px]">
+                        <KpiBar actual={Number(s.revenue)} target={s.revTarget ? Number(s.revTarget) : null} />
+                      </td>
+                      <td className="px-4 py-2.5 text-xs font-mono">
+                        <span style={{ color: 'var(--text-primary)' }}>{fmt(s.orderCount)}</span>
+                        {s.ordTarget && <span style={{ color: 'var(--text-tertiary)' }}> / {s.ordTarget}</span>}
+                      </td>
+                      <td className="px-4 py-2.5 text-xs font-mono">
+                        <span style={{ color: 'var(--text-primary)' }}>{fmt(s.newCustomers)}</span>
+                        {s.custTarget && <span style={{ color: 'var(--text-tertiary)' }}> / {s.custTarget}</span>}
+                      </td>
+                      <td className="px-4 py-2.5">
+                        {!s.revTarget && !s.ordTarget && !s.custTarget ? (
+                          <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Chưa đặt KPI</span>
+                        ) : (
+                          <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
+                                style={{ background: kpiOk ? 'rgba(16,185,129,0.1)' : 'rgba(245,158,11,0.1)',
+                                         color: kpiOk ? '#10B981' : '#F59E0B' }}>
+                            {kpiOk ? '✅ Đạt' : `⚠ ${revPct ?? '—'}%`}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-2.5">
+                        <button onClick={() => setTarget(s)}
+                                className="lbtn lbtn-secondary !h-7 !px-2.5 text-xs gap-1">
+                          <span className="icon" style={{ fontSize: 13 }}>edit</span>
+                          Đặt KPI
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>
         )}
+      </div>
+    </div>
+  )
+}
+
+// ─── Payroll Tab (Bảng lương) ─────────────────────────────────────────────────
+function PayrollTab() {
+  const { user: me } = useAuth()
+  const isOwner      = me?.role === 'Owner'
+  const today        = new Date()
+  const [year,  setYear]  = useState(today.getFullYear())
+  const [month, setMonth] = useState(today.getMonth() + 1)
+  const [data,  setData]  = useState([])
+  const [loading, setLoading] = useState(false)
+  const [error,   setError]   = useState('')
+  const [salaryTarget, setSalaryTarget] = useState(null) // staff row for PayrollModal
+  const [acting,  setActing]  = useState({}) // { payrollId: true } while processing
+
+  const load = useCallback(async () => {
+    setLoading(true); setError('')
+    try {
+      const res = await getPayroll(year, month)
+      setData(res.staff ?? [])
+    } catch (e) {
+      const msg = e?.response?.data?.error ?? 'Không tải được dữ liệu bảng lương'
+      setError(msg.includes('employee_payroll') ? 'Cần chạy migration CT-071 trước.' : msg)
+      setData([])
+    } finally { setLoading(false) }
+  }, [year, month])
+
+  useEffect(() => { load() }, [load])
+
+  const act = async (payrollId, fn, label) => {
+    if (!window.confirm(`${label}?`)) return
+    setActing(a => ({ ...a, [payrollId]: true }))
+    try { await fn(); await load() }
+    catch (e) { alert(e?.response?.data?.error ?? `${label} thất bại`) }
+    finally { setActing(a => ({ ...a, [payrollId]: false })) }
+  }
+
+  const MONTHS = ['T1','T2','T3','T4','T5','T6','T7','T8','T9','T10','T11','T12']
+
+  const totalPayroll = data.reduce((s, r) => s + Number(r.totalSalary ?? 0), 0)
+
+  return (
+    <div className="space-y-3">
+      {salaryTarget && (
+        <PayrollModal
+          staff={salaryTarget} year={year} month={month}
+          onClose={() => setSalaryTarget(null)}
+          onSaved={() => { setSalaryTarget(null); load() }}
+        />
+      )}
+
+      {/* Controls */}
+      <div className="lcard p-3 flex flex-wrap gap-3 items-center">
+        <div className="flex items-center gap-2">
+          <div className="flex flex-col gap-1">
+            <label className="text-xs" style={{ color: 'var(--text-secondary)' }}>Tháng</label>
+            <select value={month} onChange={e => setMonth(+e.target.value)} className="linput !h-8 text-xs" style={{ width: 90 }}>
+              {MONTHS.map((m, i) => <option key={i+1} value={i+1}>{m}</option>)}
+            </select>
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs" style={{ color: 'var(--text-secondary)' }}>Năm</label>
+            <select value={year} onChange={e => setYear(+e.target.value)} className="linput !h-8 text-xs" style={{ width: 80 }}>
+              {[2024,2025,2026,2027].map(y => <option key={y} value={y}>{y}</option>)}
+            </select>
+          </div>
+          <button onClick={load} className="lbtn lbtn-secondary !h-8 !px-3 text-xs self-end" disabled={loading}>
+            <span className="icon" style={{ fontSize: 14 }}>refresh</span>
+          </button>
+        </div>
+
+        {/* Tổng lương tháng */}
+        {data.length > 0 && (
+          <div className="ml-auto flex items-center gap-2 px-3 py-1.5 rounded-lg"
+               style={{ background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.2)' }}>
+            <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>Tổng lương tháng {month}/{year}</span>
+            <span className="font-bold font-mono text-sm" style={{ color: '#6366F1' }}>
+              {totalPayroll.toLocaleString('vi-VN')} ₫
+            </span>
+          </div>
+        )}
+      </div>
+
+      {error && (
+        <div className="lcard px-4 py-3 text-sm" style={{ borderColor: '#F59E0B', background: 'rgba(245,158,11,0.06)', color: '#D97706' }}>
+          {error}
+        </div>
+      )}
+
+      {/* Table */}
+      <div className="lcard overflow-hidden">
+        {loading ? (
+          <div className="p-16 flex items-center justify-center">
+            <span className="w-7 h-7 border-2 rounded-full"
+                  style={{ borderColor: 'var(--border-strong)', borderTopColor: 'var(--primary-500)', animation: 'spin 0.8s linear infinite' }} />
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr style={{ borderBottom: '2px solid var(--border)', background: 'var(--bg-elevated)' }}>
+                  {['Nhân viên','Vai trò','KPI','Lương CB','Thưởng','Khấu trừ','Tổng lương','Trạng thái','Email','Hành động'].map(h => (
+                    <th key={h} className="text-left px-3 py-2.5 text-xs font-semibold whitespace-nowrap"
+                        style={{ color: 'var(--text-tertiary)' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {data.length === 0 ? (
+                  <tr><td colSpan={10} className="py-12 text-center text-sm" style={{ color: 'var(--text-tertiary)' }}>
+                    <span className="icon text-3xl block mb-2">payments</span>
+                    Chưa có dữ liệu lương cho kỳ này
+                  </td></tr>
+                ) : data.map(s => {
+                  const pid      = s.payrollId
+                  const isLocked = s.status === 'Approved' || s.status === 'Paid'
+                  const loading_  = acting[pid]
+                  return (
+                    <tr key={s.userId} style={{ borderBottom: '1px solid var(--border)' }}
+                        onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                      <td className="px-3 py-2.5 font-medium whitespace-nowrap" style={{ color: 'var(--text-primary)' }}>{s.fullName}</td>
+                      <td className="px-3 py-2.5"><RoleBadge role={s.role} /></td>
+                      <td className="px-3 py-2.5">
+                        {!s.hasAnyTarget ? (
+                          <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Chưa đặt</span>
+                        ) : (
+                          <span className="text-xs font-semibold px-1.5 py-0.5 rounded-full"
+                                style={{ background: s.isKpiAchieved ? 'rgba(16,185,129,0.1)' : 'rgba(245,158,11,0.1)',
+                                         color: s.isKpiAchieved ? '#10B981' : '#F59E0B' }}>
+                            {s.isKpiAchieved ? '✅ Đạt' : `⚠ ${s.overallPct ?? '—'}%`}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2.5 font-mono text-xs">{fmtVNDShort(s.baseSalary)}</td>
+                      <td className="px-3 py-2.5 font-mono text-xs"
+                          style={{ color: s.isKpiAchieved && s.bonusAmount > 0 ? '#10B981' : 'var(--text-tertiary)' }}>
+                        {s.isKpiAchieved ? '+' : ''}{fmtVNDShort(s.bonusAmount)}
+                      </td>
+                      <td className="px-3 py-2.5 font-mono text-xs" style={{ color: s.penaltyAmount > 0 ? '#EF4444' : 'var(--text-tertiary)' }}>
+                        {s.penaltyAmount > 0 ? `-${fmtVNDShort(s.penaltyAmount)}` : '—'}
+                      </td>
+                      <td className="px-3 py-2.5 font-mono font-bold text-sm" style={{ color: '#6366F1' }}>
+                        {s.baseSalary > 0 ? `${fmtVNDShort(s.totalSalary)}` : <span style={{ color: 'var(--text-tertiary)', fontWeight: 400 }}>Chưa cài</span>}
+                      </td>
+                      <td className="px-3 py-2.5">
+                        {s.status ? <PayrollStatusBadge status={s.status} /> : (
+                          <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>—</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2.5 text-xs">
+                        {s.emailSentAt ? (
+                          <span style={{ color: '#10B981' }}>✓ Đã gửi</span>
+                        ) : <span style={{ color: 'var(--text-tertiary)' }}>Chưa gửi</span>}
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <div className="flex gap-1 items-center">
+                          {loading_ ? <Spinner size={3} /> : (
+                            <>
+                              {/* Cài lương */}
+                              {!isLocked && (
+                                <IconBtn icon="edit" title="Cài / sửa lương"
+                                  color="var(--primary-500)" bg="rgba(99,102,241,0.08)" hoverBg="rgba(99,102,241,0.16)"
+                                  onClick={() => setSalaryTarget(s)} />
+                              )}
+                              {/* Duyệt */}
+                              {(s.status === 'Active' || s.status === 'Completed') && (
+                                <IconBtn icon="check_circle" title="Duyệt lương"
+                                  color="#10B981" bg="rgba(16,185,129,0.08)" hoverBg="rgba(16,185,129,0.16)"
+                                  onClick={() => act(pid, () => approvePayroll(pid), `Duyệt lương ${s.fullName} tháng ${month}/${year}`)} />
+                              )}
+                              {/* Mở khóa (chỉ Owner) */}
+                              {s.status === 'Approved' && isOwner && (
+                                <IconBtn icon="lock_open" title="Mở khóa để điều chỉnh"
+                                  color="#F59E0B" bg="rgba(245,158,11,0.08)" hoverBg="rgba(245,158,11,0.16)"
+                                  onClick={() => act(pid, () => unlockPayroll(pid), `Mở khóa lương ${s.fullName}`)} />
+                              )}
+                              {/* Trả lương (chỉ Owner) */}
+                              {s.status === 'Approved' && isOwner && (
+                                <IconBtn icon="payments" title="Đánh dấu đã trả lương"
+                                  color="#6366F1" bg="rgba(99,102,241,0.08)" hoverBg="rgba(99,102,241,0.16)"
+                                  onClick={() => act(pid, () => payPayroll(pid), `Trả lương ${s.fullName} tháng ${month}/${year}`)} />
+                              )}
+                              {/* Gửi phiếu lương */}
+                              {pid && s.status !== 'Draft' && (
+                                <IconBtn icon="mail" title="Gửi phiếu lương qua email"
+                                  color="#3B82F6" bg="rgba(59,130,246,0.08)" hoverBg="rgba(59,130,246,0.16)"
+                                  onClick={() => act(pid, async () => {
+                                    const r = await sendPayslip(pid)
+                                    if (!r.sent) alert(r.message)
+                                  }, `Gửi phiếu lương cho ${s.fullName}`)} />
+                              )}
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Ghi chú về Finance */}
+      <div className="lcard p-3 flex items-start gap-2.5"
+           style={{ background: 'rgba(99,102,241,0.04)', borderColor: 'rgba(99,102,241,0.15)' }}>
+        <span className="icon text-sm shrink-0 mt-0.5" style={{ color: 'var(--primary-500)' }}>info</span>
+        <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+          Khi bấm "Trả lương", tổng lương từng nhân viên sẽ tự động được ghi vào{' '}
+          <a href="/finance/operating-expenses" className="underline" style={{ color: 'var(--primary-500)' }}>
+            Finance → Chi phí vận hành (Salary)
+          </a>.
+          Không cần nhập thủ công.
+        </p>
       </div>
     </div>
   )
@@ -586,9 +937,10 @@ export default function AdminPage() {
       {/* Tabs */}
       <div className="flex" style={{ borderBottom: '1px solid var(--border)' }}>
         {[
-          { key: 'all',   label: t('admin.allUsers'),  suffix: '' },
-          { key: 'kpi',   label: 'KPI Nhân viên',      suffix: '' },
-          { key: 'audit', label: 'Lịch sử hoạt động', suffix: auditTotal > 0 ? ` (${auditTotal})` : '' },
+          { key: 'all',     label: t('admin.allUsers'),  suffix: '' },
+          { key: 'kpi',     label: 'KPI Nhân viên',      suffix: '' },
+          { key: 'payroll', label: 'Bảng lương',          suffix: '' },
+          { key: 'audit',   label: 'Lịch sử hoạt động', suffix: auditTotal > 0 ? ` (${auditTotal})` : '' },
         ].map(tb => (
           <button key={tb.key} onClick={() => setTab(tb.key)}
                   className="pb-3 px-4 text-sm font-medium transition-all"
@@ -696,6 +1048,9 @@ export default function AdminPage() {
 
       {/* ── KPI tab ── */}
       {tab === 'kpi' && <KpiTab />}
+
+      {/* ── Payroll tab ── */}
+      {tab === 'payroll' && <PayrollTab />}
 
       {/* ── Audit log tab ── */}
       {tab === 'audit' && (

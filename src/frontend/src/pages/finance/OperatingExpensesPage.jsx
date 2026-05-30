@@ -359,6 +359,19 @@ export default function OperatingExpensesPage() {
                     ₫{Number(item.amount).toLocaleString('vi-VN')}
                   </td>
                   <td className="px-4 py-2.5">
+                    {/* Salary từ payroll hệ thống → không cho sửa/xoá trực tiếp */}
+                    {item.expenseType === 'Salary' && item.description?.startsWith('[Payroll]') ? (
+                      <div className="flex items-center gap-1.5 justify-end">
+                        <span className="text-xs px-1.5 py-0.5 rounded font-semibold"
+                              style={{ background: 'rgba(99,102,241,0.08)', color: 'var(--primary-500)' }}>
+                          Payroll
+                        </span>
+                        <a href="/admin" className="lbtn lbtn-ghost !h-7 !px-2 text-xs"
+                           title="Xem tại Quản trị hệ thống">
+                          <span className="icon icon-sm">open_in_new</span>
+                        </a>
+                      </div>
+                    ) : (
                     <div className="flex items-center gap-1 justify-end">
                       <button onClick={() => { setEditing(item); setShowForm(false) }}
                               className="lbtn lbtn-ghost !h-7 !px-2 text-xs">
@@ -386,6 +399,7 @@ export default function OperatingExpensesPage() {
                         )
                       )}
                     </div>
+                    )}
                   </td>
                 </tr>
               ))}

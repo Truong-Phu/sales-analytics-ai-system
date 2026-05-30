@@ -15,6 +15,13 @@ public interface IEmailService
     Task<bool> SendPurchaseOrderAsync(string toEmail, string supplierName, string poCode,
         decimal totalAmount, List<(string ProductName, int Qty, decimal Price)> items,
         string senderCompany, string? approvalUrl = null);
+
+    Task<bool> SendPayslipAsync(
+        string toEmail, string fullName, int year, int month,
+        decimal baseSalary, decimal bonusAmount, decimal penaltyAmount, decimal totalSalary,
+        decimal actualRevenue, decimal? revenueTarget,
+        long actualOrders, int? orderTarget,
+        bool isKpiAchieved, string status);
 }
 
 public class ResendEmailService(
@@ -551,4 +558,82 @@ public class ResendEmailService(
           </table>
         </body></html>
         """;
+
+    // ── Phiếu lương nhân viên ─────────────────────────────────────────────────
+    public async Task<bool> SendPayslipAsync(
+        string toEmail, string fullName, int year, int month,
+        decimal baseSalary, decimal bonusAmount, decimal penaltyAmount, decimal totalSalary,
+        decimal actualRevenue, decimal? revenueTarget,
+        long actualOrders, int? orderTarget,
+        bool isKpiAchieved, string status)
+    {
+        var subject = $"[MSAS] Phiếu lương tháng {month}/{year} — {fullName}";
+        var html    = BuildPayslipHtml(fullName, year, month, baseSalary, bonusAmount, penaltyAmount,
+                                       totalSalary, actualRevenue, revenueTarget,
+                                       actualOrders, orderTarget, isKpiAchieved, status);
+        return await SendAsync(toEmail, subject, html);
+    }
+
+    private static string BuildPayslipHtml(
+        string fullName, int year, int month,
+        decimal baseSalary, decimal bonusAmount, decimal penaltyAmount, decimal totalSalary,
+        decimal actualRevenue, decimal? revenueTarget,
+        long actualOrders, int? orderTarget,
+        bool isKpiAchieved, string status)
+    {
+        string Fmt(decimal v) => v.ToString("N0") + " ₫";
+        string FmtO(long v) => v.ToString("N0");
+        var kpiLabel  = isKpiAchieved ? "✅ Đạt KPI" : "⚠ Chưa đạt KPI";
+        var kpiColor  = isKpiAchieved ? "#10B981" : "#F59E0B";
+        var revRow    = revenueTarget.HasValue
+            ? $"<tr><td>Doanh thu thực tế / Mục tiêu</td><td>{Fmt(actualRevenue)} / {Fmt(revenueTarget.Value)}</td></tr>"
+            : $"<tr><td>Doanh thu thực tế</td><td>{Fmt(actualRevenue)}</td></tr>";
+        var ordRow    = orderTarget.HasValue
+            ? $"<tr><td>Số đơn thực tế / Mục tiêu</td><td>{FmtO(actualOrders)} / {orderTarget}</td></tr>"
+            : "";
+
+        return $"""
+        <!DOCTYPE html><html><body style="font-family:sans-serif;color:#1e293b;background:#f8fafc;padding:20px">
+          <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:12px;border:1px solid #e2e8f0;overflow:hidden">
+            <div style="background:linear-gradient(135deg,#6366f1,#3b82f6);padding:24px 32px;color:#fff">
+              <h2 style="margin:0;font-size:20px">Phiếu lương tháng {month}/{year}</h2>
+              <p style="margin:4px 0 0;opacity:0.85">{fullName}</p>
+            </div>
+            <div style="padding:24px 32px">
+              <table style="width:100%;border-collapse:collapse;font-size:14px">
+                <tr style="background:#f1f5f9">
+                  <th colspan="2" style="text-align:left;padding:8px 12px;font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:.05em">
+                    Kết quả KPI
+                  </th>
+                </tr>
+                {revRow}
+                {ordRow}
+                <tr><td style="padding:6px 12px;color:#64748b">Trạng thái KPI</td>
+                    <td style="padding:6px 12px;font-weight:700;color:{kpiColor}">{kpiLabel}</td></tr>
+                <tr style="background:#f1f5f9">
+                  <th colspan="2" style="text-align:left;padding:8px 12px;font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:.05em">
+                    Chi tiết lương
+                  </th>
+                </tr>
+                <tr><td style="padding:6px 12px;color:#64748b">Lương cơ bản</td>
+                    <td style="padding:6px 12px">{Fmt(baseSalary)}</td></tr>
+                <tr><td style="padding:6px 12px;color:#10B981">Thưởng KPI</td>
+                    <td style="padding:6px 12px;color:{(isKpiAchieved ? "#10B981" : "#94a3b8")}">{(isKpiAchieved ? "+" : "")}{Fmt(bonusAmount)}</td></tr>
+                <tr><td style="padding:6px 12px;color:#EF4444">Khấu trừ</td>
+                    <td style="padding:6px 12px;color:#EF4444">-{Fmt(penaltyAmount)}</td></tr>
+                <tr style="border-top:2px solid #6366f1">
+                  <td style="padding:10px 12px;font-weight:700">TỔNG LƯƠNG</td>
+                  <td style="padding:10px 12px;font-weight:700;font-size:18px;color:#6366f1">{Fmt(totalSalary)}</td>
+                </tr>
+                <tr><td style="padding:6px 12px;color:#64748b">Trạng thái</td>
+                    <td style="padding:6px 12px"><strong>{status}</strong></td></tr>
+              </table>
+              <p style="margin-top:20px;font-size:12px;color:#94a3b8">
+                Email được gửi từ hệ thống MSAS — SalesAnalytics. Vui lòng không trả lời email này.
+              </p>
+            </div>
+          </div>
+        </body></html>
+        """;
+    }
 }
