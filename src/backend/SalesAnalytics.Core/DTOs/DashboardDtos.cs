@@ -24,7 +24,9 @@ public record RevenueByChannel(
     string   ChannelName,
     decimal  Revenue,
     int      Orders,
-    decimal  RevenuePct
+    decimal  RevenuePct,
+    decimal  AdSpend = 0,          // Chi phí QC từ ad_spend_monthly
+    decimal  Roas    = 0           // Revenue / AdSpend (0 nếu chưa nhập chi phí)
 );
 
 public record TopProduct(

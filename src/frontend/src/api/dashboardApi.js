@@ -305,6 +305,16 @@ export const getOpsKpi = (from, to, channel = null) => {
   return api.get('/api/dashboard/ops-kpi', { params }).then(r => r.data)
 }
 
+// ── Chi phí quảng cáo (Ad Spend) ────────────────────────────────────────────
+export const getAdSpend = (year, month) =>
+  api.get('/api/ad-spend', { params: { year, month } }).then(r => r.data)
+export const getAdSpendChannels = () =>
+  api.get('/api/ad-spend/channels').then(r => r.data.data ?? [])
+export const getAdSpendHistory = (months = 6) =>
+  api.get('/api/ad-spend/history', { params: { months } }).then(r => r.data)
+export const upsertAdSpend = (dto) =>
+  api.put('/api/ad-spend', dto).then(r => r.data)
+
 // ── Tồn kho thực tế (OLTP products + order_items) ────────────────────────────
 export const getInventoryReal = (from, to) =>
   api.get('/api/dashboard/inventory-real', { params: { from, to } }).then(r => r.data)

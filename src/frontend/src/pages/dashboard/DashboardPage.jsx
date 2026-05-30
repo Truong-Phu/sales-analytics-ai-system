@@ -1607,6 +1607,9 @@ function TabMarketing({ data, fbAdsData, wd = {}, wl = {} }) {
   const campData    = wd.campaign ?? null
   const campLoading = wl.campaign ?? false
 
+  // Kiểm tra có kênh nào chưa nhập chi phí QC không
+  const missingAdSpend = (data.revenueByChannel ?? []).filter(ch => (ch.adSpend ?? 0) === 0)
+
   const safeRoas = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? n : 0 }
   const comboData = data.revenueByChannel.map(ch => ({
     name:       ch.channelName.split(' ')[0],
@@ -1632,6 +1635,25 @@ function TabMarketing({ data, fbAdsData, wd = {}, wl = {} }) {
 
   return (
     <div className="space-y-5">
+      {/* Banner nhắc nhập chi phí QC nếu chưa đủ */}
+      {missingAdSpend.length > 0 && (
+        <div className="flex items-center justify-between gap-3 rounded-xl px-4 py-3"
+          style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)' }}>
+          <div>
+            <p className="text-sm font-semibold" style={{ color: '#D97706' }}>
+              ⚠ Chưa nhập chi phí QC cho {missingAdSpend.length} kênh — ROAS hiển thị chưa chính xác
+            </p>
+            <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
+              {missingAdSpend.map(c => c.channelName).join(', ')}
+            </p>
+          </div>
+          <a href="/marketing/ad-spend"
+            className="lbtn lbtn-secondary text-xs !h-8 !px-3 shrink-0">
+            Nhập chi phí QC
+          </a>
+        </div>
+      )}
+
       <div className="grid grid-cols-12 gap-4">
         {/* ComboChart chi phí vs doanh thu + ROAS label */}
         <div className="lcard p-5 col-span-12 lg:col-span-8">

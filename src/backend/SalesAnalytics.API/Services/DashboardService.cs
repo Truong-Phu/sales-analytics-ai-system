@@ -173,37 +173,58 @@ public class DashboardService
     private static async Task<List<RevenueByChannel>> GetRevenueByChannelAsync(
         NpgsqlConnection conn, DateOnly from, DateOnly to, Guid? companyId = null)
     {
+        // Tính year*12+month để so sánh khoảng tháng
+        var fromYM = from.Year * 12 + from.Month;
+        var toYM   = to.Year   * 12 + to.Month;
+
         var sql = """
             SELECT
                 dc.channel_name,
-                SUM(fs.net_revenue) AS revenue,
-                SUM(fs.order_count) AS orders
+                SUM(fs.net_revenue)                          AS revenue,
+                SUM(fs.order_count)                          AS orders,
+                COALESCE(ad.total_spend, 0)                  AS ad_spend
             FROM dw.fact_sales fs
             JOIN dw.dim_date    dd ON fs.date_key    = dd.date_key
             JOIN dw.dim_channel dc ON fs.channel_key = dc.channel_key
+            -- LEFT JOIN chi phí QC từ OLTP (nếu đã nhập)
+            LEFT JOIN (
+                SELECT LOWER(sc.channel_name) AS ch_lower, SUM(asm.amount) AS total_spend
+                FROM public.ad_spend_monthly asm
+                JOIN public.sales_channels sc ON sc.channel_id = asm.channel_id
+                WHERE (@companyId IS NULL OR asm.company_id = @companyId::uuid)
+                  AND (asm.year * 12 + asm.month) BETWEEN @fromYM AND @toYM
+                GROUP BY LOWER(sc.channel_name)
+            ) ad ON LOWER(dc.channel_name) = ad.ch_lower
             WHERE dd.full_date BETWEEN @from AND @to
               AND (@companyId IS NULL OR fs.company_id = @companyId::uuid)
-            GROUP BY dc.channel_name
+            GROUP BY dc.channel_name, ad.total_spend
             ORDER BY revenue DESC
             """;
 
         await using var cmd = new NpgsqlCommand(sql, conn);
-        cmd.Parameters.AddWithValue("from", from.ToDateTime(TimeOnly.MinValue));
-        cmd.Parameters.AddWithValue("to",   to.ToDateTime(TimeOnly.MinValue));
+        cmd.Parameters.AddWithValue("from",      from.ToDateTime(TimeOnly.MinValue));
+        cmd.Parameters.AddWithValue("to",        to.ToDateTime(TimeOnly.MinValue));
+        cmd.Parameters.AddWithValue("fromYM",    fromYM);
+        cmd.Parameters.AddWithValue("toYM",      toYM);
         cmd.Parameters.Add(new NpgsqlParameter("companyId", NpgsqlDbType.Text) { Value = (object?)companyId?.ToString() ?? DBNull.Value });
 
-        var rows = new List<(string, decimal, int)>();
+        var rows = new List<(string channel, decimal revenue, int orders, decimal adSpend)>();
         await using var reader = await cmd.ExecuteReaderAsync();
         while (await reader.ReadAsync())
-            rows.Add((reader.GetString(0), reader.GetDecimal(1), reader.GetInt32(2)));
+            rows.Add((reader.GetString(0), reader.GetDecimal(1), reader.GetInt32(2), reader.GetDecimal(3)));
 
-        var total = rows.Sum(r => r.Item2);
-        return rows.Select(r => new RevenueByChannel(
-            ChannelName: r.Item1,
-            Revenue:     r.Item2,
-            Orders:      r.Item3,
-            RevenuePct:  total > 0 ? Math.Round(r.Item2 / total * 100, 1) : 0
-        )).ToList();
+        var total = rows.Sum(r => r.revenue);
+        return rows.Select(r => {
+            var roas = r.adSpend > 0 ? Math.Round(r.revenue / r.adSpend, 2) : 0;
+            return new RevenueByChannel(
+                ChannelName: r.channel,
+                Revenue:     r.revenue,
+                Orders:      r.orders,
+                RevenuePct:  total > 0 ? Math.Round(r.revenue / total * 100, 1) : 0,
+                AdSpend:     r.adSpend,
+                Roas:        roas
+            );
+        }).ToList();
     }
 
     // ── Mobile endpoints (revenue-trend, top-products, channel-revenue) ─────────

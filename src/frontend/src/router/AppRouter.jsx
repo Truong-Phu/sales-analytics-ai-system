@@ -70,6 +70,7 @@ const PricePage       = lazy(() => import('../pages/price/PricePage'))
 const SentimentPage   = lazy(() => import('../pages/sentiment/SentimentPage'))
 const PosPage         = lazy(() => import('../pages/pos/PosPage'))
 const ProfitPage      = lazy(() => import('../pages/finance/ProfitPage'))
+const AdSpendPage     = lazy(() => import('../pages/marketing/AdSpendPage'))
 
 // Roles constants
 const ALL_ROLES     = ['Owner', 'Manager', 'Staff', 'DataIT']
@@ -352,6 +353,13 @@ export default function AppRouter() {
         <Route path="/finance/profit" element={
           <ProtectedRoute roles={ANALYST_ROLES}>
             <Shell><ProfitPage /></Shell>
+          </ProtectedRoute>
+        } />
+
+        {/* Marketing — Nhập chi phí quảng cáo */}
+        <Route path="/marketing/ad-spend" element={
+          <ProtectedRoute roles={['Owner', 'Manager']}>
+            <Shell><AdSpendPage /></Shell>
           </ProtectedRoute>
         } />
 
