@@ -7,6 +7,9 @@ import {
   getProfitOverview, getProfitByChannel, getProfitByProduct,
   getProfitByDate, getProfitOrders, getFeeConfigs, updateFeeConfig,
 } from '../../api/financeApi'
+import MockToast from '../../components/ui/MockToast'
+import MockDataButton from '../../components/ui/MockDataButton'
+import AiEmptyState from '../../components/ui/AiEmptyState'
 
 // ── Mock data dự phòng ────────────────────────────────────────────────────────
 const MOCK_OVERVIEW = {
@@ -155,11 +158,19 @@ export default function ProfitPage() {
   const [orders,    setOrders]    = useState({ items: [], totalCount: 0 })
   const [feeConfs,  setFeeConfs]  = useState([])
   const [loading,   setLoading]   = useState(false)
-  const [useMock,   setUseMock]   = useState(false)
-  const [page,      setPage]      = useState(1)
+  const [useMock,      setUseMock]      = useState(false)
+  const [showMockBtn,  setShowMockBtn]  = useState(false)
+  const [page,         setPage]         = useState(1)
+
+  const loadMock = () => {
+    setOverview(MOCK_OVERVIEW); setChannels(MOCK_CHANNELS)
+    setProducts([]); setByDate([]); setOrders({ items: [], totalCount: 0 })
+    setFeeConfs(MOCK_CONFIGS); setUseMock(true); setShowMockBtn(false)
+  }
 
   const load = useCallback(async () => {
     setLoading(true)
+    setShowMockBtn(false)
     const p = { from, to }
     try {
       const [ov, ch, pr, dt, ord, fc] = await Promise.all([
@@ -174,9 +185,9 @@ export default function ProfitPage() {
       setByDate(dt); setOrders(ord); setFeeConfs(fc)
       setUseMock(false)
     } catch {
-      setOverview(MOCK_OVERVIEW); setChannels(MOCK_CHANNELS)
-      setProducts([]); setByDate([]); setOrders({ items: [], totalCount: 0 })
-      setFeeConfs(MOCK_CONFIGS); setUseMock(true)
+      setOverview(null); setChannels([]); setProducts([])
+      setByDate([]); setOrders({ items: [], totalCount: 0 })
+      setFeeConfs([]); setUseMock(false); setShowMockBtn(true)
     } finally {
       setLoading(false)
     }
@@ -193,10 +204,13 @@ export default function ProfitPage() {
     }
   }
 
-  const ov = overview || MOCK_OVERVIEW
+  const ov = overview
 
   return (
     <div className="p-6 space-y-6">
+      <MockToast show={useMock} />
+      <MockDataButton show={showMockBtn} onClick={loadMock} />
+      {!ov && !loading && <AiEmptyState title="Chưa có dữ liệu lợi nhuận" />}
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>

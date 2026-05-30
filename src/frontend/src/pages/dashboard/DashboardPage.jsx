@@ -1925,7 +1925,7 @@ function TabInventory({ data, wd = {}, wl = {} }) {
     { label: 'Tỷ lệ hoàn hàng',          value: fmtPct(invKpi.returnRate),      icon: 'assignment_return',     color: '#EC4899' },
     { label: 'Tỷ lệ huỷ đơn',           value: fmtPct(invKpi.cancelRate),      icon: 'cancel',                color: 'var(--color-error)' },
     { label: 'Giao hàng thành công',      value: fmtPct(invKpi.deliverySuccess), icon: 'local_shipping',       color: 'var(--accent-500)' },
-    { labelKey: 'invKpi.processingTime',  value: '2.3h',                         icon: 'timer',                color: '#F59E0B' },
+    { label: 'Thời gian xử lý đơn',       value: invKpi.processingTime ?? '—',   icon: 'timer',                color: '#F59E0B' },
   ]
 
   // Label % chênh lệch tồn kho

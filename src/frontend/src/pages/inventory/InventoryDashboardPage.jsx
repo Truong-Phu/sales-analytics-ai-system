@@ -10,6 +10,8 @@ import {
   getInventoryRecommendations,
 } from '../../api/inventoryApi'
 import MockToast from '../../components/ui/MockToast'
+import MockDataButton from '../../components/ui/MockDataButton'
+import AiEmptyState from '../../components/ui/AiEmptyState'
 
 Chart.register(...registerables)
 
@@ -160,11 +162,13 @@ export default function InventoryDashboardPage() {
   const [loadingMain, setLoadingMain] = useState(true)
   const [movDays,     setMovDays]     = useState(30)
   const [isMock,      setIsMock]      = useState(false)
+  const [showMockBtn, setShowMockBtn] = useState(false)
 
   const setErr = (key) => setErrors(e => ({ ...e, [key]: true }))
 
   useEffect(() => {
     setLoadingMain(true)
+    setShowMockBtn(false)
     Promise.allSettled([
       getInventoryOverview(),
       getLowStock({ threshold: 20, pageSize: 10 }),
@@ -174,10 +178,7 @@ export default function InventoryDashboardPage() {
     ]).then(([ov, ls, vel, sup, rec]) => {
       const allFailed = [ov, ls, vel, sup, rec].every(r => r.status === 'rejected')
       if (allFailed) {
-        // Backend không khả dụng — dùng mock data để demo
-        setOverview(MOCK_OVERVIEW); setLowStock(MOCK_LOW_STOCK)
-        setVelocity(MOCK_VELOCITY); setSuppliers(MOCK_SUPPLIERS_PERF); setRecs(MOCK_RECS)
-        setIsMock(true)
+        setShowMockBtn(true)  // hiện nút, không auto-load mock
       } else {
         if (ov.status  === 'fulfilled') setOverview(ov.value);   else setErr('overview')
         if (ls.status  === 'fulfilled') setLowStock(ls.value);   else setErr('lowStock')
@@ -189,10 +190,17 @@ export default function InventoryDashboardPage() {
     })
   }, [])
 
+  const loadMock = () => {
+    setOverview(MOCK_OVERVIEW); setLowStock(MOCK_LOW_STOCK)
+    setVelocity(MOCK_VELOCITY); setSuppliers(MOCK_SUPPLIERS_PERF)
+    setRecs(MOCK_RECS); setMovement(MOCK_MOVEMENT)
+    setIsMock(true); setShowMockBtn(false)
+  }
+
   useEffect(() => {
     getStockMovement({ days: movDays })
       .then(setMovement)
-      .catch(() => { if (isMock) setMovement(MOCK_MOVEMENT); else setErr('movement') })
+      .catch(() => { if (!isMock) setErr('movement') })
   }, [movDays, isMock])
 
   const fmt = (n) => n == null ? '—' : n.toLocaleString('vi-VN')
@@ -202,6 +210,8 @@ export default function InventoryDashboardPage() {
   return (
     <div className="space-y-4">
       <MockToast show={isMock} />
+      <MockDataButton show={showMockBtn} onClick={loadMock} />
+      {!overview && !loadingMain && <AiEmptyState title="Không kết nối được dữ liệu tồn kho" />}
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
