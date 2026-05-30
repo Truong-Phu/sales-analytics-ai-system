@@ -34,6 +34,7 @@ public class FinanceController(
             await conn.OpenAsync();
 
             var (dateFilter, dateParams) = BuildDateFilter(from, to);
+            var (fromYM, toYM) = ComputeYearMonths(from, to);
 
             await using var cmd = new NpgsqlCommand($"""
                 SELECT
@@ -49,34 +50,52 @@ public class FinanceController(
                          THEN ROUND(SUM(fs.estimated_net_profit) / SUM(fs.net_revenue) * 100, 2)
                          ELSE 0 END                              AS estimated_net_margin,
                     COUNT(*) FILTER (WHERE fs.missing_cost = TRUE) AS missing_cost_orders,
-                    BOOL_OR(fs.is_fee_estimated)                 AS is_estimated
+                    BOOL_OR(fs.is_fee_estimated)                 AS is_estimated,
+                    COALESCE((
+                        SELECT SUM(asm.amount)
+                        FROM public.ad_spend_monthly asm
+                        WHERE asm.company_id = @cid::uuid
+                          AND asm.year * 12 + asm.month BETWEEN @fromYM AND @toYM
+                    ), 0)                                        AS advertising_cost
                 FROM dw.fact_sales fs
                 JOIN dw.dim_date  dd ON dd.date_key = fs.date_key
                 WHERE fs.company_id = @cid::uuid
                 {dateFilter}
                 """, conn);
-            cmd.Parameters.AddWithValue("cid", Cid);
+            cmd.Parameters.AddWithValue("cid",    Cid);
+            cmd.Parameters.AddWithValue("fromYM", fromYM);
+            cmd.Parameters.AddWithValue("toYM",   toYM);
             AddDateParams(cmd, dateParams, from, to);
 
             await using var r = await cmd.ExecuteReaderAsync();
             if (await r.ReadAsync())
             {
+                var revenue            = r.GetDecimal(0);
+                var estimatedNetProfit = r.GetDecimal(4);
+                var advertisingCost    = r.GetDecimal(9);
+                var (opProfit, opMargin, acos) =
+                    ComputeOperatingMetrics(revenue, estimatedNetProfit, advertisingCost);
                 return Ok(new
                 {
-                    revenue              = r.GetDecimal(0),
+                    revenue              = revenue,
                     cogs                 = r.GetDecimal(1),
                     grossProfit          = r.GetDecimal(2),
                     estimatedFees        = r.GetDecimal(3),
-                    estimatedNetProfit   = r.GetDecimal(4),
+                    estimatedNetProfit   = estimatedNetProfit,
                     grossMargin          = r.GetDecimal(5),
                     estimatedNetMargin   = r.GetDecimal(6),
                     missingCostOrders    = r.GetInt64(7),
                     isEstimated          = !r.IsDBNull(8) && r.GetBoolean(8),
+                    advertisingCost      = advertisingCost,
+                    operatingProfit      = opProfit,
+                    operatingMargin      = opMargin,
+                    acos                 = acos,
                 });
             }
             return Ok(new { revenue = 0, cogs = 0, grossProfit = 0, estimatedFees = 0,
                             estimatedNetProfit = 0, grossMargin = 0, estimatedNetMargin = 0,
-                            missingCostOrders = 0, isEstimated = true });
+                            missingCostOrders = 0, isEstimated = true,
+                            advertisingCost = 0, operatingProfit = 0, operatingMargin = 0, acos = 0 });
         }
         catch (Exception ex)
         {
@@ -98,6 +117,7 @@ public class FinanceController(
             await conn.OpenAsync();
 
             var (dateFilter, dateParams) = BuildDateFilter(from, to);
+            var (fromYM, toYM) = ComputeYearMonths(from, to);
 
             await using var cmd = new NpgsqlCommand($"""
                 SELECT
@@ -114,34 +134,56 @@ public class FinanceController(
                     CASE WHEN SUM(fs.net_revenue) > 0
                          THEN ROUND(SUM(fs.estimated_net_profit) / SUM(fs.net_revenue) * 100, 2)
                          ELSE 0 END AS estimated_net_margin,
-                    COUNT(*) AS order_count
+                    COUNT(*) AS order_count,
+                    COALESCE(ads.ad_spend, 0) AS advertising_cost
                 FROM dw.fact_sales fs
                 JOIN dw.dim_channel dc ON dc.channel_key = fs.channel_key
                 JOIN dw.dim_date    dd ON dd.date_key    = fs.date_key
+                LEFT JOIN (
+                    SELECT LOWER(sc.channel_name) AS ch_lower, SUM(asm.amount) AS ad_spend
+                    FROM public.ad_spend_monthly asm
+                    JOIN public.sales_channels sc ON sc.channel_id = asm.channel_id
+                    WHERE asm.company_id = @cid::uuid
+                      AND asm.year * 12 + asm.month BETWEEN @fromYM AND @toYM
+                    GROUP BY LOWER(sc.channel_name)
+                ) ads ON LOWER(dc.channel_name) = ads.ch_lower
                 WHERE fs.company_id = @cid::uuid
                 {dateFilter}
-                GROUP BY dc.channel_name, dc.platform
+                GROUP BY dc.channel_name, dc.platform, ads.ad_spend
                 ORDER BY revenue DESC
                 """, conn);
-            cmd.Parameters.AddWithValue("cid", Cid);
+            cmd.Parameters.AddWithValue("cid",    Cid);
+            cmd.Parameters.AddWithValue("fromYM", fromYM);
+            cmd.Parameters.AddWithValue("toYM",   toYM);
             AddDateParams(cmd, dateParams, from, to);
 
             var list = new List<object>();
             await using var r = await cmd.ExecuteReaderAsync();
             while (await r.ReadAsync())
+            {
+                var revenue            = r.GetDecimal(2);
+                var estimatedNetProfit = r.GetDecimal(6);
+                var advertisingCost    = r.GetDecimal(10);
+                var (opProfit, opMargin, acos) =
+                    ComputeOperatingMetrics(revenue, estimatedNetProfit, advertisingCost);
                 list.Add(new
                 {
                     channel              = r.GetString(0),
                     platform             = r.IsDBNull(1) ? "" : r.GetString(1),
-                    revenue              = r.GetDecimal(2),
+                    revenue              = revenue,
                     cogs                 = r.GetDecimal(3),
                     grossProfit          = r.GetDecimal(4),
                     estimatedFees        = r.GetDecimal(5),
-                    estimatedNetProfit   = r.GetDecimal(6),
+                    estimatedNetProfit   = estimatedNetProfit,
                     grossMargin          = r.GetDecimal(7),
                     estimatedNetMargin   = r.GetDecimal(8),
                     orderCount           = r.GetInt64(9),
+                    advertisingCost      = advertisingCost,
+                    operatingProfit      = opProfit,
+                    operatingMargin      = opMargin,
+                    acos                 = acos,
                 });
+            }
             return Ok(list);
         }
         catch (Exception ex)
@@ -232,6 +274,7 @@ public class FinanceController(
             await conn.OpenAsync();
 
             var (dateFilter, dateParams) = BuildDateFilter(from, to);
+            var (fromYM, toYM) = ComputeYearMonths(from, to);
             var truncExpr = granularity switch
             {
                 "day"   => "TO_CHAR(dd.full_date, 'YYYY-MM-DD')",
@@ -258,19 +301,49 @@ public class FinanceController(
             cmd.Parameters.AddWithValue("cid", Cid);
             AddDateParams(cmd, dateParams, from, to);
 
+            // Ad spend theo tháng — dùng cho granularity=month; day/week sẽ phân bổ tương đối
+            await using var adCmd = new NpgsqlCommand("""
+                SELECT year, month, SUM(amount) AS ad_spend
+                FROM public.ad_spend_monthly
+                WHERE company_id = @cid::uuid
+                  AND year * 12 + month BETWEEN @fromYM AND @toYM
+                GROUP BY year, month
+                """, conn);
+            adCmd.Parameters.AddWithValue("cid",    Cid);
+            adCmd.Parameters.AddWithValue("fromYM", fromYM);
+            adCmd.Parameters.AddWithValue("toYM",   toYM);
+            var adByMonth = new Dictionary<string, decimal>();
+            await using var adR = await adCmd.ExecuteReaderAsync();
+            while (await adR.ReadAsync())
+                adByMonth[$"{adR.GetInt32(0):D4}-{adR.GetInt32(1):D2}"] = adR.GetDecimal(2);
+
             var list = new List<object>();
             await using var r = await cmd.ExecuteReaderAsync();
             while (await r.ReadAsync())
+            {
+                var period             = r.GetString(0);
+                var revenue            = r.GetDecimal(1);
+                var estimatedNetProfit = r.GetDecimal(5);
+                // Lấy ad_spend cho tháng tương ứng (period dạng YYYY-MM hoặc YYYY-MM-DD)
+                var monthKey = period.Length >= 7 ? period[..7] : period;
+                var advertisingCost = adByMonth.GetValueOrDefault(monthKey, 0m);
+                var (opProfit, opMargin, acos) =
+                    ComputeOperatingMetrics(revenue, estimatedNetProfit, advertisingCost);
                 list.Add(new
                 {
-                    period             = r.GetString(0),
-                    revenue            = r.GetDecimal(1),
+                    period             = period,
+                    revenue            = revenue,
                     cogs               = r.GetDecimal(2),
                     grossProfit        = r.GetDecimal(3),
                     estimatedFees      = r.GetDecimal(4),
-                    estimatedNetProfit = r.GetDecimal(5),
+                    estimatedNetProfit = estimatedNetProfit,
                     orderCount         = r.GetInt64(6),
+                    advertisingCost    = advertisingCost,
+                    operatingProfit    = opProfit,
+                    operatingMargin    = opMargin,
+                    acos               = acos,
                 });
+            }
             return Ok(list);
         }
         catch (Exception ex)
@@ -459,6 +532,25 @@ public class FinanceController(
         if (!hasParams) return;
         if (!string.IsNullOrWhiteSpace(from)) cmd.Parameters.AddWithValue("from", from);
         if (!string.IsNullOrWhiteSpace(to))   cmd.Parameters.AddWithValue("to",   to);
+    }
+
+    // Chuyển từ chuỗi ngày sang year*12+month để so sánh với ad_spend_monthly
+    private static (int fromYM, int toYM) ComputeYearMonths(string? from, string? to)
+    {
+        var now = DateTime.UtcNow;
+        var f = string.IsNullOrWhiteSpace(from) ? now.AddMonths(-12) : DateTime.Parse(from);
+        var t = string.IsNullOrWhiteSpace(to)   ? now               : DateTime.Parse(to);
+        return (f.Year * 12 + f.Month, t.Year * 12 + t.Month);
+    }
+
+    // Tính operating profit và ACOS từ estimated_net_profit và advertising_cost
+    private static (decimal operatingProfit, decimal operatingMargin, decimal acos)
+        ComputeOperatingMetrics(decimal revenue, decimal estimatedNetProfit, decimal advertisingCost)
+    {
+        var op   = estimatedNetProfit - advertisingCost;
+        var opM  = revenue > 0 ? Math.Round(op / revenue * 100, 2) : 0;
+        var acos = revenue > 0 ? Math.Round(advertisingCost / revenue * 100, 2) : 0;
+        return (op, opM, acos);
     }
 }
 

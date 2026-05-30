@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
 import api from '../../api/axios'
-import MockToast from '../../components/ui/MockToast'
 
 const TYPE_CFG = {
   POS_SALE:               { label: 'Bán POS',        bg: 'rgba(239,68,68,0.10)',   text: '#EF4444' },
@@ -10,15 +9,6 @@ const TYPE_CFG = {
   MANUAL_ADJUST_UP:       { label: 'Điều chỉnh +',   bg: 'rgba(99,102,241,0.10)',  text: '#6366F1' },
   MANUAL_ADJUST_DOWN:     { label: 'Điều chỉnh -',   bg: 'rgba(249,115,22,0.10)',  text: '#F97316' },
   RETURN_REFUND:          { label: 'Hoàn trả',        bg: 'rgba(139,92,246,0.10)', text: '#7C3AED' },
-}
-
-const MOCK_DATA = {
-  total: 3, page: 1, pageSize: 20, totalPages: 1,
-  items: [
-    { transactionId: 1, productId: 1, productName: 'Áo thun nam cổ tròn', transactionType: 'POS_SALE', quantityChange: -2, beforeStock: 15, afterStock: 13, referenceType: 'order', referenceId: 101, note: 'POS ban hang', createdAt: '2026-05-28T10:00:00Z', createdBy: 'staff01' },
-    { transactionId: 2, productId: 2, productName: 'Váy hoa mùa hè',      transactionType: 'MARKETPLACE_IMPORT_SALE', quantityChange: -3, beforeStock: 30, afterStock: 27, referenceType: 'marketplace_order', referenceId: 202, note: 'ETL sync tu san thuong mai dien tu', createdAt: '2026-05-28T09:00:00Z', createdBy: null },
-    { transactionId: 3, productId: 1, productName: 'Áo thun nam cổ tròn', transactionType: 'ORDER_CANCEL_REFUND',    quantityChange: 2,  beforeStock: 11, afterStock: 13, referenceType: 'order', referenceId: 100, note: 'Hoan kho do huy don hang', createdAt: '2026-05-27T14:00:00Z', createdBy: 'manager01' },
-  ],
 }
 
 function TypeBadge({ type }) {
@@ -47,7 +37,6 @@ export default function InventoryTransactionsPage() {
   const [page,      setPage]      = useState(1)
   const [totalPages,setTotalPages]= useState(1)
   const [loading,   setLoading]   = useState(true)
-  const [isMock,    setIsMock]    = useState(false)
 
   const [filterType, setFilterType] = useState('')
   const [filterFrom, setFilterFrom] = useState('')
@@ -69,13 +58,11 @@ export default function InventoryTransactionsPage() {
       setTotal(d.total ?? 0)
       setTotalPages(d.totalPages ?? 1)
       setPage(p)
-      setIsMock(false)
     } catch {
-      setRows(MOCK_DATA.items)
-      setTotal(MOCK_DATA.total)
-      setTotalPages(MOCK_DATA.totalPages)
+      setRows([])
+      setTotal(0)
+      setTotalPages(1)
       setPage(1)
-      setIsMock(true)
     } finally {
       setLoading(false)
     }
@@ -90,7 +77,6 @@ export default function InventoryTransactionsPage() {
 
   return (
     <div className="p-4 md:p-6 space-y-4">
-      {isMock && <MockToast />}
 
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-2">

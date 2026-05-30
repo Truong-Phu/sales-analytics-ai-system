@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import api from '../../api/axios'
 import MockToast from '../../components/ui/MockToast'
@@ -30,6 +30,80 @@ function StatusBadge({ status }) {
 
 // ── Drawer tạo phiếu nhập hàng ────────────────────────────────────────────────
 // Flow mới: chọn sản phẩm trước → NCC tự lọc theo sản phẩm đã chọn
+function ProductSearch({ allProducts, value, onSelect, style = {} }) {
+  const [q, setQ]       = useState('')
+  const [open, setOpen] = useState(false)
+  const ref             = React.useRef(null)
+
+  // Đồng bộ tên sản phẩm đã chọn vào input
+  const selectedName = value
+    ? (allProducts.find(p => String(p.productId) === String(value))?.productName ?? '')
+    : ''
+
+  const filtered = (() => {
+    const term = q.trim().toLowerCase()
+    const list = term
+      ? allProducts.filter(p =>
+          (p.productName ?? '').toLowerCase().includes(term) ||
+          (p.sku ?? '').toLowerCase().includes(term)
+        )
+      : allProducts
+    return list.slice(0, 20)
+  })()
+
+  // Click ngoài → đóng
+  React.useEffect(() => {
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  return (
+    <div ref={ref} style={{ position: 'relative', ...style }}>
+      <input
+        type="text"
+        placeholder="Tìm sản phẩm theo tên hoặc SKU..."
+        value={open ? q : selectedName}
+        onFocus={() => { setQ(''); setOpen(true) }}
+        onChange={e => { setQ(e.target.value); setOpen(true) }}
+        style={{ width: '100%', fontSize: 13, borderRadius: 7,
+                 border: `1px solid ${value ? '#6366f1' : '#e5e7eb'}`,
+                 padding: '7px 10px 7px 32px', background: '#ffffff', color: '#0f172a',
+                 boxSizing: 'border-box' }}
+      />
+      {/* Icon search */}
+      <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)',
+                     fontSize: 14, color: '#94a3b8', pointerEvents: 'none' }}>🔍</span>
+      {open && (
+        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 200,
+                      background: '#fff', border: '1px solid #e5e7eb', borderRadius: 8,
+                      maxHeight: 220, overflowY: 'auto', boxShadow: '0 4px 16px rgba(0,0,0,0.12)' }}>
+          {filtered.length === 0 ? (
+            <div style={{ padding: '10px 14px', fontSize: 12, color: '#94a3b8' }}>Không tìm thấy sản phẩm</div>
+          ) : filtered.map(p => (
+            <div
+              key={p.productId}
+              onMouseDown={() => {
+                onSelect(String(p.productId))
+                setQ('')
+                setOpen(false)
+              }}
+              style={{ padding: '9px 14px', cursor: 'pointer', borderBottom: '1px solid #f1f5f9',
+                       background: String(p.productId) === String(value) ? '#eff6ff' : '#fff' }}
+              onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
+              onMouseLeave={e => e.currentTarget.style.background =
+                String(p.productId) === String(value) ? '#eff6ff' : '#fff'}
+            >
+              <div style={{ fontSize: 13, fontWeight: 500, color: '#0f172a' }}>{p.productName}</div>
+              <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 1 }}>SKU: {p.sku}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function CreateDrawer({ open, onClose, onSaved, defaultProductId = '', defaultProductName = '' }) {
   const [allProducts,   setAllProducts]   = useState([])
   const [allSuppliers,  setAllSuppliers]  = useState([])
@@ -46,7 +120,7 @@ function CreateDrawer({ open, onClose, onSaved, defaultProductId = '', defaultPr
   useEffect(() => {
     api.get('/api/suppliers', { params: { active: true, pageSize: 100 } })
        .then(r => setAllSuppliers(r.data.items ?? [])).catch(() => {})
-    api.get('/api/products/oltp', { params: { pageSize: 200 } })
+    api.get('/api/products/oltp', { params: { pageSize: 200, isActive: true } })
        .then(r => setAllProducts(r.data.data ?? [])).catch(() => {})
   }, [])
 
@@ -205,14 +279,13 @@ function CreateDrawer({ open, onClose, onSaved, defaultProductId = '', defaultPr
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {items.map((it, i) => (
               <div key={i} style={{ border: '1px solid #e5e7eb', borderRadius: 10, padding: '12px 14px', background: '#f8fafc' }}>
-                {/* Chọn sản phẩm */}
+                {/* Chọn sản phẩm — tìm kiếm */}
                 <div style={{ marginBottom: 8 }}>
-                  <select value={it.productId} onChange={e => handleProductChange(i, e.target.value)}
-                    style={{ width: '100%', fontSize: 13, borderRadius: 7, border: '1px solid #e5e7eb',
-                             padding: '7px 10px', background: '#ffffff', color: '#0f172a', boxSizing: 'border-box' }}>
-                    <option value="">-- Chọn sản phẩm --</option>
-                    {allProducts.map(p => <option key={p.productId} value={p.productId}>{p.productName}</option>)}
-                  </select>
+                  <ProductSearch
+                    allProducts={allProducts}
+                    value={it.productId}
+                    onSelect={pid => handleProductChange(i, pid)}
+                  />
                 </div>
 
                 {/* Chọn biến thể (size/màu) — chỉ hiện khi sản phẩm có variation */}
@@ -225,10 +298,13 @@ function CreateDrawer({ open, onClose, onSaved, defaultProductId = '', defaultPr
                                padding: '7px 10px', background: '#ffffff', color: '#0f172a', boxSizing: 'border-box' }}>
                       <option value="">-- Chọn size / màu sắc --</option>
                       {variationsMap[it.productId].map(v => {
-                        const label = [v.size, v.color, v.variationName].filter(Boolean).join(' / ') || v.sku
+                        const parts = [v.color, v.size].filter(Boolean)
+                        const label = parts.length > 0
+                          ? parts.join(' / ')
+                          : (v.variationName || v.sku)
                         return (
                           <option key={v.variationId} value={v.variationId}>
-                            {label} — SKU: {v.sku} (tồn: {v.stockQuantity ?? 0})
+                            {label}  •  Tồn: {v.stockQuantity ?? 0}
                           </option>
                         )
                       })}
@@ -549,10 +625,19 @@ export default function PurchaseOrdersPage() {
                               <tbody>
                                 {items.map(it => {
                                   const remaining = it.remainingQuantity ?? (it.quantity - it.receivedQuantity)
+                                  const varLabel = it.variationId
+                                    ? [it.color, it.size].filter(Boolean).join(' · ') || it.variationName
+                                    : null
                                   return (
                                     <tr key={it.purchaseOrderItemId}>
                                       <td className="py-1.5 pr-4 font-medium" style={{ color: 'var(--text-primary)' }}>
                                         {it.productName}
+                                        {varLabel && (
+                                          <span className="ml-1.5 text-[10px] font-normal px-1.5 py-0.5 rounded"
+                                                style={{ background: 'rgba(99,102,241,0.1)', color: '#6366F1', border: '1px solid rgba(99,102,241,0.2)' }}>
+                                            {varLabel}
+                                          </span>
+                                        )}
                                       </td>
                                       <td className="py-1.5 pr-4 tabular-nums" style={{ color: 'var(--text-secondary)' }}>
                                         {it.quantity}

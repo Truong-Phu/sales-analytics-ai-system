@@ -14,12 +14,13 @@ import { SkeletonCard } from '../../components/ui/Skeleton'
 import AiEmptyState from '../../components/ui/AiEmptyState'
 import DevEmptyState from '../../components/ui/DevEmptyState'
 import { getDashboard, getTodayVsYesterday, getDrillDownOrders, getDrillDownCustomers,
-         getFbAds,
          getOrderHeatmap, getOrderFunnel, getMonthlyByChannel,
          getOpsKpi, getInventoryReal, getTopProductsByChannel } from '../../api/dashboardApi'
 import { getInsights, getLeaderboard, getGeoDistribution, getChannelAttribution,
          getCampaignPlan, getFeedbackSummary,
          getRfmSegments } from '../../api/aiApi'
+import { getProfitOverview } from '../../api/financeApi'
+import { KPI_DEFINITIONS } from '../../utils/kpiDefinitions'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function relDate(offsetDays) {
@@ -283,37 +284,119 @@ function Sparkline({ data, color = '#6366F1' }) {
   )
 }
 
-function KpiCard({ label, value, trend, trendLabel, icon, color = 'var(--primary-500)', valueColor, sparkData, sparkColor }) {
+// ── KPI Help Tooltip — ⓘ icon mở popup giải thích công thức/ý nghĩa ───────────
+function KpiTooltip({ def }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+
+  useEffect(() => {
+    if (!open) return
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  if (!def) return null
+  return (
+    <div ref={ref} className="relative inline-flex shrink-0">
+      <button
+        onClick={(e) => { e.stopPropagation(); setOpen(o => !o) }}
+        className="w-4 h-4 rounded-full flex items-center justify-center ml-0.5"
+        style={{
+          background: 'var(--bg-elevated)',
+          color: open ? 'var(--primary-500)' : 'var(--text-tertiary)',
+          fontSize: 9,
+          fontWeight: 700,
+          lineHeight: 1,
+          border: `1px solid ${open ? 'var(--primary-400)' : 'var(--border)'}`,
+        }}
+        title="Xem định nghĩa KPI"
+      >
+        ⓘ
+      </button>
+      {open && (
+        <div
+          className="lcard scale-in absolute z-[300] p-3"
+          style={{
+            bottom: 'calc(100% + 6px)',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            width: 270,
+            boxShadow: 'var(--shadow-lg)',
+            fontSize: 12,
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <p className="font-bold mb-2" style={{ color: 'var(--text-primary)', fontSize: 13 }}>{def.name}</p>
+          <div className="space-y-1.5">
+            <div>
+              <span className="font-semibold" style={{ color: 'var(--text-tertiary)' }}>Công thức: </span>
+              <span className="font-mono" style={{ color: 'var(--primary-600)', fontSize: 11 }}>{def.formula}</span>
+            </div>
+            <div>
+              <span className="font-semibold" style={{ color: 'var(--text-tertiary)' }}>Ý nghĩa: </span>
+              <span style={{ color: 'var(--text-secondary)' }}>{def.description}</span>
+            </div>
+            <div className="pt-1.5 mt-1" style={{ borderTop: '1px solid var(--border)' }}>
+              <span className="font-semibold" style={{ color: 'var(--text-tertiary)' }}>Ví dụ: </span>
+              <span style={{ color: 'var(--text-secondary)', fontStyle: 'italic' }}>{def.example}</span>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function KpiCard({ label, value, trend, trendLabel, icon, color = 'var(--primary-500)', valueColor, sparkData, sparkColor, helpDef, unavailable = false, placeholderText }) {
   const up = trend > 0
   return (
     <div className="lcard lcard-hover px-4 py-3 cursor-default w-full">
-      <div className="flex items-center gap-1.5 mb-2">
-        <span className="icon" style={{ color, fontSize: 18 }}>{icon}</span>
-        <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-secondary)', letterSpacing: '0.05em' }}>{label}</span>
+      <div className="flex items-center gap-1 mb-2">
+        <span className="icon shrink-0" style={{ color, fontSize: 18 }}>{icon}</span>
+        <span className="text-xs font-semibold uppercase tracking-wide truncate" style={{ color: 'var(--text-secondary)', letterSpacing: '0.05em' }}>{label}</span>
+        {helpDef && <KpiTooltip def={helpDef} />}
       </div>
-      <div className="text-3xl font-bold font-mono mb-1 leading-none" style={{ color: valueColor || 'var(--foreground)' }}>
-        {(() => {
-          const { sym, num, unit } = splitFmt(value)
-          return unit
-            ? <>{sym}{num}<span style={{ fontSize: '0.55em', fontWeight: 500, opacity: 0.7, marginLeft: 2 }}>{unit}</span></>
-            : value
-        })()}
-      </div>
-      {trend !== undefined && (
-        <div className="flex items-center gap-1 mb-1">
-          <span className="icon" style={{ fontSize: 12, color: up ? 'var(--accent-500)' : 'var(--color-error)' }}>
-            {up ? 'arrow_upward' : 'arrow_downward'}
-          </span>
-          <span className={`text-sm font-medium ${up ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
-            {Math.abs(trend)}%
-          </span>
-          <span className="text-xs text-muted-foreground">{trendLabel}</span>
+
+      {unavailable ? (
+        <div className="space-y-1 py-1">
+          <div className="text-2xl font-bold font-mono" style={{ color: 'var(--text-tertiary)' }}>—</div>
+          <div className="text-[10px] leading-tight" style={{ color: 'var(--text-tertiary)' }}>
+            {placeholderText ?? 'Chưa có dữ liệu thật'}
+          </div>
         </div>
-      )}
-      {sparkData && (
-        <div className="mt-1" style={{ opacity: 0.75 }}>
-          <Sparkline data={sparkData} color={sparkColor || color} />
-        </div>
+      ) : (
+        <>
+          <div className="text-3xl font-bold font-mono mb-1 leading-none" style={{ color: valueColor || 'var(--foreground)' }}>
+            {(() => {
+              const { sym, num, unit } = splitFmt(value)
+              return unit
+                ? <>{sym}{num}<span style={{ fontSize: '0.55em', fontWeight: 500, opacity: 0.7, marginLeft: 2 }}>{unit}</span></>
+                : value
+            })()}
+          </div>
+          {trend !== undefined && (
+            <div className="flex items-center gap-1 mb-1">
+              <span className="icon" style={{ fontSize: 12, color: up ? 'var(--accent-500)' : 'var(--color-error)' }}>
+                {up ? 'arrow_upward' : 'arrow_downward'}
+              </span>
+              <span className={`text-sm font-medium ${up ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
+                {Math.abs(trend)}%
+              </span>
+              <span className="text-xs text-muted-foreground">{trendLabel}</span>
+            </div>
+          )}
+          {placeholderText && (
+            <div className="text-[10px] mt-1" style={{ color: 'var(--text-tertiary)', fontStyle: 'italic' }}>
+              {placeholderText}
+            </div>
+          )}
+          {sparkData && (
+            <div className="mt-1" style={{ opacity: 0.75 }}>
+              <Sparkline data={sparkData} color={sparkColor || color} />
+            </div>
+          )}
+        </>
       )}
     </div>
   )
@@ -544,6 +627,25 @@ function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd 
   const lbLoading    = wl.leaderboard ?? false
   const insData      = wd.insights   ?? null
   const insLoading   = wl.insights   ?? false
+  // Finance KPI (Operating Profit, ACOS) từ FinanceController
+  const financeKpi   = wd.financeKpi  ?? null
+  const financeLoading = wl.financeKpi ?? false
+
+  // ROAS & ACOS tính từ dữ liệu channel thực (khi đã nhập chi phí QC)
+  const totalAdSpend  = (data.revenueByChannel ?? []).reduce((s, ch) => s + Number(ch.adSpend ?? 0), 0)
+  const hasAdSpend    = totalAdSpend > 0
+  const avgRoasVal    = hasAdSpend && kpi.totalRevenue > 0
+    ? (kpi.totalRevenue / totalAdSpend).toFixed(1) : null
+  const acosVal       = financeKpi?.acos != null
+    ? Number(financeKpi.acos).toFixed(1)
+    : (hasAdSpend && kpi.totalRevenue > 0
+        ? ((totalAdSpend / kpi.totalRevenue) * 100).toFixed(1) : null)
+  // Operating Profit từ Finance API (fetch theo widget)
+  const opProfit      = financeKpi?.operatingProfit ?? financeKpi?.operating_profit ?? null
+
+  // Biên lợi nhuận gộp (thực từ DB)
+  const grossMarginPct = kpi.totalRevenue > 0
+    ? ((kpi.totalProfit / kpi.totalRevenue) * 100).toFixed(1) : '0.0'
 
   // Dữ liệu chart gộp kỳ này + kỳ trước (index-based)
   const trendData = data.revenueByDay.map((d, i) => {
@@ -557,78 +659,131 @@ function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd 
     }
   })
 
+  // Label nhóm KPI — subtle separator
+  const GroupLabel = ({ children }) => (
+    <p className="text-[11px] font-bold uppercase tracking-[0.12em] mb-2 mt-1" style={{ color: 'var(--text-tertiary)' }}>
+      {children}
+    </p>
+  )
+
   return (
     <div className="space-y-5">
-      {/* KPI strip — 8 cards trải đều màn hình */}
-      <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-3">
-        <KpiCard
-          label={t('dashboard.kpi.revenue')}
-          value={fmtM(kpi.totalRevenue)}
-          trend={kpi.revenueGrowthPct}
-          trendLabel={t('dashboard.compare')}
-          icon="payments"
-          sparkData={sp.revenue}
-          sparkColor="#6366F1"
-        />
-        <KpiCard
-          label={t('dashboard.kpi.orders')}
-          value={kpi.totalOrders.toLocaleString('vi-VN')}
-          trend={kpi.ordersGrowthPct}
-          trendLabel={t('dashboard.compare')}
-          icon="shopping_cart"
-          sparkData={sp.orders}
-          sparkColor="#10B981"
-        />
-        <KpiCard
-          label="Khách hàng mới"
-          value={kpi.newCustomers.toLocaleString('vi-VN')}
-          trend={kpi.customersGrowthPct}
-          trendLabel={t('dashboard.compare')}
-          icon="person_add"
-          color="#3B82F6"
-          sparkData={sp.newCustomers}
-          sparkColor="#3B82F6"
-        />
-        <KpiCard
-          label="Tỷ lệ giữ chân"
-          value={`${kpi.retentionRate}%`}
-          icon="replay"
-          color="#14B8A6"
-          sparkData={sp.retention}
-          sparkColor="#14B8A6"
-        />
-        <KpiCard
-          label={t('dashboard.kpi.aov')}
-          value={fmtM(kpi.avgOrderValue)}
-          icon="receipt_long"
-          color="var(--accent-500)"
-        />
-        <KpiCard
-          label={t('dashboard.kpi.conversionRate')}
-          value={`${kpi.conversionRate.toFixed(1)}%`}
-          icon="conversion_path"
-          color="#F59E0B"
-          sparkData={sp.conversion}
-          sparkColor="#F59E0B"
-        />
-        <KpiCard
-          label={t('dashboard.kpi.profit')}
-          value={fmtM(kpi.totalProfit)}
-          trend={kpi.profitMarginPct}
-          trendLabel={t('dashboard.compare')}
-          icon="percent"
-          color="#8B5CF6"
-          valueColor={kpi.totalProfit >= 0 ? 'var(--profit-positive)' : 'var(--profit-negative)'}
-          sparkData={sp.profit}
-          sparkColor="#8B5CF6"
-        />
-        <KpiCard
-          label={t('dashboard.kpi.roi')}
-          value={`${kpi.roi}%`}
-          icon="trending_up"
-          color="#EC4899"
-          valueColor={kpi.roi >= 0 ? 'var(--profit-positive)' : 'var(--profit-negative)'}
-        />
+      {/* ── KPI 3 nhóm ─────────────────────────────────────────────────── */}
+      <div className="space-y-3">
+        {/* Nhóm 1: Doanh thu */}
+        <GroupLabel>Nhóm Doanh thu</GroupLabel>
+        <div className="grid grid-cols-3 gap-3">
+          <KpiCard
+            label={t('dashboard.kpi.revenue')}
+            value={fmtM(kpi.totalRevenue)}
+            trend={kpi.revenueGrowthPct}
+            trendLabel={t('dashboard.compare')}
+            icon="payments"
+            sparkData={sp.revenue}
+            sparkColor="#6366F1"
+            helpDef={KPI_DEFINITIONS.revenue}
+          />
+          <KpiCard
+            label={t('dashboard.kpi.orders')}
+            value={kpi.totalOrders.toLocaleString('vi-VN')}
+            trend={kpi.ordersGrowthPct}
+            trendLabel={t('dashboard.compare')}
+            icon="shopping_cart"
+            sparkData={sp.orders}
+            sparkColor="#10B981"
+            helpDef={KPI_DEFINITIONS.orders}
+          />
+          <KpiCard
+            label={t('dashboard.kpi.aov')}
+            value={fmtM(kpi.avgOrderValue)}
+            icon="receipt_long"
+            color="var(--accent-500)"
+            helpDef={KPI_DEFINITIONS.aov}
+          />
+        </div>
+
+        {/* Nhóm 2: Khách hàng */}
+        <GroupLabel>Nhóm Khách hàng</GroupLabel>
+        <div className="grid grid-cols-3 gap-3">
+          <KpiCard
+            label="Khách hàng mới"
+            value={kpi.newCustomers.toLocaleString('vi-VN')}
+            trend={kpi.customersGrowthPct}
+            trendLabel={t('dashboard.compare')}
+            icon="person_add"
+            color="#3B82F6"
+            sparkData={sp.newCustomers}
+            sparkColor="#3B82F6"
+            helpDef={KPI_DEFINITIONS.newCustomers}
+          />
+          <KpiCard
+            label="Tỷ lệ giữ chân"
+            icon="replay"
+            color="#14B8A6"
+            unavailable
+            helpDef={KPI_DEFINITIONS.retentionRate}
+            placeholderText="Cần dữ liệu mua lại từ hệ thống"
+          />
+          <KpiCard
+            label="Tỷ lệ chuyển đổi"
+            icon="conversion_path"
+            color="#F59E0B"
+            unavailable
+            helpDef={KPI_DEFINITIONS.conversionRate}
+            placeholderText="Cần dữ liệu traffic từ sàn TMĐT"
+          />
+        </div>
+
+        {/* Nhóm 3: Hiệu quả kinh doanh */}
+        <GroupLabel>Hiệu quả kinh doanh</GroupLabel>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <KpiCard
+            label={t('dashboard.kpi.profit')}
+            value={fmtM(kpi.totalProfit)}
+            trend={parseFloat(grossMarginPct)}
+            trendLabel="biên LN gộp"
+            icon="percent"
+            color="#8B5CF6"
+            valueColor={kpi.totalProfit >= 0 ? 'var(--profit-positive)' : 'var(--profit-negative)'}
+            sparkData={sp.profit}
+            sparkColor="#8B5CF6"
+            helpDef={KPI_DEFINITIONS.grossProfit}
+          />
+          <KpiCard
+            label="Lợi nhuận vận hành"
+            value={opProfit != null ? fmtM(opProfit) : (financeLoading ? '...' : '—')}
+            icon="account_balance_wallet"
+            color="#6366F1"
+            valueColor={opProfit != null ? (opProfit >= 0 ? 'var(--profit-positive)' : 'var(--profit-negative)') : undefined}
+            helpDef={KPI_DEFINITIONS.operatingProfit}
+            unavailable={opProfit == null && !financeLoading}
+            placeholderText={opProfit == null && !financeLoading ? 'Xem chi tiết tại trang Tài chính' : undefined}
+          />
+          <KpiCard
+            label="ROAS"
+            value={avgRoasVal != null ? `${avgRoasVal}×` : '—'}
+            icon="ads_click"
+            color="#10B981"
+            valueColor={avgRoasVal != null
+              ? (parseFloat(avgRoasVal) >= 4 ? 'var(--profit-positive)' : parseFloat(avgRoasVal) >= 2 ? '#F59E0B' : 'var(--color-error)')
+              : undefined}
+            helpDef={KPI_DEFINITIONS.roas}
+            unavailable={avgRoasVal == null}
+            placeholderText={avgRoasVal == null ? 'Nhập chi phí QC để tính ROAS' : undefined}
+          />
+          <KpiCard
+            label="ACOS"
+            value={acosVal != null ? `${acosVal}%` : '—'}
+            icon="savings"
+            color="#EC4899"
+            valueColor={acosVal != null
+              ? (parseFloat(acosVal) <= 15 ? 'var(--profit-positive)' : parseFloat(acosVal) <= 25 ? '#F59E0B' : 'var(--color-error)')
+              : undefined}
+            helpDef={KPI_DEFINITIONS.acos}
+            unavailable={acosVal == null}
+            placeholderText={acosVal == null ? 'Nhập chi phí QC để tính ACOS' : undefined}
+          />
+        </div>
       </div>
 
       {/* AI Insights — chỉ hiện cho Owner/Manager/DataIT/SuperAdmin */}
@@ -1600,7 +1755,7 @@ function HeatmapGrid({ data = [] }) {
 }
 
 // ── Tab: 5 — Marketing & ROI ──────────────────────────────────────────────────
-function TabMarketing({ data, fbAdsData, wd = {}, wl = {} }) {
+function TabMarketing({ data, wd = {}, wl = {} }) {
   const { t } = useTranslation()
   const campData    = wd.campaign ?? null
   const campLoading = wl.campaign ?? false
@@ -1785,85 +1940,13 @@ function TabMarketing({ data, fbAdsData, wd = {}, wl = {} }) {
         </div>
       )}
 
-      {/* ── Facebook Ads section ── */}
-      {fbAdsData && (() => {
-        const { summary: fb = {}, daily: fbDaily = [], byCampaign = [], byAdType = [] } = fbAdsData
-        const fbKpis = [
-          { label: t('dashboard.fbKpi.totalSpend'),  value: fmtM(fb.totalSpend   ?? 0), icon: 'paid',          color: '#EC4899' },
-          { label: t('dashboard.fbKpi.totalClicks'), value: (fb.totalClicks ?? 0).toLocaleString(), icon: 'ads_click', color: '#6366F1' },
-          { label: 'ROAS',                           value: `${fb.roas ?? 0}x`,         icon: 'trending_up',   color: '#10B981' },
-          { label: 'CPA',                            value: fmtM(fb.cpa ?? 0),          icon: 'person_add',    color: '#F59E0B' },
-        ]
-        return (
-          <>
-            <div className="flex items-center gap-2 mt-2 px-4 py-2.5 rounded-xl text-sm font-medium"
-              style={{ background: 'rgba(99,102,241,0.08)', color: 'var(--primary-700)', border: '1px solid rgba(99,102,241,0.2)' }}>
-              <span className="icon text-base">facebook</span>
-              Facebook Ads Performance
-              {fbAdsData.isMock && <span className="ml-2 text-xs opacity-70">(dữ liệu mẫu)</span>}
-            </div>
-
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-              {fbKpis.map((k, i) => (
-                <div key={i} className="lcard p-4 flex items-start gap-3">
-                  <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
-                    style={{ background: `${k.color}20` }}>
-                    <span className="icon text-base" style={{ color: k.color }}>{k.icon}</span>
-                  </div>
-                  <div>
-                    <p className="text-caption" style={{ color: 'var(--text-tertiary)' }}>{k.label}</p>
-                    <p className="text-2xl font-bold text-foreground">{k.value}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="grid grid-cols-12 gap-4">
-              {/* Daily spend vs revenue */}
-              <div className="lcard p-5 col-span-12 lg:col-span-7">
-                <SectionTitle>{t('dashboard.chart.fbAdsTrend')}</SectionTitle>
-                <ResponsiveContainer width="100%" height={250}>
-                  <ComposedChart data={fbDaily} margin={{ top: 5, right: 16, left: 0, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                    <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'var(--text-tertiary)' }} axisLine={false} tickLine={false}
-                      tickFormatter={v => v.slice(5)} />
-                    <YAxis yAxisId="left"  tick={{ fontSize: 10, fill: 'var(--text-tertiary)' }} axisLine={false} tickLine={false} width={44}
-                      tickFormatter={tickFmt} />
-                    <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10, fill: 'var(--text-tertiary)' }} axisLine={false} tickLine={false} width={36}
-                      tickFormatter={v => `${v}x`} />
-                    <Tooltip formatter={(v, name) => name === 'ROAS' ? `${v}x` : fmtM(v)} />
-                    <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
-                    <Bar  yAxisId="left"  dataKey="spend"   name={t('dashboard.series.adSpend')}  fill="#EC4899" radius={[3,3,0,0]} />
-                    <Bar  yAxisId="left"  dataKey="revenue" name={t('dashboard.series.revenue')} fill="#6366F1" radius={[3,3,0,0]} />
-                    <Line yAxisId="right" type="monotone" dataKey="roas" name="ROAS" stroke="#F59E0B" strokeWidth={2} dot={false} />
-                  </ComposedChart>
-                </ResponsiveContainer>
-              </div>
-
-              {/* Campaign ROAS */}
-              <div className="lcard p-5 col-span-12 lg:col-span-5">
-                <SectionTitle>{t('dashboard.chart.fbCampaigns')}</SectionTitle>
-                <div className="space-y-3 mt-3">
-                  {byCampaign.map((c, i) => (
-                    <div key={i}>
-                      <div className="flex justify-between text-caption mb-1" style={{ color: 'var(--text-secondary)' }}>
-                        <span className="truncate max-w-[160px]">{c.campaign}</span>
-                        <span className="font-mono font-bold"
-                          style={{ color: c.roas >= 4 ? 'var(--accent-500)' : c.roas >= 2 ? '#F59E0B' : (c.roas > 0 ? 'var(--color-error)' : 'var(--text-tertiary)') }}>
-                          {c.roas > 0 ? `${c.roas}x` : '—'}
-                        </span>
-                      </div>
-                      <div className="h-2 rounded-full" style={{ background: 'var(--bg-elevated)' }}>
-                        <div className="h-full rounded-full" style={{ width: `${Math.min((c.roas || 0) / 8 * 100, 100)}%`, background: CHART_COLORS[i % CHART_COLORS.length] }} />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </>
-        )
-      })()}
+      {/* ── Facebook Ads section — hướng phát triển ── */}
+      <div className="lcard">
+        <DevEmptyState
+          title="Facebook Ads Performance"
+          desc="Tích hợp Facebook Ads API để theo dõi hiệu suất quảng cáo (ROAS, CPC, CTR, CPA) trực tiếp trên Dashboard. Đây là hướng phát triển trong phiên bản tiếp theo của hệ thống."
+        />
+      </div>
 
       {/* ── Campaign mini-widget ── */}
       <MiniWidget title="Chiến dịch Marketing được đề xuất" icon="campaign" href="/campaign" loading={campLoading}>
@@ -2164,7 +2247,6 @@ export default function DashboardPage() {
   const [tvy,     setTvy]     = useState(null)
   const [compareMode, setCompareMode] = useState(false)
   const [prevData,    setPrevData]    = useState(null)
-  const [fbAdsData,   setFbAdsData]   = useState(null)
   // ── Mini-widget state (lifted từ tab components để tránh loop khi tab unmount/remount) ──
   const [widgetData,    setWidgetData]    = useState({})
   const [widgetLoading, setWidgetLoading] = useState({})
@@ -2333,13 +2415,6 @@ export default function DashboardPage() {
       }))
   }, [])
 
-  // Fetch FB Ads khi date range thay đổi — chỉ gọi cho Owner/Manager/DataIT/SuperAdmin
-  useEffect(() => {
-    if (!canViewAnalytics) return
-    const { from, to } = getRange()
-    getFbAds(from, to).then(setFbAdsData).catch(() => setFbAdsData(null))
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [presetKey, customFrom, customTo, canViewAnalytics])
 
   // ── Load mini-widget data khi tab được kích hoạt (mỗi key chỉ fetch 1 lần/session) ──
   const loadWidget = useCallback((key, fetchFn) => {
@@ -2356,6 +2431,9 @@ export default function DashboardPage() {
     if (activeTab === 'overview') {
       loadWidget('leaderboard', () => getLeaderboard({ limit: 5 }))
       loadWidget('insights',    () => getInsights())
+      // Fetch Operating Profit & ACOS từ FinanceController (Phase 1 đã xong)
+      const { from, to } = getRange()
+      loadWidget('financeKpi',  () => getProfitOverview({ from, to }))
     }
     if (activeTab === 'multichannel')
       loadWidget('attribution', () => getChannelAttribution())
@@ -2366,6 +2444,7 @@ export default function DashboardPage() {
     }
     if (activeTab === 'marketing')
       loadWidget('campaign',  () => getCampaignPlan())
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, loadWidget])
 
   return (
@@ -2533,7 +2612,7 @@ export default function DashboardPage() {
           {activeTab === 'sales'        && <TabSales        data={data} compareMode={compareMode} prevData={prevData} from={getRange().from} to={getRange().to} />}
           {activeTab === 'multichannel' && <TabMultiChannel data={data} wd={widgetData} wl={widgetLoading} />}
           {activeTab === 'customer'     && <TabCustomer     data={data} wd={widgetData} wl={widgetLoading} />}
-          {activeTab === 'marketing'    && <TabMarketing    data={data} fbAdsData={fbAdsData} wd={widgetData} wl={widgetLoading} />}
+          {activeTab === 'marketing'    && <TabMarketing    data={data} wd={widgetData} wl={widgetLoading} />}
           {activeTab === 'inventory'    && <TabInventory    data={data} wd={widgetData} wl={widgetLoading} />}
         </div>
       )}

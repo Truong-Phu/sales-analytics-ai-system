@@ -249,37 +249,163 @@ public class ProductsController(
     }
 
     /// <summary>
+    /// [OLTP] Thêm biến thể (size/màu) vào sản phẩm.
+    /// </summary>
+    [HttpPost("{id:int}/variations")]
+    [Authorize(Roles = "Owner,Manager,DataIT")]
+    public async Task<IActionResult> AddVariation(int id, [FromBody] AddVariationDto dto)
+    {
+        var companyId = tenant.CompanyId;
+        if (companyId is null) return Forbid();
+        if (string.IsNullOrWhiteSpace(dto.Sku)) return BadRequest(new { message = "SKU không được để trống." });
+
+        try
+        {
+            await using var conn = new NpgsqlConnection(_connStr);
+            await conn.OpenAsync();
+
+            // Kiểm tra sản phẩm thuộc công ty
+            await using var chk = new NpgsqlCommand(
+                "SELECT 1 FROM public.products WHERE product_id = @pid AND company_id = @cid::uuid",
+                conn);
+            chk.Parameters.AddWithValue("pid", id);
+            chk.Parameters.AddWithValue("cid", companyId.Value.ToString());
+            var exists = await chk.ExecuteScalarAsync();
+            if (exists is null) return NotFound(new { message = "Sản phẩm không tồn tại." });
+
+            await using var cmd = new NpgsqlCommand("""
+                INSERT INTO public.product_variations
+                    (product_id, company_id, sku, variation_name, attribute_color, attribute_size,
+                     sale_price, original_price, stock_quantity, is_active, created_at)
+                VALUES (@pid, @cid::uuid, @sku, @vname, @color, @size,
+                        @sale, @orig, @stock, TRUE, NOW())
+                RETURNING id
+                """, conn);
+            cmd.Parameters.AddWithValue("pid",   id);
+            cmd.Parameters.AddWithValue("cid",   companyId.Value.ToString());
+            cmd.Parameters.AddWithValue("sku",   dto.Sku.Trim());
+            cmd.Parameters.AddWithValue("vname", (object?)dto.VariationName ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("color", (object?)dto.Color         ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("size",  (object?)dto.Size          ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("sale",  dto.SalePrice.HasValue ? (object)dto.SalePrice.Value : DBNull.Value);
+            cmd.Parameters.AddWithValue("orig",  dto.OriginalPrice.HasValue ? (object)dto.OriginalPrice.Value : DBNull.Value);
+            cmd.Parameters.AddWithValue("stock", dto.StockQuantity);
+
+            var newId = (int)(await cmd.ExecuteScalarAsync())!;
+            return Ok(new { success = true, variationId = newId });
+        }
+        catch (PostgresException pgEx) when (pgEx.SqlState == "23505")
+        {
+            return Conflict(new { message = $"SKU '{dto.Sku}' đã tồn tại cho biến thể này." });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(503, new { message = "Lỗi kết nối database.", detail = ex.Message });
+        }
+    }
+
+    public record AddVariationDto(
+        string Sku,
+        string? VariationName,
+        string? Color,
+        string? Size,
+        decimal? SalePrice,
+        decimal? OriginalPrice,
+        int StockQuantity = 0);
+
+    /// <summary>
+    /// [OLTP] Xóa (soft-delete) biến thể.
+    /// </summary>
+    [HttpDelete("{id:int}/variations/{varId:int}")]
+    [Authorize(Roles = "Owner,Manager,DataIT")]
+    public async Task<IActionResult> DeleteVariation(int id, int varId)
+    {
+        var companyId = tenant.CompanyId;
+        if (companyId is null) return Forbid();
+
+        try
+        {
+            await using var conn = new NpgsqlConnection(_connStr);
+            await conn.OpenAsync();
+
+            await using var cmd = new NpgsqlCommand("""
+                UPDATE public.product_variations
+                SET is_active = FALSE
+                WHERE id = @vid AND product_id = @pid AND company_id = @cid::uuid
+                """, conn);
+            cmd.Parameters.AddWithValue("vid", varId);
+            cmd.Parameters.AddWithValue("pid", id);
+            cmd.Parameters.AddWithValue("cid", companyId.Value.ToString());
+
+            var affected = await cmd.ExecuteNonQueryAsync();
+            if (affected == 0) return NotFound(new { message = "Biến thể không tồn tại." });
+            return Ok(new { success = true });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(503, new { message = "Lỗi kết nối database.", detail = ex.Message });
+        }
+    }
+
+    /// <summary>
     /// [OLTP] Danh sách sản phẩm với phân trang và tìm kiếm (EF Core, public schema).
     /// Roles: Owner, Manager, Staff, DataIT
     /// </summary>
     [HttpGet("oltp")]
     [Authorize(Roles = "Owner,Manager,Staff,Staff_Sales,Staff_Warehouse,Staff_Marketing,DataIT,SuperAdmin")]
     public async Task<IActionResult> GetOltpProducts(
-        [FromQuery] string? search     = null,
-        [FromQuery] int?    categoryId = null,
-        [FromQuery] bool?   isActive   = null,
-        [FromQuery] int     page       = 1,
-        [FromQuery] int     pageSize   = 20)
+        [FromQuery] string? search        = null,
+        [FromQuery] int?    categoryId    = null,
+        [FromQuery] bool?   isActive      = null,
+        [FromQuery] bool?   hasVariations = null,
+        [FromQuery] int     page          = 1,
+        [FromQuery] int     pageSize      = 20)
     {
         var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
         try
         {
             var (items, total) = await productRepo.GetFilteredAsync(
-                search, categoryId, isActive, page, pageSize, companyId);
-            var dtos = items.Select(p => new ProductResponseDto
+                search, categoryId, isActive, page, pageSize, companyId, hasVariations);
+
+            var itemList   = items.ToList();
+            var productIds = itemList.Select(p => p.ProductId).ToArray();
+
+            // Batch-query số biến thể đang active của từng sản phẩm
+            var varCounts = new Dictionary<int, int>();
+            if (productIds.Length > 0)
             {
-                ProductId     = p.ProductId,
-                Sku           = p.Sku,
-                ProductName   = p.ProductName,
-                Description   = p.Description,
-                BasePrice     = p.BasePrice,
-                CostPrice     = p.CostPrice,
-                StockQuantity = p.StockQuantity,
-                CategoryId    = p.CategoryId,
-                CategoryName  = p.Category?.CategoryName,
-                ImageUrl      = p.ImageUrl,
-                IsActive      = p.IsActive,
-                CreatedAt     = p.CreatedAt,
+                var cid = companyId?.ToString() ?? tenant.CompanyId?.ToString() ?? "";
+                await using var conn = new NpgsqlConnection(_connStr);
+                await conn.OpenAsync();
+                await using var vc = new NpgsqlCommand("""
+                    SELECT product_id, COUNT(*)::int
+                    FROM public.product_variations
+                    WHERE product_id = ANY(@ids) AND is_active = TRUE
+                      AND (@cid = '' OR company_id = @cid::uuid)
+                    GROUP BY product_id
+                    """, conn);
+                vc.Parameters.AddWithValue("ids", productIds);
+                vc.Parameters.AddWithValue("cid", cid);
+                await using var vcr = await vc.ExecuteReaderAsync();
+                while (await vcr.ReadAsync())
+                    varCounts[vcr.GetInt32(0)] = vcr.GetInt32(1);
+            }
+
+            var dtos = itemList.Select(p => new ProductResponseDto
+            {
+                ProductId      = p.ProductId,
+                Sku            = p.Sku,
+                ProductName    = p.ProductName,
+                Description    = p.Description,
+                BasePrice      = p.BasePrice,
+                CostPrice      = p.CostPrice,
+                StockQuantity  = p.StockQuantity,
+                CategoryId     = p.CategoryId,
+                CategoryName   = p.Category?.CategoryName,
+                ImageUrl       = p.ImageUrl,
+                IsActive       = p.IsActive,
+                CreatedAt      = p.CreatedAt,
+                VariationCount = varCounts.GetValueOrDefault(p.ProductId, 0),
             });
 
             return Ok(new PagedResult<ProductResponseDto>(dtos, total, page, pageSize));

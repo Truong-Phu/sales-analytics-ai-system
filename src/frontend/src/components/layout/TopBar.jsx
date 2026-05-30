@@ -503,7 +503,7 @@ export default function TopBar() {
     { label: t('nav.supplier',       'Hiệu suất NCC (AI)'), desc: 'Phân tích & đánh giá nhà cung cấp',     icon: 'local_shipping',href: '/supplier' },
   ]
 
-  // ── Nhóm Phân tích: AI + Tài chính + Báo cáo ─────────────────────────────
+  // ── Nhóm Phân tích: AI + Báo cáo (Tài chính đã tách thành tab riêng) ─────
   const analysisMenuItems = [
     { label: t('nav.forecast',        'Dự báo doanh thu'),     desc: 'Prophet AI – xu hướng & seasonality',     icon: 'trending_up',            href: '/forecast' },
     { label: t('nav.anomaly',         'Phát hiện bất thường'), desc: 'Cảnh báo dữ liệu bất thường',             icon: 'crisis_alert',           href: '/anomaly' },
@@ -513,8 +513,16 @@ export default function TopBar() {
     { label: t('nav.basket',          'Phân tích giỏ hàng'),   desc: 'Market basket analysis',                  icon: 'shopping_bag',           href: '/basket' },
     { label: t('nav.whatIf',          'Mô phỏng What-If'),     desc: 'What-if scenario simulation',             icon: 'science',                href: '/whatif' },
     { label: t('nav.price',           'Thông minh Giá'),       desc: 'Tối ưu chiến lược định giá',              icon: 'price_check',            href: '/price' },
-    { label: t('nav.finance',         'Lợi nhuận'),            desc: 'Doanh thu, COGS & biên lợi nhuận',        icon: 'account_balance_wallet', href: '/finance/profit' },
     { label: t('nav.report',          'Báo cáo tổng hợp'),     desc: 'Xuất báo cáo PDF, Excel',                 icon: 'picture_as_pdf',         href: '/report' },
+  ]
+
+  // ── Nhóm Tài chính — 5 trang con ─────────────────────────────────────────
+  const financeMenuItems = [
+    { label: t('nav.financeProfit',   'Phân tích lợi nhuận'),  desc: 'Revenue, COGS, Gross Profit, ROAS, Operating Profit',      icon: 'analytics',        href: '/finance/profit' },
+    { label: t('nav.financeAdSpend',  'Chi phí quảng cáo'),    desc: 'Nhập chi phí QC theo kênh/tháng để tính ROAS & ACOS',      icon: 'ads_click',        href: '/finance/ad-spend' },
+    { label: t('nav.financeOpEx',     'Chi phí vận hành'),      desc: 'Lương, kho bãi, điện nước, internet, văn phòng, khác',    icon: 'business_center',  href: '/finance/operating-expenses' },
+    { label: t('nav.financePnL',      'Báo cáo P&L'),           desc: 'Operating Profit − Operating Expenses = Business Net Profit', icon: 'receipt_long',  href: '/finance/pnl' },
+    { label: t('nav.financeFormulas', 'Công thức KPI'),         desc: 'Định nghĩa Revenue, COGS, ROAS, ACOS, Profit, Margin',    icon: 'menu_book',        href: '/finance/kpi-formulas' },
   ]
 
   // ── Nhóm Vận hành & Quản trị ─────────────────────────────────────────────
@@ -549,6 +557,14 @@ export default function TopBar() {
       href: '/inventory',
       icon: 'inventory_2',
       label: t('nav.inventory', 'Tồn kho'),
+    }] : []),
+    ...(canSeeAI ? [{
+      href: '/finance/profit',
+      icon: 'account_balance_wallet',
+      label: t('nav.finance', 'Tài chính'),
+      hasMega: true,
+      menuItems: financeMenuItems,
+      columns: 1,
     }] : []),
     ...(canSeeAI ? [{
       href: '/forecast',

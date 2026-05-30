@@ -1,9 +1,7 @@
 ﻿import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import MockToast from '../../components/ui/MockToast'
 import DetailDrawer from '../../components/ui/DetailDrawer'
 import { getSyncStatus, triggerSync } from '../../api/syncApi'
-import { MOCK_DATA_SYNC } from '../../mockData/dataSync'
 import api from '../../api/axios'
 import { showToast } from '../../utils/toast'
 import { useHasRole } from '../../hooks/useAuth'
@@ -2004,16 +2002,12 @@ export default function DataSyncPage() {
   const [data,    setData]    = useState(null)
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState({})
-  const [isMock,  setIsMock]  = useState(false)
-
   const fetchStatus = async () => {
     setLoading(true)
-    setIsMock(false)
     try {
       setData(await getSyncStatus())
     } catch {
-      setData(MOCK_DATA_SYNC)
-      setIsMock(true)
+      setData(null)
     } finally {
       setLoading(false)
     }
@@ -2056,7 +2050,6 @@ export default function DataSyncPage() {
 
   return (
     <div className="space-y-4">
-      <MockToast show={isMock} />
 
       {/* Header */}
       <div className="flex items-start justify-between gap-4 flex-wrap">

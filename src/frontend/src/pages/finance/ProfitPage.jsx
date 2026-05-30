@@ -29,8 +29,49 @@ function channelLabel(raw) {
   return CHANNEL_LABELS[(raw || '').toLowerCase()] || raw
 }
 
+// ── Tooltip thông tin KPI ─────────────────────────────────────────────────────
+const KPI_INFO = {
+  'Doanh thu':          { formula: 'gross_revenue - discount', meaning: 'Doanh thu thuần sau chiết khấu từ tất cả kênh bán hàng.', interpret: 'Cao = bán được nhiều hàng.' },
+  'Giá vốn (COGS)':     { formula: 'cost_price × quantity', meaning: 'Chi phí nhập hàng trực tiếp để tạo ra sản phẩm đã bán.', interpret: 'Thấp = hiệu quả nhập hàng tốt.' },
+  'Lợi nhuận gộp':      { formula: 'Doanh thu − COGS', meaning: 'Lợi nhuận trước khi trừ phí vận hành và quảng cáo.', interpret: 'Biên gộp > 30% là tốt cho thời trang.' },
+  'Phí vận hành':       { formula: 'Platform fee + Payment fee + Packaging + Shipping', meaning: 'Toàn bộ phí liên quan đến bán hàng trên sàn và vận chuyển.', interpret: 'Phí < 15% doanh thu là hợp lý.' },
+  'LN sau phí sàn':     { formula: 'Lợi nhuận gộp − Phí vận hành', meaning: 'Lợi nhuận sau khi trừ phí sàn TMĐT và vận chuyển. Chưa trừ chi phí quảng cáo.', interpret: 'Đây là điểm hòa vốn trước QC.' },
+  'Chi phí QC':         { formula: 'Tổng chi phí quảng cáo nhập tay theo kênh/tháng', meaning: 'Chi phí chạy quảng cáo Shopee Ads, TikTok Ads, Lazada Ads...', interpret: 'Thấp hơn 20% doanh thu là hiệu quả.' },
+  'Lợi nhuận vận hành': { formula: 'LN sau phí sàn − Chi phí QC', meaning: 'Lợi nhuận thực tế từ hoạt động bán hàng đa kênh sau tất cả chi phí trực tiếp.', interpret: 'Dương = kinh doanh có lãi. Tăng trưởng = xu hướng tốt.' },
+  'Biên lợi nhuận gộp': { formula: '(LN gộp / Doanh thu) × 100', meaning: 'Tỷ lệ lợi nhuận gộp trên doanh thu.', interpret: 'Mục tiêu: ≥ 30% cho thời trang B2C.' },
+  'Biên LN vận hành':   { formula: '(LN vận hành / Doanh thu) × 100', meaning: 'Tỷ lệ lợi nhuận vận hành trên doanh thu sau tất cả chi phí trực tiếp.', interpret: 'Mục tiêu: ≥ 10% cho SME thời trang.' },
+  'ROAS':               { formula: 'Doanh thu / Chi phí quảng cáo', meaning: '1 đồng quảng cáo tạo ra bao nhiêu đồng doanh thu.', interpret: 'ROAS = 4 → 1đ QC tạo 4đ doanh thu. Mục tiêu: ≥ 4x.' },
+  'ACOS':               { formula: '(Chi phí QC / Doanh thu) × 100', meaning: 'Tỷ lệ chi phí quảng cáo trên doanh thu (Advertising Cost of Sale).', interpret: 'ACOS thấp = QC hiệu quả. Mục tiêu: ≤ 15-20%.' },
+}
+
+function InfoTooltip({ kpiKey }) {
+  const [show, setShow] = useState(false)
+  const info = KPI_INFO[kpiKey]
+  if (!info) return null
+  return (
+    <span className="relative inline-flex ml-1">
+      <button
+        onMouseEnter={() => setShow(true)}
+        onMouseLeave={() => setShow(false)}
+        onClick={() => setShow(v => !v)}
+        className="w-4 h-4 rounded-full text-[10px] font-bold flex items-center justify-center opacity-50 hover:opacity-100 transition-opacity"
+        style={{ background: 'currentColor', color: 'inherit', border: '1.5px solid currentColor' }}>
+        <span style={{ color: 'white', fontSize: 9 }}>?</span>
+      </button>
+      {show && (
+        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 rounded-lg shadow-xl border z-50 p-3 text-left"
+             style={{ background: '#1e293b', color: '#f1f5f9', fontSize: 11, lineHeight: 1.5 }}>
+          <div className="font-mono text-[10px] text-blue-300 mb-1">{info.formula}</div>
+          <div className="mb-1">{info.meaning}</div>
+          <div className="text-green-300 text-[10px]">{info.interpret}</div>
+        </div>
+      )}
+    </span>
+  )
+}
+
 // ── KPI Card ──────────────────────────────────────────────────────────────────
-function KpiCard({ label, value, sub, color = 'blue', estimated }) {
+function KpiCard({ label, value, sub, color = 'blue', estimated, infoKey }) {
   const colors = {
     blue:   'bg-blue-50 border-blue-200 text-blue-700',
     green:  'bg-green-50 border-green-200 text-green-700',
@@ -39,11 +80,15 @@ function KpiCard({ label, value, sub, color = 'blue', estimated }) {
     purple: 'bg-purple-50 border-purple-200 text-purple-700',
     teal:   'bg-teal-50 border-teal-200 text-teal-700',
     yellow: 'bg-yellow-50 border-yellow-200 text-yellow-700',
+    pink:   'bg-pink-50 border-pink-200 text-pink-700',
+    indigo: 'bg-indigo-50 border-indigo-200 text-indigo-700',
   }
   return (
     <div className={`rounded-xl border p-4 ${colors[color]}`}>
-      <div className="text-xs font-medium opacity-70 mb-1">
-        {label}{estimated && <span className="ml-1 text-[10px] opacity-60">(ước tính)</span>}
+      <div className="text-xs font-medium opacity-70 mb-1 flex items-center">
+        {label}
+        {estimated && <span className="ml-1 text-[10px] opacity-60">(ước tính)</span>}
+        {infoKey && <InfoTooltip kpiKey={infoKey} />}
       </div>
       <div className="text-2xl font-bold">{value}</div>
       {sub && <div className="text-xs opacity-60 mt-1">{sub}</div>}
@@ -181,7 +226,7 @@ export default function ProfitPage() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-800">Phân tích lợi nhuận</h1>
-          <p className="text-sm text-gray-500">Revenue · COGS · Gross Profit · Estimated Net Profit</p>
+          <p className="text-sm text-gray-500">Doanh thu · COGS · LN gộp · Phí sàn · Chi phí QC → Lợi nhuận vận hành</p>
         </div>
         <div className="flex gap-2 items-center flex-wrap">
           <label className="text-sm text-gray-600">Từ</label>
@@ -211,18 +256,34 @@ export default function ProfitPage() {
         </div>
       )}
 
-      {/* KPI Cards */}
-      {ov && (
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
-        <KpiCard label="Doanh thu"           value={fmtM(ov.revenue)}            color="blue"   />
-        <KpiCard label="Giá vốn (COGS)"      value={fmtM(ov.cogs)}               color="orange" />
-        <KpiCard label="Lợi nhuận gộp"       value={fmtM(ov.grossProfit)}         color="green"  />
-        <KpiCard label="Phí ước tính"        value={fmtM(ov.estimatedFees)}       color="red"    estimated />
-        <KpiCard label="LN ròng ước tính"    value={fmtM(ov.estimatedNetProfit)}  color="teal"   estimated />
-        <KpiCard label="Biên lợi nhuận gộp"  value={fmtPct(ov.grossMargin)}       color="purple" />
-        <KpiCard label="Biên LN ròng (ước)"  value={fmtPct(ov.estimatedNetMargin)} color="yellow" estimated />
-      </div>
+      {/* Missing cost warning */}
+      {ov?.missingCostOrders > 0 && (
+        <div className="bg-red-50 border border-red-300 rounded-lg px-4 py-2.5 text-sm text-red-800 flex gap-2 items-center">
+          <span className="text-base">⚠</span>
+          <span><strong>{ov.missingCostOrders} đơn hàng</strong> thiếu giá vốn (cost_price) → COGS và lợi nhuận chưa chính xác. Vào <strong>Quản lý sản phẩm</strong> để cập nhật giá vốn.</span>
+        </div>
       )}
+
+      {/* KPI Cards — 2 hàng: hàng 1 tuyệt đối, hàng 2 tỷ lệ */}
+      {ov && (<>
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        <KpiCard label="Doanh thu"           value={fmtM(ov.revenue)}            color="blue"   infoKey="Doanh thu" />
+        <KpiCard label="Giá vốn (COGS)"      value={fmtM(ov.cogs)}               color="orange" infoKey="Giá vốn (COGS)" />
+        <KpiCard label="Lợi nhuận gộp"       value={fmtM(ov.grossProfit)}        color="green"  infoKey="Lợi nhuận gộp" />
+        <KpiCard label="Phí vận hành"        value={fmtM(ov.estimatedFees)}      color="red"    estimated infoKey="Phí vận hành" />
+        <KpiCard label="LN sau phí sàn"      value={fmtM(ov.estimatedNetProfit)} color="teal"   estimated infoKey="LN sau phí sàn" />
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        <KpiCard label="Chi phí QC"          value={fmtM(ov.advertisingCost ?? 0)}   color="pink"   infoKey="Chi phí QC"
+                 sub={ov.advertisingCost > 0 ? `ACOS: ${fmtPct(ov.acos)}` : 'Chưa nhập QC tháng này'} />
+        <KpiCard label="Lợi nhuận vận hành"  value={fmtM(ov.operatingProfit ?? 0)}   color="indigo" infoKey="Lợi nhuận vận hành"
+                 sub={`Biên: ${fmtPct(ov.operatingMargin ?? 0)}`} />
+        <KpiCard label="Biên lợi nhuận gộp"  value={fmtPct(ov.grossMargin)}          color="purple" infoKey="Biên lợi nhuận gộp" />
+        <KpiCard label="Biên LN vận hành"    value={fmtPct(ov.operatingMargin ?? 0)} color="yellow" infoKey="Biên LN vận hành" />
+        <KpiCard label="ACOS"                value={fmtPct(ov.acos ?? 0)}            color="red"    infoKey="ACOS"
+                 sub={`QC: ${fmtM(ov.advertisingCost ?? 0)}`} />
+      </div>
+      </>)}
 
       {/* Tabs */}
       <div className="border-b flex gap-6 text-sm font-medium">
@@ -256,8 +317,10 @@ export default function ProfitPage() {
                   <Legend />
                   <Bar dataKey="revenue"            name="Doanh thu"          fill="#3b82f6" />
                   <Bar dataKey="cogs"               name="Giá vốn"            fill="#f97316" />
-                  <Bar dataKey="grossProfit"        name="Lợi nhuận gộp"      fill="#22c55e" />
-                  <Bar dataKey="estimatedNetProfit" name="LN ròng ước tính"   fill="#14b8a6" />
+                  <Bar dataKey="grossProfit"        name="LN gộp"             fill="#22c55e" />
+                  <Bar dataKey="estimatedNetProfit" name="LN sau phí sàn"     fill="#14b8a6" />
+                  <Bar dataKey="advertisingCost"    name="Chi phí QC"         fill="#ec4899" />
+                  <Bar dataKey="operatingProfit"    name="LN vận hành"        fill="#6366f1" />
                 </BarChart>
               </ResponsiveContainer>
           }
@@ -270,8 +333,8 @@ export default function ProfitPage() {
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b">
               <tr>
-                {['Kênh','Đơn','Doanh thu','Giá vốn','LN Gộp','Biên gộp','Phí (ước)','LN Ròng (ước)','Biên ròng'].map(h => (
-                  <th key={h} className="text-left py-2 px-3 text-xs font-medium text-gray-600">{h}</th>
+                {['Kênh','Đơn','Doanh thu','Giá vốn','LN Gộp','Biên gộp','Phí sàn (ước)','LN sau phí','Chi phí QC','ACOS','LN vận hành','Biên VH'].map(h => (
+                  <th key={h} className="text-left py-2 px-3 text-xs font-medium text-gray-600 whitespace-nowrap">{h}</th>
                 ))}
               </tr>
             </thead>
@@ -285,8 +348,11 @@ export default function ProfitPage() {
                   <td className="py-2 px-3 text-green-700">{fmtM(c.grossProfit)}</td>
                   <td className="py-2 px-3">{fmtPct(c.grossMargin)}</td>
                   <td className="py-2 px-3 text-red-600">{fmtM(c.estimatedFees)}</td>
-                  <td className="py-2 px-3 text-teal-700 font-semibold">{fmtM(c.estimatedNetProfit)}</td>
-                  <td className="py-2 px-3">{fmtPct(c.estimatedNetMargin)}</td>
+                  <td className="py-2 px-3 text-teal-700">{fmtM(c.estimatedNetProfit)}</td>
+                  <td className="py-2 px-3 text-pink-700">{fmtM(c.advertisingCost ?? 0)}</td>
+                  <td className="py-2 px-3 text-red-500 text-xs">{fmtPct(c.acos ?? 0)}</td>
+                  <td className="py-2 px-3 text-indigo-700 font-semibold">{fmtM(c.operatingProfit ?? 0)}</td>
+                  <td className="py-2 px-3 text-xs">{fmtPct(c.operatingMargin ?? 0)}</td>
                 </tr>
               ))}
             </tbody>

@@ -1,15 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
 import api from '../../api/axios'
 import { useAuth } from '../../hooks/useAuth'
-import MockToast from '../../components/ui/MockToast'
 import DetailDrawer from '../../components/ui/DetailDrawer'
 import { exportToCsv } from '../../utils/format'
 import { useDebounce } from '../../hooks/useDebounce'
-
-const MOCK_SUPPLIERS = [
-  { supplierId: 1, supplierCode: 'NCC-001', supplierName: 'Cong ty TNHH Nguyen Thanh', contactName: 'Nguyen Van A', phone: '0901234567', email: 'contact@nguyenthanh.vn', isActive: true },
-  { supplierId: 2, supplierCode: 'NCC-002', supplierName: 'Cong ty CP Det May Mien Nam', contactName: 'Tran Thi B', phone: '0912345678', email: 'sales@detmaymn.com', isActive: true },
-]
 
 // Phí sàn thương mại điện tử Việt Nam (tỷ lệ phổ biến)
 const PLATFORM_FEES = [
@@ -58,7 +52,7 @@ function SupplierModal({ supplier, onClose, onSaved }) {
   const supplierId = supplier?.supplierId
 
   useEffect(() => {
-    api.get('/api/products/oltp', { params: { pageSize: 200 } })
+    api.get('/api/products/oltp', { params: { pageSize: 200, isActive: true } })
        .then(r => setAllProducts(r.data.data ?? [])).catch(() => {})
 
     if (supplierId) {
@@ -325,7 +319,6 @@ export default function SuppliersManagementPage() {
   const [page,         setPage]         = useState(1)
   const [totalPages,   setTotalPages]   = useState(1)
   const [loading,      setLoading]      = useState(true)
-  const [isMock,       setIsMock]       = useState(false)
   const [search,       setSearch]       = useState('')
   const [activeFilter, setActiveFilter] = useState('') // '' | 'true' | 'false'
   const [modal,        setModal]        = useState(null) // null | 'create' | {supplier}
@@ -347,13 +340,11 @@ export default function SuppliersManagementPage() {
       setTotal(d.total ?? 0)
       setTotalPages(d.totalPages ?? 1)
       setPage(p)
-      setIsMock(false)
     } catch {
-      setRows(MOCK_SUPPLIERS)
-      setTotal(MOCK_SUPPLIERS.length)
+      setRows([])
+      setTotal(0)
       setTotalPages(1)
       setPage(1)
-      setIsMock(true)
     } finally { setLoading(false) }
   }, [debouncedSearch, activeFilter])
 
@@ -402,7 +393,6 @@ export default function SuppliersManagementPage() {
 
   return (
     <div className="p-4 md:p-6 space-y-4">
-      {isMock && <MockToast />}
       {modal && (
         <SupplierModal
           supplier={modal === 'create' ? null : modal}
@@ -474,7 +464,7 @@ export default function SuppliersManagementPage() {
             Đã chọn {checkedIds.size} nhà cung cấp
           </span>
           <div className="flex gap-2 ml-auto">
-            {canEdit && !isMock && (
+            {canEdit && (
               <button onClick={handleBulkDeactivate}
                       className="lbtn !h-8 !px-3 text-xs font-medium"
                       style={{ background: 'rgba(239,68,68,0.1)', color: '#EF4444', border: '1px solid rgba(239,68,68,0.3)' }}>

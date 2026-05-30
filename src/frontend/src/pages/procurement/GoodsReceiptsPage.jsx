@@ -53,6 +53,7 @@ function CreateReceiptDrawer({ open, onClose, onSaved, initialPoId = '' }) {
     const items = poItems
       .map(i => ({
         productId:        i.productId,
+        variationId:      i.variationId || null,
         receivedQuantity: Number(receiveQtys[i.purchaseOrderItemId] ?? 0),
         importPrice:      Number(i.importPrice),
       }))

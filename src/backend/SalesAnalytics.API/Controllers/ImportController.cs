@@ -66,12 +66,45 @@ public class ImportController(IConfiguration cfg, ITenantContext tenant, IAuditL
     [HttpGet("template/{type}")]
     public IActionResult GetTemplate(string type)
     {
+        var today = DateTime.Now.ToString("yyyy-MM-dd");
+
+        if (type.ToLower() == "orders")
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("order_code,customer_email,product_sku,variation_sku,variation_name,color,size,quantity,unit_price,channel,order_date,status");
+            sb.AppendLine($"DH-2026-001,khachhang@email.com,AT-NAM-001,AT-NAM-001-M-TRG,M - Trắng,Trắng,M,2,250000,Shopee,{today},DELIVERED");
+            sb.AppendLine($"DH-2026-001,khachhang@email.com,QJ-NU-001,QJ-NU-001-27-XNH,27 - Xanh nhạt,Xanh nhạt,27,1,450000,Shopee,{today},DELIVERED");
+            sb.AppendLine($"DH-2026-002,mua@gmail.com,GIAY-NAM-001,GIAY-NAM-001-41-TRG,41 - Trắng,Trắng,41,1,780000,Lazada,{today},SHIPPED");
+            sb.AppendLine($"DH-2026-003,vip@gmail.com,TUI-XACH-001,TUI-XACH-001-DEN,Đen,Đen,One Size,1,750000,Website,{today},DELIVERED");
+            sb.AppendLine($"DH-2026-004,kh@yahoo.com,DAM-001,DAM-001-M-HVAN,M - Hoa vàng,Hoa vàng,M,1,680000,TikTok Shop,{today},DELIVERED");
+            return File(Encoding.UTF8.GetBytes(sb.ToString()), "text/csv", "template_orders.csv");
+        }
+
+        if (type.ToLower() == "products")
+        {
+            var sb = new StringBuilder();
+            // Header: cột sản phẩm + cột biến thể
+            sb.AppendLine("sku,product_name,category,description,base_price,cost_price,variation_sku,variation_name,attribute_color,attribute_size,variation_sale_price,variation_stock");
+            // Ví dụ 1: áo thun nam - nhiều biến thể
+            sb.AppendLine("AT-NAM-001,Áo thun nam basic cotton 100%,Thời trang nam,Cotton 100% thoáng mát,250000,90000,AT-NAM-001-S-TRG,S - Trắng,Trắng,S,250000,80");
+            sb.AppendLine(",,,,,,AT-NAM-001-M-TRG,M - Trắng,Trắng,M,250000,120");
+            sb.AppendLine(",,,,,,AT-NAM-001-L-TRG,L - Trắng,Trắng,L,250000,90");
+            sb.AppendLine(",,,,,,AT-NAM-001-S-DEN,S - Đen,Đen,S,250000,60");
+            sb.AppendLine(",,,,,,AT-NAM-001-M-DEN,M - Đen,Đen,M,250000,90");
+            // Ví dụ 2: giày nam - size × màu
+            sb.AppendLine("GIAY-NAM-001,Giày sneaker nam da PU đế êm,Giày dép,Da PU cao cấp đế Eva êm ái,780000,310000,GIAY-NAM-001-40-TRG,40 - Trắng,Trắng,40,780000,20");
+            sb.AppendLine(",,,,,,GIAY-NAM-001-41-TRG,41 - Trắng,Trắng,41,780000,25");
+            sb.AppendLine(",,,,,,GIAY-NAM-001-42-TRG,42 - Trắng,Trắng,42,780000,20");
+            sb.AppendLine(",,,,,,GIAY-NAM-001-41-DEN,41 - Đen,Đen,41,790000,20");
+            // Ví dụ 3: túi xách - chỉ màu
+            sb.AppendLine("TUI-XACH-001,Túi xách da PU công sở,Túi xách & Ba lô,Da PU cao cấp quai cầm vàng,750000,290000,TUI-XACH-001-DEN,Đen,Đen,One Size,750000,30");
+            sb.AppendLine(",,,,,,TUI-XACH-001-NAU,Nâu caramel,Nâu caramel,One Size,760000,22");
+            sb.AppendLine(",,,,,,TUI-XACH-001-DDO,Đỏ đô,Đỏ đô,One Size,765000,15");
+            return File(Encoding.UTF8.GetBytes(sb.ToString()), "text/csv", "template_products.csv");
+        }
+
         var (header, filename) = type.ToLower() switch
         {
-            "orders"     => ("order_code,customer_email,product_sku,quantity,unit_price,channel,order_date,status",
-                             "template_orders.csv"),
-            "products"   => ("sku,name,category,description,price,cost_price,stock_quantity",
-                             "template_products.csv"),
             "customers"  => ("email,full_name,phone,address,district,province,registered_date",
                              "template_customers.csv"),
             "sales-data" => ("date,channel,product_sku,quantity_sold,revenue,order_count",
@@ -700,32 +733,61 @@ public class ImportController(IConfiguration cfg, ITenantContext tenant, IAuditL
         if (defaultCatId == 0)
             defaultCatId = await GetOrCreateCategoryAsync(conn, "Thời trang", tenant.CompanyId!.Value);
 
-        // Tìm hoặc tạo product theo SKU (scope theo company để tránh xung đột multi-tenant)
-        var productSql = """
-            INSERT INTO public.products
-                (sku, product_name, base_price, cost_price, category_id, is_active, company_id, created_at, updated_at)
-            VALUES
-                (@sku, @name, @price, 0, @catId, TRUE, @cid::uuid, NOW(), NOW())
-            ON CONFLICT (sku, company_id) DO NOTHING
-            RETURNING product_id
-            """;
-        await using var prCmd = new NpgsqlCommand(productSql, conn);
-        prCmd.Parameters.AddWithValue("sku",   o.Sku.Length > 0 ? o.Sku : $"IMPORT-{Guid.NewGuid():N}"[..20]);
-        prCmd.Parameters.AddWithValue("name",  o.ProductName.Length > 0 ? o.ProductName : o.Sku);
-        prCmd.Parameters.AddWithValue("price", o.UnitPrice);
-        prCmd.Parameters.AddWithValue("catId", defaultCatId);
-        prCmd.Parameters.AddWithValue("cid",   tenant.CompanyId!.Value.ToString());
-        var prodIdObj = await prCmd.ExecuteScalarAsync();
+        // Bước 1: Kiểm tra SKU có khớp biến thể đã có trong catalog không
+        // Nếu có → dùng product cha + variation_id, KHÔNG tạo product mới
         int productId;
-        if (prodIdObj is null or DBNull)
+        int? variationId = null;
+        var importSku = o.Sku.Length > 0 ? o.Sku : "";
+
+        await using var varChk = new NpgsqlCommand("""
+            SELECT product_id, id
+            FROM public.product_variations
+            WHERE sku = @sku AND company_id = @cid::uuid AND is_active = TRUE
+            LIMIT 1
+            """, conn);
+        varChk.Parameters.AddWithValue("sku", importSku);
+        varChk.Parameters.AddWithValue("cid", tenant.CompanyId!.Value.ToString());
+        await using (var varR = await varChk.ExecuteReaderAsync())
         {
-            await using var getCmd = new NpgsqlCommand(
-                "SELECT product_id FROM public.products WHERE sku=@sku AND company_id=@cid::uuid LIMIT 1", conn);
-            getCmd.Parameters.AddWithValue("sku", o.Sku.Length > 0 ? o.Sku : "");
-            getCmd.Parameters.AddWithValue("cid", tenant.CompanyId!.Value.ToString());
-            productId = Convert.ToInt32(await getCmd.ExecuteScalarAsync() ?? 0);
+            if (await varR.ReadAsync())
+            {
+                productId  = varR.GetInt32(0);
+                variationId = varR.GetInt32(1);
+            }
+            else
+            {
+                productId = 0;
+            }
         }
-        else { productId = Convert.ToInt32(prodIdObj); }
+
+        if (productId == 0)
+        {
+            // Bước 2: Tìm hoặc tạo product theo SKU (behavior gốc)
+            var productSql = """
+                INSERT INTO public.products
+                    (sku, product_name, base_price, cost_price, category_id, is_active, company_id, created_at, updated_at)
+                VALUES
+                    (@sku, @name, @price, 0, @catId, TRUE, @cid::uuid, NOW(), NOW())
+                ON CONFLICT (sku, company_id) DO NOTHING
+                RETURNING product_id
+                """;
+            await using var prCmd = new NpgsqlCommand(productSql, conn);
+            prCmd.Parameters.AddWithValue("sku",   importSku.Length > 0 ? importSku : $"IMPORT-{Guid.NewGuid():N}"[..20]);
+            prCmd.Parameters.AddWithValue("name",  o.ProductName.Length > 0 ? o.ProductName : importSku);
+            prCmd.Parameters.AddWithValue("price", o.UnitPrice);
+            prCmd.Parameters.AddWithValue("catId", defaultCatId);
+            prCmd.Parameters.AddWithValue("cid",   tenant.CompanyId!.Value.ToString());
+            var prodIdObj = await prCmd.ExecuteScalarAsync();
+            if (prodIdObj is null or DBNull)
+            {
+                await using var getCmd = new NpgsqlCommand(
+                    "SELECT product_id FROM public.products WHERE sku=@sku AND company_id=@cid::uuid LIMIT 1", conn);
+                getCmd.Parameters.AddWithValue("sku", importSku);
+                getCmd.Parameters.AddWithValue("cid", tenant.CompanyId!.Value.ToString());
+                productId = Convert.ToInt32(await getCmd.ExecuteScalarAsync() ?? 0);
+            }
+            else { productId = Convert.ToInt32(prodIdObj); }
+        }
 
         if (customerId <= 0 || productId <= 0) return 0;
 
@@ -810,13 +872,13 @@ public class ImportController(IConfiguration cfg, ITenantContext tenant, IAuditL
             {
                 var itemSql = """
                     INSERT INTO public.order_items
-                        (order_id, product_id, quantity, unit_price, sale_price,
+                        (order_id, product_id, variation_id, quantity, unit_price, sale_price,
                          original_price, subtotal,
                          product_name, sku, variation_name,
                          seller_discount, platform_discount,
                          created_at)
                     VALUES
-                        (@oid, @pid, @qty, @price, @saleP,
+                        (@oid, @pid, @vid, @qty, @price, @saleP,
                          @origP, @sub,
                          @pname, @sku, @vname,
                          @sellDisc, @platDisc,
@@ -827,6 +889,8 @@ public class ImportController(IConfiguration cfg, ITenantContext tenant, IAuditL
                 await using var itmCmd = new NpgsqlCommand(itemSql, conn);
                 itmCmd.Parameters.AddWithValue("oid",      orderId);
                 itmCmd.Parameters.AddWithValue("pid",      productId);
+                itmCmd.Parameters.Add(new NpgsqlParameter("vid", NpgsqlTypes.NpgsqlDbType.Integer)
+                    { Value = variationId.HasValue ? (object)variationId.Value : DBNull.Value });
                 itmCmd.Parameters.AddWithValue("qty",      o.Quantity);
                 itmCmd.Parameters.AddWithValue("price",    effectiveSale);
                 itmCmd.Parameters.AddWithValue("saleP",    effectiveSale);

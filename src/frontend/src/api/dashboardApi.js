@@ -159,10 +159,10 @@ export const cancelOrder = (id) =>
 // ── Products OLTP CRUD ───────────────────────────────────────────────────────
 
 export const getOltpProducts = async (params = {}) => {
-  const { limit, ...rest } = params
-  const res = await api.get('/api/products/oltp', {
-    params: { ...rest, pageSize: limit ?? 20 },
-  }).then(r => r.data)
+  const { limit, hasVariations, ...rest } = params
+  const qp = { ...rest, pageSize: limit ?? 20, isActive: true }
+  if (hasVariations !== undefined && hasVariations !== null) qp.hasVariations = hasVariations
+  const res = await api.get('/api/products/oltp', { params: qp }).then(r => r.data)
   return {
     items:      (res.data ?? res.items ?? []).map(normalizeProduct),
     total:      res.total ?? 0,

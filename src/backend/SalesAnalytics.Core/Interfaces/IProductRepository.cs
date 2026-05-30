@@ -14,7 +14,7 @@ public interface IProductRepository : IRepository<Product>
     /// <summary>Lấy sản phẩm đang hoạt động, có phân trang và tìm kiếm</summary>
     Task<(IEnumerable<Product> Items, int Total)> GetFilteredAsync(
         string? search, int? categoryId, bool? isActive, int page, int pageSize,
-        Guid? companyId = null);
+        Guid? companyId = null, bool? hasVariations = null);
 
     /// <summary>Kiểm tra SKU đã tồn tại chưa (để tránh trùng)</summary>
     Task<bool> SkuExistsAsync(string sku, int? excludeId = null);

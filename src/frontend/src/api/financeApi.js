@@ -22,3 +22,19 @@ export const getFeeConfigs      = ()    =>
 
 export const updateFeeConfig    = (id, dto) =>
   api.put(`${BASE}/fee-configs/${id}`, dto).then(r => r.data)
+
+// ── Chi phí vận hành (Operating Expenses) ────────────────────────────────────
+export const getExpenses        = (params = {}) =>
+  api.get('/api/expenses',          { params }).then(r => r.data)
+
+export const getExpensesSummary  = (params = {}) =>
+  api.get('/api/expenses/summary',  { params }).then(r => r.data)
+
+export const createExpense       = (dto)         =>
+  api.post('/api/expenses',         dto).then(r => r.data)
+
+export const updateExpense       = (id, dto)     =>
+  api.put(`/api/expenses/${id}`,    dto).then(r => r.data)
+
+export const deleteExpense       = (id)          =>
+  api.delete(`/api/expenses/${id}`).then(r => r.data)

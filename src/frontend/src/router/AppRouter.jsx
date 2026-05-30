@@ -69,8 +69,11 @@ const SupplierPage    = lazy(() => import('../pages/supplier/SupplierPage'))
 const PricePage       = lazy(() => import('../pages/price/PricePage'))
 const SentimentPage   = lazy(() => import('../pages/sentiment/SentimentPage'))
 const PosPage         = lazy(() => import('../pages/pos/PosPage'))
-const ProfitPage      = lazy(() => import('../pages/finance/ProfitPage'))
-const AdSpendPage     = lazy(() => import('../pages/marketing/AdSpendPage'))
+const ProfitPage              = lazy(() => import('../pages/finance/ProfitPage'))
+const KpiFormulasPage         = lazy(() => import('../pages/finance/KpiFormulasPage'))
+const OperatingExpensesPage   = lazy(() => import('../pages/finance/OperatingExpensesPage'))
+const PnLPage                 = lazy(() => import('../pages/finance/PnLPage'))
+const AdSpendPage             = lazy(() => import('../pages/marketing/AdSpendPage'))
 
 // Roles constants
 const ALL_ROLES     = ['Owner', 'Manager', 'Staff_Sales', 'Staff_Warehouse', 'Staff_Marketing', 'Staff', 'DataIT']
@@ -349,10 +352,30 @@ export default function AppRouter() {
           </ProtectedRoute>
         } />
 
-        {/* Finance — Profit Engine */}
+        {/* Finance Module — tất cả routes /finance/* */}
         <Route path="/finance/profit" element={
           <ProtectedRoute roles={ANALYST_ROLES}>
             <Shell><ProfitPage /></Shell>
+          </ProtectedRoute>
+        } />
+        <Route path="/finance/ad-spend" element={
+          <ProtectedRoute roles={['Owner', 'Manager', 'Staff_Marketing']}>
+            <Shell><AdSpendPage /></Shell>
+          </ProtectedRoute>
+        } />
+        <Route path="/finance/operating-expenses" element={
+          <ProtectedRoute roles={ANALYST_ROLES}>
+            <Shell><OperatingExpensesPage /></Shell>
+          </ProtectedRoute>
+        } />
+        <Route path="/finance/pnl" element={
+          <ProtectedRoute roles={ANALYST_ROLES}>
+            <Shell><PnLPage /></Shell>
+          </ProtectedRoute>
+        } />
+        <Route path="/finance/kpi-formulas" element={
+          <ProtectedRoute roles={ANALYST_ROLES}>
+            <Shell><KpiFormulasPage /></Shell>
           </ProtectedRoute>
         } />
 

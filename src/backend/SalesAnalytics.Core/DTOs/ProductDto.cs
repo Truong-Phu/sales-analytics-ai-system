@@ -15,9 +15,10 @@ public class ProductResponseDto
     public int     CategoryId    { get; set; }
     public string? CategoryName  { get; set; }
     public string? ImageUrl      { get; set; }
-    public bool    IsActive      { get; set; }
+    public bool    IsActive       { get; set; }
     public DateTime CreatedAt    { get; set; }
     public DateTime UpdatedAt    { get; set; }
+    public int     VariationCount { get; set; }  // Số biến thể đang active
 }
 
 /// <summary>Dữ liệu tạo sản phẩm mới</summary>

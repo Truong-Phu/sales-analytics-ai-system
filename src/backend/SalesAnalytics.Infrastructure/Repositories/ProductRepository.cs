@@ -32,7 +32,7 @@ public class ProductRepository(AppDbContext db)
     /// <inheritdoc/>
     public async Task<(IEnumerable<Product> Items, int Total)> GetFilteredAsync(
         string? search, int? categoryId, bool? isActive, int page, int pageSize,
-        Guid? companyId = null)
+        Guid? companyId = null, bool? hasVariations = null)
     {
         if (page < 1) page = 1;
         if (pageSize < 1 || pageSize > 200) pageSize = 20;
@@ -83,6 +83,12 @@ public class ProductRepository(AppDbContext db)
             query = query.Where(p =>
                 EF.Functions.ILike(p.ProductName, $"%{search}%") ||
                 EF.Functions.ILike(p.Sku, $"%{search}%"));
+
+        // Lọc theo số biến thể: true = chỉ SP có variation, false = chỉ SP không có variation
+        if (hasVariations == true)
+            query = query.Where(p => p.Variations.Any(v => v.IsActive));
+        else if (hasVariations == false)
+            query = query.Where(p => !p.Variations.Any(v => v.IsActive));
 
         var total = await query.CountAsync();
         var items = await query
