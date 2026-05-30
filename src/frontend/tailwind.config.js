@@ -5,11 +5,11 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        sans:     ['Inter', 'system-ui', 'sans-serif'],
+        sans:     ['"Be Vietnam Pro"', 'Inter', 'system-ui', 'sans-serif'],
         mono:     ['JetBrains Mono', 'monospace'],
-        headline: ['Inter', 'sans-serif'],
-        body:     ['"Be Vietnam Pro"', 'sans-serif'],
-        label:    ['Inter', 'sans-serif'],
+        headline: ['"Be Vietnam Pro"', 'Inter', 'sans-serif'],
+        body:     ['"Be Vietnam Pro"', 'Inter', 'sans-serif'],
+        label:    ['"Be Vietnam Pro"', 'Inter', 'sans-serif'],
       },
       // ── Typography Scale (PROMPT 3) ──────────────────────────────────────
       fontSize: {
