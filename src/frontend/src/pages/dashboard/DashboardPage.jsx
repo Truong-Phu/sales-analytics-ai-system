@@ -1040,58 +1040,95 @@ function TabMultiChannel({ data, wd = {}, wl = {} }) {
         </ResponsiveContainer>
       </div>
 
-      {/* Radar + Ranking table */}
-      <div className="grid grid-cols-12 gap-4">
-        <div className="lcard p-5 col-span-12 lg:col-span-6">
-          <SectionTitle>{t('dashboard.chart.radar')}</SectionTitle>
-          {data?.radarData?.length > 0 ? (
-            <ResponsiveContainer width="100%" height={300}>
-              <RadarChart data={data.radarData} cx="50%" cy="50%" outerRadius="70%">
-                <PolarGrid stroke="var(--border)" />
-                <PolarAngleAxis dataKey="channel" tick={{ fontSize: 11, fill: 'var(--text-secondary)' }} />
-                <Radar name={t('dashboard.series.radarCost')}    dataKey="adCost"     stroke="#6366F1" fill="#6366F1" fillOpacity={0.2} />
-                <Radar name={t('dashboard.series.radarEngage')}  dataKey="engagement" stroke="#10B981" fill="#10B981" fillOpacity={0.2} />
-                <Radar name={t('dashboard.series.radarRevenue')} dataKey="revenue"    stroke="#F59E0B" fill="#F59E0B" fillOpacity={0.2} />
-                <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
-                <Tooltip />
-              </RadarChart>
-            </ResponsiveContainer>
-          ) : (
-            <DevEmptyState title="Chưa có dữ liệu radar chart" desc="Hệ thống chưa có API tổng hợp chỉ số đa chiều (Chi phí QC, Tương tác, Chuyển đổi) theo kênh." />
-          )}
-        </div>
+      {/* Doanh thu vs Chi phí QC + Xếp hạng kênh từ dữ liệu thật */}
+      {(data.revenueByChannel ?? []).length > 0 && (() => {
+        const chData = (data.revenueByChannel ?? []).map(ch => ({
+          name:     ch.channelName,
+          revenue:  Math.round((ch.revenue ?? 0) / 1_000_000),   // triệu đ
+          adSpend:  Math.round((ch.adSpend  ?? 0) / 1_000_000),
+          roas:     parseFloat(ch.roas ?? 0),
+          orders:   ch.orders ?? 0,
+          growth:   parseFloat(ch.growth ?? 0),
+          revenuePct: parseFloat(ch.revenuePct ?? 0),
+        }))
+        const maxRev = Math.max(...chData.map(c => c.revenue), 1)
 
-        {/* Ranking table theo chỉ số radar */}
-        <div className="lcard p-5 col-span-12 lg:col-span-6">
-          <SectionTitle>Xếp hạng kênh theo chỉ số</SectionTitle>
-          {data?.radarData?.length > 0 ? (
-          <div className="space-y-4">
-            {radarMetrics.map(metric => {
-              const ranked = [...data.radarData].sort((a, b) => b[metric.key] - a[metric.key])
-              return (
-                <div key={metric.key}>
-                  <p className="text-caption font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>{metric.label}</p>
-                  <div className="space-y-1">
-                    {ranked.map((ch, idx) => (
-                      <div key={ch.channel} className="flex items-center gap-2 text-caption">
-                        <span className="w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
-                          style={{ background: idx === 0 ? '#F59E0B' : idx === 1 ? '#9CA3AF' : idx === 2 ? '#B45309' : 'var(--bg-elevated)', color: idx < 3 ? '#fff' : 'var(--text-tertiary)' }}>
-                          {idx + 1}
+        return (
+          <div className="grid grid-cols-12 gap-4">
+            {/* Biểu đồ: Doanh thu vs Chi phí QC + ROAS */}
+            <div className="lcard p-5 col-span-12 lg:col-span-7">
+              <SectionTitle>Doanh thu & Chi phí QC theo kênh</SectionTitle>
+              <p className="text-caption mb-3" style={{ color: 'var(--text-tertiary)' }}>
+                Cột: Doanh thu (xanh) và Chi phí QC (hồng) · Đường: ROAS (trục phải)
+              </p>
+              <ResponsiveContainer width="100%" height={280}>
+                <ComposedChart data={chData} margin={{ top: 8, right: 40, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                  <XAxis dataKey="name" tick={{ fontSize: 11, fill: 'var(--text-secondary)' }} />
+                  <YAxis yAxisId="left"  tick={{ fontSize: 11, fill: 'var(--text-secondary)' }}
+                    tickFormatter={v => `${v}M`} />
+                  <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11, fill: '#F59E0B' }}
+                    tickFormatter={v => `${v}x`} />
+                  <Tooltip formatter={(val, name) =>
+                    name === 'ROAS' ? [`${val}x`, name] : [`₫${val}M`, name]
+                  } />
+                  <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
+                  <Bar yAxisId="left"  dataKey="revenue"  name="Doanh thu (M₫)" fill="#6366F1" radius={[4,4,0,0]} />
+                  <Bar yAxisId="left"  dataKey="adSpend"  name="Chi phí QC (M₫)" fill="#EC4899" radius={[4,4,0,0]} />
+                  <Line yAxisId="right" dataKey="roas" name="ROAS" type="monotone"
+                    stroke="#F59E0B" strokeWidth={2.5} dot={{ r: 5, fill: '#F59E0B' }} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+
+            {/* Scorecard xếp hạng kênh từ dữ liệu thật */}
+            <div className="lcard p-5 col-span-12 lg:col-span-5">
+              <SectionTitle>Hiệu suất kênh</SectionTitle>
+              <div className="space-y-3 mt-2">
+                {[...chData].sort((a, b) => b.revenue - a.revenue).map((ch, idx) => {
+                  const roasOk = ch.roas >= 4
+                  const growthUp = ch.growth >= 0
+                  return (
+                    <div key={ch.name} className="rounded-xl p-3"
+                      style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)' }}>
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold"
+                            style={{ background: idx === 0 ? '#F59E0B' : idx === 1 ? '#9CA3AF' : idx === 2 ? '#B45309' : 'var(--bg-card)',
+                                     color: idx < 3 ? '#fff' : 'var(--text-tertiary)' }}>
+                            {idx + 1}
+                          </span>
+                          <span className="text-sm font-semibold" style={{ color: getChannelColor(ch.name) }}>
+                            {ch.name}
+                          </span>
+                        </div>
+                        <span className="text-xs font-bold" style={{ color: 'var(--text-primary)' }}>
+                          ₫{ch.revenue}M
                         </span>
-                        <span className="flex-1" style={{ color: 'var(--text-secondary)' }}>{ch.channel}</span>
-                        <span className="font-mono font-medium" style={{ color: CHART_COLORS[idx % CHART_COLORS.length] }}>{ch[metric.key]}</span>
                       </div>
-                    ))}
-                  </div>
-                </div>
-              )
-            })}
+                      {/* Progress bar tỷ trọng */}
+                      <div className="h-1.5 rounded-full mb-2" style={{ background: 'var(--border)' }}>
+                        <div className="h-full rounded-full"
+                          style={{ width: `${(ch.revenue / maxRev) * 100}%`, background: getChannelColor(ch.name) }} />
+                      </div>
+                      <div className="flex gap-3 text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                        <span>{ch.revenuePct.toFixed(1)}% tỷ trọng</span>
+                        <span style={{ color: roasOk ? 'var(--accent-500)' : '#F59E0B' }}>
+                          ROAS {ch.roas}x
+                        </span>
+                        <span style={{ color: growthUp ? 'var(--accent-500)' : 'var(--color-error)' }}>
+                          {growthUp ? '▲' : '▼'}{Math.abs(ch.growth)}%
+                        </span>
+                        <span>{ch.orders.toLocaleString('vi-VN')} đơn</span>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
           </div>
-          ) : (
-            <DevEmptyState title="Chưa có dữ liệu xếp hạng kênh" desc="Xếp hạng theo chỉ số đa chiều sẽ khả dụng khi có dữ liệu Radar chart." />
-          )}
-        </div>
-      </div>
+        )
+      })()}
 
       {/* Bảng so sánh chi tiết theo kênh */}
       <div className="lcard p-5">
