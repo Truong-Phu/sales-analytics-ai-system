@@ -16,7 +16,7 @@ namespace SalesAnalytics.API.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/pos")]
-[Authorize(Roles = "Owner,Manager,Staff")]
+[Authorize(Roles = "Owner,Manager,Staff,Staff_Sales")]
 public class PosController(IConfiguration cfg, ITenantContext tenant) : ControllerBase
 {
     private readonly string _connStr = cfg.GetConnectionString("Default")!;

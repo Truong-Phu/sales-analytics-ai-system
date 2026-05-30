@@ -2,51 +2,66 @@ import { useAuth } from './useAuth'
 
 /**
  * Ma trận quyền hạn theo feature & role.
- * Trả về true/false để dùng thống nhất thay vì check role rải rác.
- *
- * Cách dùng:
- *   const canEdit = usePermission('products.edit')
- *   const canViewReport = usePermission('report.view')
+ * Roles: Owner | Manager | Staff_Sales | Staff_Warehouse | Staff_Marketing | DataIT | Viewer
+ * Staff (legacy) được giữ để tương thích ngược.
  */
-// Ma trận quyền cho 5 roles TRONG doanh nghiệp.
-// SuperAdmin không dùng hook này — SA có layout và router riêng (/sa/...).
-const PERMISSIONS = {
-  // Dashboard
-  'dashboard.view':          ['Owner', 'Manager', 'DataIT', 'Staff', 'Viewer'],
+const S  = 'Staff'           // legacy
+const SS = 'Staff_Sales'
+const SW = 'Staff_Warehouse'
+const SM = 'Staff_Marketing'
 
-  // AI / Phân tích
+const PERMISSIONS = {
+  // ── Dashboard ──────────────────────────────────────────────────────────────
+  'dashboard.view':          ['Owner', 'Manager', 'DataIT', SS, SM, S, 'Viewer'],
+
+  // ── AI / Phân tích ────────────────────────────────────────────────────────
   'forecast.view':           ['Owner', 'Manager', 'DataIT'],
   'anomaly.view':            ['Owner', 'Manager', 'DataIT'],
   'recommendations.view':    ['Owner', 'Manager', 'DataIT'],
 
-  // Sản phẩm / Đơn hàng / Khách hàng
-  'orders.view':             ['Owner', 'Manager', 'DataIT', 'Staff', 'Viewer'],
-  'products.view':           ['Owner', 'Manager', 'DataIT', 'Staff'],
-  'products.edit':           ['Owner', 'Manager', 'DataIT', 'Staff'],
-  'products.delete':         ['Owner', 'Manager'],
-  'categories.view':         ['Owner', 'Manager', 'DataIT', 'Staff'],
-  'categories.edit':         ['Owner', 'Manager'],
-  'customers.view':          ['Owner', 'Manager', 'DataIT'],
+  // ── Đơn hàng ─────────────────────────────────────────────────────────────
+  'orders.view':             ['Owner', 'Manager', 'DataIT', SS, S, 'Viewer'],
+  'orders.create':           ['Owner', 'Manager', SS, S],
+  'orders.edit':             ['Owner', 'Manager', SS, S],
 
-  // Vận hành dữ liệu
+  // ── Sản phẩm (mọi staff đều xem được) ───────────────────────────────────
+  'products.view':           ['Owner', 'Manager', 'DataIT', SS, SW, SM, S],
+  'products.edit':           ['Owner', 'Manager', 'DataIT', SS, SW, S],
+  'products.delete':         ['Owner', 'Manager'],
+  'categories.view':         ['Owner', 'Manager', 'DataIT', SS, SW, SM, S],
+  'categories.edit':         ['Owner', 'Manager'],
+
+  // ── Khách hàng ────────────────────────────────────────────────────────────
+  'customers.view':          ['Owner', 'Manager', 'DataIT', SS, SM, S],
+  'customers.edit':          ['Owner', 'Manager', SS, S],
+
+  // ── Kho / Nhập hàng (Staff_Warehouse) ────────────────────────────────────
+  'inventory.view':          ['Owner', 'Manager', 'DataIT', SW, S],
+  'inventory.adjust':        ['Owner', 'Manager', SW],
+  'procurement.view':        ['Owner', 'Manager', 'DataIT', SW, S],
+  'procurement.create':      ['Owner', 'Manager', SW],
+  'goods-receipts.view':     ['Owner', 'Manager', 'DataIT', SW, S],
+  'goods-receipts.create':   ['Owner', 'Manager', SW],
+
+  // ── Báo cáo ───────────────────────────────────────────────────────────────
+  'report.view':             ['Owner', 'Manager', 'DataIT', SM],
+  'report.export':           ['Owner', 'Manager'],
+
+  // ── Vận hành dữ liệu ─────────────────────────────────────────────────────
   'data-sync.view':          ['Owner', 'Manager', 'DataIT'],
   'etl-monitor.view':        ['DataIT', 'Owner'],
 
-  // Báo cáo
-  'report.view':             ['Owner', 'Manager', 'DataIT'],
-  'report.export':           ['Owner', 'Manager'],
-
-  // Quản trị
+  // ── Quản trị ─────────────────────────────────────────────────────────────
   'admin.view':              ['Owner', 'Manager'],
   'admin.manage-users':      ['Owner', 'Manager'],
   'admin.manage-roles':      ['Owner'],
 
-  // Cài đặt
-  'settings.view':           ['Owner', 'Manager', 'DataIT', 'Staff', 'Viewer'],
+  // ── Cài đặt ──────────────────────────────────────────────────────────────
+  'settings.view':           ['Owner', 'Manager', 'DataIT', SS, SW, SM, S, 'Viewer'],
   'settings.subscription':   ['Owner'],
 
-  // Thông báo
-  'notifications.view':      ['Owner', 'Manager', 'DataIT', 'Staff', 'Viewer'],
+  // ── Thông báo ─────────────────────────────────────────────────────────────
+  'notifications.view':      ['Owner', 'Manager', 'DataIT', SS, SW, SM, S, 'Viewer'],
 }
 
 export function usePermission(feature) {
@@ -57,14 +72,22 @@ export function usePermission(feature) {
   return allowed.includes(user.role)
 }
 
-/**
- * Kiểm tra nhiều feature cùng lúc.
- * Trả về object { [feature]: boolean }
- */
 export function usePermissions(...features) {
   const { user } = useAuth()
   const role = user?.role ?? ''
   return Object.fromEntries(
     features.map(f => [f, (PERMISSIONS[f] ?? []).includes(role)])
   )
+}
+
+/** Kiểm tra role có phải là một trong các Staff sub-role không */
+export function useStaffRole() {
+  const { user } = useAuth()
+  const role = user?.role ?? ''
+  return {
+    isSales:     role === 'Staff_Sales'     || role === 'Staff',
+    isWarehouse: role === 'Staff_Warehouse',
+    isMarketing: role === 'Staff_Marketing',
+    isAnyStaff:  ['Staff_Sales', 'Staff_Warehouse', 'Staff_Marketing', 'Staff'].includes(role),
+  }
 }

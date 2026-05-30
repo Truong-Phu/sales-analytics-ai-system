@@ -259,7 +259,7 @@ public class CustomersController(
     /// Roles: Owner, Manager, Staff
     /// </summary>
     [HttpPost("oltp")]
-    [Authorize(Roles = "Owner,Manager,Staff")]
+    [Authorize(Roles = "Owner,Manager,Staff,Staff_Sales")]
     public async Task<IActionResult> CreateCustomer([FromBody] CreateCustomerDto dto)
     {
         if (!ModelState.IsValid) return BadRequest(ModelState);
@@ -303,7 +303,7 @@ public class CustomersController(
     /// Roles: Owner, Manager, Staff
     /// </summary>
     [HttpPut("oltp/{id:int}")]
-    [Authorize(Roles = "Owner,Manager,Staff")]
+    [Authorize(Roles = "Owner,Manager,Staff,Staff_Sales")]
     public async Task<IActionResult> UpdateCustomer(int id, [FromBody] UpdateCustomerDto dto)
     {
         if (!ModelState.IsValid) return BadRequest(ModelState);

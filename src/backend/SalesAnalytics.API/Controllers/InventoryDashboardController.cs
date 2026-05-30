@@ -25,7 +25,7 @@ public class InventoryDashboardController(
     // 1. GET /api/inventory/dashboard/overview
     // ─────────────────────────────────────────────────────────────────────────
     [HttpGet("dashboard/overview")]
-    [Authorize(Roles = "Owner,Manager,DataIT,SuperAdmin")]
+    [Authorize(Roles = "Owner,Manager,Staff_Warehouse,DataIT,SuperAdmin")]
     public async Task<IActionResult> Overview([FromQuery] int threshold = 10)
     {
         try
@@ -128,7 +128,7 @@ public class InventoryDashboardController(
     // 2. GET /api/inventory/dashboard/stock-movement
     // ─────────────────────────────────────────────────────────────────────────
     [HttpGet("dashboard/stock-movement")]
-    [Authorize(Roles = "Owner,Manager,DataIT,SuperAdmin")]
+    [Authorize(Roles = "Owner,Manager,Staff_Warehouse,DataIT,SuperAdmin")]
     public async Task<IActionResult> StockMovement(
         [FromQuery] DateOnly? from = null,
         [FromQuery] DateOnly? to   = null)
@@ -181,7 +181,7 @@ public class InventoryDashboardController(
     // 3. GET /api/inventory/dashboard/low-stock
     // ─────────────────────────────────────────────────────────────────────────
     [HttpGet("dashboard/low-stock")]
-    [Authorize(Roles = "Owner,Manager,DataIT,SuperAdmin")]
+    [Authorize(Roles = "Owner,Manager,Staff_Warehouse,DataIT,SuperAdmin")]
     public async Task<IActionResult> LowStock(
         [FromQuery] int threshold = 10,
         [FromQuery] int page      = 1,
@@ -253,7 +253,7 @@ public class InventoryDashboardController(
     // 4. GET /api/inventory/dashboard/product-velocity
     // ─────────────────────────────────────────────────────────────────────────
     [HttpGet("dashboard/product-velocity")]
-    [Authorize(Roles = "Owner,Manager,DataIT,SuperAdmin")]
+    [Authorize(Roles = "Owner,Manager,Staff_Warehouse,DataIT,SuperAdmin")]
     public async Task<IActionResult> ProductVelocity([FromQuery] int days = 30)
     {
         if (days < 1 || days > 365) days = 30;
@@ -327,7 +327,7 @@ public class InventoryDashboardController(
     // 5. GET /api/inventory/dashboard/supplier-performance
     // ─────────────────────────────────────────────────────────────────────────
     [HttpGet("dashboard/supplier-performance")]
-    [Authorize(Roles = "Owner,Manager,DataIT,SuperAdmin")]
+    [Authorize(Roles = "Owner,Manager,Staff_Warehouse,DataIT,SuperAdmin")]
     public async Task<IActionResult> SupplierPerformance()
     {
         try
@@ -390,7 +390,7 @@ public class InventoryDashboardController(
     // 6. GET /api/inventory/recommendations
     // ─────────────────────────────────────────────────────────────────────────
     [HttpGet("recommendations")]
-    [Authorize(Roles = "Owner,Manager,DataIT,SuperAdmin")]
+    [Authorize(Roles = "Owner,Manager,Staff_Warehouse,DataIT,SuperAdmin")]
     public async Task<IActionResult> Recommendations(
         [FromQuery] int targetDays = 30,
         [FromQuery] int topN       = 20)

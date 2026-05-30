@@ -31,7 +31,7 @@ public class GoodsReceiptsController(
     // GET /api/goods-receipts
     // ─────────────────────────────────────────────────────────────────────────
     [HttpGet]
-    [Authorize(Roles = "Owner,Manager,DataIT,SuperAdmin")]
+    [Authorize(Roles = "Owner,Manager,Staff_Warehouse,DataIT,SuperAdmin")]
     public async Task<IActionResult> GetAll(
         [FromQuery] long? purchaseOrderId = null,
         [FromQuery] int   page     = 1,
@@ -108,7 +108,7 @@ public class GoodsReceiptsController(
     // GET /api/goods-receipts/{id}
     // ─────────────────────────────────────────────────────────────────────────
     [HttpGet("{id:long}")]
-    [Authorize(Roles = "Owner,Manager,DataIT,SuperAdmin")]
+    [Authorize(Roles = "Owner,Manager,Staff_Warehouse,DataIT,SuperAdmin")]
     public async Task<IActionResult> GetById(long id)
     {
         try
@@ -184,7 +184,7 @@ public class GoodsReceiptsController(
     // POST /api/goods-receipts  (nhập kho — core transaction)
     // ─────────────────────────────────────────────────────────────────────────
     [HttpPost]
-    [Authorize(Roles = "Owner,Manager")]
+    [Authorize(Roles = "Owner,Manager,Staff_Warehouse")]
     public async Task<IActionResult> Create([FromBody] CreateGoodsReceiptDto dto)
     {
         if (dto.PurchaseOrderId <= 0)

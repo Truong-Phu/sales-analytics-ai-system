@@ -745,7 +745,7 @@ public class AdminController(
     // ── GET /api/admin/customers/{id}/history ──────────────────────────────────
     /// <summary>Lịch sử mua hàng KH (online + offline)</summary>
     [HttpGet("customers/{id}/history")]
-    [Authorize(Roles = "Owner,Manager,Staff")]
+    [Authorize(Roles = "Owner,Manager,Staff,Staff_Sales")]
     public async Task<IActionResult> GetCustomerHistory(int id, [FromQuery] int page = 1)
     {
         await using var conn = new NpgsqlConnection(_connStr);

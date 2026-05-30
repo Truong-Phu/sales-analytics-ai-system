@@ -9,7 +9,7 @@ namespace SalesAnalytics.API.Controllers;
 
 [ApiController]
 [Route("api/stock-adjustments")]
-[Authorize(Roles = "Owner,Manager")]
+[Authorize(Roles = "Owner,Manager,Staff_Warehouse")]
 public class StockAdjustmentsController(
     IConfiguration cfg,
     ITenantContext tenant) : ControllerBase

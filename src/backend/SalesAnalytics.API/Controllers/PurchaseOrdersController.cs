@@ -30,7 +30,7 @@ public class PurchaseOrdersController(
     // GET /api/purchase-orders
     // ─────────────────────────────────────────────────────────────────────────
     [HttpGet]
-    [Authorize(Roles = "Owner,Manager,DataIT,SuperAdmin")]
+    [Authorize(Roles = "Owner,Manager,Staff_Warehouse,DataIT,SuperAdmin")]
     public async Task<IActionResult> GetAll(
         [FromQuery] string? status   = null,
         [FromQuery] int?    supplier = null,
@@ -114,7 +114,7 @@ public class PurchaseOrdersController(
     // GET /api/purchase-orders/{id}
     // ─────────────────────────────────────────────────────────────────────────
     [HttpGet("{id:long}")]
-    [Authorize(Roles = "Owner,Manager,DataIT,SuperAdmin")]
+    [Authorize(Roles = "Owner,Manager,Staff_Warehouse,DataIT,SuperAdmin")]
     public async Task<IActionResult> GetById(long id)
     {
         try
@@ -204,7 +204,7 @@ public class PurchaseOrdersController(
     // POST /api/purchase-orders  (tạo APPROVED + gửi email thông báo NCC)
     // ─────────────────────────────────────────────────────────────────────────
     [HttpPost]
-    [Authorize(Roles = "Owner,Manager")]
+    [Authorize(Roles = "Owner,Manager,Staff_Warehouse")]
     public async Task<IActionResult> Create([FromBody] CreatePurchaseOrderDto dto)
     {
         if (dto.SupplierId <= 0)
@@ -339,7 +339,7 @@ public class PurchaseOrdersController(
     // PUT /api/purchase-orders/{id}  (chỉ sửa khi DRAFT)
     // ─────────────────────────────────────────────────────────────────────────
     [HttpPut("{id:long}")]
-    [Authorize(Roles = "Owner,Manager")]
+    [Authorize(Roles = "Owner,Manager,Staff_Warehouse")]
     public async Task<IActionResult> Update(long id, [FromBody] CreatePurchaseOrderDto dto)
     {
         if (dto.Items == null || dto.Items.Count == 0)
@@ -421,7 +421,7 @@ public class PurchaseOrdersController(
     // POST /api/purchase-orders/{id}/submit  (DRAFT → PENDING + email thông báo NCC)
     // ─────────────────────────────────────────────────────────────────────────
     [HttpPost("{id:long}/submit")]
-    [Authorize(Roles = "Owner,Manager")]
+    [Authorize(Roles = "Owner,Manager,Staff_Warehouse")]
     public async Task<IActionResult> Submit(long id)
     {
         try

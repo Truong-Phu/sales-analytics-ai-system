@@ -227,10 +227,121 @@ function getTabOptions(colors) {
 }
 
 // ─── Main Tabs theo role ──────────────────────────────────────────────────────
-// Tab 5 chuẩn: Tổng quan | Đơn hàng | POS | Thông báo | Tôi
-// RBAC giữ nguyên logic cũ — thêm POS tab và Thông báo tab với badge
 
-// Staff: Tổng quan(+Alerts) | Đơn hàng(+Add) | POS | Sản phẩm | Tôi
+// Staff_Sales: Tổng quan | Đơn hàng | POS | Thông báo | Tôi
+function StaffSalesTabs() {
+  const unread = useUnreadCount()
+  const { colors } = useTheme()
+  return (
+    <Tab.Navigator screenOptions={getTabOptions(colors)}>
+      <Tab.Screen
+        name="Dashboard"
+        component={DashboardWithAlertsStack}
+        options={{ title: 'Tổng quan', headerShown: false, tabBarIcon: ({ focused }) => <TabIcon emoji="📊" focused={focused} /> }}
+      />
+      <Tab.Screen
+        name="Orders"
+        component={OrdersStack}
+        options={{ title: 'Đơn hàng', headerShown: false, tabBarIcon: ({ focused }) => <TabIcon emoji="🛒" focused={focused} /> }}
+      />
+      <Tab.Screen
+        name="POS"
+        component={POSStack}
+        options={{ title: 'Bán hàng', headerShown: false, tabBarIcon: ({ focused }) => <TabIconPOS focused={focused} /> }}
+      />
+      <Tab.Screen
+        name="Notifications"
+        component={NotificationsStack}
+        options={{ title: 'Thông báo', headerShown: false, tabBarIcon: ({ focused }) => <TabIconWithBadge emoji="🔔" focused={focused} badge={unread} /> }}
+      />
+      <Tab.Screen
+        name="Profile"
+        component={ProfileStack}
+        options={{ title: 'Tôi', headerShown: false, tabBarIcon: ({ focused }) => <TabIcon emoji="👤" focused={focused} /> }}
+      />
+    </Tab.Navigator>
+  )
+}
+
+// Staff_Warehouse: Tổng quan | Tồn kho | Sản phẩm | Thông báo | Tôi
+function StaffWarehouseTabs() {
+  const unread = useUnreadCount()
+  const { colors } = useTheme()
+  return (
+    <Tab.Navigator screenOptions={getTabOptions(colors)}>
+      <Tab.Screen
+        name="Dashboard"
+        component={DashboardSimpleStack}
+        options={{ title: 'Tổng quan', headerShown: false, tabBarIcon: ({ focused }) => <TabIcon emoji="📊" focused={focused} /> }}
+      />
+      <Tab.Screen
+        name="TonKhoTab"
+        options={{ title: 'Tồn kho', headerShown: false, tabBarIcon: ({ focused }) => <TabIcon emoji="🏭" focused={focused} /> }}
+      >
+        {() => {
+          const { colors: c } = useTheme()
+          return (
+            <Stack.Navigator screenOptions={getStackOptions(c)}>
+              <Stack.Screen name="TonKhoMain" component={TonKhoScreen} options={{ title: 'Quản lý tồn kho' }} />
+            </Stack.Navigator>
+          )
+        }}
+      </Tab.Screen>
+      <Tab.Screen
+        name="Products"
+        component={ProductsStack}
+        options={{ title: 'Sản phẩm', headerShown: false, tabBarIcon: ({ focused }) => <TabIcon emoji="📦" focused={focused} /> }}
+      />
+      <Tab.Screen
+        name="Notifications"
+        component={NotificationsStack}
+        options={{ title: 'Thông báo', headerShown: false, tabBarIcon: ({ focused }) => <TabIconWithBadge emoji="🔔" focused={focused} badge={unread} /> }}
+      />
+      <Tab.Screen
+        name="Profile"
+        component={ProfileStack}
+        options={{ title: 'Tôi', headerShown: false, tabBarIcon: ({ focused }) => <TabIcon emoji="👤" focused={focused} /> }}
+      />
+    </Tab.Navigator>
+  )
+}
+
+// Staff_Marketing: Tổng quan | Báo cáo | Khách hàng | Thông báo | Tôi
+function StaffMarketingTabs() {
+  const unread = useUnreadCount()
+  const { colors } = useTheme()
+  return (
+    <Tab.Navigator screenOptions={getTabOptions(colors)}>
+      <Tab.Screen
+        name="Dashboard"
+        component={DashboardSimpleStack}
+        options={{ title: 'Tổng quan', headerShown: false, tabBarIcon: ({ focused }) => <TabIcon emoji="📊" focused={focused} /> }}
+      />
+      <Tab.Screen
+        name="Reports"
+        component={ReportsStack}
+        options={{ title: 'Báo cáo', headerShown: false, tabBarIcon: ({ focused }) => <TabIcon emoji="📈" focused={focused} /> }}
+      />
+      <Tab.Screen
+        name="Products"
+        component={ProductsStack}
+        options={{ title: 'Sản phẩm', headerShown: false, tabBarIcon: ({ focused }) => <TabIcon emoji="📦" focused={focused} /> }}
+      />
+      <Tab.Screen
+        name="Notifications"
+        component={NotificationsStack}
+        options={{ title: 'Thông báo', headerShown: false, tabBarIcon: ({ focused }) => <TabIconWithBadge emoji="🔔" focused={focused} badge={unread} /> }}
+      />
+      <Tab.Screen
+        name="Profile"
+        component={ProfileStack}
+        options={{ title: 'Tôi', headerShown: false, tabBarIcon: ({ focused }) => <TabIcon emoji="👤" focused={focused} /> }}
+      />
+    </Tab.Navigator>
+  )
+}
+
+// Staff (legacy): Tổng quan(+Alerts) | Đơn hàng(+Add) | POS | Sản phẩm | Tôi
 function StaffTabs() {
   const unread = useUnreadCount()
   const { colors } = useTheme()
@@ -405,7 +516,13 @@ function MainTabs({ role }) {
     case 'Owner':
     case 'Manager':
       return <OwnerManagerTabs />
-    case 'Staff':
+    case 'Staff_Sales':
+      return <StaffSalesTabs />
+    case 'Staff_Warehouse':
+      return <StaffWarehouseTabs />
+    case 'Staff_Marketing':
+      return <StaffMarketingTabs />
+    case 'Staff':         // legacy
       return <StaffTabs />
     case 'DataIT':
       return <DataITTabs />

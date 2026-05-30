@@ -23,7 +23,7 @@ public class InventoryController(
     /// Roles: Owner, Manager, DataIT
     /// </summary>
     [HttpGet("transactions")]
-    [Authorize(Roles = "Owner,Manager,DataIT,SuperAdmin")]
+    [Authorize(Roles = "Owner,Manager,Staff_Warehouse,DataIT,SuperAdmin")]
     public async Task<IActionResult> GetTransactions(
         [FromQuery] int?      productId = null,
         [FromQuery] string?   type      = null,

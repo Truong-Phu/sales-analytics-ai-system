@@ -70,7 +70,7 @@ public class PaymentController : ControllerBase
     // Khởi tạo thanh toán cho đơn hàng
     // ─────────────────────────────────────────────────────────────────────────
     [HttpPost("order/{orderId:int}/initiate")]
-    [Authorize(Roles = "Owner,Manager,Staff")]
+    [Authorize(Roles = "Owner,Manager,Staff,Staff_Sales")]
     public async Task<IActionResult> InitiateOrderPayment(
         int orderId, [FromBody] InitiateOrderPaymentRequest req)
     {
@@ -100,7 +100,7 @@ public class PaymentController : ControllerBase
     // Xác nhận thanh toán thủ công (Cash / Bank Transfer)
     // ─────────────────────────────────────────────────────────────────────────
     [HttpPost("transaction/{txId:guid}/confirm")]
-    [Authorize(Roles = "Owner,Manager,Staff")]
+    [Authorize(Roles = "Owner,Manager,Staff,Staff_Sales")]
     public async Task<IActionResult> ManualConfirm(
         Guid txId, [FromBody] ManualConfirmPaymentRequest req)
     {
@@ -257,7 +257,7 @@ public class PaymentController : ControllerBase
     // POST /api/payment/mock/sepay-success
     /// <summary>Giả lập SePay webhook – demo mode, production thay bằng SePay tự động</summary>
     [HttpPost("mock/sepay-success")]
-    [Authorize(Roles = "Owner,Manager,Staff,SuperAdmin")]
+    [Authorize(Roles = "Owner,Manager,Staff,Staff_Sales,SuperAdmin")]
     public async Task<IActionResult> MockSePaySuccess([FromBody] MockSePayRequest req)
     {
         // SaaS isolation: non-SuperAdmin chỉ được mock giao dịch của chính tenant mình

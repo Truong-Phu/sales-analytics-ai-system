@@ -33,7 +33,7 @@ public class ProductsController(
     /// Roles: Owner, Manager, Staff, DataIT
     /// </summary>
     [HttpGet]
-    [Authorize(Roles = "Owner,Manager,Staff,DataIT,SuperAdmin")]
+    [Authorize(Roles = "Owner,Manager,Staff,Staff_Sales,Staff_Warehouse,Staff_Marketing,DataIT,SuperAdmin")]
     public async Task<IActionResult> GetProducts(
         [FromQuery] string? search   = null,
         [FromQuery] string? category = null,
@@ -153,7 +153,7 @@ public class ProductsController(
     /// Danh sách danh mục sản phẩm đang hoạt động, dùng cho dropdown.
     /// </summary>
     [HttpGet("categories")]
-    [Authorize(Roles = "Owner,Manager,Staff,DataIT")]
+    [Authorize(Roles = "Owner,Manager,Staff,Staff_Sales,Staff_Warehouse,Staff_Marketing,DataIT")]
     public async Task<IActionResult> GetCategories()
     {
         try
@@ -203,7 +203,7 @@ public class ProductsController(
     /// Dùng trong form tạo phiếu nhập hàng để chọn variation cụ thể.
     /// </summary>
     [HttpGet("{id:int}/variations")]
-    [Authorize(Roles = "Owner,Manager,Staff,DataIT,SuperAdmin")]
+    [Authorize(Roles = "Owner,Manager,Staff,Staff_Sales,Staff_Warehouse,Staff_Marketing,DataIT,SuperAdmin")]
     public async Task<IActionResult> GetVariations(int id)
     {
         var companyId = tenant.CompanyId;
@@ -253,7 +253,7 @@ public class ProductsController(
     /// Roles: Owner, Manager, Staff, DataIT
     /// </summary>
     [HttpGet("oltp")]
-    [Authorize(Roles = "Owner,Manager,Staff,DataIT,SuperAdmin")]
+    [Authorize(Roles = "Owner,Manager,Staff,Staff_Sales,Staff_Warehouse,Staff_Marketing,DataIT,SuperAdmin")]
     public async Task<IActionResult> GetOltpProducts(
         [FromQuery] string? search     = null,
         [FromQuery] int?    categoryId = null,
@@ -294,7 +294,7 @@ public class ProductsController(
     /// [OLTP] Lấy chi tiết sản phẩm theo ID.
     /// </summary>
     [HttpGet("oltp/{id:int}")]
-    [Authorize(Roles = "Owner,Manager,Staff,DataIT,SuperAdmin")]
+    [Authorize(Roles = "Owner,Manager,Staff,Staff_Sales,Staff_Warehouse,Staff_Marketing,DataIT,SuperAdmin")]
     public async Task<IActionResult> GetOltpProduct(int id)
     {
         try
@@ -491,7 +491,7 @@ public class ProductsController(
 
     /// <summary>Lấy danh sách giá theo kênh của 1 sản phẩm</summary>
     [HttpGet("oltp/{id:int}/channel-prices")]
-    [Authorize(Roles = "Owner,Manager,Staff,DataIT,SuperAdmin")]
+    [Authorize(Roles = "Owner,Manager,Staff,Staff_Sales,Staff_Warehouse,Staff_Marketing,DataIT,SuperAdmin")]
     public async Task<IActionResult> GetChannelPrices(int id)
     {
         try
