@@ -5,7 +5,7 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        sans:     ['"Be Vietnam Pro"', 'Inter', 'system-ui', 'sans-serif'],
+        sans:     ['"Be Vietnam Pro"', 'Inter', '"Segoe UI"', '"Arial Unicode MS"', 'Tahoma', 'Arial', 'sans-serif'],
         mono:     ['JetBrains Mono', 'monospace'],
         headline: ['"Be Vietnam Pro"', 'Inter', 'sans-serif'],
         body:     ['"Be Vietnam Pro"', 'Inter', 'sans-serif'],

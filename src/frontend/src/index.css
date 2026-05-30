@@ -13,7 +13,9 @@
 
 @layer base {
   body {
-    font-family: 'Be Vietnam Pro', sans-serif;
+    /* Be Vietnam Pro: thiết kế riêng cho tiếng Việt
+       Fallback: Segoe UI (Windows), Arial Unicode MS, Tahoma đều hỗ trợ dấu tiếng Việt */
+    font-family: 'Be Vietnam Pro', 'Segoe UI', 'Arial Unicode MS', Tahoma, Arial, sans-serif;
     background-color: var(--bg-base);
     color: var(--text-primary);
     @apply antialiased;
