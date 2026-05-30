@@ -125,60 +125,131 @@ def get_leaderboard(
     if company_id:
         params["cid"] = company_id
 
+    # Tính kỳ trước để compare trend (cùng khoảng ngày, lùi thêm days)
+    prev_filter  = f"AND o.order_date >= NOW() - INTERVAL '{int(days*2)} days' AND o.order_date < NOW() - INTERVAL '{int(days)} days'"
+    if company_id:
+        prev_filter += " AND o.company_id = %(cid)s::uuid"
+
     if category == "product":
         sql = f"""
-            SELECT
-                p.product_name                          AS name,
-                SUM(oi.subtotal)                        AS value,
-                COUNT(DISTINCT o.order_id)              AS orders,
-                LAG(SUM(oi.subtotal)) OVER (
-                    PARTITION BY p.product_id
-                    ORDER BY DATE_TRUNC('month', o.order_date)
-                ) AS prev_value
-            FROM public.order_items oi
-            JOIN public.orders   o ON oi.order_id   = o.order_id
-            JOIN public.products p ON oi.product_id = p.product_id
-            WHERE o.status NOT IN ('CANCELLED', 'RETURNED')
-              AND o.order_date >= NOW() - INTERVAL '{int(days)} days'
-              {cmp_filter}
-            GROUP BY p.product_id, p.product_name
-            ORDER BY value DESC
+            WITH curr AS (
+                SELECT p.product_id, p.product_name,
+                       SUM(oi.subtotal)        AS value,
+                       COUNT(DISTINCT o.order_id) AS orders
+                FROM public.order_items oi
+                JOIN public.orders   o ON oi.order_id   = o.order_id
+                JOIN public.products p ON oi.product_id = p.product_id
+                WHERE o.status NOT IN ('CANCELLED', 'RETURNED')
+                  AND o.order_date >= NOW() - INTERVAL '{int(days)} days'
+                  {cmp_filter}
+                GROUP BY p.product_id, p.product_name
+            ),
+            prev AS (
+                SELECT oi.product_id, SUM(oi.subtotal) AS prev_value
+                FROM public.order_items oi
+                JOIN public.orders o ON oi.order_id = o.order_id
+                WHERE o.status NOT IN ('CANCELLED', 'RETURNED')
+                  {prev_filter}
+                GROUP BY oi.product_id
+            )
+            SELECT c.product_name AS name, c.value, c.orders,
+                   COALESCE(p.prev_value, 0) AS prev_value
+            FROM curr c
+            LEFT JOIN prev p ON p.product_id = c.product_id
+            ORDER BY c.value DESC
             LIMIT {int(top_n)}
         """
     elif category == "customer":
         sql = f"""
-            SELECT
-                c.full_name                             AS name,
-                SUM(oi.subtotal)                        AS value,
-                COUNT(DISTINCT o.order_id)              AS orders
-            FROM public.orders o
-            JOIN public.order_items oi ON oi.order_id   = o.order_id
-            JOIN public.customers c    ON o.customer_id = c.customer_id
-            WHERE o.status NOT IN ('CANCELLED', 'RETURNED')
-              AND o.order_date >= NOW() - INTERVAL '{int(days)} days'
-              {cmp_filter}
-            GROUP BY c.customer_id, c.full_name
-            ORDER BY value DESC
+            WITH curr AS (
+                SELECT cu.customer_id, cu.full_name AS name,
+                       SUM(oi.subtotal) AS value,
+                       COUNT(DISTINCT o.order_id) AS orders
+                FROM public.orders o
+                JOIN public.order_items oi ON oi.order_id   = o.order_id
+                JOIN public.customers  cu ON o.customer_id  = cu.customer_id
+                WHERE o.status NOT IN ('CANCELLED', 'RETURNED')
+                  AND o.order_date >= NOW() - INTERVAL '{int(days)} days'
+                  {cmp_filter}
+                GROUP BY cu.customer_id, cu.full_name
+            ),
+            prev AS (
+                SELECT o.customer_id, SUM(oi.subtotal) AS prev_value
+                FROM public.orders o
+                JOIN public.order_items oi ON oi.order_id = o.order_id
+                WHERE o.status NOT IN ('CANCELLED', 'RETURNED')
+                  {prev_filter}
+                GROUP BY o.customer_id
+            )
+            SELECT c.name, c.value, c.orders,
+                   COALESCE(p.prev_value, 0) AS prev_value
+            FROM curr c
+            LEFT JOIN prev p ON p.customer_id = c.customer_id
+            ORDER BY c.value DESC
             LIMIT {int(top_n)}
         """
     elif category == "channel":
         sql = f"""
-            SELECT
-                ch.channel_name                         AS name,
-                SUM(oi.subtotal)                        AS value,
-                COUNT(DISTINCT o.order_id)              AS orders
-            FROM public.orders o
-            JOIN public.order_items oi ON oi.order_id  = o.order_id
-            JOIN public.sales_channels ch ON o.channel_id = ch.channel_id
-            WHERE o.status NOT IN ('CANCELLED', 'RETURNED')
-              AND o.order_date >= NOW() - INTERVAL '{int(days)} days'
-              {cmp_filter}
-            GROUP BY ch.channel_id, ch.channel_name
-            ORDER BY value DESC
+            WITH curr AS (
+                SELECT ch.channel_id, ch.channel_name AS name,
+                       SUM(oi.subtotal) AS value,
+                       COUNT(DISTINCT o.order_id) AS orders
+                FROM public.orders o
+                JOIN public.order_items oi ON oi.order_id   = o.order_id
+                JOIN public.sales_channels ch ON o.channel_id = ch.channel_id
+                WHERE o.status NOT IN ('CANCELLED', 'RETURNED')
+                  AND o.order_date >= NOW() - INTERVAL '{int(days)} days'
+                  {cmp_filter}
+                GROUP BY ch.channel_id, ch.channel_name
+            ),
+            prev AS (
+                SELECT o.channel_id, SUM(oi.subtotal) AS prev_value
+                FROM public.orders o
+                JOIN public.order_items oi ON oi.order_id = o.order_id
+                WHERE o.status NOT IN ('CANCELLED', 'RETURNED')
+                  {prev_filter}
+                GROUP BY o.channel_id
+            )
+            SELECT c.name, c.value, c.orders,
+                   COALESCE(p.prev_value, 0) AS prev_value
+            FROM curr c
+            LEFT JOIN prev p ON p.channel_id = c.channel_id
+            ORDER BY c.value DESC
             LIMIT {int(top_n)}
         """
-    else:  # staff – fallback to mock if no staff table
-        return _mock_leaderboard("staff")
+    else:  # staff – dùng admin KPI data
+        sql = f"""
+            WITH curr AS (
+                SELECT u.user_id, u.full_name AS name,
+                       COALESCE(SUM(o.total_amount), 0) AS value,
+                       COUNT(DISTINCT o.order_id) AS orders
+                FROM public.users u
+                LEFT JOIN public.orders o
+                    ON o.created_by_user_id = u.user_id
+                    AND o.status NOT IN ('CANCELLED','RETURNED')
+                    AND o.order_date >= NOW() - INTERVAL '{int(days)} days'
+                    {cmp_filter.replace('o.company_id', 'o.company_id')}
+                WHERE u.is_active = TRUE
+                  AND u.role NOT IN ('SuperAdmin','Owner')
+                  {'AND u.company_id = %(cid)s::uuid' if company_id else ''}
+                GROUP BY u.user_id, u.full_name
+            ),
+            prev AS (
+                SELECT o.created_by_user_id AS user_id,
+                       SUM(o.total_amount) AS prev_value
+                FROM public.orders o
+                WHERE o.status NOT IN ('CANCELLED','RETURNED')
+                  {prev_filter}
+                GROUP BY o.created_by_user_id
+            )
+            SELECT c.name, c.value, c.orders,
+                   COALESCE(p.prev_value, 0) AS prev_value
+            FROM curr c
+            LEFT JOIN prev p ON p.user_id = c.user_id
+            WHERE c.value > 0
+            ORDER BY c.value DESC
+            LIMIT {int(top_n)}
+        """
 
     df = query_df(sql, params or None)
 
@@ -189,7 +260,7 @@ def get_leaderboard(
     entries: List[RankEntry] = []
     for i, (_, row) in enumerate(df.iterrows(), start=1):
         val      = float(row["value"])
-        prev_val = float(row.get("prev_value", 0) or 0)
+        prev_val = float(row["prev_value"]) if "prev_value" in row and row["prev_value"] else 0.0
         chg_pct  = round((val - prev_val) / prev_val * 100, 1) if prev_val > 0 else 0.0
         trend    = "UP" if chg_pct > 2 else ("DOWN" if chg_pct < -2 else "STABLE")
         entries.append(RankEntry(
