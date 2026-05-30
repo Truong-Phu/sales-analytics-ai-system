@@ -55,44 +55,17 @@ def _fmt_vnd(val: float) -> str:
     return f"{val:,.0f} VNĐ"
 
 
-def _mock_leaderboard(category: str) -> LeaderboardResponse:
-    if category == "product":
-        entries = [
-            RankEntry(rank=1, name="Áo thun nam cổ tròn",   value=45_200_000, value_label="45.2 triệu VNĐ", orders=312, badge="🥇", trend="UP",     change_pct=12.3),
-            RankEntry(rank=2, name="Váy hoa mùa hè",         value=38_700_000, value_label="38.7 triệu VNĐ", orders=265, badge="🥈", trend="UP",     change_pct=8.1),
-            RankEntry(rank=3, name="Giày sneaker trắng",      value=31_500_000, value_label="31.5 triệu VNĐ", orders=198, badge="🥉", trend="STABLE", change_pct=0.5),
-            RankEntry(rank=4, name="Quần short nam",          value=25_000_000, value_label="25.0 triệu VNĐ", orders=175, badge="",   trend="DOWN",   change_pct=-5.2),
-            RankEntry(rank=5, name="Balo thời trang",         value=18_300_000, value_label="18.3 triệu VNĐ", orders=92,  badge="",   trend="UP",     change_pct=22.0),
-        ]
-    elif category == "customer":
-        entries = [
-            RankEntry(rank=1, name="Nguyễn Thị Lan",   value=8_500_000, value_label="8.5 triệu VNĐ",  orders=23, badge="🥇", trend="UP",     change_pct=15.0),
-            RankEntry(rank=2, name="Trần Văn Minh",    value=6_200_000, value_label="6.2 triệu VNĐ",  orders=18, badge="🥈", trend="STABLE", change_pct=2.1),
-            RankEntry(rank=3, name="Lê Thị Hoa",       value=5_800_000, value_label="5.8 triệu VNĐ",  orders=15, badge="🥉", trend="UP",     change_pct=9.3),
-            RankEntry(rank=4, name="Phạm Quang Vinh",  value=4_100_000, value_label="4.1 triệu VNĐ",  orders=12, badge="",   trend="DOWN",   change_pct=-3.0),
-            RankEntry(rank=5, name="Hoàng Thị Mai",    value=3_700_000, value_label="3.7 triệu VNĐ",  orders=10, badge="",   trend="UP",     change_pct=5.5),
-        ]
-    elif category == "channel":
-        entries = [
-            RankEntry(rank=1, name="Shopee",            value=45_000_000, value_label="45.0 triệu VNĐ", orders=312, badge="🥇", trend="UP",     change_pct=10.2),
-            RankEntry(rank=2, name="TikTok Shop",       value=28_000_000, value_label="28.0 triệu VNĐ", orders=195, badge="🥈", trend="UP",     change_pct=35.8),
-            RankEntry(rank=3, name="Lazada",            value=15_000_000, value_label="15.0 triệu VNĐ", orders=98,  badge="🥉", trend="STABLE", change_pct=1.2),
-            RankEntry(rank=4, name="Facebook",          value=7_000_000,  value_label="7.0 triệu VNĐ",  orders=45,  badge="",   trend="DOWN",   change_pct=-8.5),
-            RankEntry(rank=5, name="Website trực tiếp", value=5_000_000,  value_label="5.0 triệu VNĐ",  orders=30,  badge="",   trend="UP",     change_pct=4.0),
-        ]
-    else:  # staff
-        entries = [
-            RankEntry(rank=1, name="Nguyễn Văn An",   value=52_000_000, value_label="52.0 triệu VNĐ", orders=145, badge="🥇", trend="UP",     change_pct=18.5),
-            RankEntry(rank=2, name="Trần Thị Bình",   value=43_500_000, value_label="43.5 triệu VNĐ", orders=128, badge="🥈", trend="STABLE", change_pct=3.2),
-            RankEntry(rank=3, name="Lê Minh Châu",    value=38_200_000, value_label="38.2 triệu VNĐ", orders=112, badge="🥉", trend="UP",     change_pct=7.1),
-        ]
+def _empty_leaderboard(category: str, days: int) -> LeaderboardResponse:
+    """Trả về response rỗng khi không có đủ dữ liệu — không bao giờ trả mock."""
+    period_map = {7: "7 ngày", 14: "14 ngày", 30: "30 ngày", 90: "90 ngày", 365: "1 năm"}
+    period_label = period_map.get(days, f"{days} ngày") + " gần nhất"
     return LeaderboardResponse(
         category=category,
-        period_label="30 ngày gần nhất",
-        analysis_days=30,
-        entries=entries,
-        total_revenue=sum(e.value for e in entries),
-        is_mock=True,
+        period_label=period_label,
+        analysis_days=days,
+        entries=[],
+        total_revenue=0.0,
+        is_mock=False,
     )
 
 
@@ -254,7 +227,7 @@ def get_leaderboard(
     df = query_df(sql, params or None)
 
     if df.empty:
-        return _mock_leaderboard(category)
+        return _empty_leaderboard(category, days)
 
     total_rev = float(df["value"].sum())
     entries: List[RankEntry] = []

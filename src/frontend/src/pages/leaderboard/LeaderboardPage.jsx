@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react'
-import MockToast from '../../components/ui/MockToast'
 import AiEmptyState from '../../components/ui/AiEmptyState'
 import { getLeaderboard } from '../../api/aiApi'
 
@@ -16,7 +15,6 @@ const TREND_COLOR = { UP: '#22C55E', DOWN: '#EF4444', STABLE: 'var(--text-tertia
 export default function LeaderboardPage() {
   const [data,     setData]     = useState(null)
   const [loading,  setLoading]  = useState(true)
-  const [isMock,   setIsMock]   = useState(false)
   const [category, setCategory] = useState('product')
   const [days,     setDays]     = useState(30)
 
@@ -25,7 +23,6 @@ export default function LeaderboardPage() {
     try {
       const res = await getLeaderboard({ category, days, top_n: 10 })
       setData(res)
-      setIsMock(res.is_mock ?? false)
     } catch {
       setData(null)
     } finally { setLoading(false) }
@@ -33,10 +30,13 @@ export default function LeaderboardPage() {
 
   useEffect(() => { load() }, [category, days])
 
+  const hasData = data && (data.entries ?? []).length > 0
+
   return (
     <div className="space-y-5">
-      <MockToast show={isMock} />
-      {!data && !loading && <AiEmptyState title="Chưa đủ dữ liệu bảng xếp hạng" />}
+      {!loading && !hasData && (
+        <AiEmptyState title="Chưa đủ dữ liệu bảng xếp hạng" />
+      )}
 
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -67,7 +67,7 @@ export default function LeaderboardPage() {
           <span className="w-6 h-6 border-2 rounded-full animate-spin"
             style={{ borderColor: 'var(--border)', borderTopColor: 'var(--primary-500)' }} />
         </div>
-      ) : (
+      ) : hasData ? (
         <div className="lcard overflow-hidden">
           {/* Sub-header */}
           <div className="px-5 py-3 flex items-center justify-between"
@@ -125,7 +125,7 @@ export default function LeaderboardPage() {
             ))}
           </div>
         </div>
-      )}
+      ) : null}
     </div>
   )
 }
