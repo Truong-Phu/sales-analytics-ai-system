@@ -14,6 +14,7 @@ import { SkeletonCard } from '../../components/ui/Skeleton'
 import MockToast from '../../components/ui/MockToast'
 import MockDataButton from '../../components/ui/MockDataButton'
 import AiEmptyState from '../../components/ui/AiEmptyState'
+import DevEmptyState from '../../components/ui/DevEmptyState'
 import { getDashboard, getTodayVsYesterday, getDrillDownOrders, getDrillDownCustomers,
          getFbAds,
          getOrderHeatmap, getOrderFunnel, getMonthlyByChannel,
@@ -938,7 +939,7 @@ function TabSales({ data, compareMode, prevData, from, to }) {
             </table>
           </div>
         ) : (
-          <AiEmptyState title="Chưa có dữ liệu top sản phẩm theo kênh" />
+          <DevEmptyState title="Chưa có dữ liệu top sản phẩm theo kênh" desc="Hệ thống chưa có API tổng hợp top sản phẩm phân tách theo từng kênh bán." />
         )}
       </div>
 
@@ -1056,7 +1057,7 @@ function TabMultiChannel({ data, wd = {}, wl = {} }) {
               </RadarChart>
             </ResponsiveContainer>
           ) : (
-            <AiEmptyState title="Chưa có dữ liệu so sánh đa chiều kênh bán" />
+            <DevEmptyState title="Chưa có dữ liệu radar chart" desc="Hệ thống chưa có API tổng hợp chỉ số đa chiều (Chi phí QC, Tương tác, Chuyển đổi) theo kênh." />
           )}
         </div>
 
@@ -1087,7 +1088,7 @@ function TabMultiChannel({ data, wd = {}, wl = {} }) {
             })}
           </div>
           ) : (
-            <AiEmptyState title="Chưa có dữ liệu xếp hạng kênh" />
+            <DevEmptyState title="Chưa có dữ liệu xếp hạng kênh" desc="Xếp hạng theo chỉ số đa chiều sẽ khả dụng khi có dữ liệu Radar chart." />
           )}
         </div>
       </div>
@@ -1720,7 +1721,7 @@ function TabMarketing({ data, fbAdsData, wd = {}, wl = {} }) {
       ) : (
         <div className="lcard p-5">
           <SectionTitle>Chi phí theo loại quảng cáo</SectionTitle>
-          <AiEmptyState title="Chưa có dữ liệu chi phí quảng cáo theo loại" />
+          <DevEmptyState title="Chưa có dữ liệu chi phí quảng cáo theo loại" desc="Hệ thống chưa thu thập dữ liệu phân loại chi phí QC (Sponsored, Banner, Video...) từ các nền tảng." />
         </div>
       )}
 
