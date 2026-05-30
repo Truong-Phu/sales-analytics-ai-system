@@ -1,22 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import MockToast from '../../components/ui/MockToast'
-import MockDataButton from '../../components/ui/MockDataButton'
 import AiEmptyState from '../../components/ui/AiEmptyState'
 import { getChurnPrediction } from '../../api/aiApi'
-
-const MOCK_CHURN = {
-  total_customers: 182, high_risk_count: 23, medium_risk_count: 47, low_risk_count: 112,
-  churn_rate_pct: 12.6, churn_threshold_days: 60, model: 'RandomForestClassifier',
-  note: 'Phân tích 182 khách hàng.',
-  customers: [
-    { customer_id:'1', full_name:'Nguyễn Thị Lan',  email:'lan@example.com', phone:'0901234567', recency_days:72, frequency:3,  monetary:850000,  churn_prob:85.2, risk:'HIGH',   action:'Gửi voucher ưu đãi 15% để kéo lại đơn hàng ngay' },
-    { customer_id:'2', full_name:'Trần Văn Minh',   email:'minh@example.com',phone:'0912345678', recency_days:65, frequency:5,  monetary:1200000, churn_prob:76.8, risk:'HIGH',   action:'Gửi voucher ưu đãi 15% để kéo lại đơn hàng ngay' },
-    { customer_id:'3', full_name:'Lê Thị Hoa',      email:'hoa@example.com', phone:'0923456789', recency_days:45, frequency:8,  monetary:2100000, churn_prob:48.3, risk:'MEDIUM', action:'Gửi email nhắc nhở + sản phẩm gợi ý cá nhân hoá' },
-    { customer_id:'4', full_name:'Phạm Quang Vinh', email:'vinh@example.com',phone:'0934567890', recency_days:20, frequency:12, monetary:3500000, churn_prob:12.1, risk:'LOW',    action:'Duy trì chăm sóc định kỳ, ưu tiên upsell' },
-    { customer_id:'5', full_name:'Hoàng Thị Mai',   email:'mai@example.com', phone:'0945678901', recency_days:80, frequency:2,  monetary:420000,  churn_prob:91.4, risk:'HIGH',   action:'Gửi voucher ưu đãi 15% để kéo lại đơn hàng ngay' },
-  ],
-}
 
 const RISK_COLOR = {
   HIGH:   { bg: 'rgba(239,68,68,0.10)',  border: 'rgba(239,68,68,0.30)',  text: '#EF4444', dot: '#EF4444'  },
@@ -50,27 +35,20 @@ function ProbBar({ pct }) {
 
 export default function ChurnPage() {
   const { t } = useTranslation()
-  const [data,        setData]        = useState(null)
-  const [loading,     setLoading]     = useState(true)
+  const [data,    setData]    = useState(null)
+  const [loading, setLoading] = useState(true)
   const fetchedRef = useRef(false)
-  const [isMock,      setIsMock]      = useState(false)
-  const [showMockBtn, setShowMockBtn] = useState(false)
-  const [filter,      setFilter]      = useState('ALL')
+  const [filter,  setFilter]  = useState('ALL')
 
   const load = async () => {
     setLoading(true)
-    setShowMockBtn(false)
     try {
       const res = await getChurnPrediction({ top_n: 100 })
       setData(res)
-      setIsMock(false)
     } catch {
       setData(null)
-      setShowMockBtn(true)
     } finally { setLoading(false) }
   }
-
-  const loadMock = () => { setData(MOCK_CHURN); setIsMock(true); setShowMockBtn(false) }
 
   useEffect(() => { if (fetchedRef.current) return; fetchedRef.current = true; load() }, [])
 
@@ -78,8 +56,6 @@ export default function ChurnPage() {
 
   return (
     <div className="space-y-5">
-      <MockToast show={isMock} />
-      <MockDataButton show={showMockBtn} onClick={loadMock} />
       {!data && !loading && <AiEmptyState title="Chưa đủ dữ liệu dự báo churn" />}
 
       {/* Header */}

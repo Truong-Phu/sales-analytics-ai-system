@@ -1,22 +1,7 @@
 ﻿import { useState, useEffect, useRef } from 'react'
 import MockToast from '../../components/ui/MockToast'
-import MockDataButton from '../../components/ui/MockDataButton'
 import AiEmptyState from '../../components/ui/AiEmptyState'
 import { getGeoDistribution } from '../../api/aiApi'
-
-const MOCK_GEO = {
-  total_customers:11260, total_provinces:8, top_province:'TP. Hồ Chí Minh', analysis_days:30, is_mock:true,
-  points:[
-    {province:'TP. Hồ Chí Minh',lat:10.7769,lng:106.7009,customer_count:4500,revenue:285000000,orders:1820,intensity:1.0 },
-    {province:'Hà Nội',          lat:21.0285,lng:105.8542,customer_count:3200,revenue:198000000,orders:1340,intensity:0.71},
-    {province:'Đà Nẵng',         lat:16.0471,lng:108.2062,customer_count:890, revenue:52000000, orders:423, intensity:0.20},
-    {province:'Bình Dương',      lat:11.1684,lng:106.6515,customer_count:780, revenue:41000000, orders:310, intensity:0.17},
-    {province:'Đồng Nai',        lat:11.0686,lng:107.1676,customer_count:640, revenue:33000000, orders:265, intensity:0.14},
-    {province:'Hải Phòng',       lat:20.8449,lng:106.6881,customer_count:520, revenue:28000000, orders:198, intensity:0.12},
-    {province:'Cần Thơ',         lat:10.0341,lng:105.7878,customer_count:410, revenue:22000000, orders:168, intensity:0.09},
-    {province:'Khánh Hòa',       lat:12.2388,lng:109.1967,customer_count:320, revenue:17000000, orders:124, intensity:0.07},
-  ],
-}
 
 const VN_COORDS = {
   'Hà Nội':           [21.0285, 105.8542],
@@ -49,25 +34,19 @@ export default function GeoPage() {
   const [metric,   setMetric]   = useState('customers')
   const [days,     setDays]     = useState(30)
   const [selected, setSelected] = useState(null)
-  const mapRef    = useRef(null)
+  const mapRef     = useRef(null)
   const leafletRef = useRef(null)
-
-  const [showMockBtn, setShowMockBtn] = useState(false)
 
   const load = async () => {
     setLoading(true)
-    setShowMockBtn(false)
     try {
       const res = await getGeoDistribution({ days, metric })
       setData(res)
       setIsMock(res.is_mock ?? false)
     } catch {
       setData(null)
-      setShowMockBtn(true)
     } finally { setLoading(false) }
   }
-
-  const loadMock = () => { setData(MOCK_GEO); setIsMock(true); setShowMockBtn(false) }
 
   useEffect(() => { load() }, [days, metric])
 
@@ -131,7 +110,6 @@ export default function GeoPage() {
   return (
     <div className="space-y-5">
       <MockToast show={isMock} />
-      <MockDataButton show={showMockBtn} onClick={loadMock} />
       {!data && !loading && <AiEmptyState title="Chưa đủ dữ liệu phân tích phân bổ địa lý" />}
 
       {/* Header */}

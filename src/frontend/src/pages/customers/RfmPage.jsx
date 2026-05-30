@@ -6,8 +6,6 @@ import {
   PieChart, Pie, Cell,
 } from 'recharts'
 import { SkeletonCard } from '../../components/ui/Skeleton'
-import MockToast from '../../components/ui/MockToast'
-import MockDataButton from '../../components/ui/MockDataButton'
 import AiEmptyState from '../../components/ui/AiEmptyState'
 import { getRfmSegments } from '../../api/aiApi'
 
@@ -69,41 +67,21 @@ function SegmentCard({ name, data }) {
   )
 }
 
-const MOCK_RFM = {
-  computed_at: new Date().toISOString(),
-  total_customers: 165,
-  segment_summary: {
-    VIP:       { count: 15, pct_customers: 9.1,  total_revenue: 48445000, avg_monetary: 3229667, avg_frequency: 5.1, avg_recency: 423 },
-    Loyal:     { count: 16, pct_customers: 9.7,  total_revenue: 40905000, avg_monetary: 2556562, avg_frequency: 4.4, avg_recency: 441 },
-    Returning: { count: 18, pct_customers: 10.9, total_revenue: 33930000, avg_monetary: 1885000, avg_frequency: 3.0, avg_recency: 436 },
-    New:       { count: 29, pct_customers: 17.6, total_revenue: 30050000, avg_monetary: 1036207, avg_frequency: 1.6, avg_recency: 426 },
-    'At Risk': { count: 19, pct_customers: 11.5, total_revenue: 39325000, avg_monetary: 2069737, avg_frequency: 3.6, avg_recency: 519 },
-    Lost:      { count: 27, pct_customers: 16.4, total_revenue: 22400000, avg_monetary:  829630, avg_frequency: 1.3, avg_recency: 571 },
-    Other:     { count: 41, pct_customers: 24.8, total_revenue: 32095000, avg_monetary:  782805, avg_frequency: 1.4, avg_recency: 486 },
-  },
-  customers: [],
-}
-
 export default function RfmPage() {
   const { t } = useTranslation()
-  const [data,        setData]        = useState(null)
-  const [loading,     setLoading]     = useState(true)
-  const [isMock,      setIsMock]      = useState(false)
-  const [showMockBtn, setShowMockBtn] = useState(false)
-  const [activeTab,   setActiveTab]   = useState('overview')
-  const [searchKH,    setSearchKH]    = useState('')
-  const [filterSeg,   setFilterSeg]   = useState('all')
+  const [data,      setData]      = useState(null)
+  const [loading,   setLoading]   = useState(true)
+  const [activeTab, setActiveTab] = useState('overview')
+  const [searchKH,  setSearchKH]  = useState('')
+  const [filterSeg, setFilterSeg] = useState('all')
 
   useEffect(() => {
     setLoading(true)
-    setShowMockBtn(false)
     getRfmSegments()
-      .then(d => { setData(d); setIsMock(false) })
-      .catch(() => { setData(null); setShowMockBtn(true) })
+      .then(d => { setData(d) })
+      .catch(() => { setData(null) })
       .finally(() => setLoading(false))
   }, [])
-
-  const loadMock = () => { setData(MOCK_RFM); setIsMock(true); setShowMockBtn(false) }
 
   if (loading) return (
     <div className="space-y-4">
@@ -113,7 +91,6 @@ export default function RfmPage() {
 
   if (!data) return (
     <div className="space-y-4">
-      <MockDataButton show={showMockBtn} onClick={loadMock} />
       <AiEmptyState title="Chưa đủ dữ liệu phân tích RFM" />
     </div>
   )
@@ -154,8 +131,6 @@ export default function RfmPage() {
 
   return (
     <div className="space-y-4">
-      <MockToast show={isMock} />
-      <MockDataButton show={showMockBtn} onClick={loadMock} />
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
@@ -167,12 +142,6 @@ export default function RfmPage() {
             {data?.computed_at && ` · Cập nhật: ${new Date(data.computed_at).toLocaleDateString('vi-VN')}`}
           </p>
         </div>
-        {isMock && (
-          <div className="text-xs px-3 py-1.5 rounded-full font-medium"
-               style={{ background: 'rgba(245,158,11,0.1)', color: '#D97706', border: '1px solid rgba(245,158,11,0.3)' }}>
-            ⚠ Dữ liệu mẫu — chạy notebook 04_RFM_Analysis.ipynb để cập nhật
-          </div>
-        )}
       </div>
 
       {/* KPI tổng quan */}

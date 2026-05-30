@@ -1,46 +1,27 @@
 import { useState, useEffect } from 'react'
 import MockToast from '../../components/ui/MockToast'
-import MockDataButton from '../../components/ui/MockDataButton'
 import AiEmptyState from '../../components/ui/AiEmptyState'
 import { getChannelAttribution } from '../../api/aiApi'
-
-const MOCK_ATTRIBUTION = {
-  model:'last_touch', total_revenue:100_000_000, total_orders:680, analysis_days:30,
-  top_channel:'Shopee', worst_roi_channel:'Facebook', is_mock:true,
-  insight:'Shopee đóng góp 45% doanh thu với ROI cao nhất. Facebook có ROI thấp nhất.',
-  channels:[
-    { channel:'Shopee',            revenue:45_000_000, orders:312, attribution_pct:45.0, avg_order_value:144231, ad_spend:3_500_000, roi_pct:1185.7, cpa:11218,  recommendation:'Kênh hiệu quả nhất – tăng ngân sách 20%' },
-    { channel:'TikTok Shop',       revenue:28_000_000, orders:195, attribution_pct:28.0, avg_order_value:143590, ad_spend:5_200_000, roi_pct:438.5,  cpa:26667,  recommendation:'ROI tốt nhưng CPA cao – tối ưu creative' },
-    { channel:'Lazada',            revenue:15_000_000, orders:98,  attribution_pct:15.0, avg_order_value:153061, ad_spend:2_100_000, roi_pct:614.3,  cpa:21429,  recommendation:'Ổn định – duy trì' },
-    { channel:'Facebook',          revenue:7_000_000,  orders:45,  attribution_pct:7.0,  avg_order_value:155556, ad_spend:4_800_000, roi_pct:45.8,   cpa:106667, recommendation:'ROI thấp – xem xét lại chiến lược' },
-    { channel:'Website trực tiếp', revenue:5_000_000,  orders:30,  attribution_pct:5.0,  avg_order_value:166667, ad_spend:0,         roi_pct:0,      cpa:0,      recommendation:'AOV cao – đầu tư SEO' },
-  ],
-}
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 
 const COLORS = ['#6366F1','#22C55E','#F59E0B','#EF4444','#8B5CF6','#06B6D4']
 
 export default function AttributionPage() {
-  const [data,        setData]        = useState(null)
-  const [loading,     setLoading]     = useState(true)
-  const [isMock,      setIsMock]      = useState(false)
-  const [showMockBtn, setShowMockBtn] = useState(false)
-  const [days,        setDays]        = useState(30)
+  const [data,   setData]   = useState(null)
+  const [loading,setLoading]= useState(true)
+  const [isMock, setIsMock] = useState(false)
+  const [days,   setDays]   = useState(30)
 
   const load = async () => {
     setLoading(true)
-    setShowMockBtn(false)
     try {
       const res = await getChannelAttribution({ days })
       setData(res)
       setIsMock(res.is_mock ?? false)
     } catch {
       setData(null)
-      setShowMockBtn(true)
     } finally { setLoading(false) }
   }
-
-  const loadMock = () => { setData(MOCK_ATTRIBUTION); setIsMock(true); setShowMockBtn(false) }
 
   useEffect(() => { load() }, [days])
 
@@ -51,7 +32,6 @@ export default function AttributionPage() {
   return (
     <div className="space-y-5">
       <MockToast show={isMock} />
-      <MockDataButton show={showMockBtn} onClick={loadMock} />
 
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">

@@ -7,29 +7,7 @@ import {
   getProfitOverview, getProfitByChannel, getProfitByProduct,
   getProfitByDate, getProfitOrders, getFeeConfigs, updateFeeConfig,
 } from '../../api/financeApi'
-import MockToast from '../../components/ui/MockToast'
-import MockDataButton from '../../components/ui/MockDataButton'
 import AiEmptyState from '../../components/ui/AiEmptyState'
-
-// ── Mock data dự phòng ────────────────────────────────────────────────────────
-const MOCK_OVERVIEW = {
-  revenue: 1265592450, cogs: 622890800, grossProfit: 642701650,
-  estimatedFees: 37967774, estimatedNetProfit: 604733876,
-  grossMargin: 50.8, estimatedNetMargin: 47.8,
-  missingCostOrders: 0, isEstimated: true,
-}
-const MOCK_CHANNELS = [
-  { channel: 'shopee',      revenue: 600000000, cogs: 295000000, grossProfit: 305000000, estimatedFees: 18000000, estimatedNetProfit: 287000000, grossMargin: 50.8, estimatedNetMargin: 47.8, orderCount: 1103 },
-  { channel: 'tiktok',      revenue: 380000000, cogs: 187000000, grossProfit: 193000000, estimatedFees: 10500000, estimatedNetProfit: 182500000, grossMargin: 50.8, estimatedNetMargin: 48.0, orderCount: 661  },
-  { channel: 'lazada',      revenue: 284000000, cogs: 140000000, grossProfit: 144000000, estimatedFees: 9400000,  estimatedNetProfit: 134600000, grossMargin: 50.7, estimatedNetMargin: 47.4, orderCount: 551  },
-  { channel: 'Bán tại quầy', revenue: 1600000,  cogs:  800000,  grossProfit:  800000,   estimatedFees: 0,        estimatedNetProfit:  800000,   grossMargin: 50.0, estimatedNetMargin: 50.0, orderCount: 7    },
-]
-const MOCK_CONFIGS = [
-  { feeConfigId: 1, channelName: 'SHOPEE',      platformFeeRate: 0.025, paymentFeeRate: 0.005, fixedFeePerOrder: 0, packagingCostPerOrder: 2000, shippingCostMode: 'USE_ORDER_SHIPPING_FEE', isEstimated: true,  note: 'Estimated for demo' },
-  { feeConfigId: 2, channelName: 'TIKTOK_SHOP', platformFeeRate: 0.020, paymentFeeRate: 0.005, fixedFeePerOrder: 0, packagingCostPerOrder: 2000, shippingCostMode: 'USE_ORDER_SHIPPING_FEE', isEstimated: true,  note: 'Estimated for demo' },
-  { feeConfigId: 3, channelName: 'LAZADA',      platformFeeRate: 0.030, paymentFeeRate: 0.005, fixedFeePerOrder: 0, packagingCostPerOrder: 2000, shippingCostMode: 'USE_ORDER_SHIPPING_FEE', isEstimated: true,  note: 'Estimated for demo' },
-  { feeConfigId: 4, channelName: 'OFFLINE',     platformFeeRate: 0.000, paymentFeeRate: 0.000, fixedFeePerOrder: 0, packagingCostPerOrder: 0,    shippingCostMode: 'ZERO',                   isEstimated: false, note: 'POS' },
-]
 
 function fmtM(v) {
   if (v == null) return '—'
@@ -157,20 +135,11 @@ export default function ProfitPage() {
   const [byDate,    setByDate]    = useState([])
   const [orders,    setOrders]    = useState({ items: [], totalCount: 0 })
   const [feeConfs,  setFeeConfs]  = useState([])
-  const [loading,   setLoading]   = useState(false)
-  const [useMock,      setUseMock]      = useState(false)
-  const [showMockBtn,  setShowMockBtn]  = useState(false)
-  const [page,         setPage]         = useState(1)
-
-  const loadMock = () => {
-    setOverview(MOCK_OVERVIEW); setChannels(MOCK_CHANNELS)
-    setProducts([]); setByDate([]); setOrders({ items: [], totalCount: 0 })
-    setFeeConfs(MOCK_CONFIGS); setUseMock(true); setShowMockBtn(false)
-  }
+  const [loading, setLoading] = useState(false)
+  const [page,    setPage]    = useState(1)
 
   const load = useCallback(async () => {
     setLoading(true)
-    setShowMockBtn(false)
     const p = { from, to }
     try {
       const [ov, ch, pr, dt, ord, fc] = await Promise.all([
@@ -183,11 +152,10 @@ export default function ProfitPage() {
       ])
       setOverview(ov); setChannels(ch); setProducts(pr)
       setByDate(dt); setOrders(ord); setFeeConfs(fc)
-      setUseMock(false)
     } catch {
       setOverview(null); setChannels([]); setProducts([])
       setByDate([]); setOrders({ items: [], totalCount: 0 })
-      setFeeConfs([]); setUseMock(false); setShowMockBtn(true)
+      setFeeConfs([])
     } finally {
       setLoading(false)
     }
@@ -208,8 +176,6 @@ export default function ProfitPage() {
 
   return (
     <div className="p-6 space-y-6">
-      <MockToast show={useMock} />
-      <MockDataButton show={showMockBtn} onClick={loadMock} />
       {!ov && !loading && <AiEmptyState title="Chưa có dữ liệu lợi nhuận" />}
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -234,7 +200,7 @@ export default function ProfitPage() {
       </div>
 
       {/* Cảnh báo estimated */}
-      {ov.isEstimated && (
+      {ov?.isEstimated && (
         <div className="bg-yellow-50 border border-yellow-300 rounded-lg px-4 py-3 text-sm text-yellow-800 flex gap-2">
           <span className="text-lg leading-none">⚠</span>
           <span>
@@ -245,13 +211,8 @@ export default function ProfitPage() {
         </div>
       )}
 
-      {useMock && (
-        <div className="bg-amber-100 border border-amber-400 rounded-lg px-4 py-2 text-sm text-amber-800">
-          Đang dùng dữ liệu mẫu — backend chưa kết nối.
-        </div>
-      )}
-
       {/* KPI Cards */}
+      {ov && (
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
         <KpiCard label="Doanh thu"           value={fmtM(ov.revenue)}            color="blue"   />
         <KpiCard label="Giá vốn (COGS)"      value={fmtM(ov.cogs)}               color="orange" />
@@ -261,6 +222,7 @@ export default function ProfitPage() {
         <KpiCard label="Biên lợi nhuận gộp"  value={fmtPct(ov.grossMargin)}       color="purple" />
         <KpiCard label="Biên LN ròng (ước)"  value={fmtPct(ov.estimatedNetMargin)} color="yellow" estimated />
       </div>
+      )}
 
       {/* Tabs */}
       <div className="border-b flex gap-6 text-sm font-medium">

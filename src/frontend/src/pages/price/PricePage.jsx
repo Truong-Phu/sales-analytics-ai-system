@@ -1,20 +1,7 @@
 import { useState, useEffect } from 'react'
 import MockToast from '../../components/ui/MockToast'
-import MockDataButton from '../../components/ui/MockDataButton'
 import AiEmptyState from '../../components/ui/AiEmptyState'
 import { getPriceIntelligence } from '../../api/aiApi'
-
-const MOCK_PRICE = {
-  is_mock: true, category_filter: null, analysis_date: new Date().toISOString().slice(0, 10),
-  products: [
-    { product_name: 'Áo thun nam cổ tròn', category:'Áo nam',    our_price:250000, market_avg:285000, market_min:220000, market_max:320000, gap_pct:-12.3, recommendation:'INCREASE', sources:['shopee_scrape'] },
-    { product_name: 'Quần jeans slim fit',  category:'Quần nam',  our_price:420000, market_avg:395000, market_min:350000, market_max:480000, gap_pct:6.3,   recommendation:'HOLD',     sources:['lazada_scrape'] },
-    { product_name: 'Váy hoa mùa hè',       category:'Váy nữ',   our_price:380000, market_avg:340000, market_min:290000, market_max:420000, gap_pct:11.8,  recommendation:'DECREASE', sources:['shopee_scrape','lazada_scrape'] },
-    { product_name: 'Áo sơ mi công sở nữ', category:'Áo nữ',    our_price:310000, market_avg:325000, market_min:280000, market_max:390000, gap_pct:-4.6,  recommendation:'HOLD',     sources:['tiktok_scrape'] },
-    { product_name: 'Áo khoác denim',       category:'Áo khoác', our_price:680000, market_avg:820000, market_min:650000, market_max:950000, gap_pct:-17.1, recommendation:'INCREASE', sources:['shopee_scrape'] },
-    { product_name: 'Quần short thể thao',  category:'Quần nam',  our_price:195000, market_avg:180000, market_min:150000, market_max:230000, gap_pct:8.3,   recommendation:'HOLD',     sources:['lazada_scrape'] },
-  ],
-}
 
 function RecoBadge({ rec }) {
   const map = {
@@ -54,27 +41,22 @@ const fmt = v => v >= 1e6
   : new Intl.NumberFormat('vi-VN').format(Math.round(v))
 
 export default function PricePage() {
-  const [data,        setData]        = useState(null)
-  const [loading,     setLoading]     = useState(true)
-  const [isMock,      setIsMock]      = useState(false)
-  const [showMockBtn, setShowMockBtn] = useState(false)
-  const [days,        setDays]        = useState(30)
-  const [filter,      setFilter]      = useState('ALL')
+  const [data,   setData]   = useState(null)
+  const [loading,setLoading]= useState(true)
+  const [isMock, setIsMock] = useState(false)
+  const [days,   setDays]   = useState(30)
+  const [filter, setFilter] = useState('ALL')
 
   const load = async () => {
     setLoading(true)
-    setShowMockBtn(false)
     try {
       const res = await getPriceIntelligence({ days })
       setData(res)
       setIsMock(res.is_mock ?? false)
     } catch {
       setData(null)
-      setShowMockBtn(true)
     } finally { setLoading(false) }
   }
-
-  const loadMock = () => { setData(MOCK_PRICE); setIsMock(true); setShowMockBtn(false) }
 
   useEffect(() => { load() }, [days])
 
@@ -86,7 +68,6 @@ export default function PricePage() {
   return (
     <div className="space-y-5">
       <MockToast show={isMock} />
-      <MockDataButton show={showMockBtn} onClick={loadMock} />
       {!data && !loading && <AiEmptyState title="Chưa đủ dữ liệu phân tích giá thị trường" />}
 
       {/* Header */}

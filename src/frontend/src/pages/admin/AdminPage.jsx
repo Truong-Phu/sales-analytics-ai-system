@@ -1,11 +1,9 @@
 ﻿import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import MockToast from '../../components/ui/MockToast'
 import {
   getUsers, deactivate, activate, getAuditLogs,
   createUser, updateUser, deleteUser,
 } from '../../api/adminApi'
-import { MOCK_USERS } from '../../mockData/admin'
 import { useAuth } from '../../hooks/useAuth'
 import api from '../../api/axios'
 
@@ -472,7 +470,6 @@ export default function AdminPage() {
   const { user: me } = useAuth()
   const [users,   setUsers]   = useState([])
   const [loading, setLoading] = useState(true)
-  const [isMock,  setIsMock]  = useState(false)
   const [tab,     setTab]     = useState('all')
   const [acting,  setActing]  = useState({})
 
@@ -490,9 +487,9 @@ export default function AdminPage() {
   const [filterTo,     setFilterTo]     = useState('')
 
   const fetchUsers = async () => {
-    setLoading(true); setIsMock(false)
+    setLoading(true)
     try   { setUsers(await getUsers()) }
-    catch { setUsers(MOCK_USERS); setIsMock(true) }
+    catch { setUsers([]) }
     finally { setLoading(false) }
   }
 
@@ -546,7 +543,6 @@ export default function AdminPage() {
 
   return (
     <div className="space-y-4">
-      <MockToast show={isMock} />
       {showCreate && <CreateUserModal onClose={() => setShowCreate(false)} onCreated={fetchUsers} />}
       {editUser   && <EditUserModal   user={editUser} onClose={() => setEditUser(null)} onSaved={fetchUsers} />}
 

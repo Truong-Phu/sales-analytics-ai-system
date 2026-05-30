@@ -9,54 +9,9 @@ import {
   getSupplierPerformanceDashboard,
   getInventoryRecommendations,
 } from '../../api/inventoryApi'
-import MockToast from '../../components/ui/MockToast'
-import MockDataButton from '../../components/ui/MockDataButton'
 import AiEmptyState from '../../components/ui/AiEmptyState'
 
 Chart.register(...registerables)
-
-// ── Mock data fallback (khi backend không khả dụng) ───────────────────────────
-const MOCK_OVERVIEW = {
-  totalProducts: 48, totalStockQuantity: 1240, lowStockCount: 7, outOfStockCount: 2,
-  stockInToday: 85, stockOutToday: 43, inventoryValue: 185600000,
-  pendingPurchaseOrders: 3, approvedPurchaseOrders: 1, partiallyReceivedPurchaseOrders: 2,
-}
-const MOCK_MOVEMENT = Array.from({ length: 14 }, (_, i) => {
-  const d = new Date(); d.setDate(d.getDate() - (13 - i))
-  return { date: `${d.getDate()}/${d.getMonth() + 1}`, stockIn: Math.floor(Math.random() * 60 + 10), stockOut: Math.floor(Math.random() * 40 + 5) }
-})
-const MOCK_LOW_STOCK = [
-  { productId: 1, productName: 'Áo thun nam basic',  sku: 'ATN-001', stockQuantity: 3,  avgDailySales: 2.5, estimatedDaysLeft: 1, recommendedReorderQuantity: 50 },
-  { productId: 2, productName: 'Quần jean slim fit',  sku: 'QJ-002',  stockQuantity: 8,  avgDailySales: 1.8, estimatedDaysLeft: 4, recommendedReorderQuantity: 30 },
-  { productId: 3, productName: 'Giày sneaker trắng',  sku: 'GS-007',  stockQuantity: 12, avgDailySales: 3.1, estimatedDaysLeft: 3, recommendedReorderQuantity: 40 },
-  { productId: 4, productName: 'Túi xách nữ da PU',   sku: 'TX-010',  stockQuantity: 0,  avgDailySales: 1.2, estimatedDaysLeft: 0, recommendedReorderQuantity: 20 },
-]
-const MOCK_VELOCITY = {
-  topFastMovingProducts: [
-    { productId: 1, productName: 'Áo thun nam basic', totalSold: 320 },
-    { productId: 3, productName: 'Giày sneaker trắng', totalSold: 215 },
-    { productId: 5, productName: 'Mũ lưỡi trai', totalSold: 180 },
-  ],
-  slowMovingProducts: [
-    { productId: 10, productName: 'Áo khoác dạ cao cấp', totalSold: 12 },
-    { productId: 11, productName: 'Đầm dự tiệc sequin', totalSold: 8 },
-  ],
-  deadStockProducts: [
-    { productId: 20, productName: 'Balo da vintage', stockQuantity: 24 },
-  ],
-}
-const MOCK_SUPPLIERS_PERF = [
-  { supplierId: 1, supplierName: 'Cty TNHH Nguyên Thành', totalPurchaseOrders: 12, totalReceivedQuantity: 480, totalReceivedAmount: 72000000, fulfillmentRate: 0.95, lastReceiptDate: new Date(Date.now() - 5 * 86400000).toISOString() },
-  { supplierId: 2, supplierName: 'Cty CP Dệt May Miền Nam', totalPurchaseOrders: 8,  totalReceivedQuantity: 290, totalReceivedAmount: 43500000, fulfillmentRate: 0.87, lastReceiptDate: new Date(Date.now() - 12 * 86400000).toISOString() },
-]
-const MOCK_RECS = {
-  count: 3,
-  items: [
-    { productId: 1, productName: 'Áo thun nam basic', sku: 'ATN-001', riskLevel: 'CRITICAL', reason: 'Tồn kho còn 3 đơn vị, bán 2-3 sản phẩm/ngày', recommendedAction: 'Đặt hàng ngay ít nhất 50 sản phẩm', lastSupplier: 'Cty TNHH Nguyên Thành', currentStock: 3, avgDailySales: 2.5, estimatedDaysLeft: 1, recommendedReorderQuantity: 50 },
-    { productId: 4, productName: 'Túi xách nữ da PU',  sku: 'TX-010',  riskLevel: 'CRITICAL', reason: 'Đã hết hàng', recommendedAction: 'Liên hệ nhà cung cấp đặt hàng gấp', lastSupplier: 'Cty CP Dệt May Miền Nam', currentStock: 0, avgDailySales: 1.2, estimatedDaysLeft: 0, recommendedReorderQuantity: 20 },
-    { productId: 2, productName: 'Quần jean slim fit',  sku: 'QJ-002',  riskLevel: 'HIGH',     reason: 'Dự kiến hết hàng trong 4 ngày', recommendedAction: 'Cân nhắc đặt thêm 30 sản phẩm', lastSupplier: 'Cty TNHH Nguyên Thành', currentStock: 8, avgDailySales: 1.8, estimatedDaysLeft: 4, recommendedReorderQuantity: 30 },
-  ],
-}
 
 const RISK_CFG = {
   CRITICAL: { color: '#EF4444', bg: 'rgba(239,68,68,0.08)', border: 'rgba(239,68,68,0.25)', label: 'Khẩn cấp' },
@@ -161,14 +116,11 @@ export default function InventoryDashboardPage() {
   const [errors,      setErrors]      = useState({})
   const [loadingMain, setLoadingMain] = useState(true)
   const [movDays,     setMovDays]     = useState(30)
-  const [isMock,      setIsMock]      = useState(false)
-  const [showMockBtn, setShowMockBtn] = useState(false)
 
   const setErr = (key) => setErrors(e => ({ ...e, [key]: true }))
 
   useEffect(() => {
     setLoadingMain(true)
-    setShowMockBtn(false)
     Promise.allSettled([
       getInventoryOverview(),
       getLowStock({ threshold: 20, pageSize: 10 }),
@@ -176,32 +128,20 @@ export default function InventoryDashboardPage() {
       getSupplierPerformanceDashboard(),
       getInventoryRecommendations({ targetDays: 30, topN: 10 }),
     ]).then(([ov, ls, vel, sup, rec]) => {
-      const allFailed = [ov, ls, vel, sup, rec].every(r => r.status === 'rejected')
-      if (allFailed) {
-        setShowMockBtn(true)  // hiện nút, không auto-load mock
-      } else {
-        if (ov.status  === 'fulfilled') setOverview(ov.value);   else setErr('overview')
-        if (ls.status  === 'fulfilled') setLowStock(ls.value);   else setErr('lowStock')
-        if (vel.status === 'fulfilled') setVelocity(vel.value);  else setErr('velocity')
-        if (sup.status === 'fulfilled') setSuppliers(sup.value); else setErr('suppliers')
-        if (rec.status === 'fulfilled') setRecs(rec.value);      else setErr('recs')
-      }
+      if (ov.status  === 'fulfilled') setOverview(ov.value);   else setErr('overview')
+      if (ls.status  === 'fulfilled') setLowStock(ls.value);   else setErr('lowStock')
+      if (vel.status === 'fulfilled') setVelocity(vel.value);  else setErr('velocity')
+      if (sup.status === 'fulfilled') setSuppliers(sup.value); else setErr('suppliers')
+      if (rec.status === 'fulfilled') setRecs(rec.value);      else setErr('recs')
       setLoadingMain(false)
     })
   }, [])
 
-  const loadMock = () => {
-    setOverview(MOCK_OVERVIEW); setLowStock(MOCK_LOW_STOCK)
-    setVelocity(MOCK_VELOCITY); setSuppliers(MOCK_SUPPLIERS_PERF)
-    setRecs(MOCK_RECS); setMovement(MOCK_MOVEMENT)
-    setIsMock(true); setShowMockBtn(false)
-  }
-
   useEffect(() => {
     getStockMovement({ days: movDays })
       .then(setMovement)
-      .catch(() => { if (!isMock) setErr('movement') })
-  }, [movDays, isMock])
+      .catch(() => setErr('movement'))
+  }, [movDays])
 
   const fmt = (n) => n == null ? '—' : n.toLocaleString('vi-VN')
   const fmtCur = (n) => n == null ? '—' : `${(+n).toLocaleString('vi-VN')}₫`
@@ -209,8 +149,6 @@ export default function InventoryDashboardPage() {
 
   return (
     <div className="space-y-4">
-      <MockToast show={isMock} />
-      <MockDataButton show={showMockBtn} onClick={loadMock} />
       {!overview && !loadingMain && <AiEmptyState title="Không kết nối được dữ liệu tồn kho" />}
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">

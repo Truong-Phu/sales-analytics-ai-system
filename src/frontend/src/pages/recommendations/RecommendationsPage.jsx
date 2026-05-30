@@ -1,10 +1,7 @@
 ﻿import { useState, useEffect, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import MockToast from '../../components/ui/MockToast'
-import MockDataButton from '../../components/ui/MockDataButton'
 import AiEmptyState from '../../components/ui/AiEmptyState'
 import { getRecommendations } from '../../api/aiApi'
-import { MOCK_RECOMMENDATIONS } from '../../mockData/recommendations'
 import api from '../../api/axios'
 
 // ── Cấu hình 3 tab nguồn dữ liệu ─────────────────────────────────────────────
@@ -384,8 +381,6 @@ export default function RecommendationsPage() {
   // Auto-recommendations (danh sách bên dưới)
   const [autoData,    setAutoData]    = useState(null)
   const [autoLoading, setAutoLoading] = useState(true)
-  const [isMock,      setIsMock]      = useState(false)
-  const [showMockBtn, setShowMockBtn] = useState(false)
   const [filter,      setFilter]      = useState('all')
 
   const [showScrollTop, setShowScrollTop] = useState(false)
@@ -398,17 +393,12 @@ export default function RecommendationsPage() {
 
   const scrollToTop = () => window.scrollTo({ top: 0, behavior: 'smooth' })
 
-  const loadMock = () => { setAutoData(MOCK_RECOMMENDATIONS); setIsMock(true); setShowMockBtn(false) }
-
   const fetchAutoRecs = async () => {
     setAutoLoading(true)
-    setIsMock(false)
-    setShowMockBtn(false)
     try {
       setAutoData(await getRecommendations())
     } catch {
       setAutoData(null)
-      setShowMockBtn(true)
     } finally {
       setAutoLoading(false)
     }
@@ -421,8 +411,6 @@ export default function RecommendationsPage() {
 
   return (
     <div className="space-y-5 pb-24">
-      <MockToast show={isMock} />
-      <MockDataButton show={showMockBtn} onClick={loadMock} />
       {!autoData && !autoLoading && <AiEmptyState title="Chưa có dữ liệu gợi ý AI" />}
 
       {/* ── Header ── */}

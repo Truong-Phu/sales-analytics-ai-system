@@ -1,10 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import MockToast from '../../components/ui/MockToast'
-import MockDataButton from '../../components/ui/MockDataButton'
 import AiEmptyState from '../../components/ui/AiEmptyState'
 import { getEtlStatus, triggerEtl } from '../../api/syncApi'
-import { MOCK_ETL } from '../../mockData/etlMonitor'
 
 const STATUS_CFG = {
   running: { bg: 'rgba(245,158,11,0.10)', border: 'rgba(245,158,11,0.30)', color: '#F59E0B',            dot: '#F59E0B',   icon: 'hourglass_top',   labelKey: 'etlMonitor.status.running' },
@@ -46,27 +43,19 @@ export default function EtlMonitorPage() {
   const [data,       setData]       = useState(null)
   const [loading,    setLoading]    = useState(true)
   const [triggering, setTriggering] = useState({})
-  const [isMock,     setIsMock]     = useState(false)
   const [expanded,   setExpanded]   = useState(null)
   const fetchedRef = useRef(false)
 
-  const [showMockBtn, setShowMockBtn] = useState(false)
-
   const fetchData = async () => {
     setLoading(true)
-    setIsMock(false)
-    setShowMockBtn(false)
     try {
       setData(await getEtlStatus())
     } catch {
       setData(null)
-      setShowMockBtn(true)
     } finally {
       setLoading(false)
     }
   }
-
-  const loadMock = () => { setData(MOCK_ETL); setIsMock(true); setShowMockBtn(false) }
 
   useEffect(() => { if (fetchedRef.current) return; fetchedRef.current = true; fetchData() }, [])
 
@@ -86,8 +75,6 @@ export default function EtlMonitorPage() {
 
   return (
     <div className="space-y-4">
-      <MockToast show={isMock} />
-      <MockDataButton show={showMockBtn} onClick={loadMock} />
       {!data && !loading && <AiEmptyState title="ETL Service chưa khởi động hoặc không kết nối được" />}
 
       {/* Header */}

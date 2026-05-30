@@ -1,45 +1,25 @@
 import { useState, useEffect } from 'react'
 import MockToast from '../../components/ui/MockToast'
-import MockDataButton from '../../components/ui/MockDataButton'
 import AiEmptyState from '../../components/ui/AiEmptyState'
 import { getNarrative } from '../../api/aiApi'
 
-const MOCK_NARRATIVE = {
-  period: '30 ngày gần nhất', language: 'vi',
-  headline: 'Doanh thu tháng tăng 15.3% – kết quả kinh doanh rất tích cực!',
-  full_narrative: 'Trong 30 ngày vừa qua, tổng doanh thu đạt **158.5 triệu VNĐ**, tăng **15.3%** so với tháng trước. Số lượng đơn hàng tăng 8.7% với **680 đơn**. Kênh **Shopee** tiếp tục dẫn đầu về doanh thu. Sản phẩm bán chạy nhất là **Áo thun nam cổ tròn**.',
-  key_metrics: { current_revenue: 158500000, revenue_change: 15.3, current_orders: 680, orders_change: 8.7 },
-  anomaly_note: 'Phát hiện 1 ngày bất thường: 05/05/2026 doanh thu cao đột biến (+3.2σ)',
-  recommendations: [
-    'Tập trung ngân sách quảng cáo vào kênh Shopee – đang dẫn đầu doanh thu.',
-    'Xem xét phân tích RFM để chăm sóc khách hàng có nguy cơ rời bỏ.',
-    'Chuẩn bị chiến dịch 11.11 sớm – dự kiến doanh thu tăng 3.5x.',
-  ],
-  generated_by: 'rule_based', is_mock: true,
-}
-
 export default function NarrativePage() {
-  const [data,        setData]        = useState(null)
-  const [loading,     setLoading]     = useState(true)
-  const [isMock,      setIsMock]      = useState(false)
-  const [showMockBtn, setShowMockBtn] = useState(false)
-  const [days,        setDays]        = useState(30)
-  const [lang,        setLang]        = useState('vi')
+  const [data,   setData]   = useState(null)
+  const [loading,setLoading]= useState(true)
+  const [isMock, setIsMock] = useState(false)
+  const [days,   setDays]   = useState(30)
+  const [lang,   setLang]   = useState('vi')
 
   const load = async () => {
     setLoading(true)
-    setShowMockBtn(false)
     try {
       const res = await getNarrative({ days, language: lang })
       setData(res)
       setIsMock(res.is_mock ?? false)
     } catch {
       setData(null)
-      setShowMockBtn(true)
     } finally { setLoading(false) }
   }
-
-  const loadMock = () => { setData({ ...MOCK_NARRATIVE, period: `${days} ngày gần nhất`, language: lang }); setIsMock(true); setShowMockBtn(false) }
 
   useEffect(() => { load() }, [days, lang])
 
@@ -53,7 +33,6 @@ export default function NarrativePage() {
   return (
     <div className="space-y-5">
       <MockToast show={isMock} />
-      <MockDataButton show={showMockBtn} onClick={loadMock} />
       {!data && !loading && <AiEmptyState title="Chưa đủ dữ liệu sinh nhận xét tự động" />}
 
       {/* Header */}

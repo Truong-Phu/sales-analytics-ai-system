@@ -11,8 +11,6 @@ import {
   ScatterChart, Scatter, ZAxis, ComposedChart, LabelList,
 } from 'recharts'
 import { SkeletonCard } from '../../components/ui/Skeleton'
-import MockToast from '../../components/ui/MockToast'
-import MockDataButton from '../../components/ui/MockDataButton'
 import AiEmptyState from '../../components/ui/AiEmptyState'
 import DevEmptyState from '../../components/ui/DevEmptyState'
 import { getDashboard, getTodayVsYesterday, getDrillDownOrders, getDrillDownCustomers,
@@ -2161,11 +2159,9 @@ export default function DashboardPage() {
   const [customFrom,  setCustomFrom]  = useState('2025-01-01')
   const [customTo,    setCustomTo]    = useState('2025-12-31')
   const [channel,     setChannel]     = useState('all')
-  const [data,        setData]        = useState(null)
-  const [loading,     setLoading]     = useState(true)
-  const [isMock,      setIsMock]      = useState(false)
-  const [showMockBtn, setShowMockBtn] = useState(false)
-  const [tvy,         setTvy]         = useState(null)
+  const [data,    setData]    = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [tvy,     setTvy]     = useState(null)
   const [compareMode, setCompareMode] = useState(false)
   const [prevData,    setPrevData]    = useState(null)
   const [fbAdsData,   setFbAdsData]   = useState(null)
@@ -2304,24 +2300,13 @@ export default function DashboardPage() {
         }
       }
       setData(merged)
-      setIsMock(false)
     } catch {
       setData(null)
-      setShowMockBtn(true)
     } finally {
       setLoading(false)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [presetKey, customFrom, customTo, channel])
-
-  // Load mock data on demand (khi user nhấn nút "Xem dữ liệu mẫu")
-  const loadMock = useCallback(() => {
-    const { from, to } = getRange()
-    setData(generateMockData(from, to))
-    setIsMock(true)
-    setShowMockBtn(false)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [presetKey, customFrom, customTo])
 
   // Fetch dữ liệu kỳ trước khi compareMode bật
   useEffect(() => {
@@ -2441,9 +2426,6 @@ export default function DashboardPage() {
           </button>
         </div>
       </div>
-
-      <MockToast show={isMock} />
-      <MockDataButton show={showMockBtn} onClick={loadMock} />
 
       {/* Khi API fail — empty state toàn bộ dashboard */}
       {!data && !loading && (

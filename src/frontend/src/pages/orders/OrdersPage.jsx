@@ -1,13 +1,11 @@
 import { useState, useEffect, useCallback, useMemo, useRef, memo, Fragment } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
-import MockToast from '../../components/ui/MockToast'
 import { SkeletonTableBody } from '../../components/ui/Skeleton'
 import FilterPill from '../../components/ui/FilterPill'
 import { getOrders, updateOrderStatus, cancelOrder, getOrderNotes, addOrderNote, deleteOrderNote } from '../../api/dashboardApi'
 import api from '../../api/axios'
 import { useAuth } from '../../hooks/useAuth'
-import { MOCK_ORDERS } from '../../mockData/orders'
 import PaymentStatusBadge from '../../components/payment/PaymentStatusBadge'
 import PaymentSelectModal from '../../components/payment/PaymentSelectModal'
 import ManualConfirmModal from '../../components/payment/ManualConfirmModal'
@@ -372,7 +370,6 @@ export default function OrdersPage() {
 
   const [data,    setData]    = useState(null)
   const [loading, setLoading] = useState(true)
-  const [isMock,  setIsMock]  = useState(false)
   const [search,  setSearch]  = useState('')
   const [status,  setStatus]  = useState('all')
   const [channel, setChannel] = useState('all')
@@ -428,7 +425,6 @@ export default function OrdersPage() {
     abortRef.current = new AbortController()
 
     setLoading(true)
-    setIsMock(false)
     try {
       const res = await getOrders(
         { search, status: status === 'all' ? '' : status, page, limit: 20 },
@@ -437,8 +433,7 @@ export default function OrdersPage() {
       setData(res)
     } catch (err) {
       if (err.name === 'AbortError' || err.code === 'ERR_CANCELED') return
-      setData(MOCK_ORDERS)
-      setIsMock(true)
+      setData(null)
     } finally {
       if (!abortRef.current?.signal.aborted) setLoading(false)
     }
@@ -472,8 +467,6 @@ export default function OrdersPage() {
 
   return (
     <div className="space-y-4">
-      <MockToast show={isMock} />
-
       {/* Toast notification */}
       {toast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-xl text-sm font-medium shadow-lg"
@@ -654,7 +647,7 @@ export default function OrdersPage() {
                             }
                             size="xs"
                           />
-                          {canPayment && !isMock && !['cancelled', 'returned'].includes(order.status) && (
+                          {canPayment && !['cancelled', 'returned'].includes(order.status) && (
                             <>
                               {/* Chưa có transaction → nút khởi tạo */}
                               {(!paymentTxCache[order.orderId] && (order.paymentStatus === 'UNPAID' || !order.paymentStatus)) && (
@@ -697,8 +690,7 @@ export default function OrdersPage() {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
-                          {!isMock && (
-                            <>
+                          <>
                               <button
                                 onClick={e => { e.stopPropagation(); setEditOrder(order) }}
                                 title="Cập nhật trạng thái"
@@ -720,7 +712,6 @@ export default function OrdersPage() {
                                 </button>
                               )}
                             </>
-                          )}
                           <span className="icon text-base" style={{ color: 'var(--text-tertiary)', transition: 'transform 0.2s',
                             transform: expanded === order.orderId ? 'rotate(180deg)' : '' }}>
                             expand_more

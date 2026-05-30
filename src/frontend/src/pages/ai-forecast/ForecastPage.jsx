@@ -4,18 +4,8 @@ import {
   ComposedChart, Area, Line, ReferenceLine,
   ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid,
 } from 'recharts'
-import MockToast from '../../components/ui/MockToast'
-import MockDataButton from '../../components/ui/MockDataButton'
 import AiEmptyState from '../../components/ui/AiEmptyState'
 import { getForecast, getTrend, getForecastMetrics } from '../../api/aiApi'
-import { getMockForecast, MOCK_TREND } from '../../mockData/forecast'
-
-const MOCK_METRICS = {
-  mae: 357188, rmse: 357188, mape_pct: 39.69,
-  train_from: '2025-10-02', train_to: '2025-12-01',
-  test_from: '2025-12-05', test_to: '2025-12-22',
-  n_train: 19, n_test: 5, eval_method: 'hold-out 80/20',
-}
 
 const HORIZONS   = [7, 14, 30, 60, 90]
 const CHANNEL_KEYS = ['all', 'shopee', 'lazada', 'tiktok']
@@ -54,21 +44,17 @@ export default function ForecastPage() {
   const [trend,        setTrend]        = useState(null)
   const [metrics,      setMetrics]      = useState(null)
   const [loading,       setLoading]       = useState(false)
-  const [isMock,        setIsMock]        = useState(false)
   const [metricsIsMock, setMetricsIsMock] = useState(false)
-  const [showMockBtn,   setShowMockBtn]   = useState(false)
 
   const handleRun = async () => {
     setLoading(true)
-    setIsMock(false)
     setMetricsIsMock(false)
-    setShowMockBtn(false)
     try {
       let metricsFallback = false
       const [fc, tr, mt] = await Promise.all([
         getForecast(horizon, channel),
         getTrend(30, channel),
-        getForecastMetrics().catch(() => { metricsFallback = true; return MOCK_METRICS }),
+        getForecastMetrics().catch(() => { metricsFallback = true; return null }),
       ])
       setResult(fc)
       setTrend(tr)
@@ -78,19 +64,9 @@ export default function ForecastPage() {
       setResult(null)
       setTrend(null)
       setMetrics(null)
-      setShowMockBtn(true)
     } finally {
       setLoading(false)
     }
-  }
-
-  const loadMock = () => {
-    setResult(getMockForecast(horizon))
-    setTrend(MOCK_TREND)
-    setMetrics(MOCK_METRICS)
-    setIsMock(true)
-    setMetricsIsMock(true)
-    setShowMockBtn(false)
   }
 
   // Build chart data: merge history + forecast
@@ -118,8 +94,6 @@ export default function ForecastPage() {
 
   return (
     <div className="space-y-4">
-      <MockToast show={isMock} />
-      <MockDataButton show={showMockBtn} onClick={loadMock} />
 
       {!result && !loading && <AiEmptyState title="Chưa có dữ liệu dự báo" />}
 

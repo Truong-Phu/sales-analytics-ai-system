@@ -1,22 +1,5 @@
 ﻿import { useState } from 'react'
-import MockToast from '../../components/ui/MockToast'
-import MockDataButton from '../../components/ui/MockDataButton'
 import { simulateWhatIf } from '../../api/aiApi'
-
-const buildMockResult = (scenario, changePct, horizon) => {
-  const baseline = Array.from({ length: horizon }, (_, i) => ({
-    date: new Date(Date.now() + (i + 1) * 86400000).toISOString().split('T')[0],
-    baseline: 5_000_000 + (i * 100_000),
-    simulated: 0, delta: 0, delta_pct: 0,
-  }))
-  const mult = scenario === 'price_change' ? 1 + (changePct / 100) * (1 + -1.5 * (changePct / 100))
-    : scenario === 'discount' ? (1 + changePct / 100) * (1 - -1.5 * (changePct / 100))
-    : 1 + Math.abs(changePct / 100) * (scenario === 'boost_marketing' ? 0.3 : 1)
-  baseline.forEach(p => { p.simulated = Math.round(p.baseline * mult); p.delta = p.simulated - p.baseline; p.delta_pct = (p.delta / p.baseline * 100).toFixed(2) })
-  const btotal = baseline.reduce((s, p) => s + p.baseline, 0)
-  const stotal = baseline.reduce((s, p) => s + p.simulated, 0)
-  return { scenario, change_pct: changePct, horizon_days: horizon, baseline_total: btotal, simulated_total: stotal, delta_total: stotal - btotal, delta_total_pct: ((stotal - btotal) / btotal * 100).toFixed(1), chart_data: baseline, recommendation: `Ước tính doanh thu ${stotal > btotal ? 'tăng' : 'giảm'} ${Math.abs(((stotal - btotal) / btotal * 100)).toFixed(1)}% với kịch bản này.`, assumptions: ['Price elasticity = -1.5 (mặc định)', 'Dữ liệu mẫu demo'], is_mock: true }
-}
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 
 const SCENARIOS = [
@@ -32,33 +15,24 @@ export default function WhatIfPage() {
   const [scenario,  setScenario]  = useState('price_change')
   const [changePct, setChangePct] = useState(10)
   const [horizon,   setHorizon]   = useState(30)
-  const [result,      setResult]      = useState(null)
-  const [loading,     setLoading]     = useState(false)
-  const [isMock,      setIsMock]      = useState(false)
-  const [showMockBtn, setShowMockBtn] = useState(false)
+  const [result,  setResult]  = useState(null)
+  const [loading, setLoading] = useState(false)
 
   const run = async () => {
     setLoading(true)
-    setShowMockBtn(false)
-    setIsMock(false)
     try {
       const res = await simulateWhatIf({ scenario, change_pct: changePct, horizon_days: horizon })
       setResult(res)
     } catch {
       setResult(null)
-      setShowMockBtn(true)
     } finally { setLoading(false) }
   }
-
-  const loadMock = () => { setResult(buildMockResult(scenario, changePct, horizon)); setIsMock(true); setShowMockBtn(false) }
 
   const delta      = result ? result.delta_total_pct : 0
   const isPositive = delta > 0
 
   return (
     <div className="space-y-5">
-      <MockToast show={isMock} />
-      <MockDataButton show={showMockBtn} onClick={loadMock} />
       {/* Header */}
       <div>
         <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>What-If Simulator</h1>

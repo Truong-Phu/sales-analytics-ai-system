@@ -1,22 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import MockToast from '../../components/ui/MockToast'
-import MockDataButton from '../../components/ui/MockDataButton'
 import AiEmptyState from '../../components/ui/AiEmptyState'
 import { getFeedbackSummary } from '../../api/aiApi'
-
-const MOCK = {
-  total_comments: 284, positive: 168, negative: 72, neutral: 44,
-  positive_pct: 59.2, negative_pct: 25.4, neutral_pct: 15.5,
-  top_issues:   ['giao chậm', 'sai size', 'không phản hồi'],
-  top_praises:  ['giao nhanh', 'chất vải đẹp', 'đúng mô tả'],
-  recent_comments: [
-    { comment_id: '1', message: 'Áo đẹp lắm, chất vải mềm mại, giao hàng nhanh hơn dự kiến!',      author_name: 'Nguyễn Thị Lan', sentiment: 'positive', like_count: 12, created_at: '2026-05-15' },
-    { comment_id: '2', message: 'Hàng giao chậm quá, order 5 ngày mới nhận, lần sau không mua nữa.', author_name: 'Trần Văn Minh',  sentiment: 'negative', like_count: 3,  created_at: '2026-05-14' },
-    { comment_id: '3', message: 'Size hơi nhỏ hơn bình thường, nên lên 1 size.',                    author_name: 'Phạm Thị Hương', sentiment: 'neutral',  like_count: 7,  created_at: '2026-05-13' },
-    { comment_id: '4', message: 'Shop nhiệt tình, đổi size nhanh, recommend shop này!',              author_name: 'Lê Quang Hùng',  sentiment: 'positive', like_count: 21, created_at: '2026-05-12' },
-    { comment_id: '5', message: 'Màu hơi khác hình, nhưng chất lượng ổn, chấp nhận được.',          author_name: 'Võ Thị Mai',     sentiment: 'neutral',  like_count: 2,  created_at: '2026-05-11' },
-  ],
-}
 
 function CommentCard({ comment }) {
   const cfg = {
@@ -74,27 +59,22 @@ function DonutChart({ pos, neg, neu, total }) {
 }
 
 export default function SentimentPage() {
-  const [data,        setData]        = useState(null)
-  const [loading,     setLoading]     = useState(true)
-  const [isMock,      setIsMock]      = useState(false)
-  const [showMockBtn, setShowMockBtn] = useState(false)
+  const [data,   setData]   = useState(null)
+  const [loading,setLoading]= useState(true)
+  const [isMock, setIsMock] = useState(false)
   const fetchedRef = useRef(false)
-  const [filter,      setFilter]      = useState('all')
+  const [filter, setFilter] = useState('all')
 
   const load = async () => {
     setLoading(true)
-    setShowMockBtn(false)
     try {
       const res = await getFeedbackSummary()
       setData(res)
       setIsMock(res.is_mock ?? false)
     } catch {
       setData(null)
-      setShowMockBtn(true)
     } finally { setLoading(false) }
   }
-
-  const loadMock = () => { setData({ ...MOCK, is_mock: true }); setIsMock(true); setShowMockBtn(false) }
 
   useEffect(() => { if (fetchedRef.current) return; fetchedRef.current = true; load() }, [])
 
@@ -104,7 +84,6 @@ export default function SentimentPage() {
   return (
     <div className="space-y-5">
       <MockToast show={isMock} />
-      <MockDataButton show={showMockBtn} onClick={loadMock} />
       {!data && !loading && <AiEmptyState title="Chưa đủ dữ liệu phân tích cảm xúc khách hàng" />}
 
       {/* Header */}

@@ -1,43 +1,26 @@
 import { useState, useEffect, useRef } from 'react'
 import MockToast from '../../components/ui/MockToast'
-import MockDataButton from '../../components/ui/MockDataButton'
 import AiEmptyState from '../../components/ui/AiEmptyState'
 import { getBasketAnalysis } from '../../api/aiApi'
 
-const MOCK_BASKET = {
-  total_transactions: 0, total_rules: 3, is_mock: true,
-  note: 'Đang dùng dữ liệu mẫu',
-  parameters: { days: 180, min_support: 0.02, min_confidence: 0.3, min_lift: 1.0 },
-  rules: [
-    { antecedents:['Áo thun nam'],  consequents:['Quần short nam'],     support:0.25, confidence:0.72, lift:2.4, conviction:3.1, transactions:45, recommendation:'72% khách mua Áo thun nam cũng mua Quần short nam → tạo bundle giảm 5%' },
-    { antecedents:['Váy hoa nữ'],   consequents:['Băng đô thời trang'], support:0.18, confidence:0.65, lift:3.2, conviction:2.5, transactions:33, recommendation:'65% khách mua Váy hoa nữ cũng mua Băng đô → đề xuất cross-sell' },
-    { antecedents:['Giày sneaker'], consequents:['Tất cotton'],          support:0.31, confidence:0.81, lift:2.1, conviction:4.2, transactions:58, recommendation:'81% khách mua Giày sneaker cũng mua Tất cotton → hiển thị gợi ý ngay trang sản phẩm' },
-  ],
-}
-
 export default function BasketPage() {
   const [data,    setData]    = useState(null)
-  const [loading,     setLoading]     = useState(true)
-  const [isMock,      setIsMock]      = useState(false)
-  const [showMockBtn, setShowMockBtn] = useState(false)
-  const [minConf,     setMinConf]     = useState(0.3)
-  const [minLift,     setMinLift]     = useState(1.0)
+  const [loading, setLoading] = useState(true)
+  const [isMock,  setIsMock]  = useState(false)
+  const [minConf, setMinConf] = useState(0.3)
+  const [minLift, setMinLift] = useState(1.0)
   const fetchedRef = useRef(false)
 
   const load = async () => {
     setLoading(true)
-    setShowMockBtn(false)
     try {
       const res = await getBasketAnalysis({ min_confidence: minConf, min_lift: minLift, top_n: 30 })
       setData(res)
       setIsMock(res.is_mock ?? false)
     } catch {
       setData(null)
-      setShowMockBtn(true)
     } finally { setLoading(false) }
   }
-
-  const loadMock = () => { setData(MOCK_BASKET); setIsMock(true); setShowMockBtn(false) }
 
   useEffect(() => { if (fetchedRef.current) return; fetchedRef.current = true; load() }, [])
 
@@ -46,7 +29,6 @@ export default function BasketPage() {
   return (
     <div className="space-y-5">
       <MockToast show={isMock} />
-      <MockDataButton show={showMockBtn} onClick={loadMock} />
       {!data && !loading && <AiEmptyState title="Chưa đủ dữ liệu phân tích sản phẩm hay mua chung" />}
 
       {/* Header */}

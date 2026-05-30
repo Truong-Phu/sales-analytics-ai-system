@@ -1,9 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import MockToast from '../../components/ui/MockToast'
 import DetailDrawer from '../../components/ui/DetailDrawer'
 import { getCustomers, createCustomer, updateCustomer, deactivateCustomer, getCustomerOrderHistory, getOltpCustomer } from '../../api/dashboardApi'
-import { MOCK_CUSTOMERS } from '../../mockData/customers'
 import { useAuth } from '../../hooks/useAuth'
 import { useDebounce } from '../../hooks/useDebounce'
 import { exportToCsv } from '../../utils/format'
@@ -150,9 +148,8 @@ function Avatar({ name }) {
 export default function CustomersPage() {
   const { t } = useTranslation()
   const { user } = useAuth()
-  const [data,          setData]          = useState(null)
-  const [loading,       setLoading]       = useState(true)
-  const [isMock,        setIsMock]        = useState(false)
+  const [data,    setData]    = useState(null)
+  const [loading, setLoading] = useState(true)
   const [search,        setSearch]        = useState('')
   const [segment,       setSegment]       = useState('all')
   const [page,          setPage]          = useState(1)
@@ -171,7 +168,7 @@ export default function CustomersPage() {
 
   // Fetch lịch sử đơn hàng khi chọn KH
   useEffect(() => {
-    if (!selected || isMock) { setSelOrders(null); return }
+    if (!selected) { setSelOrders(null); return }
     const cid = selected.customer_id ?? selected.customerId
     if (!cid) return
     setSelOrdersLoad(true)
@@ -179,23 +176,14 @@ export default function CustomersPage() {
       .then(orders => setSelOrders(orders))
       .catch(() => setSelOrders([]))
       .finally(() => setSelOrdersLoad(false))
-  }, [selected, isMock])
+  }, [selected])
 
   const fetchData = useCallback(async () => {
     setLoading(true)
-    setIsMock(false)
     try {
       setData(await getCustomers({ search: debouncedSearch, segment: segment === 'all' ? '' : segment, page, limit: PAGE_SIZE }))
     } catch {
-      const filtered = MOCK_CUSTOMERS.filter(c =>
-        (!debouncedSearch  || (c.full_name ?? '').toLowerCase().includes(debouncedSearch.toLowerCase()) ||
-                              (c.customer_code ?? '').toLowerCase().includes(debouncedSearch.toLowerCase())) &&
-        (segment === 'all' || c.segment_label === segment)
-      )
-      const start = (page - 1) * PAGE_SIZE
-      setData({ items: filtered.slice(start, start + PAGE_SIZE), total: filtered.length, page,
-                totalPages: Math.max(1, Math.ceil(filtered.length / PAGE_SIZE)) })
-      setIsMock(true)
+      setData(null)
     } finally {
       setLoading(false)
     }
@@ -280,8 +268,6 @@ export default function CustomersPage() {
 
   return (
     <div className="space-y-4">
-      <MockToast show={isMock} />
-
       {toast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-xl text-sm font-medium shadow-lg"
              style={{ background: 'var(--primary-500)', color: 'white' }}>
@@ -309,7 +295,7 @@ export default function CustomersPage() {
           )}
         </div>
         <div className="flex items-center gap-2">
-          {canEdit && !isMock && (
+          {canEdit && (
             <button className="lbtn lbtn-primary !h-9" onClick={openCreate}>
               <span className="icon text-base">person_add</span>
               Thêm khách hàng
@@ -334,7 +320,7 @@ export default function CustomersPage() {
             Đã chọn {checkedIds.size} khách hàng
           </span>
           <div className="flex gap-2 ml-auto">
-            {canEdit && !isMock && (
+            {canEdit && (
               <button onClick={handleBulkDeactivate}
                       className="lbtn !h-8 !px-3 text-xs font-medium"
                       style={{ background: 'rgba(239,68,68,0.1)', color: '#EF4444', border: '1px solid rgba(239,68,68,0.3)' }}>
@@ -513,7 +499,7 @@ export default function CustomersPage() {
         const rfmF = selected.rfm_f_score ?? selected.rfmFScore
         const rfmM = selected.rfm_m_score ?? selected.rfmMScore
 
-        const footer = canEdit && !isMock ? (
+        const footer = canEdit ? (
           <>
             <button onClick={() => openEdit(selected)} className="lbtn lbtn-secondary flex-1 justify-center">
               <span className="icon text-base">edit</span>Sửa
@@ -631,8 +617,7 @@ export default function CustomersPage() {
               </div>
 
               {/* Lịch sử đơn hàng */}
-              {!isMock && (
-                <div>
+              <div>
                   <p className="text-xs font-semibold uppercase tracking-wider mb-3"
                      style={{ color: 'var(--text-tertiary)' }}>5 đơn hàng gần nhất</p>
                   {selOrdersLoad ? (
@@ -684,7 +669,6 @@ export default function CustomersPage() {
                     </div>
                   )}
                 </div>
-              )}
             </div>
           </DetailDrawer>
         )
