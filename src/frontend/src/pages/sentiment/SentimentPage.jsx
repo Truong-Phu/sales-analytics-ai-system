@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import MockToast from '../../components/ui/MockToast'
+import MockDataButton from '../../components/ui/MockDataButton'
+import AiEmptyState from '../../components/ui/AiEmptyState'
 import { getFeedbackSummary } from '../../api/aiApi'
 
 const MOCK = {
@@ -72,23 +74,27 @@ function DonutChart({ pos, neg, neu, total }) {
 }
 
 export default function SentimentPage() {
-  const [data,    setData]    = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [isMock,  setIsMock]  = useState(false)
+  const [data,        setData]        = useState(null)
+  const [loading,     setLoading]     = useState(true)
+  const [isMock,      setIsMock]      = useState(false)
+  const [showMockBtn, setShowMockBtn] = useState(false)
   const fetchedRef = useRef(false)
-  const [filter,  setFilter]  = useState('all')
+  const [filter,      setFilter]      = useState('all')
 
   const load = async () => {
     setLoading(true)
+    setShowMockBtn(false)
     try {
       const res = await getFeedbackSummary()
       setData(res)
       setIsMock(res.is_mock ?? false)
     } catch {
-      setData({ ...MOCK, is_mock: true })
-      setIsMock(true)
+      setData(null)
+      setShowMockBtn(true)
     } finally { setLoading(false) }
   }
+
+  const loadMock = () => { setData({ ...MOCK, is_mock: true }); setIsMock(true); setShowMockBtn(false) }
 
   useEffect(() => { if (fetchedRef.current) return; fetchedRef.current = true; load() }, [])
 
@@ -97,7 +103,9 @@ export default function SentimentPage() {
 
   return (
     <div className="space-y-5">
-      {isMock && <MockToast />}
+      <MockToast show={isMock} />
+      <MockDataButton show={showMockBtn} onClick={loadMock} />
+      {!data && !loading && <AiEmptyState title="Chưa đủ dữ liệu phân tích cảm xúc khách hàng" />}
 
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">

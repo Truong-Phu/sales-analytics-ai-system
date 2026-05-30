@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import MockToast from '../../components/ui/MockToast'
+import MockDataButton from '../../components/ui/MockDataButton'
+import AiEmptyState from '../../components/ui/AiEmptyState'
 import { getEtlStatus, triggerEtl } from '../../api/syncApi'
 import { MOCK_ETL } from '../../mockData/etlMonitor'
 
@@ -48,18 +50,23 @@ export default function EtlMonitorPage() {
   const [expanded,   setExpanded]   = useState(null)
   const fetchedRef = useRef(false)
 
+  const [showMockBtn, setShowMockBtn] = useState(false)
+
   const fetchData = async () => {
     setLoading(true)
     setIsMock(false)
+    setShowMockBtn(false)
     try {
       setData(await getEtlStatus())
     } catch {
-      setData(MOCK_ETL)
-      setIsMock(true)
+      setData(null)
+      setShowMockBtn(true)
     } finally {
       setLoading(false)
     }
   }
+
+  const loadMock = () => { setData(MOCK_ETL); setIsMock(true); setShowMockBtn(false) }
 
   useEffect(() => { if (fetchedRef.current) return; fetchedRef.current = true; fetchData() }, [])
 
@@ -80,6 +87,8 @@ export default function EtlMonitorPage() {
   return (
     <div className="space-y-4">
       <MockToast show={isMock} />
+      <MockDataButton show={showMockBtn} onClick={loadMock} />
+      {!data && !loading && <AiEmptyState title="ETL Service chưa khởi động hoặc không kết nối được" />}
 
       {/* Header */}
       <div className="flex items-start justify-between gap-4 flex-wrap">

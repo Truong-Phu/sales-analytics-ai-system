@@ -1,6 +1,19 @@
 import { useState, useEffect } from 'react'
 import MockToast from '../../components/ui/MockToast'
+import MockDataButton from '../../components/ui/MockDataButton'
+import AiEmptyState from '../../components/ui/AiEmptyState'
 import { getSupplierPerformance } from '../../api/aiApi'
+
+const MOCK_SUPPLIER = {
+  is_mock: true, days_analyzed: 90,
+  suppliers: [
+    { supplier_name:'Nhà máy Dệt may Phong Phú',    total_deliveries:48, on_time_deliveries:44, on_time_rate:0.917, avg_lead_days:3.2, late_deliveries:4, total_quantity:2400, total_value:182_000_000, quality_score:4.5, status:'GOOD'     },
+    { supplier_name:'Công ty TNHH Thời Trang Việt', total_deliveries:35, on_time_deliveries:28, on_time_rate:0.800, avg_lead_days:5.1, late_deliveries:7, total_quantity:1750, total_value:124_000_000, quality_score:3.8, status:'WARNING'  },
+    { supplier_name:'XNK Hoàng Gia Fashion',        total_deliveries:22, on_time_deliveries:14, on_time_rate:0.636, avg_lead_days:8.4, late_deliveries:8, total_quantity:880,  total_value:67_000_000,  quality_score:2.9, status:'CRITICAL' },
+    { supplier_name:'Dệt may Thành Công',           total_deliveries:31, on_time_deliveries:30, on_time_rate:0.968, avg_lead_days:2.8, late_deliveries:1, total_quantity:1550, total_value:98_000_000,  quality_score:4.8, status:'GOOD'     },
+    { supplier_name:'Công ty CP May Sơn Nam',       total_deliveries:18, on_time_deliveries:15, on_time_rate:0.833, avg_lead_days:4.7, late_deliveries:3, total_quantity:720,  total_value:51_000_000,  quality_score:4.1, status:'GOOD'     },
+  ],
+}
 
 function StatusBadge({ status }) {
   const map = {
@@ -48,26 +61,22 @@ export default function SupplierPage() {
   const [filter,   setFilter]   = useState('ALL')
   const [sortBy,   setSortBy]   = useState('on_time_rate')
 
+  const [showMockBtn, setShowMockBtn] = useState(false)
+
   const load = async () => {
     setLoading(true)
+    setShowMockBtn(false)
     try {
       const res = await getSupplierPerformance({ days })
       setData(res)
       setIsMock(res.is_mock ?? false)
     } catch {
-      setData({
-        is_mock: true, days_analyzed: days,
-        suppliers: [
-          { supplier_name: 'Nhà máy Dệt may Phong Phú',    total_deliveries: 48, on_time_deliveries: 44, on_time_rate: 0.917, avg_lead_days: 3.2, late_deliveries: 4,  total_quantity: 2400, total_value: 182_000_000, quality_score: 4.5, status: 'GOOD'     },
-          { supplier_name: 'Công ty TNHH Thời Trang Việt', total_deliveries: 35, on_time_deliveries: 28, on_time_rate: 0.800, avg_lead_days: 5.1, late_deliveries: 7,  total_quantity: 1750, total_value: 124_000_000, quality_score: 3.8, status: 'WARNING'  },
-          { supplier_name: 'XNK Hoàng Gia Fashion',        total_deliveries: 22, on_time_deliveries: 14, on_time_rate: 0.636, avg_lead_days: 8.4, late_deliveries: 8,  total_quantity: 880,  total_value: 67_000_000,  quality_score: 2.9, status: 'CRITICAL' },
-          { supplier_name: 'Dệt may Thành Công',           total_deliveries: 31, on_time_deliveries: 30, on_time_rate: 0.968, avg_lead_days: 2.8, late_deliveries: 1,  total_quantity: 1550, total_value: 98_000_000,  quality_score: 4.8, status: 'GOOD'     },
-          { supplier_name: 'Công ty CP May Sơn Nam',       total_deliveries: 18, on_time_deliveries: 15, on_time_rate: 0.833, avg_lead_days: 4.7, late_deliveries: 3,  total_quantity: 720,  total_value: 51_000_000,  quality_score: 4.1, status: 'GOOD'     },
-        ],
-      })
-      setIsMock(true)
+      setData(null)
+      setShowMockBtn(true)
     } finally { setLoading(false) }
   }
+
+  const loadMock = () => { setData({ ...MOCK_SUPPLIER, days_analyzed: days }); setIsMock(true); setShowMockBtn(false) }
 
   useEffect(() => { load() }, [days])
 
@@ -89,7 +98,9 @@ export default function SupplierPage() {
 
   return (
     <div className="space-y-5">
-      {isMock && <MockToast />}
+      <MockToast show={isMock} />
+      <MockDataButton show={showMockBtn} onClick={loadMock} />
+      {!data && !loading && <AiEmptyState title="Chưa đủ dữ liệu phân tích hiệu suất nhà cung cấp" />}
 
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
