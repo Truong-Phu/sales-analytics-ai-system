@@ -6,6 +6,9 @@ import {
   PieChart, Pie, Cell,
 } from 'recharts'
 import { SkeletonCard } from '../../components/ui/Skeleton'
+import MockToast from '../../components/ui/MockToast'
+import MockDataButton from '../../components/ui/MockDataButton'
+import AiEmptyState from '../../components/ui/AiEmptyState'
 import { getRfmSegments } from '../../api/aiApi'
 
 const SEGMENT_CONFIG = {
@@ -83,24 +86,35 @@ const MOCK_RFM = {
 
 export default function RfmPage() {
   const { t } = useTranslation()
-  const [data,       setData]       = useState(null)
-  const [loading,    setLoading]    = useState(true)
-  const [isMock,     setIsMock]     = useState(false)
-  const [activeTab,  setActiveTab]  = useState('overview')
-  const [searchKH,   setSearchKH]   = useState('')
-  const [filterSeg,  setFilterSeg]  = useState('all')
+  const [data,        setData]        = useState(null)
+  const [loading,     setLoading]     = useState(true)
+  const [isMock,      setIsMock]      = useState(false)
+  const [showMockBtn, setShowMockBtn] = useState(false)
+  const [activeTab,   setActiveTab]   = useState('overview')
+  const [searchKH,    setSearchKH]    = useState('')
+  const [filterSeg,   setFilterSeg]   = useState('all')
 
   useEffect(() => {
     setLoading(true)
+    setShowMockBtn(false)
     getRfmSegments()
       .then(d => { setData(d); setIsMock(false) })
-      .catch(() => { setData(MOCK_RFM); setIsMock(true) })
+      .catch(() => { setData(null); setShowMockBtn(true) })
       .finally(() => setLoading(false))
   }, [])
+
+  const loadMock = () => { setData(MOCK_RFM); setIsMock(true); setShowMockBtn(false) }
 
   if (loading) return (
     <div className="space-y-4">
       <SkeletonCard /><SkeletonCard /><SkeletonCard />
+    </div>
+  )
+
+  if (!data) return (
+    <div className="space-y-4">
+      <MockDataButton show={showMockBtn} onClick={loadMock} />
+      <AiEmptyState title="Chưa đủ dữ liệu phân tích RFM" />
     </div>
   )
 
@@ -140,6 +154,8 @@ export default function RfmPage() {
 
   return (
     <div className="space-y-4">
+      <MockToast show={isMock} />
+      <MockDataButton show={showMockBtn} onClick={loadMock} />
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>

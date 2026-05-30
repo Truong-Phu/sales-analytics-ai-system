@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import MockToast from '../../components/ui/MockToast'
+import MockDataButton from '../../components/ui/MockDataButton'
+import AiEmptyState from '../../components/ui/AiEmptyState'
 import { getAnomaly } from '../../api/aiApi'
 import { MOCK_ANOMALY } from '../../mockData/anomaly'
 
@@ -45,23 +47,27 @@ export default function AnomalyPage() {
   const { t } = useTranslation()
   const [days,    setDays]    = useState(90)
   const [channel, setChannel] = useState('all')
-  const [data,    setData]    = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [isMock,  setIsMock]  = useState(false)
+  const [data,        setData]        = useState(null)
+  const [loading,     setLoading]     = useState(true)
+  const [isMock,      setIsMock]      = useState(false)
+  const [showMockBtn, setShowMockBtn] = useState(false)
 
   const fetchData = async () => {
     setLoading(true)
     setIsMock(false)
+    setShowMockBtn(false)
     try {
       const res = await getAnomaly(days, channel)
       setData(res)
     } catch {
-      setData(MOCK_ANOMALY)
-      setIsMock(true)
+      setData(null)
+      setShowMockBtn(true)
     } finally {
       setLoading(false)
     }
   }
+
+  const loadMock = () => { setData(MOCK_ANOMALY); setIsMock(true); setShowMockBtn(false) }
 
   useEffect(() => { fetchData() }, [days, channel])
 
@@ -72,6 +78,7 @@ export default function AnomalyPage() {
   return (
     <div className="space-y-4">
       <MockToast show={isMock} />
+      <MockDataButton show={showMockBtn} onClick={loadMock} />
 
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -141,7 +148,9 @@ export default function AnomalyPage() {
             <span className="text-sm">Đang phân tích...</span>
           </div>
         </div>
-      ) : data && (
+      ) : !data ? (
+        <AiEmptyState title="Chưa đủ dữ liệu phát hiện bất thường" />
+      ) : (
         <>
           {/* Summary KPI row */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">

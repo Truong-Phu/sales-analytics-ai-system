@@ -1,6 +1,29 @@
 import { useState, useEffect, useRef } from 'react'
 import MockToast from '../../components/ui/MockToast'
+import MockDataButton from '../../components/ui/MockDataButton'
+import AiEmptyState from '../../components/ui/AiEmptyState'
 import { getCampaignPlan } from '../../api/aiApi'
+
+const MOCK_CAMPAIGN = {
+  is_mock: true, note: 'Đang dùng dữ liệu mẫu',
+  windows: [
+    { period:'2026-06', period_type:'month', avg_revenue:38500000, vs_overall_pct:25.3,  recommendation:'PREPARE',      label:'Tháng 6 – Chuẩn bị trước 01/06', events:['Ngày Quốc tế Thiếu nhi'] },
+    { period:'2026-07', period_type:'month', avg_revenue:18200000, vs_overall_pct:-35.2, recommendation:'LOW_SEASON',   label:'Tháng 7 – Mùa thấp điểm',        events:[] },
+    { period:'2026-10', period_type:'month', avg_revenue:45000000, vs_overall_pct:35.5,  recommendation:'RUN_CAMPAIGN', label:'Tháng 10 – Ngày Phụ nữ VN 20/10',events:['Ngày Phụ nữ VN 20/10'] },
+    { period:'2026-11', period_type:'month', avg_revenue:68500000, vs_overall_pct:144.6, recommendation:'RUN_CAMPAIGN', label:'Tháng 11 – Mùa 11.11',            events:['11.11 Sale'] },
+  ],
+  seasonal_insight: {
+    best_month:4, best_month_name:'Tháng 11 (11.11)', worst_month:7, worst_month_name:'Tháng 7', best_weekday:'Thứ 7',
+    weekly_pattern:[
+      {day:'Thứ 2',avg:22000000,rank:5},{day:'Thứ 3',avg:20500000,rank:6},{day:'Thứ 4',avg:21800000,rank:4},
+      {day:'Thứ 5',avg:23000000,rank:3},{day:'Thứ 6',avg:25500000,rank:2},{day:'Thứ 7',avg:32000000,rank:1},{day:'CN',avg:28000000,rank:1},
+    ],
+  },
+  upcoming_events:[
+    {name:'Ngày Quốc tế Thiếu nhi',date:'2026-06-01',days_until:15,boost_expected:1.6,prepare_by:'2026-05-25',tip:'Chuẩn bị trước 7 ngày. Dự kiến tăng 60%.'},
+    {name:'Ngày Phụ nữ VN',         date:'2026-10-20',days_until:156,boost_expected:1.9,prepare_by:'2026-10-13',tip:'Dự kiến tăng 90%.'},
+  ],
+}
 
 const REC_CONFIG = {
   RUN_CAMPAIGN: { textColor: '#22C55E', bg: 'rgba(34,197,94,0.08)',   border: 'rgba(34,197,94,0.25)',   icon: '🚀', label: 'Nên chạy'   },
@@ -10,51 +33,26 @@ const REC_CONFIG = {
 }
 
 export default function CampaignPage() {
-  const [data,    setData]    = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [isMock,  setIsMock]  = useState(false)
+  const [data,        setData]        = useState(null)
+  const [loading,     setLoading]     = useState(true)
+  const [isMock,      setIsMock]      = useState(false)
+  const [showMockBtn, setShowMockBtn] = useState(false)
   const fetchedRef = useRef(false)
 
   const load = async () => {
     setLoading(true)
+    setShowMockBtn(false)
     try {
       const res = await getCampaignPlan({ days_ahead: 60 })
       setData(res)
       setIsMock(res.is_mock ?? false)
     } catch {
-      setData({
-        is_mock: true, note: 'Đang dùng dữ liệu mẫu',
-        windows: [
-          { period:'2026-06', period_type:'month', avg_revenue:38500000, vs_overall_pct:25.3,  recommendation:'PREPARE',      label:'Tháng 6 – Chuẩn bị trước 01/06',         events:['Ngày Quốc tế Thiếu nhi'] },
-          { period:'2026-07', period_type:'month', avg_revenue:18200000, vs_overall_pct:-35.2, recommendation:'LOW_SEASON',   label:'Tháng 7 – Mùa thấp điểm',                events:[] },
-          { period:'2026-08', period_type:'month', avg_revenue:28000000, vs_overall_pct:-5.1,  recommendation:'NORMAL',       label:'Tháng 8 – Bình thường',                   events:[] },
-          { period:'2026-09', period_type:'month', avg_revenue:32000000, vs_overall_pct:8.2,   recommendation:'PREPARE',      label:'Tháng 9 – Dịp 2/9',                       events:['Quốc khánh 2/9'] },
-          { period:'2026-10', period_type:'month', avg_revenue:45000000, vs_overall_pct:35.5,  recommendation:'RUN_CAMPAIGN', label:'Tháng 10 – Ngày Phụ nữ VN 20/10',         events:['Ngày Phụ nữ VN 20/10'] },
-          { period:'2026-11', period_type:'month', avg_revenue:68500000, vs_overall_pct:144.6, recommendation:'RUN_CAMPAIGN', label:'Tháng 11 – Mùa 11.11',                    events:['11.11 Sale'] },
-        ],
-        seasonal_insight: {
-          best_month: 11, best_month_name: 'Tháng 11 (11.11)',
-          worst_month: 7, worst_month_name: 'Tháng 7',
-          best_weekday: 'Thứ 7',
-          weekly_pattern: [
-            { day:'Thứ 2', avg:22000000, rank:5 },
-            { day:'Thứ 3', avg:20500000, rank:6 },
-            { day:'Thứ 4', avg:21800000, rank:4 },
-            { day:'Thứ 5', avg:23000000, rank:3 },
-            { day:'Thứ 6', avg:25500000, rank:2 },
-            { day:'Thứ 7', avg:32000000, rank:1 },
-            { day:'CN',    avg:28000000, rank:1 },
-          ],
-        },
-        upcoming_events: [
-          { name:'Ngày Quốc tế Thiếu nhi', date:'2026-06-01', days_until:15,  boost_expected:1.6, prepare_by:'2026-05-25', tip:'Chuẩn bị chiến dịch trước 7 ngày. Dự kiến tăng 60%.' },
-          { name:'Quốc khánh',              date:'2026-09-02', days_until:108, boost_expected:1.3, prepare_by:'2026-08-26', tip:'Dự kiến tăng 30%.' },
-          { name:'Ngày Phụ nữ VN',          date:'2026-10-20', days_until:156, boost_expected:1.9, prepare_by:'2026-10-13', tip:'Dự kiến tăng 90%.' },
-        ],
-      })
-      setIsMock(true)
+      setData(null)
+      setShowMockBtn(true)
     } finally { setLoading(false) }
   }
+
+  const loadMock = () => { setData(MOCK_CAMPAIGN); setIsMock(true); setShowMockBtn(false) }
 
   useEffect(() => { if (fetchedRef.current) return; fetchedRef.current = true; load() }, [])
 
@@ -62,7 +60,9 @@ export default function CampaignPage() {
 
   return (
     <div className="space-y-5">
-      {isMock && <MockToast />}
+      <MockToast show={isMock} />
+      <MockDataButton show={showMockBtn} onClick={loadMock} />
+      {!data && !loading && <AiEmptyState title="Chưa đủ dữ liệu lịch chiến dịch" />}
 
       {/* Header */}
       <div>

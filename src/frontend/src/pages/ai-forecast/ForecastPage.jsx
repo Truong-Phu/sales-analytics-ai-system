@@ -5,6 +5,8 @@ import {
   ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid,
 } from 'recharts'
 import MockToast from '../../components/ui/MockToast'
+import MockDataButton from '../../components/ui/MockDataButton'
+import AiEmptyState from '../../components/ui/AiEmptyState'
 import { getForecast, getTrend, getForecastMetrics } from '../../api/aiApi'
 import { getMockForecast, MOCK_TREND } from '../../mockData/forecast'
 
@@ -51,14 +53,16 @@ export default function ForecastPage() {
   const [result,       setResult]       = useState(null)
   const [trend,        setTrend]        = useState(null)
   const [metrics,      setMetrics]      = useState(null)
-  const [loading,      setLoading]      = useState(false)
-  const [isMock,       setIsMock]       = useState(false)
+  const [loading,       setLoading]       = useState(false)
+  const [isMock,        setIsMock]        = useState(false)
   const [metricsIsMock, setMetricsIsMock] = useState(false)
+  const [showMockBtn,   setShowMockBtn]   = useState(false)
 
   const handleRun = async () => {
     setLoading(true)
     setIsMock(false)
     setMetricsIsMock(false)
+    setShowMockBtn(false)
     try {
       let metricsFallback = false
       const [fc, tr, mt] = await Promise.all([
@@ -71,14 +75,22 @@ export default function ForecastPage() {
       setMetrics(mt)
       setMetricsIsMock(metricsFallback)
     } catch {
-      setResult(getMockForecast(horizon))
-      setTrend(MOCK_TREND)
-      setMetrics(MOCK_METRICS)
-      setIsMock(true)
-      setMetricsIsMock(true)
+      setResult(null)
+      setTrend(null)
+      setMetrics(null)
+      setShowMockBtn(true)
     } finally {
       setLoading(false)
     }
+  }
+
+  const loadMock = () => {
+    setResult(getMockForecast(horizon))
+    setTrend(MOCK_TREND)
+    setMetrics(MOCK_METRICS)
+    setIsMock(true)
+    setMetricsIsMock(true)
+    setShowMockBtn(false)
   }
 
   // Build chart data: merge history + forecast
@@ -107,6 +119,9 @@ export default function ForecastPage() {
   return (
     <div className="space-y-4">
       <MockToast show={isMock} />
+      <MockDataButton show={showMockBtn} onClick={loadMock} />
+
+      {!result && !loading && <AiEmptyState title="Chưa có dữ liệu dự báo" />}
 
       <div className="flex flex-col md:flex-row gap-5">
 
