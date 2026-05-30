@@ -35,7 +35,10 @@ export default function LeaderboardPage() {
   return (
     <div className="space-y-5">
       {!loading && !hasData && (
-        <AiEmptyState title="Chưa đủ dữ liệu bảng xếp hạng" />
+        <AiEmptyState
+          title="Chưa đủ dữ liệu bảng xếp hạng"
+          desc={`Cần có đơn hàng đã giao thành công trong ${days} ngày gần nhất để xếp hạng theo danh mục "${CATEGORIES.find(c => c.value === category)?.label ?? category}". Thử chọn khoảng thời gian dài hơn.`}
+        />
       )}
 
       {/* Header */}
