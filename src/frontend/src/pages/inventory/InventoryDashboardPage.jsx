@@ -238,12 +238,23 @@ export default function InventoryDashboardPage() {
                     {item.recommendedReorderQuantity > 0 ? `+${fmt(item.recommendedReorderQuantity)}` : '—'}
                   </td>
                   <td className="px-4 py-2">
-                    <button
-                      onClick={() => navigate(`/purchase-orders?productId=${item.productId}&productName=${encodeURIComponent(item.productName)}`)}
-                      className="text-xs px-3 py-1 rounded-lg font-medium whitespace-nowrap"
-                      style={{ background: 'rgba(99,102,241,0.1)', color: '#6366F1', border: '1px solid rgba(99,102,241,0.2)' }}>
-                      + Nhập hàng
-                    </button>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {/* Nút chính: điều chỉnh tồn kho trực tiếp — không cần PO */}
+                      <button
+                        onClick={() => navigate(`/stock-adjustments?productId=${item.productId}`)}
+                        className="text-xs px-3 py-1 rounded-lg font-semibold whitespace-nowrap flex items-center gap-1"
+                        style={{ background: 'rgba(34,197,94,0.12)', color: '#16A34A', border: '1px solid rgba(34,197,94,0.3)' }}>
+                        <span style={{ fontSize: 12 }}>↑</span> Nhập kho
+                      </button>
+                      {/* Nút phụ: tạo PO đặt hàng nhà cung cấp */}
+                      <button
+                        onClick={() => navigate(`/purchase-orders?productId=${item.productId}&productName=${encodeURIComponent(item.productName)}`)}
+                        className="text-xs px-2 py-1 rounded-lg whitespace-nowrap"
+                        style={{ background: 'transparent', color: 'var(--text-tertiary)', border: '1px solid var(--border)' }}
+                        title="Tạo phiếu đặt hàng nhà cung cấp">
+                        Đặt hàng NCC
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

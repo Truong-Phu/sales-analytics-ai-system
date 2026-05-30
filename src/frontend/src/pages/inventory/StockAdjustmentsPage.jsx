@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import api from '../../api/axios'
 import DetailDrawer from '../../components/ui/DetailDrawer'
 
@@ -14,9 +15,9 @@ function ErrorState({ message }) {
 }
 
 // ── Nội dung form chỉnh kho — dùng trong Drawer ───────────────────────────────
-function AdjustmentFormContent({ onCreated, onClose }) {
+function AdjustmentFormContent({ onCreated, onClose, initialProductId = null }) {
   const [products,    setProducts]    = useState([])
-  const [productId,   setProductId]   = useState('')
+  const [productId,   setProductId]   = useState(initialProductId ? String(initialProductId) : '')
   const [variationId, setVariationId] = useState('')
   const [variations,  setVariations]  = useState([])
   const [newQuantity, setNewQuantity] = useState('')
@@ -31,6 +32,14 @@ function AdjustmentFormContent({ onCreated, onClose }) {
       .then(r => setProducts(r.data?.data ?? r.data?.items ?? []))
       .catch(() => setProducts([]))
   }, [])
+
+  // Khi có initialProductId (từ URL) → tự load variations
+  useEffect(() => {
+    if (!initialProductId) return
+    api.get(`/api/products/${initialProductId}/variations`)
+      .then(r => setVariations(r.data ?? []))
+      .catch(() => setVariations([]))
+  }, [initialProductId])
 
   const selectedProduct  = products.find(p => p.productId == productId || p.product_id == productId)
   const selectedVariation = variations.find(v => v.variationId == variationId)
@@ -209,12 +218,16 @@ function AdjustmentFormContent({ onCreated, onClose }) {
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function StockAdjustmentsPage() {
+  const [searchParams, setSearchParams] = useSearchParams()
+  const urlProductId = searchParams.get('productId') || null
+
   const [data,        setData]        = useState(null)
   const [loading,     setLoading]     = useState(true)
   const [error,       setError]       = useState(false)
   const [page,        setPage]        = useState(1)
   const [refresh,     setRefresh]     = useState(0)
-  const [showDrawer,  setShowDrawer]  = useState(false)
+  // Auto-open drawer nếu URL có ?productId=...
+  const [showDrawer,  setShowDrawer]  = useState(!!urlProductId)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -234,6 +247,13 @@ export default function StockAdjustmentsPage() {
   const handleCreated = () => {
     setPage(1)
     setRefresh(r => r + 1)
+    // Xóa productId khỏi URL sau khi tạo xong để không auto-open lại
+    setSearchParams({})
+  }
+
+  const handleCloseDrawer = () => {
+    setShowDrawer(false)
+    setSearchParams({})
   }
 
   const totalPages = data ? Math.ceil(data.total / 20) : 1
@@ -243,14 +263,15 @@ export default function StockAdjustmentsPage() {
     <div className="space-y-5">
       <DetailDrawer
         open={showDrawer}
-        onClose={() => setShowDrawer(false)}
+        onClose={handleCloseDrawer}
         title="Tạo phiếu chỉnh kho"
-        subtitle="Điều chỉnh tồn kho sau kiểm kê thực tế"
+        subtitle={urlProductId ? 'Điều chỉnh tồn kho — sản phẩm được chọn từ gợi ý hệ thống' : 'Điều chỉnh tồn kho sau kiểm kê thực tế'}
         width={520}
       >
         <AdjustmentFormContent
           onCreated={handleCreated}
-          onClose={() => setShowDrawer(false)}
+          onClose={handleCloseDrawer}
+          initialProductId={urlProductId}
         />
       </DetailDrawer>
 

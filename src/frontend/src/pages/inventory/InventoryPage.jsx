@@ -165,12 +165,21 @@ export default function InventoryPage() {
                         </div>
                       ))}
                       {item.reorder_qty > 0 && (
-                        <button
-                          onClick={() => navigate(`/purchase-orders?productId=${item.product_id}&productName=${encodeURIComponent(item.product_name)}`)}
-                          className="text-xs px-3 py-1.5 rounded-lg font-medium whitespace-nowrap"
-                          style={{ background: 'rgba(99,102,241,0.12)', color: '#6366F1', border: '1px solid rgba(99,102,241,0.25)' }}>
-                          + Nhập hàng
-                        </button>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <button
+                            onClick={() => navigate(`/stock-adjustments?productId=${item.product_id}`)}
+                            className="text-xs px-3 py-1.5 rounded-lg font-semibold whitespace-nowrap flex items-center gap-1"
+                            style={{ background: 'rgba(34,197,94,0.12)', color: '#16A34A', border: '1px solid rgba(34,197,94,0.3)' }}>
+                            <span style={{ fontSize: 12 }}>↑</span> Nhập kho
+                          </button>
+                          <button
+                            onClick={() => navigate(`/purchase-orders?productId=${item.product_id}&productName=${encodeURIComponent(item.product_name)}`)}
+                            className="text-xs px-2 py-1.5 rounded-lg whitespace-nowrap"
+                            style={{ background: 'transparent', color: 'var(--text-tertiary)', border: '1px solid var(--border)' }}
+                            title="Tạo phiếu đặt hàng nhà cung cấp">
+                            Đặt hàng NCC
+                          </button>
+                        </div>
                       )}
                       {!isMock && (
                         <button
