@@ -308,3 +308,8 @@ export const getOpsKpi = (from, to, channel = null) => {
 // ── Tồn kho thực tế (OLTP products + order_items) ────────────────────────────
 export const getInventoryReal = (from, to) =>
   api.get('/api/dashboard/inventory-real', { params: { from, to } }).then(r => r.data)
+
+// ── Top sản phẩm theo kênh (OLTP orders × products × channels) ───────────────
+export const getTopProductsByChannel = (from, to, limit = 3) =>
+  api.get('/api/dashboard/top-products-by-channel', { params: { from, to, limit } })
+     .then(r => r.data?.data ?? r.data ?? [])

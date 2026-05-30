@@ -18,7 +18,7 @@ import DevEmptyState from '../../components/ui/DevEmptyState'
 import { getDashboard, getTodayVsYesterday, getDrillDownOrders, getDrillDownCustomers,
          getFbAds,
          getOrderHeatmap, getOrderFunnel, getMonthlyByChannel,
-         getOpsKpi, getInventoryReal } from '../../api/dashboardApi'
+         getOpsKpi, getInventoryReal, getTopProductsByChannel } from '../../api/dashboardApi'
 import { getInsights, getLeaderboard, getGeoDistribution, getChannelAttribution,
          getCampaignPlan, getFeedbackSummary,
          getRfmSegments } from '../../api/aiApi'
@@ -2155,13 +2155,14 @@ export default function DashboardPage() {
       // Truyền from, to, channel vào API call để filter đúng
       const ch  = channel === 'all' ? null : channel
       // Fetch song song: dashboard KPI + monthly-by-channel + heatmap + order-funnel + ops KPI + inventory
-      const [res, monthlyReal, heatmapReal, funnelReal, opsReal, invReal] = await Promise.allSettled([
+      const [res, monthlyReal, heatmapReal, funnelReal, opsReal, invReal, topByChannelReal] = await Promise.allSettled([
         getDashboard(from, to, ch),
         getMonthlyByChannel(from, to),
         getOrderHeatmap(from, to, ch),
         getOrderFunnel(from, to, ch),
         getOpsKpi(from, to, ch),
         getInventoryReal(from, to),
+        getTopProductsByChannel(from, to, 3),
       ])
       const resData = res.status === 'fulfilled' ? res.value : null
       if (resData?.kpi == null) throw new Error('no_data')
@@ -2226,6 +2227,9 @@ export default function DashboardPage() {
           deliverySuccess: Number(opsData?.deliverySuccess ?? mock.inventoryKpi?.deliverySuccess ?? 0),
         },
         returnByChannel: opsData?.returnByChannel ?? mock.returnByChannel ?? [],
+        // Top sản phẩm theo kênh — dữ liệu thật từ OLTP (không có → [] → DevEmptyState)
+        productsByChannel: topByChannelReal.status === 'fulfilled' && topByChannelReal.value?.length
+          ? topByChannelReal.value : [],
       }
       // Tính sparklines từ revenueByDay thực — lấy 7 điểm cuối
       const last7 = merged.revenueByDay.slice(-7)

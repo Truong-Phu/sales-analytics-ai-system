@@ -287,4 +287,29 @@ public class DashboardController(DashboardService service, ITenantContext tenant
             customersPct = custPct,
         });
     }
+
+    /// <summary>Top sản phẩm bán chạy phân tách theo từng kênh bán hàng.</summary>
+    [HttpGet("top-products-by-channel")]
+    [Authorize(Roles = "Owner,Manager,DataIT,Staff,Staff_Sales,Staff_Marketing,Viewer,SuperAdmin")]
+    public async Task<IActionResult> GetTopProductsByChannel(
+        [FromQuery] DateOnly? from  = null,
+        [FromQuery] DateOnly? to    = null,
+        [FromQuery] int       limit = 3)
+    {
+        var dateFrom  = from ?? DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-30));
+        var dateTo    = to   ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
+
+        if (limit < 1 || limit > 10) limit = 3;
+
+        try
+        {
+            var data = await service.GetTopProductsByChannelAsync(dateFrom, dateTo, limit, companyId);
+            return Ok(new { success = true, data });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(503, new { message = "Lỗi kết nối database.", detail = ex.Message });
+        }
+    }
 }

@@ -671,4 +671,63 @@ public class DashboardService
             new { stage = "Hoàn/Hủy",         value = returned + cancelled },
         };
     }
+
+    // ── Top sản phẩm phân tách theo kênh bán (OLTP) ─────────────────────────
+    public async Task<List<object>> GetTopProductsByChannelAsync(
+        DateOnly from, DateOnly to, int limit, Guid? companyId)
+    {
+        await using var conn = new NpgsqlConnection(_connStr);
+        await conn.OpenAsync();
+
+        await using var cmd = new NpgsqlCommand("""
+            WITH ranked AS (
+                SELECT
+                    sc.channel_name,
+                    p.product_name,
+                    COUNT(DISTINCT o.order_id)   AS order_count,
+                    COALESCE(SUM(oi.subtotal), 0) AS revenue,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY sc.channel_id
+                        ORDER BY COALESCE(SUM(oi.subtotal), 0) DESC
+                    ) AS rn
+                FROM public.order_items  oi
+                JOIN public.orders       o  ON o.order_id   = oi.order_id
+                JOIN public.products     p  ON p.product_id = oi.product_id
+                JOIN public.sales_channels sc ON sc.channel_id = o.channel_id
+                WHERE (@cid IS NULL OR o.company_id = @cid::uuid)
+                  AND o.order_date::date BETWEEN @from AND @to
+                  AND o.status NOT IN ('CANCELLED', 'RETURNED')
+                GROUP BY sc.channel_id, sc.channel_name, p.product_id, p.product_name
+            )
+            SELECT channel_name, product_name, order_count, revenue
+            FROM   ranked
+            WHERE  rn <= @limit
+            ORDER  BY channel_name, revenue DESC
+            """, conn);
+
+        cmd.Parameters.AddWithValue("cid",   companyId.HasValue ? (object)companyId.Value.ToString() : DBNull.Value);
+        cmd.Parameters.Add(new NpgsqlParameter("from", NpgsqlDbType.Date) { Value = from });
+        cmd.Parameters.Add(new NpgsqlParameter("to",   NpgsqlDbType.Date) { Value = to   });
+        cmd.Parameters.AddWithValue("limit", limit);
+
+        var rows = new List<(string channel, string product, long orders, decimal revenue)>();
+        await using var r = await cmd.ExecuteReaderAsync();
+        while (await r.ReadAsync())
+            rows.Add((r.GetString(0), r.GetString(1), r.GetInt64(2), r.GetDecimal(3)));
+
+        // Group theo kênh
+        return rows
+            .GroupBy(x => x.channel)
+            .Select(g => (object)new
+            {
+                channelName = g.Key,
+                products = g.Select(p => new
+                {
+                    productName = p.product,
+                    orders      = p.orders,
+                    revenue     = p.revenue,
+                }).ToList(),
+            })
+            .ToList();
+    }
 }
