@@ -4,14 +4,22 @@ import axios from '../../api/axios'
 const fmtDate = d => d ? new Date(d).toLocaleDateString('vi-VN') : '—'
 
 const ROLE_CFG = {
-  Owner:   { bg: '#EDE9FE', color: '#7C3AED' },
-  Manager: { bg: '#DBEAFE', color: '#1D4ED8' },
-  Staff:   { bg: '#D1FAE5', color: '#065F46' },
-  DataIT:  { bg: '#E0F2FE', color: '#0369A1' },
-  Viewer:  { bg: '#F1F5F9', color: '#475569' },
+  Owner:           { bg: '#EDE9FE', color: '#7C3AED' },
+  Manager:         { bg: '#DBEAFE', color: '#1D4ED8' },
+  Staff_Sales:     { bg: '#D1FAE5', color: '#065F46' },
+  Staff_Warehouse: { bg: '#FEF3C7', color: '#D97706' },
+  Staff_Marketing: { bg: '#FCE7F3', color: '#DB2777' },
+  Staff:           { bg: '#D1FAE5', color: '#065F46' }, // legacy
+  DataIT:          { bg: '#E0F2FE', color: '#0369A1' },
+  Viewer:          { bg: '#F1F5F9', color: '#475569' },
 }
 
-const ROLES = ['', 'Owner', 'Manager', 'Staff', 'DataIT', 'Viewer']
+const ROLES = ['', 'Owner', 'Manager', 'Staff_Sales', 'Staff_Warehouse', 'Staff_Marketing', 'DataIT', 'Viewer', 'Staff']
+const ROLE_LABELS = {
+  '': 'Tất cả', Owner: 'Chủ DN', Manager: 'Quản lý',
+  Staff_Sales: 'NV Bán hàng', Staff_Warehouse: 'NV Kho', Staff_Marketing: 'NV Marketing',
+  DataIT: 'Data/IT', Viewer: 'Xem', Staff: 'NV (cũ)',
+}
 
 export default function SaUsersPage() {
   const [users,   setUsers]   = useState([])
@@ -53,7 +61,7 @@ export default function SaUsersPage() {
             background: 'var(--bg-surface)', border: '1px solid var(--border)',
             color: 'var(--text-primary)', minWidth: 140,
           }}>
-          {ROLES.map(r => <option key={r} value={r}>{r || 'Tất cả vai trò'}</option>)}
+          {ROLES.map(r => <option key={r} value={r}>{ROLE_LABELS[r] ?? r}</option>)}
         </select>
       </div>
 

@@ -192,7 +192,7 @@ function CreateUserModal({ onClose, onCreated }) {
 function EditUserModal({ user: u, onClose, onSaved }) {
   const [form, setForm]   = useState({
     fullName: u.fullName ?? '',
-    role:     u.role ?? 'Staff',
+    role:     u.role ?? 'Staff_Sales',
     isActive: u.status === 'active' || u.isActive === true,
   })
   const [saving, setSaving] = useState(false)

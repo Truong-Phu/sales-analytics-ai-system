@@ -73,7 +73,7 @@ const ProfitPage      = lazy(() => import('../pages/finance/ProfitPage'))
 const AdSpendPage     = lazy(() => import('../pages/marketing/AdSpendPage'))
 
 // Roles constants
-const ALL_ROLES     = ['Owner', 'Manager', 'Staff', 'DataIT']
+const ALL_ROLES     = ['Owner', 'Manager', 'Staff_Sales', 'Staff_Warehouse', 'Staff_Marketing', 'Staff', 'DataIT']
 const ANALYST_ROLES = ['Owner', 'Manager', 'DataIT']
 const DATA_ROLES    = ['DataIT', 'Owner']
 const ADMIN_ONLY    = ['Owner']
@@ -332,7 +332,7 @@ export default function AppRouter() {
 
         {/* ── Payment ── */}
         <Route path="/payment/vietqr" element={
-          <ProtectedRoute roles={['Owner', 'Manager', 'Staff']}>
+          <ProtectedRoute roles={['Owner', 'Manager', 'Staff_Sales', 'Staff']}>
             <Shell><VietQRPage /></Shell>
           </ProtectedRoute>
         } />
@@ -342,9 +342,9 @@ export default function AppRouter() {
           </ProtectedRoute>
         } />
 
-        {/* POS — Bán hàng tại quầy: chỉ Owner/Manager/Staff */}
+        {/* POS — Bán hàng tại quầy: Staff_Sales */}
         <Route path="/pos" element={
-          <ProtectedRoute roles={['Owner', 'Manager', 'Staff']}>
+          <ProtectedRoute roles={['Owner', 'Manager', 'Staff_Sales', 'Staff']}>
             <Shell><PosPage /></Shell>
           </ProtectedRoute>
         } />
