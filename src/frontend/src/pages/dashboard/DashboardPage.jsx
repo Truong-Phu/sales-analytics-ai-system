@@ -1040,53 +1040,60 @@ function TabMultiChannel({ data, wd = {}, wl = {} }) {
         </ResponsiveContainer>
       </div>
 
-      {/* Doanh thu vs Chi phí QC + Xếp hạng kênh từ dữ liệu thật */}
+      {/* Xu hướng kênh theo tháng (Line Chart) + Tỷ trọng kênh (Scorecard) */}
       {(data.revenueByChannel ?? []).length > 0 && (() => {
-        const chData = (data.revenueByChannel ?? []).map(ch => ({
-          name:     ch.channelName,
-          revenue:  Math.round((ch.revenue ?? 0) / 1_000_000),   // triệu đ
-          adSpend:  Math.round((ch.adSpend  ?? 0) / 1_000_000),
-          roas:     parseFloat(ch.roas ?? 0),
-          orders:   ch.orders ?? 0,
-          growth:   parseFloat(ch.growth ?? 0),
+        const chNames = (data.revenueByChannel ?? []).map(ch => ch.channelName)
+        const chData  = (data.revenueByChannel ?? []).map(ch => ({
+          name:       ch.channelName,
+          revenue:    Math.round((ch.revenue ?? 0) / 1_000_000),
+          orders:     ch.orders ?? 0,
+          growth:     parseFloat(ch.growth ?? 0),
           revenuePct: parseFloat(ch.revenuePct ?? 0),
         }))
         const maxRev = Math.max(...chData.map(c => c.revenue), 1)
 
+        // Chuẩn hóa monthlyByChannel về triệu đ
+        const monthlyM = (data.monthlyByChannel ?? []).map(row => {
+          const norm = { month: row.month }
+          chNames.forEach(n => { norm[n] = Math.round((row[n] ?? 0) / 1_000_000) })
+          return norm
+        })
+
+        const LINE_COLORS = ['#6366F1','#EE4D2D','#2DD4BF','#0F3DD1','#1877F2','#6B7280']
+
         return (
           <div className="grid grid-cols-12 gap-4">
-            {/* Biểu đồ: Doanh thu vs Chi phí QC + ROAS */}
+            {/* Line Chart: xu hướng từng kênh theo tháng (KHÁC stacked bar của Tab Sales) */}
             <div className="lcard p-5 col-span-12 lg:col-span-7">
-              <SectionTitle>Doanh thu & Chi phí QC theo kênh</SectionTitle>
+              <SectionTitle>Xu hướng doanh thu từng kênh theo tháng</SectionTitle>
               <p className="text-caption mb-3" style={{ color: 'var(--text-tertiary)' }}>
-                Cột: Doanh thu (xanh) và Chi phí QC (hồng) · Đường: ROAS (trục phải)
+                Mỗi đường = 1 kênh · Theo dõi tốc độ tăng trưởng riêng từng kênh
               </p>
-              <ResponsiveContainer width="100%" height={280}>
-                <ComposedChart data={chData} margin={{ top: 8, right: 40, left: 0, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                  <XAxis dataKey="name" tick={{ fontSize: 11, fill: 'var(--text-secondary)' }} />
-                  <YAxis yAxisId="left"  tick={{ fontSize: 11, fill: 'var(--text-secondary)' }}
-                    tickFormatter={v => `${v}M`} />
-                  <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11, fill: '#F59E0B' }}
-                    tickFormatter={v => `${v}x`} />
-                  <Tooltip formatter={(val, name) =>
-                    name === 'ROAS' ? [`${val}x`, name] : [`₫${val}M`, name]
-                  } />
-                  <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
-                  <Bar yAxisId="left"  dataKey="revenue"  name="Doanh thu (M₫)" fill="#6366F1" radius={[4,4,0,0]} />
-                  <Bar yAxisId="left"  dataKey="adSpend"  name="Chi phí QC (M₫)" fill="#EC4899" radius={[4,4,0,0]} />
-                  <Line yAxisId="right" dataKey="roas" name="ROAS" type="monotone"
-                    stroke="#F59E0B" strokeWidth={2.5} dot={{ r: 5, fill: '#F59E0B' }} />
-                </ComposedChart>
-              </ResponsiveContainer>
+              {monthlyM.length > 0 ? (
+                <ResponsiveContainer width="100%" height={280}>
+                  <LineChart data={monthlyM} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                    <XAxis dataKey="month" tick={{ fontSize: 11, fill: 'var(--text-secondary)' }} />
+                    <YAxis tickFormatter={v => `${v}M`} tick={{ fontSize: 11, fill: 'var(--text-secondary)' }} />
+                    <Tooltip formatter={(val, name) => [`₫${val}M`, name]} />
+                    <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
+                    {chNames.map((name, i) => (
+                      <Line key={name} type="monotone" dataKey={name}
+                        stroke={LINE_COLORS[i % LINE_COLORS.length]}
+                        strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
+                    ))}
+                  </LineChart>
+                </ResponsiveContainer>
+              ) : (
+                <DevEmptyState title="Chưa có dữ liệu xu hướng theo tháng" />
+              )}
             </div>
 
-            {/* Scorecard xếp hạng kênh từ dữ liệu thật */}
+            {/* Scorecard tỷ trọng kênh — không có ROAS (thuộc Marketing tab) */}
             <div className="lcard p-5 col-span-12 lg:col-span-5">
-              <SectionTitle>Hiệu suất kênh</SectionTitle>
+              <SectionTitle>Tỷ trọng & tăng trưởng kênh</SectionTitle>
               <div className="space-y-3 mt-2">
                 {[...chData].sort((a, b) => b.revenue - a.revenue).map((ch, idx) => {
-                  const roasOk = ch.roas >= 4
                   const growthUp = ch.growth >= 0
                   return (
                     <div key={ch.name} className="rounded-xl p-3"
@@ -1106,18 +1113,14 @@ function TabMultiChannel({ data, wd = {}, wl = {} }) {
                           ₫{ch.revenue}M
                         </span>
                       </div>
-                      {/* Progress bar tỷ trọng */}
                       <div className="h-1.5 rounded-full mb-2" style={{ background: 'var(--border)' }}>
                         <div className="h-full rounded-full"
                           style={{ width: `${(ch.revenue / maxRev) * 100}%`, background: getChannelColor(ch.name) }} />
                       </div>
                       <div className="flex gap-3 text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                        <span>{ch.revenuePct.toFixed(1)}% tỷ trọng</span>
-                        <span style={{ color: roasOk ? 'var(--accent-500)' : '#F59E0B' }}>
-                          ROAS {ch.roas}x
-                        </span>
+                        <span className="font-medium">{ch.revenuePct.toFixed(1)}% tỷ trọng</span>
                         <span style={{ color: growthUp ? 'var(--accent-500)' : 'var(--color-error)' }}>
-                          {growthUp ? '▲' : '▼'}{Math.abs(ch.growth)}%
+                          {growthUp ? '▲' : '▼'} {Math.abs(ch.growth)}%
                         </span>
                         <span>{ch.orders.toLocaleString('vi-VN')} đơn</span>
                       </div>
