@@ -12,6 +12,8 @@ import {
 } from 'recharts'
 import { SkeletonCard } from '../../components/ui/Skeleton'
 import MockToast from '../../components/ui/MockToast'
+import MockDataButton from '../../components/ui/MockDataButton'
+import AiEmptyState from '../../components/ui/AiEmptyState'
 import { getDashboard, getTodayVsYesterday, getDrillDownOrders, getDrillDownCustomers,
          getFbAds,
          getOrderHeatmap, getOrderFunnel, getMonthlyByChannel,
@@ -924,7 +926,8 @@ function TabSales({ data, compareMode, prevData, from, to }) {
       {/* Bảng Top sản phẩm theo kênh */}
       <div className="lcard p-5">
         <SectionTitle>Top sản phẩm theo kênh</SectionTitle>
-        <div className="overflow-x-auto">
+        {data?.productsByChannel?.length > 0 ? (
+          <div className="overflow-x-auto">
             <table className="w-full text-caption border-collapse">
               <thead>
                 <tr style={{ borderBottom: '2px solid var(--border)' }}>
@@ -935,7 +938,7 @@ function TabSales({ data, compareMode, prevData, from, to }) {
                 </tr>
               </thead>
               <tbody>
-                {(data.productsByChannel || []).flatMap((ch, ci) =>
+                {data.productsByChannel.flatMap((ch, ci) =>
                   ch.products.map((p, pi) => (
                     <tr key={`${ci}-${pi}`} style={{ borderBottom: '1px solid var(--border)' }}>
                       {pi === 0 && (
@@ -953,6 +956,9 @@ function TabSales({ data, compareMode, prevData, from, to }) {
               </tbody>
             </table>
           </div>
+        ) : (
+          <AiEmptyState title="Chưa có dữ liệu top sản phẩm theo kênh" />
+        )}
       </div>
 
       {/* Phễu trạng thái đơn hàng (PENDING → DELIVERED) */}
@@ -1056,22 +1062,27 @@ function TabMultiChannel({ data, wd = {}, wl = {} }) {
       <div className="grid grid-cols-12 gap-4">
         <div className="lcard p-5 col-span-12 lg:col-span-6">
           <SectionTitle>{t('dashboard.chart.radar')}</SectionTitle>
-          <ResponsiveContainer width="100%" height={300}>
-            <RadarChart data={data.radarData} cx="50%" cy="50%" outerRadius="70%">
-              <PolarGrid stroke="var(--border)" />
-              <PolarAngleAxis dataKey="channel" tick={{ fontSize: 11, fill: 'var(--text-secondary)' }} />
-              <Radar name={t('dashboard.series.radarCost')}    dataKey="adCost"     stroke="#6366F1" fill="#6366F1" fillOpacity={0.2} />
-              <Radar name={t('dashboard.series.radarEngage')}  dataKey="engagement" stroke="#10B981" fill="#10B981" fillOpacity={0.2} />
-              <Radar name={t('dashboard.series.radarRevenue')} dataKey="revenue"    stroke="#F59E0B" fill="#F59E0B" fillOpacity={0.2} />
-              <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
-              <Tooltip />
-            </RadarChart>
-          </ResponsiveContainer>
+          {data?.radarData?.length > 0 ? (
+            <ResponsiveContainer width="100%" height={300}>
+              <RadarChart data={data.radarData} cx="50%" cy="50%" outerRadius="70%">
+                <PolarGrid stroke="var(--border)" />
+                <PolarAngleAxis dataKey="channel" tick={{ fontSize: 11, fill: 'var(--text-secondary)' }} />
+                <Radar name={t('dashboard.series.radarCost')}    dataKey="adCost"     stroke="#6366F1" fill="#6366F1" fillOpacity={0.2} />
+                <Radar name={t('dashboard.series.radarEngage')}  dataKey="engagement" stroke="#10B981" fill="#10B981" fillOpacity={0.2} />
+                <Radar name={t('dashboard.series.radarRevenue')} dataKey="revenue"    stroke="#F59E0B" fill="#F59E0B" fillOpacity={0.2} />
+                <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
+                <Tooltip />
+              </RadarChart>
+            </ResponsiveContainer>
+          ) : (
+            <AiEmptyState title="Chưa có dữ liệu so sánh đa chiều kênh bán" />
+          )}
         </div>
 
         {/* Ranking table theo chỉ số radar */}
         <div className="lcard p-5 col-span-12 lg:col-span-6">
           <SectionTitle>Xếp hạng kênh theo chỉ số</SectionTitle>
+          {data?.radarData?.length > 0 ? (
           <div className="space-y-4">
             {radarMetrics.map(metric => {
               const ranked = [...data.radarData].sort((a, b) => b[metric.key] - a[metric.key])
@@ -1094,6 +1105,9 @@ function TabMultiChannel({ data, wd = {}, wl = {} }) {
               )
             })}
           </div>
+          ) : (
+            <AiEmptyState title="Chưa có dữ liệu xếp hạng kênh" />
+          )}
         </div>
       </div>
 
@@ -1685,43 +1699,49 @@ function TabMarketing({ data, fbAdsData, wd = {}, wl = {} }) {
       </div>
 
       {/* Chi phí theo loại quảng cáo */}
-      <div className="grid grid-cols-12 gap-4">
-        <div className="lcard p-5 col-span-12 lg:col-span-5">
-          <SectionTitle>Chi phí theo loại quảng cáo</SectionTitle>
-          <ResponsiveContainer width="100%" height={220}>
-            <PieChart>
-              <Pie data={data.adTypeCosts || []} dataKey="value" nameKey="name"
-                cx="50%" cy="50%" outerRadius={80} innerRadius={45} paddingAngle={3}>
-                {(data.adTypeCosts || []).map((_, i) => <Cell key={i} fill={adPieColors[i % adPieColors.length]} />)}
-              </Pie>
-              <Tooltip formatter={v => fmtM(v)} />
-              <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
-
-        <div className="lcard p-5 col-span-12 lg:col-span-7">
-          <SectionTitle>Chi phí quảng cáo — phân bổ ngang</SectionTitle>
-          <div className="space-y-3 mt-2">
-            {(data.adTypeCosts || []).map((item, i) => {
-              const total = (data.adTypeCosts || []).reduce((s, x) => s + x.value, 0)
-              const pct   = total > 0 ? ((item.value / total) * 100).toFixed(1) : '0.0'
-              return (
-                <div key={i}>
-                  <div className="flex justify-between text-caption mb-1" style={{ color: 'var(--text-secondary)' }}>
-                    <span>{item.name}</span>
-                    <span className="font-mono">{fmtM(item.value)} <span style={{ color: 'var(--text-tertiary)' }}>({pct}%)</span></span>
+      {data?.adTypeCosts?.length > 0 ? (
+        <div className="grid grid-cols-12 gap-4">
+          <div className="lcard p-5 col-span-12 lg:col-span-5">
+            <SectionTitle>Chi phí theo loại quảng cáo</SectionTitle>
+            <ResponsiveContainer width="100%" height={220}>
+              <PieChart>
+                <Pie data={data.adTypeCosts} dataKey="value" nameKey="name"
+                  cx="50%" cy="50%" outerRadius={80} innerRadius={45} paddingAngle={3}>
+                  {data.adTypeCosts.map((_, i) => <Cell key={i} fill={adPieColors[i % adPieColors.length]} />)}
+                </Pie>
+                <Tooltip formatter={v => fmtM(v)} />
+                <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="lcard p-5 col-span-12 lg:col-span-7">
+            <SectionTitle>Chi phí quảng cáo — phân bổ ngang</SectionTitle>
+            <div className="space-y-3 mt-2">
+              {data.adTypeCosts.map((item, i) => {
+                const total = data.adTypeCosts.reduce((s, x) => s + x.value, 0)
+                const pct   = total > 0 ? ((item.value / total) * 100).toFixed(1) : '0.0'
+                return (
+                  <div key={i}>
+                    <div className="flex justify-between text-caption mb-1" style={{ color: 'var(--text-secondary)' }}>
+                      <span>{item.name}</span>
+                      <span className="font-mono">{fmtM(item.value)} <span style={{ color: 'var(--text-tertiary)' }}>({pct}%)</span></span>
+                    </div>
+                    <div className="h-2.5 rounded-full" style={{ background: 'var(--bg-elevated)' }}>
+                      <div className="h-full rounded-full transition-all duration-500"
+                        style={{ width: `${pct}%`, background: adPieColors[i % adPieColors.length] }} />
+                    </div>
                   </div>
-                  <div className="h-2.5 rounded-full" style={{ background: 'var(--bg-elevated)' }}>
-                    <div className="h-full rounded-full transition-all duration-500"
-                      style={{ width: `${pct}%`, background: adPieColors[i % adPieColors.length] }} />
-                  </div>
-                </div>
-              )
-            })}
+                )
+              })}
+            </div>
           </div>
         </div>
-      </div>
+      ) : (
+        <div className="lcard p-5">
+          <SectionTitle>Chi phí theo loại quảng cáo</SectionTitle>
+          <AiEmptyState title="Chưa có dữ liệu chi phí quảng cáo theo loại" />
+        </div>
+      )}
 
       {/* ── Facebook Ads section ── */}
       {fbAdsData && (() => {
@@ -2100,6 +2120,7 @@ export default function DashboardPage() {
   const [data,        setData]        = useState(null)
   const [loading,     setLoading]     = useState(true)
   const [isMock,      setIsMock]      = useState(false)
+  const [showMockBtn, setShowMockBtn] = useState(false)
   const [tvy,         setTvy]         = useState(null)
   const [compareMode, setCompareMode] = useState(false)
   const [prevData,    setPrevData]    = useState(null)
@@ -2237,14 +2258,22 @@ export default function DashboardPage() {
       setData(merged)
       setIsMock(false)
     } catch {
-      // Fallback mock data với params filter đã được áp dụng vào generateMockData
-      setData(generateMockData(from, to))
-      setIsMock(true)
+      setData(null)
+      setShowMockBtn(true)
     } finally {
       setLoading(false)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [presetKey, customFrom, customTo, channel])
+
+  // Load mock data on demand (khi user nhấn nút "Xem dữ liệu mẫu")
+  const loadMock = useCallback(() => {
+    const { from, to } = getRange()
+    setData(generateMockData(from, to))
+    setIsMock(true)
+    setShowMockBtn(false)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [presetKey, customFrom, customTo])
 
   // Fetch dữ liệu kỳ trước khi compareMode bật
   useEffect(() => {
@@ -2366,6 +2395,12 @@ export default function DashboardPage() {
       </div>
 
       <MockToast show={isMock} />
+      <MockDataButton show={showMockBtn} onClick={loadMock} />
+
+      {/* Khi API fail — empty state toàn bộ dashboard */}
+      {!data && !loading && (
+        <AiEmptyState title="Không kết nối được backend — không có dữ liệu để hiển thị" />
+      )}
 
       {/* ── Today vs Yesterday widget ── */}
       {tvy && (
