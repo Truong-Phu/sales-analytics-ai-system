@@ -15,7 +15,7 @@ namespace SalesAnalytics.API.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/ad-spend")]
-[Authorize(Roles = "Owner,Manager")]
+[Authorize(Roles = "Owner,Manager,Staff_Marketing")]
 public class AdSpendController(IConfiguration cfg, ITenantContext tenant) : ControllerBase
 {
     private readonly string _connStr = cfg.GetConnectionString("Default")!;

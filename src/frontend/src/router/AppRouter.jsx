@@ -358,7 +358,7 @@ export default function AppRouter() {
 
         {/* Marketing — Nhập chi phí quảng cáo */}
         <Route path="/marketing/ad-spend" element={
-          <ProtectedRoute roles={['Owner', 'Manager']}>
+          <ProtectedRoute roles={['Owner', 'Manager', 'Staff_Marketing']}>
             <Shell><AdSpendPage /></Shell>
           </ProtectedRoute>
         } />

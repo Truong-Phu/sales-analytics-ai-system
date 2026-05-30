@@ -46,6 +46,7 @@ const PERMISSIONS = {
   // ── Báo cáo ───────────────────────────────────────────────────────────────
   'report.view':             ['Owner', 'Manager', 'DataIT', SM],
   'report.export':           ['Owner', 'Manager'],
+  'ad-spend.manage':         ['Owner', 'Manager', SM],
 
   // ── Vận hành dữ liệu ─────────────────────────────────────────────────────
   'data-sync.view':          ['Owner', 'Manager', 'DataIT'],
