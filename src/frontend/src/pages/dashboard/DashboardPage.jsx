@@ -129,15 +129,8 @@ function generateMockData(from, to) {
     revContribPct: ((p.revenue / totalRevenue) * 100).toFixed(1),
   }))
 
-  // Bảng top sản phẩm theo kênh (top 3 mỗi kênh)
-  const productsByChannel = channels.map(ch => ({
-    channelName: ch.channelName,
-    products: [
-      { productName: `SP A - ${ch.channelName.split(' ')[0]}`, orders: Math.round(200 + Math.random() * 150), revenue: Math.round(totalRevenue * ch.pct * 0.30) },
-      { productName: `SP B - ${ch.channelName.split(' ')[0]}`, orders: Math.round(130 + Math.random() * 100), revenue: Math.round(totalRevenue * ch.pct * 0.22) },
-      { productName: `SP C - ${ch.channelName.split(' ')[0]}`, orders: Math.round(80  + Math.random() * 70),  revenue: Math.round(totalRevenue * ch.pct * 0.15) },
-    ],
-  }))
+  // Top SP theo kênh: không có API → trả về [] để AiEmptyState luôn hiện
+  const productsByChannel = []
 
   // Tồn kho mở rộng
   const inventoryRaw = [
@@ -166,17 +159,18 @@ function generateMockData(from, to) {
   const top5Overstock = [...inventory].sort((a, b) => b.stock - a.stock).slice(0, 5)
   const top5LowStock  = [...inventory].filter(i => i.stock < i.dailySales * 14).sort((a, b) => (a.stock / a.dailySales) - (b.stock / b.dailySales)).slice(0, 5)
 
-  // Tỷ lệ hoàn trả theo kênh
+  // Tỷ lệ hoàn trả theo kênh — giá trị cố định hợp lý cho demo
+  const RETURN_RATES = { Shopee: 4.2, Lazada: 3.8, 'TikTok Shop': 5.1, Offline: 1.8 }
   const returnByChannel = channels.map(ch => ({
     channelName: ch.channelName,
-    returnRate:  (1.5 + Math.random() * 4).toFixed(1),
+    returnRate:  (RETURN_RATES[ch.channelName] ?? 3.0).toFixed(1),
   }))
 
   return {
     kpi: {
       totalRevenue, totalProfit, totalOrders,
       avgOrderValue:      totalOrders > 0 ? Math.round(totalRevenue / totalOrders) : 0,
-      conversionRate:     3.8 + Math.random() * 1.2,
+      conversionRate:     4.2,
       newCustomers,
       retentionRate,
       roi:                totalRevenue > 0 ? ((totalProfit / (totalRevenue * 0.25)) * 100).toFixed(1) : '0.0',
@@ -201,8 +195,8 @@ function generateMockData(from, to) {
       revenuePct:   ch.pct * 100,
       adSpend:      ch.adSpend,
       roas:         ch.adSpend > 0 ? ((totalRevenue * ch.pct) / ch.adSpend).toFixed(1) : '0.0',
-      cac:          Math.round(ch.adSpend / (totalOrders * ch.pct * 0.3)),
-      growth:       ((-5 + Math.random() * 25)).toFixed(1),
+      cac:          ch.adSpend > 0 ? Math.round(ch.adSpend / (totalOrders * ch.pct * 0.3)) : 0,
+      growth:       ({ Shopee: '15.2', Lazada: '8.4', 'TikTok Shop': '22.7', Offline: '3.1' }[ch.channelName] ?? '0.0'),
       roasTarget:   4.0,
     })),
     topProducts,
@@ -234,26 +228,13 @@ function generateMockData(from, to) {
           rows.push({ hour: `${h}:00`, day, orders: Math.round(Math.random() * 60 + (h >= 8 && h <= 20 ? 30 : 5)) }))
       return rows
     })(),
-    radarData: channels.map(ch => ({
-      channel:    ch.channelName.split(' ')[0],
-      adCost:     Math.round(ch.adSpend / 1_000_000 * 10),
-      engagement: Math.round(70 + Math.random() * 30),
-      conversion: Math.round(ch.pct * 300 + Math.random() * 20),
-      revenue:    Math.round(ch.pct * 100),
-    })),
+    radarData: [], // không có API endpoint → AiEmptyState luôn hiện
     inventory,
     inventoryKpi: { avgDIO, overstockRate, stockoutRate, returnRate: 3.2, cancelRate: 5.1, deliverySuccess: 91.7 },
     top5Overstock,
     top5LowStock,
     returnByChannel,
-    // Chi phí quảng cáo theo loại
-    adTypeCosts: [
-      { name: 'Sponsored Ads',    value: 18_500_000 },
-      { name: 'Display Banner',   value:  9_200_000 },
-      { name: 'Video / Reels',    value: 12_800_000 },
-      { name: 'Influencer',       value:  7_500_000 },
-      { name: 'Google Search',    value:  5_000_000 },
-    ],
+    adTypeCosts: [], // không có API endpoint → AiEmptyState luôn hiện
     totalCustomers,
   }
 }
