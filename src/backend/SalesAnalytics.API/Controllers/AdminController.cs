@@ -23,7 +23,8 @@ public class AdminController(
     AppDbContext db,
     IAuditLogService audit,
     ITenantContext tenant,
-    IConfiguration cfg) : ControllerBase
+    IConfiguration cfg,
+    IEmailService email) : ControllerBase
 {
     private readonly string _connStr = cfg.GetConnectionString("Default")!;
     // ══════════════════════════════════════════════════════════════════════════
@@ -74,7 +75,10 @@ public class AdminController(
 
         if (!Enum.TryParse<UserRole>(req.Role, true, out var role) ||
             role is UserRole.Owner or UserRole.SuperAdmin)
-            return BadRequest(new { message = "Vai trò không hợp lệ. Chỉ được tạo Manager, Staff, Viewer, DataIT." });
+            return BadRequest(new { message = "Vai trò không hợp lệ." });
+
+        var companyName = (await db.Set<SalesAnalytics.Core.Entities.Company>()
+            .FirstOrDefaultAsync(c => c.Id == tenant.CompanyId))?.Name ?? "Công ty";
 
         var user = new User
         {
@@ -89,14 +93,26 @@ public class AdminController(
         db.Users.Add(user);
         await db.SaveChangesAsync();
 
+        // Gửi email mời nếu sendInvite = true
+        if (req.SendInvite)
+            _ = email.SendInviteUserAsync(
+                req.Email.Trim(), req.FullName.Trim(),
+                companyName, req.Role, req.TempPassword);
+
         await audit.LogAsync(
             userId: GetCurrentUserId(), username: GetCurrentUsername(),
             action: "CREATE_USER", entityType: "User", entityId: user.Id.ToString(),
-            newValue: $"{{\"email\":\"{user.Email}\",\"role\":\"{role}\"}}",
+            newValue: $"{{\"email\":\"{user.Email}\",\"role\":\"{role}\",\"invited\":{req.SendInvite.ToString().ToLower()}}}",
             ipAddress: HttpContext.Connection.RemoteIpAddress?.ToString(),
             userAgent: HttpContext.Request.Headers["User-Agent"].ToString());
 
-        return Ok(new { message = $"Đã tạo tài khoản {user.Email} với vai trò {role}.", userId = user.Id });
+        return Ok(new
+        {
+            message  = $"Đã tạo tài khoản {user.Email} với vai trò {role}." +
+                       (req.SendInvite ? " Email mời đã gửi." : ""),
+            userId   = user.Id,
+            invited  = req.SendInvite,
+        });
     }
 
     /// <summary>Cập nhật thông tin user (tên, role, active)</summary>

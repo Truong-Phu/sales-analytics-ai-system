@@ -2,12 +2,15 @@ namespace SalesAnalytics.Core.Enums;
 
 public enum UserRole
 {
-    Owner,       // Chủ doanh nghiệp – quản trị toàn bộ công ty
+    Owner,           // Chủ doanh nghiệp – quản trị toàn bộ công ty
     Manager,
-    Staff,
+    Staff,           // Legacy – dùng Staff_Sales/Warehouse/Marketing thay thế
+    Staff_Sales,     // Nhân viên bán hàng – POS, đơn hàng, khách hàng
+    Staff_Warehouse, // Nhân viên kho – nhập hàng, tồn kho, phiếu nhập
+    Staff_Marketing, // Nhân viên marketing – báo cáo, phân tích
     DataIT,
     Viewer,
-    SuperAdmin   // Quản trị hệ thống – không thuộc tenant nào
+    SuperAdmin       // Quản trị hệ thống – không thuộc tenant nào
 }
 
 public enum OrderStatus

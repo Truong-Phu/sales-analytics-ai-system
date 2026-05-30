@@ -11,6 +11,7 @@ public interface IEmailService
     Task<bool> SendAlertAsync(string toEmail, string title, string body);
     Task<bool> SendSubscriptionConfirmedAsync(string toEmail, string companyName, string plan, DateTime expiresAt);
     Task<bool> SendSubscriptionExpiryWarningAsync(string toEmail, string companyName, DateTime expiresAt, int daysLeft);
+    Task<bool> SendInviteUserAsync(string toEmail, string fullName, string companyName, string role, string tempPassword);
     Task<bool> SendPurchaseOrderAsync(string toEmail, string supplierName, string poCode,
         decimal totalAmount, List<(string ProductName, int Qty, decimal Price)> items,
         string senderCompany, string? approvalUrl = null);
@@ -323,6 +324,85 @@ public class ResendEmailService(
           </table>
         </body></html>
         """;
+
+    public async Task<bool> SendInviteUserAsync(string toEmail, string fullName, string companyName, string role, string tempPassword)
+    {
+        var roleLabel = role switch {
+            "Staff_Sales"     => "Nhân viên Bán hàng",
+            "Staff_Warehouse" => "Nhân viên Kho",
+            "Staff_Marketing" => "Nhân viên Marketing",
+            "Manager"         => "Quản lý",
+            "DataIT"          => "Data/IT",
+            "Viewer"          => "Người xem",
+            _                 => role,
+        };
+        var subject = $"[MSAS] Bạn được mời tham gia {companyName}";
+        var html = $"""
+            <!DOCTYPE html>
+            <html lang="vi">
+            <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+            <body style="margin:0;padding:0;background:#f4f6f8;font-family:'Segoe UI',Arial,sans-serif">
+              <table width="100%" cellpadding="0" cellspacing="0" style="padding:40px 20px">
+                <tr><td align="center">
+                  <table width="560" cellpadding="0" cellspacing="0"
+                         style="background:#fff;border-radius:16px;box-shadow:0 4px 24px rgba(0,0,0,0.08);overflow:hidden">
+                    <tr>
+                      <td style="background:linear-gradient(135deg,#6366f1,#8b5cf6);padding:32px 40px;text-align:center">
+                        <h1 style="margin:0;color:#fff;font-size:24px;font-weight:700">📊 SalesAnalytics</h1>
+                        <p style="margin:8px 0 0;color:rgba(255,255,255,0.8);font-size:13px">Hệ thống phân tích bán hàng đa kênh</p>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td style="padding:40px">
+                        <h2 style="margin:0 0 12px;color:#1e293b;font-size:20px">Xin chào {fullName}!</h2>
+                        <p style="margin:0 0 20px;color:#64748b;font-size:15px;line-height:1.7">
+                          Bạn đã được mời tham gia <strong>{companyName}</strong> trên hệ thống SalesAnalytics với vai trò
+                          <strong style="color:#6366f1">{roleLabel}</strong>.
+                        </p>
+                        <div style="background:#f1f5f9;border-radius:12px;padding:24px;margin-bottom:24px;border:1px solid #e2e8f0">
+                          <p style="margin:0 0 12px;color:#475569;font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:1px">
+                            Thông tin đăng nhập
+                          </p>
+                          <table width="100%" cellpadding="6">
+                            <tr>
+                              <td style="color:#64748b;font-size:14px;width:120px">Email</td>
+                              <td style="color:#1e293b;font-size:14px;font-weight:600">{toEmail}</td>
+                            </tr>
+                            <tr>
+                              <td style="color:#64748b;font-size:14px">Mật khẩu</td>
+                              <td style="color:#6366f1;font-size:16px;font-weight:700;font-family:monospace">{tempPassword}</td>
+                            </tr>
+                            <tr>
+                              <td style="color:#64748b;font-size:14px">Vai trò</td>
+                              <td style="color:#1e293b;font-size:14px;font-weight:600">{roleLabel}</td>
+                            </tr>
+                          </table>
+                        </div>
+                        <div style="background:#fef3c7;border-radius:8px;padding:14px 18px;margin-bottom:20px">
+                          <p style="margin:0;color:#92400e;font-size:13px">
+                            ⚠️ <strong>Hãy đổi mật khẩu ngay sau lần đăng nhập đầu tiên</strong> tại trang Tài khoản → Đổi mật khẩu.
+                          </p>
+                        </div>
+                        <p style="margin:0;color:#94a3b8;font-size:13px;line-height:1.6">
+                          Chúc bạn làm việc hiệu quả!<br>
+                          <strong>Đội ngũ SalesAnalytics</strong>
+                        </p>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td style="background:#f8fafc;padding:20px 40px;border-top:1px solid #e2e8f0">
+                        <p style="margin:0;color:#94a3b8;font-size:12px;text-align:center">
+                          © 2026 SalesAnalytics · Hệ thống phân tích bán hàng MSAS
+                        </p>
+                      </td>
+                    </tr>
+                  </table>
+                </td></tr>
+              </table>
+            </body></html>
+            """;
+        return await SendAsync(toEmail, subject, html);
+    }
 
     public async Task<bool> SendPurchaseOrderAsync(string toEmail, string supplierName, string poCode,
         decimal totalAmount, List<(string ProductName, int Qty, decimal Price)> items,

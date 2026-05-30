@@ -9,14 +9,26 @@ import { MOCK_USERS } from '../../mockData/admin'
 import { useAuth } from '../../hooks/useAuth'
 import api from '../../api/axios'
 
-const ROLE_CREATEABLE = ['Manager', 'Staff', 'Viewer']
-const ROLE_LABEL = { Manager: 'Quản lý', Staff: 'Nhân viên', Viewer: 'Xem', Owner: 'Chủ doanh nghiệp', DataIT: 'Data/IT' }
+const ROLE_CREATEABLE = ['Manager', 'Staff_Sales', 'Staff_Warehouse', 'Staff_Marketing', 'DataIT', 'Viewer']
+const ROLE_LABEL = {
+  Owner:           'Chủ doanh nghiệp',
+  Manager:         'Quản lý',
+  Staff_Sales:     'NV Bán hàng',
+  Staff_Warehouse: 'NV Kho',
+  Staff_Marketing: 'NV Marketing',
+  DataIT:          'Data/IT',
+  Viewer:          'Xem',
+  Staff:           'Nhân viên (cũ)',
+}
 const ROLE_COLOR = {
-  Owner:   { bg: 'rgba(139,92,246,0.10)', color: '#7C3AED', border: 'rgba(139,92,246,0.30)' },
-  Manager: { bg: 'rgba(59,130,246,0.10)',  color: '#3B82F6', border: 'rgba(59,130,246,0.30)'  },
-  Staff:   { bg: 'rgba(16,185,129,0.10)',  color: '#10B981', border: 'rgba(16,185,129,0.30)'  },
-  DataIT:  { bg: 'rgba(59,130,246,0.10)',  color: '#3B82F6', border: 'rgba(59,130,246,0.30)'  },
-  Viewer:  { bg: 'rgba(100,116,139,0.10)', color: '#64748B', border: 'rgba(100,116,139,0.30)' },
+  Owner:           { bg: 'rgba(139,92,246,0.10)', color: '#7C3AED', border: 'rgba(139,92,246,0.30)' },
+  Manager:         { bg: 'rgba(59,130,246,0.10)',  color: '#3B82F6', border: 'rgba(59,130,246,0.30)' },
+  Staff_Sales:     { bg: 'rgba(16,185,129,0.10)',  color: '#10B981', border: 'rgba(16,185,129,0.30)' },
+  Staff_Warehouse: { bg: 'rgba(245,158,11,0.10)',  color: '#D97706', border: 'rgba(245,158,11,0.30)' },
+  Staff_Marketing: { bg: 'rgba(236,72,153,0.10)',  color: '#DB2777', border: 'rgba(236,72,153,0.30)' },
+  Staff:           { bg: 'rgba(16,185,129,0.10)',  color: '#10B981', border: 'rgba(16,185,129,0.30)' },
+  DataIT:          { bg: 'rgba(99,102,241,0.10)',  color: '#6366F1', border: 'rgba(99,102,241,0.30)' },
+  Viewer:          { bg: 'rgba(100,116,139,0.10)', color: '#64748B', border: 'rgba(100,116,139,0.30)' },
 }
 const STATUS_CFG = {
   active:   { bg: 'rgba(16,185,129,0.10)', color: 'var(--accent-500)', border: 'rgba(16,185,129,0.30)', dot: 'var(--accent-500)', label: 'Hoạt động' },
@@ -91,7 +103,7 @@ function IconBtn({ icon, title, color, bg, hoverBg, onClick, disabled }) {
 // ─── Modal Thêm người dùng ────────────────────────────────────────────────────
 function CreateUserModal({ onClose, onCreated }) {
   const { t } = useTranslation()
-  const [form, setForm]   = useState({ fullName: '', email: '', tempPassword: '', role: 'Staff', sendInvite: false })
+  const [form, setForm]   = useState({ fullName: '', email: '', tempPassword: '', role: 'Staff_Sales', sendInvite: false })
   const [saving, setSaving] = useState(false)
   const [error,  setError]  = useState('')
 
