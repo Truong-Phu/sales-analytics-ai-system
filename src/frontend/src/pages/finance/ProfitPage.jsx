@@ -8,6 +8,7 @@ import {
   getProfitByDate, getProfitOrders, getFeeConfigs, updateFeeConfig,
 } from '../../api/financeApi'
 import AiEmptyState from '../../components/ui/AiEmptyState'
+import { KPI_DEFINITIONS } from '../../utils/kpiDefinitions'
 
 function fmtM(v) {
   if (v == null) return '—'
@@ -29,25 +30,25 @@ function channelLabel(raw) {
   return CHANNEL_LABELS[(raw || '').toLowerCase()] || raw
 }
 
-// ── Tooltip thông tin KPI ─────────────────────────────────────────────────────
-const KPI_INFO = {
-  'Doanh thu':          { formula: 'gross_revenue - discount', meaning: 'Doanh thu thuần sau chiết khấu từ tất cả kênh bán hàng.', interpret: 'Cao = bán được nhiều hàng.' },
-  'Giá vốn (COGS)':     { formula: 'cost_price × quantity', meaning: 'Chi phí nhập hàng trực tiếp để tạo ra sản phẩm đã bán.', interpret: 'Thấp = hiệu quả nhập hàng tốt.' },
-  'Lợi nhuận gộp':      { formula: 'Doanh thu − COGS', meaning: 'Lợi nhuận trước khi trừ phí vận hành và quảng cáo.', interpret: 'Biên gộp > 30% là tốt cho thời trang.' },
-  'Phí vận hành':       { formula: 'Platform fee + Payment fee + Packaging + Shipping', meaning: 'Toàn bộ phí liên quan đến bán hàng trên sàn và vận chuyển.', interpret: 'Phí < 15% doanh thu là hợp lý.' },
-  'LN sau phí sàn':     { formula: 'Lợi nhuận gộp − Phí vận hành', meaning: 'Lợi nhuận sau khi trừ phí sàn TMĐT và vận chuyển. Chưa trừ chi phí quảng cáo.', interpret: 'Đây là điểm hòa vốn trước QC.' },
-  'Chi phí QC':         { formula: 'Tổng chi phí quảng cáo nhập tay theo kênh/tháng', meaning: 'Chi phí chạy quảng cáo Shopee Ads, TikTok Ads, Lazada Ads...', interpret: 'Thấp hơn 20% doanh thu là hiệu quả.' },
-  'Lợi nhuận vận hành': { formula: 'LN sau phí sàn − Chi phí QC', meaning: 'Lợi nhuận thực tế từ hoạt động bán hàng đa kênh sau tất cả chi phí trực tiếp.', interpret: 'Dương = kinh doanh có lãi. Tăng trưởng = xu hướng tốt.' },
-  'Biên lợi nhuận gộp': { formula: '(LN gộp / Doanh thu) × 100', meaning: 'Tỷ lệ lợi nhuận gộp trên doanh thu.', interpret: 'Mục tiêu: ≥ 30% cho thời trang B2C.' },
-  'Biên LN vận hành':   { formula: '(LN vận hành / Doanh thu) × 100', meaning: 'Tỷ lệ lợi nhuận vận hành trên doanh thu sau tất cả chi phí trực tiếp.', interpret: 'Mục tiêu: ≥ 10% cho SME thời trang.' },
-  'ROAS':               { formula: 'Doanh thu / Chi phí quảng cáo', meaning: '1 đồng quảng cáo tạo ra bao nhiêu đồng doanh thu.', interpret: 'ROAS = 4 → 1đ QC tạo 4đ doanh thu. Mục tiêu: ≥ 4x.' },
-  'ACOS':               { formula: '(Chi phí QC / Doanh thu) × 100', meaning: 'Tỷ lệ chi phí quảng cáo trên doanh thu (Advertising Cost of Sale).', interpret: 'ACOS thấp = QC hiệu quả. Mục tiêu: ≤ 15-20%.' },
+// ── Ánh xạ từ label hiển thị → key trong KPI_DEFINITIONS (nguồn chân lý duy nhất)
+const KPI_KEY_MAP = {
+  'Doanh thu':          'revenue',
+  'Giá vốn (COGS)':     'cogs',
+  'Lợi nhuận gộp':      'grossProfit',
+  'Phí vận hành':       'platformFee',
+  'LN sau phí sàn':     'netAfterFees',
+  'Chi phí QC':         'adSpend',
+  'Lợi nhuận vận hành': 'operatingProfit',
+  'Biên lợi nhuận gộp': 'grossMargin',
+  'Biên LN vận hành':   'operatingMargin',
+  'ROAS':               'roas',
+  'ACOS':               'acos',
 }
 
 function InfoTooltip({ kpiKey }) {
   const [show, setShow] = useState(false)
-  const info = KPI_INFO[kpiKey]
-  if (!info) return null
+  const def = KPI_DEFINITIONS[KPI_KEY_MAP[kpiKey]]
+  if (!def) return null
   return (
     <span className="relative inline-flex ml-1">
       <button
@@ -61,9 +62,9 @@ function InfoTooltip({ kpiKey }) {
       {show && (
         <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 rounded-lg shadow-xl border z-50 p-3 text-left"
              style={{ background: '#1e293b', color: '#f1f5f9', fontSize: 11, lineHeight: 1.5 }}>
-          <div className="font-mono text-[10px] text-blue-300 mb-1">{info.formula}</div>
-          <div className="mb-1">{info.meaning}</div>
-          <div className="text-green-300 text-[10px]">{info.interpret}</div>
+          <div className="font-mono text-[10px] text-blue-300 mb-1">{def.formula}</div>
+          <div className="mb-1">{def.description}</div>
+          <div className="text-green-300 text-[10px]">{def.businessMeaning}</div>
         </div>
       )}
     </span>
