@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { getExpenses, getExpensesSummary, createExpense, updateExpense, deleteExpense } from '../../api/financeApi'
 import { useAuth } from '../../hooks/useAuth'
+import DateRangeFilter from '../../components/ui/DateRangeFilter'
 
 const EXPENSE_TYPES = ['Salary', 'Warehouse', 'Utilities', 'Internet', 'Office', 'Other']
 const TYPE_LABELS = {
@@ -194,7 +195,7 @@ export default function OperatingExpensesPage() {
       setDeleting(null)
       await load()
     } catch {
-      alert('Xoá thất bại')
+      setErr('Xoá thất bại')
     }
   }
 
@@ -239,13 +240,7 @@ export default function OperatingExpensesPage() {
 
       {/* Filters */}
       <div className="flex items-center gap-3 flex-wrap">
-        <div className="flex items-center gap-2">
-          <input type="date" value={from} max={to}
-                 onChange={e => setFrom(e.target.value)} className="linput text-sm" style={{ width: 140 }} />
-          <span style={{ color: 'var(--text-tertiary)' }}>—</span>
-          <input type="date" value={to} min={from} max={today()}
-                 onChange={e => setTo(e.target.value)} className="linput text-sm" style={{ width: 140 }} />
-        </div>
+        <DateRangeFilter from={from} to={to} onChange={(f, t) => { setFrom(f); setTo(t) }} />
         <select value={filter} onChange={e => setFilter(e.target.value)} className="linput text-sm" style={{ width: 160 }}>
           <option value="all">Tất cả loại</option>
           {EXPENSE_TYPES.map(t => <option key={t} value={t}>{TYPE_LABELS[t]}</option>)}

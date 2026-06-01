@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   getUsers, deactivate, activate, getAuditLogs,
@@ -8,6 +8,8 @@ import {
 } from '../../api/adminApi'
 import { useAuth } from '../../hooks/useAuth'
 import api from '../../api/axios'
+import DetailDrawer from '../../components/ui/DetailDrawer'
+import ConfirmDialog from '../../components/ui/ConfirmDialog'
 
 const ROLE_CREATEABLE = ['Manager', 'Staff_Sales', 'Staff_Warehouse', 'Staff_Marketing', 'DataIT', 'Viewer']
 const ROLE_LABEL = {
@@ -100,176 +102,418 @@ function IconBtn({ icon, title, color, bg, hoverBg, onClick, disabled }) {
   )
 }
 
-// ─── Modal Thêm người dùng ────────────────────────────────────────────────────
-function CreateUserModal({ onClose, onCreated }) {
-  const { t } = useTranslation()
-  const [form, setForm]   = useState({ fullName: '', email: '', tempPassword: '', role: 'Staff_Sales', sendInvite: false })
-  const [saving, setSaving] = useState(false)
-  const [error,  setError]  = useState('')
-
-  const set = key => e => setForm(f => ({ ...f, [key]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }))
-
-  const handleSubmit = async e => {
-    e.preventDefault()
-    if (!form.fullName.trim() || !form.email.trim() || !form.tempPassword.trim()) {
-      setError('Vui lòng điền đầy đủ các trường bắt buộc.')
-      return
-    }
-    if (form.tempPassword.length < 6) {
-      setError('Mật khẩu tạm phải có ít nhất 6 ký tự.')
-      return
-    }
-    setSaving(true)
-    setError('')
-    try {
-      await createUser({ fullName: form.fullName.trim(), email: form.email.trim(), tempPassword: form.tempPassword, role: form.role, sendInvite: form.sendInvite })
-      onCreated()
-      onClose()
-    } catch (err) {
-      setError(err?.response?.data?.message ?? 'Tạo người dùng thất bại. Kiểm tra email đã tồn tại chưa.')
-    } finally {
-      setSaving(false)
-    }
-  }
-
+// ─── Shared Field component ───────────────────────────────────────────────────
+function Field({ label, required, children }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-         style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}>
-      <div className="lcard w-full max-w-md p-6 space-y-5" style={{ maxHeight: '90vh', overflowY: 'auto' }}>
-        <div className="flex items-center justify-between">
-          <h2 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>Thêm người dùng mới</h2>
-          <button onClick={onClose} className="icon text-xl leading-none" style={{ color: 'var(--text-tertiary)' }}>close</button>
-        </div>
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {[
-            { label: 'Họ và tên', key: 'fullName', type: 'text',     placeholder: 'Nguyễn Văn A' },
-            { label: 'Email',     key: 'email',    type: 'email',    placeholder: 'user@company.com' },
-            { label: 'Mật khẩu tạm', key: 'tempPassword', type: 'password', placeholder: 'Tối thiểu 6 ký tự' },
-          ].map(({ label, key, type, placeholder }) => (
-            <div key={key} className="space-y-1">
-              <label className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
-                {label} <span style={{ color: '#EF4444' }}>*</span>
-              </label>
-              <input type={type} className="linput w-full" placeholder={placeholder}
-                     value={form[key]} onChange={set(key)} />
-            </div>
-          ))}
-
-          <div className="space-y-1">
-            <label className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Vai trò <span style={{ color: '#EF4444' }}>*</span></label>
-            <select className="linput w-full" value={form.role} onChange={set('role')}>
-              {ROLE_CREATEABLE.map(r => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
-            </select>
-          </div>
-
-          <label className="flex items-center gap-2 cursor-pointer select-none">
-            <input type="checkbox" className="w-4 h-4 rounded accent-primary"
-                   checked={form.sendInvite} onChange={set('sendInvite')} />
-            <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>Gửi email mời đăng nhập</span>
-          </label>
-
-          {error && (
-            <p className="text-xs px-3 py-2 rounded-lg"
-               style={{ background: 'rgba(239,68,68,0.08)', color: '#EF4444', border: '1px solid rgba(239,68,68,0.25)' }}>
-              {error}
-            </p>
-          )}
-
-          <div className="flex gap-3 pt-1">
-            <button type="button" onClick={onClose} className="lbtn lbtn-secondary flex-1" disabled={saving}>Hủy</button>
-            <button type="submit" className="lbtn lbtn-primary flex-1" disabled={saving}>
-              {saving ? <Spinner size={4} /> : 'Tạo người dùng'}
-            </button>
-          </div>
-        </form>
-      </div>
+    <div className="space-y-1.5">
+      <label className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
+        {label}{required && <span style={{ color: '#EF4444' }}> *</span>}
+      </label>
+      {children}
     </div>
   )
 }
 
-// ─── Modal Sửa người dùng ─────────────────────────────────────────────────────
-function EditUserModal({ user: u, onClose, onSaved }) {
-  const [form, setForm]   = useState({
-    fullName: u.fullName ?? '',
-    role:     u.role ?? 'Staff_Sales',
-    isActive: u.status === 'active' || u.isActive === true,
+function AlertMsg({ msg, type = 'error' }) {
+  if (!msg) return null
+  const styles = type === 'success'
+    ? { background: 'rgba(16,185,129,0.08)', color: '#059669', border: '1px solid rgba(16,185,129,0.25)' }
+    : { background: 'rgba(239,68,68,0.08)',  color: '#EF4444', border: '1px solid rgba(239,68,68,0.25)' }
+  return (
+    <p className="text-xs px-3 py-2 rounded-lg" style={styles}>{msg}</p>
+  )
+}
+
+// ─── Drawer Thêm người dùng ───────────────────────────────────────────────────
+function CreateUserDrawer({ open, onClose, onCreated }) {
+  const [form, setForm]     = useState({ fullName: '', email: '', tempPassword: '', role: 'Staff_Sales', sendInvite: true })
+  const [saving, setSaving] = useState(false)
+  const [error,  setError]  = useState('')
+  const [success,setSuccess]= useState('')
+
+  const set = key => e => setForm(f => ({ ...f, [key]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }))
+
+  const handleSubmit = async () => {
+    if (!form.fullName.trim() || !form.email.trim() || !form.tempPassword.trim()) {
+      setError('Vui lòng điền đầy đủ các trường bắt buộc.'); return
+    }
+    if (form.tempPassword.length < 6) { setError('Mật khẩu tạm phải có ít nhất 6 ký tự.'); return }
+    setSaving(true); setError(''); setSuccess('')
+    try {
+      const res = await createUser({ fullName: form.fullName.trim(), email: form.email.trim(), tempPassword: form.tempPassword, role: form.role, sendInvite: form.sendInvite })
+      const emailMsg = res?.invited ? ' · Email mời đã gửi.' : ''
+      setSuccess(`Đã tạo tài khoản thành công.${emailMsg}`)
+      setTimeout(() => { onCreated(); onClose() }, 1200)
+    } catch (err) {
+      setError(err?.response?.data?.message ?? 'Tạo người dùng thất bại. Kiểm tra email đã tồn tại chưa.')
+    } finally { setSaving(false) }
+  }
+
+  return (
+    <DetailDrawer
+      open={open} onClose={onClose}
+      title="Thêm người dùng mới"
+      width={560}
+      footer={
+        <>
+          <button onClick={onClose} className="lbtn lbtn-secondary flex-1 justify-center" disabled={saving}>Hủy</button>
+          <button onClick={handleSubmit} className="lbtn lbtn-primary flex-1 justify-center" disabled={saving}>
+            {saving ? <><Spinner size={4} /><span className="ml-2">Đang tạo...</span></> : 'Tạo người dùng'}
+          </button>
+        </>
+      }
+    >
+      <div className="p-5 space-y-4">
+        {[
+          { label: 'Họ và tên', key: 'fullName', type: 'text',     placeholder: 'Nguyễn Văn A', required: true },
+          { label: 'Email',     key: 'email',    type: 'email',    placeholder: 'user@company.com', required: true },
+          { label: 'Mật khẩu tạm', key: 'tempPassword', type: 'password', placeholder: 'Tối thiểu 6 ký tự', required: true },
+        ].map(({ label, key, type, placeholder, required }) => (
+          <Field key={key} label={label} required={required}>
+            <input type={type} className="linput w-full" placeholder={placeholder} value={form[key]} onChange={set(key)} />
+          </Field>
+        ))}
+
+        <Field label="Vai trò" required>
+          <select className="linput w-full" value={form.role} onChange={set('role')}>
+            {ROLE_CREATEABLE.map(r => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
+          </select>
+        </Field>
+
+        <label className="flex items-center gap-2.5 cursor-pointer select-none p-3 rounded-lg"
+               style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)' }}>
+          <input type="checkbox" className="w-4 h-4 accent-primary" checked={form.sendInvite} onChange={set('sendInvite')} />
+          <div>
+            <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Gửi email mời đăng nhập</span>
+            <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>Nhân viên nhận email có thông tin đăng nhập và mật khẩu tạm</p>
+          </div>
+        </label>
+
+        <AlertMsg msg={error} type="error" />
+        <AlertMsg msg={success} type="success" />
+      </div>
+    </DetailDrawer>
+  )
+}
+
+// ─── Drawer Sửa người dùng ───────────────────────────────────────────────────
+function EditUserDrawer({ open, user: u, onClose, onSaved }) {
+  const [form, setForm]     = useState({
+    fullName:    u?.fullName ?? '',
+    role:        u?.role ?? 'Staff_Sales',
+    isActive:    u?.status === 'active' || u?.isActive === true,
+    notifyEmail: false,
   })
   const [saving, setSaving] = useState(false)
   const [error,  setError]  = useState('')
+  const [success,setSuccess]= useState('')
 
-  const handleSubmit = async e => {
-    e.preventDefault()
+  const isOwnerUser = u?.role === 'Owner'
+
+  const handleSubmit = async () => {
     if (!form.fullName.trim()) { setError('Họ tên không được để trống.'); return }
-    setSaving(true)
-    setError('')
+    setSaving(true); setError(''); setSuccess('')
     try {
-      await updateUser(u.id, { fullName: form.fullName.trim(), role: form.role, isActive: form.isActive })
-      onSaved()
-      onClose()
+      await updateUser(u.id, { fullName: form.fullName.trim(), role: form.role, isActive: form.isActive, notifyEmail: form.notifyEmail })
+      const emailMsg = form.notifyEmail ? ' · Đã gửi email thông báo.' : ''
+      setSuccess(`Đã cập nhật thành công.${emailMsg}`)
+      setTimeout(() => { onSaved(); onClose() }, 1200)
     } catch (err) {
       setError(err?.response?.data?.message ?? 'Cập nhật thất bại. Vui lòng thử lại.')
-    } finally {
-      setSaving(false)
-    }
+    } finally { setSaving(false) }
   }
 
-  const isOwnerUser = u.role === 'Owner'
+  return (
+    <DetailDrawer
+      open={open} onClose={onClose}
+      title="Sửa thông tin người dùng"
+      subtitle={u?.email}
+      width={560}
+      footer={
+        <>
+          <button onClick={onClose} className="lbtn lbtn-secondary flex-1 justify-center" disabled={saving}>Hủy</button>
+          <button onClick={handleSubmit} className="lbtn lbtn-primary flex-1 justify-center" disabled={saving}>
+            {saving ? <><Spinner size={4} /><span className="ml-2">Đang lưu...</span></> : 'Lưu thay đổi'}
+          </button>
+        </>
+      }
+    >
+      <div className="p-5 space-y-4">
+        <Field label="Họ và tên" required>
+          <input className="linput w-full" value={form.fullName}
+                 onChange={e => setForm(f => ({ ...f, fullName: e.target.value }))} />
+        </Field>
+
+        <Field label="Vai trò">
+          {isOwnerUser ? (
+            <div className="px-3 py-2.5 rounded-lg text-xs" style={{ background: 'var(--bg-elevated)', color: 'var(--text-tertiary)' }}>
+              Không thể thay đổi vai trò Owner
+            </div>
+          ) : (
+            <select className="linput w-full" value={form.role}
+                    onChange={e => setForm(f => ({ ...f, role: e.target.value }))}>
+              {ROLE_CREATEABLE.map(r => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
+            </select>
+          )}
+        </Field>
+
+        {!isOwnerUser && (
+          <label className="flex items-center gap-2.5 cursor-pointer select-none p-3 rounded-lg"
+                 style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)' }}>
+            <input type="checkbox" className="w-4 h-4 accent-primary"
+                   checked={form.isActive} onChange={e => setForm(f => ({ ...f, isActive: e.target.checked }))} />
+            <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>Tài khoản đang hoạt động</span>
+          </label>
+        )}
+
+        {!isOwnerUser && (
+          <label className="flex items-center gap-2.5 cursor-pointer select-none p-3 rounded-lg"
+                 style={{ background: 'rgba(99,102,241,0.05)', border: '1px solid rgba(99,102,241,0.2)' }}>
+            <input type="checkbox" className="w-4 h-4 accent-primary"
+                   checked={form.notifyEmail} onChange={e => setForm(f => ({ ...f, notifyEmail: e.target.checked }))} />
+            <div>
+              <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Gửi email thông báo thay đổi</span>
+              <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>Nhân viên nhận email khi vai trò hoặc trạng thái thay đổi</p>
+            </div>
+          </label>
+        )}
+
+        <AlertMsg msg={error} type="error" />
+        <AlertMsg msg={success} type="success" />
+      </div>
+    </DetailDrawer>
+  )
+}
+
+// ─── Drawer Cài lương nhân viên ──────────────────────────────────────────────
+function PayrollDrawer({ open, staff, year, month, onClose, onSaved }) {
+  const [form, setForm] = useState({
+    baseSalary:    String(staff?.baseSalary    ?? ''),
+    bonusAmount:   String(staff?.bonusAmount   ?? ''),
+    penaltyAmount: String(staff?.penaltyAmount ?? ''),
+    note:          staff?.note ?? '',
+    sendPayslipEmail: true,
+  })
+  const [saving, setSaving] = useState(false)
+  const [err,    setErr]    = useState('')
+  const [success,setSuccess]= useState('')
+
+  const f = (k, v) => setForm(p => ({ ...p, [k]: v }))
+
+  const totalPreview = Math.max(0,
+    staff?.isKpiAchieved
+      ? (parseFloat(form.baseSalary) || 0) + (parseFloat(form.bonusAmount) || 0) - (parseFloat(form.penaltyAmount) || 0)
+      : (parseFloat(form.baseSalary) || 0) - (parseFloat(form.penaltyAmount) || 0)
+  )
+
+  const handleSave = async () => {
+    const base    = parseFloat(form.baseSalary)    || 0
+    const bonus   = parseFloat(form.bonusAmount)   || 0
+    const penalty = parseFloat(form.penaltyAmount) || 0
+    if (base < 0 || bonus < 0 || penalty < 0) { setErr('Giá trị không được âm'); return }
+    setSaving(true); setErr(''); setSuccess('')
+    try {
+      const res = await upsertPayroll({
+        userId: staff.userId, year, month,
+        baseSalary: base, bonusAmount: bonus, penaltyAmount: penalty,
+        note: form.note || null,
+      })
+      // Gửi phiếu lương nếu được chọn
+      let emailMsg = ''
+      if (form.sendPayslipEmail && res?.payrollId) {
+        try { await sendPayslip(res.payrollId); emailMsg = ' · Phiếu lương đã gửi.' }
+        catch { emailMsg = ' · Gửi phiếu lương thất bại.' }
+      }
+      setSuccess(`Đã lưu lương thành công.${emailMsg}`)
+      setTimeout(() => { onSaved() }, 1200)
+    } catch (e) {
+      setErr(e?.response?.data?.error ?? 'Lưu thất bại')
+    } finally { setSaving(false) }
+  }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-         style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}>
-      <div className="lcard w-full max-w-md p-6 space-y-5">
-        <div className="flex items-center justify-between">
-          <h2 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>Sửa thông tin người dùng</h2>
-          <button onClick={onClose} className="icon text-xl leading-none" style={{ color: 'var(--text-tertiary)' }}>close</button>
+    <DetailDrawer
+      open={open} onClose={onClose}
+      title={`Cài lương — ${staff?.fullName ?? ''}`}
+      subtitle={`Tháng ${month}/${year}`}
+      width={560}
+      footer={
+        <>
+          <button onClick={onClose} className="lbtn lbtn-secondary flex-1 justify-center" disabled={saving}>Hủy</button>
+          <button onClick={handleSave} className="lbtn lbtn-primary flex-1 justify-center" disabled={saving}>
+            {saving ? <><Spinner size={4} /><span className="ml-2">Đang lưu...</span></> : 'Lưu lương'}
+          </button>
+        </>
+      }
+    >
+      <div className="p-5 space-y-4">
+        {/* Trạng thái KPI */}
+        <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm"
+             style={{
+               background: !staff?.hasAnyTarget ? 'rgba(148,163,184,0.1)' : staff?.isKpiAchieved ? 'rgba(16,185,129,0.1)' : 'rgba(245,158,11,0.1)',
+               border: `1px solid ${!staff?.hasAnyTarget ? 'rgba(148,163,184,0.3)' : staff?.isKpiAchieved ? 'rgba(16,185,129,0.3)' : 'rgba(245,158,11,0.3)'}`,
+             }}>
+          <span className="icon text-base">
+            {!staff?.hasAnyTarget ? 'info' : staff?.isKpiAchieved ? 'verified' : 'warning'}
+          </span>
+          <span style={{ color: !staff?.hasAnyTarget ? '#94A3B8' : staff?.isKpiAchieved ? '#10B981' : '#F59E0B', fontWeight: 600 }}>
+            {!staff?.hasAnyTarget
+              ? 'Chưa đặt KPI — thưởng sẽ không được cộng tự động'
+              : staff?.isKpiAchieved
+                ? 'KPI đạt — thưởng được cộng vào tổng lương'
+                : 'KPI chưa đạt — thưởng không được cộng'}
+          </span>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-1">
-            <label className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Họ và tên <span style={{ color: '#EF4444' }}>*</span></label>
-            <input className="linput w-full" value={form.fullName}
-                   onChange={e => setForm(f => ({ ...f, fullName: e.target.value }))} />
-          </div>
+        {[
+          { label: 'Lương cơ bản (₫)',  key: 'baseSalary',    ph: 'VD: 8000000' },
+          { label: 'Thưởng KPI (₫)',    key: 'bonusAmount',   ph: 'VD: 2000000' },
+          { label: 'Khấu trừ (₫)',      key: 'penaltyAmount', ph: 'VD: 0'       },
+        ].map(fd => (
+          <Field key={fd.key} label={fd.label}>
+            <input type="number" min="0" step="100000" value={form[fd.key]}
+                   onChange={e => f(fd.key, e.target.value)}
+                   placeholder={fd.ph} className="linput !h-9 text-sm w-full"
+                   style={{ fontFamily: 'monospace' }} />
+          </Field>
+        ))}
 
-          <div className="space-y-1">
-            <label className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Vai trò</label>
-            {isOwnerUser ? (
-              <div className="px-3 py-2 rounded-lg text-xs" style={{ background: 'var(--bg-elevated)', color: 'var(--text-tertiary)' }}>
-                Không thể thay đổi vai trò Owner
-              </div>
-            ) : (
-              <select className="linput w-full" value={form.role}
-                      onChange={e => setForm(f => ({ ...f, role: e.target.value }))}>
-                {ROLE_CREATEABLE.map(r => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
-              </select>
-            )}
-          </div>
+        <Field label="Ghi chú">
+          <input type="text" value={form.note} onChange={e => f('note', e.target.value)}
+                 placeholder="Ghi chú (tuỳ chọn)" className="linput !h-9 text-sm w-full" />
+        </Field>
 
-          {!isOwnerUser && (
-            <label className="flex items-center gap-2 cursor-pointer select-none">
-              <input type="checkbox" className="w-4 h-4 rounded accent-primary"
-                     checked={form.isActive} onChange={e => setForm(f => ({ ...f, isActive: e.target.checked }))} />
-              <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>Tài khoản đang hoạt động</span>
-            </label>
-          )}
-
-          {error && (
-            <p className="text-xs px-3 py-2 rounded-lg"
-               style={{ background: 'rgba(239,68,68,0.08)', color: '#EF4444', border: '1px solid rgba(239,68,68,0.25)' }}>
-              {error}
+        {/* Tổng lương dự kiến — card nổi bật */}
+        <div className="rounded-xl p-4 flex items-center justify-between"
+             style={{ background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.25)' }}>
+          <div>
+            <p className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>Tổng lương dự kiến</p>
+            <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
+              {staff?.isKpiAchieved ? 'Lương + Thưởng − Khấu trừ' : 'Lương − Khấu trừ (KPI chưa đạt)'}
             </p>
-          )}
-
-          <div className="flex gap-3 pt-1">
-            <button type="button" onClick={onClose} className="lbtn lbtn-secondary flex-1" disabled={saving}>Hủy</button>
-            <button type="submit" className="lbtn lbtn-primary flex-1" disabled={saving}>
-              {saving ? <Spinner size={4} /> : 'Lưu thay đổi'}
-            </button>
           </div>
-        </form>
+          <span className="text-xl font-bold font-mono" style={{ color: '#6366F1' }}>
+            {totalPreview.toLocaleString('vi-VN')} ₫
+          </span>
+        </div>
+
+        {/* Email phiếu lương */}
+        <label className="flex items-center gap-2.5 cursor-pointer select-none p-3 rounded-lg"
+               style={{ background: 'rgba(99,102,241,0.05)', border: '1px solid rgba(99,102,241,0.2)' }}>
+          <input type="checkbox" className="w-4 h-4 accent-primary"
+                 checked={form.sendPayslipEmail} onChange={e => f('sendPayslipEmail', e.target.checked)} />
+          <div>
+            <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Gửi phiếu lương qua email</span>
+            <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>Nhân viên nhận email có chi tiết lương tháng này</p>
+          </div>
+        </label>
+
+        <AlertMsg msg={err} type="error" />
+        <AlertMsg msg={success} type="success" />
       </div>
-    </div>
+    </DetailDrawer>
+  )
+}
+
+// ─── Drawer Đặt KPI nhân viên ────────────────────────────────────────────────
+function SetKpiDrawer({ open, staff, period, onClose, onSaved }) {
+  const [year, month] = (period ?? '').split('-').map(Number)
+  const [rev,  setRev]       = useState(String(staff?.revTarget  ?? ''))
+  const [ord,  setOrd]       = useState(String(staff?.ordTarget  ?? ''))
+  const [cust, setCust]      = useState(String(staff?.custTarget ?? ''))
+  const [note, setNote]      = useState('')
+  const [notifyEmail, setNotifyEmail] = useState(true)
+  const [saving, setSaving]  = useState(false)
+  const [err,    setErr]     = useState('')
+  const [success,setSuccess] = useState('')
+
+  const handleSave = async () => {
+    setSaving(true); setErr(''); setSuccess('')
+    try {
+      await api.post('/api/admin/staff/kpi/targets', {
+        userId:            staff.userId,
+        year, month,
+        revenueTarget:     rev  ? Number(rev)  : null,
+        orderCountTarget:  ord  ? Number(ord)  : null,
+        newCustomerTarget: cust ? Number(cust) : null,
+        notifyEmail,
+        note: note || null,
+      })
+      const emailMsg = notifyEmail ? ' · Email KPI đã gửi cho nhân viên.' : ''
+      setSuccess(`Đã lưu KPI tháng ${month}/${year}.${emailMsg}`)
+      setTimeout(() => { onSaved() }, 1200)
+    } catch (e) {
+      setErr(e?.response?.data?.message ?? 'Lỗi lưu KPI target')
+    } finally { setSaving(false) }
+  }
+
+  return (
+    <DetailDrawer
+      open={open} onClose={onClose}
+      title={`Đặt KPI — ${staff?.fullName ?? ''}`}
+      subtitle={`Tháng ${month}/${year}`}
+      width={560}
+      footer={
+        <>
+          <button onClick={onClose} className="lbtn lbtn-secondary flex-1 justify-center" disabled={saving}>Hủy</button>
+          <button onClick={handleSave} className="lbtn lbtn-primary flex-1 justify-center" disabled={saving}>
+            {saving ? <><Spinner size={4} /><span className="ml-2">Đang lưu...</span></> : 'Lưu KPI'}
+          </button>
+        </>
+      }
+    >
+      <div className="p-5 space-y-4">
+        {/* KPI hiện tại nếu có */}
+        {(staff?.actualRevenue != null || staff?.actualOrders != null) && (
+          <div className="rounded-xl p-4 space-y-2"
+               style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)' }}>
+            <p className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>KPI thực tế tháng {month}/{year}</p>
+            <div className="grid grid-cols-3 gap-3">
+              {[
+                { label: 'Doanh thu', val: staff?.actualRevenue != null ? (staff.actualRevenue/1e6).toFixed(1)+'M' : '—' },
+                { label: 'Số đơn',   val: staff?.actualOrders  ?? '—' },
+                { label: 'KH mới',   val: staff?.actualCustomers ?? '—' },
+              ].map(({ label, val }) => (
+                <div key={label} className="text-center">
+                  <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{label}</p>
+                  <p className="font-bold text-sm" style={{ color: 'var(--text-primary)' }}>{val}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {[
+          { label: 'Mục tiêu doanh thu (₫)', val: rev,  set: setRev,  ph: 'VD: 50000000' },
+          { label: 'Mục tiêu số đơn',         val: ord,  set: setOrd,  ph: 'VD: 100' },
+          { label: 'Mục tiêu KH mới',          val: cust, set: setCust, ph: 'VD: 20' },
+        ].map(f => (
+          <Field key={f.label} label={f.label}>
+            <input type="number" value={f.val} onChange={e => f.set(e.target.value)}
+                   placeholder={f.ph} className="linput !h-9 text-sm w-full" />
+          </Field>
+        ))}
+
+        <Field label="Ghi chú">
+          <input type="text" value={note} onChange={e => setNote(e.target.value)}
+                 placeholder="Ghi chú cho nhân viên (tuỳ chọn)" className="linput !h-9 text-sm w-full" />
+        </Field>
+
+        {/* Email notification */}
+        <label className="flex items-center gap-2.5 cursor-pointer select-none p-3 rounded-lg"
+               style={{ background: 'rgba(99,102,241,0.05)', border: '1px solid rgba(99,102,241,0.2)' }}>
+          <input type="checkbox" className="w-4 h-4 accent-primary"
+                 checked={notifyEmail} onChange={e => setNotifyEmail(e.target.checked)} />
+          <div>
+            <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Gửi email thông báo KPI</span>
+            <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>Nhân viên nhận email với mục tiêu KPI tháng {month}/{year}</p>
+          </div>
+        </label>
+
+        <AlertMsg msg={err} type="error" />
+        <AlertMsg msg={success} type="success" />
+      </div>
+    </DetailDrawer>
   )
 }
 
@@ -350,8 +594,15 @@ function PayrollModal({ staff, year, month, onClose, onSaved }) {
         </div>
         <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
           Tháng {month}/{year} ·{' '}
-          <span style={{ color: staff.isKpiAchieved ? '#10B981' : '#F59E0B', fontWeight: 600 }}>
-            {staff.isKpiAchieved ? '✅ KPI đạt — thưởng được cộng' : '⚠ KPI chưa đạt — thưởng không cộng'}
+          <span style={{
+            color: !staff.hasAnyTarget ? '#94A3B8' : staff.isKpiAchieved ? '#10B981' : '#F59E0B',
+            fontWeight: 600
+          }}>
+            {!staff.hasAnyTarget
+              ? '— Chưa đặt KPI (thưởng sẽ không tự động)'
+              : staff.isKpiAchieved
+                ? '✅ KPI đạt — thưởng được cộng vào tổng'
+                : '⚠ KPI chưa đạt — thưởng không được cộng'}
           </span>
         </p>
 
@@ -495,10 +746,11 @@ function KpiTab() {
 
   return (
     <div className="space-y-3">
-      {target && (
-        <SetTargetModal staff={target} period={period} onClose={() => setTarget(null)}
-                        onSaved={() => { setTarget(null); fetch() }} />
-      )}
+      <SetKpiDrawer
+        open={!!target} staff={target} period={period}
+        onClose={() => setTarget(null)}
+        onSaved={() => { setTarget(null); fetch() }}
+      />
       <div className="lcard p-3 flex flex-wrap gap-3 items-center">
         <div className="flex flex-col gap-1">
           <label className="text-xs" style={{ color: 'var(--text-secondary)' }}>Kỳ (tháng/năm)</label>
@@ -623,12 +875,15 @@ function PayrollTab() {
 
   useEffect(() => { load() }, [load])
 
+  const [confirmDlg, setConfirmDlg] = useState(null)
+
   const act = async (payrollId, fn, label) => {
-    if (!window.confirm(`${label}?`)) return
-    setActing(a => ({ ...a, [payrollId]: true }))
-    try { await fn(); await load() }
-    catch (e) { alert(e?.response?.data?.error ?? `${label} thất bại`) }
-    finally { setActing(a => ({ ...a, [payrollId]: false })) }
+    setConfirmDlg({ title: 'Xác nhận thao tác', msg: `${label}?`, icon: 'warning', danger: false, action: async () => {
+      setActing(a => ({ ...a, [payrollId]: true }))
+      try { await fn(); await load() }
+      catch (e) { setError(e?.response?.data?.error ?? `${label} thất bại`) }
+      finally { setActing(a => ({ ...a, [payrollId]: false })) }
+    }})
   }
 
   const MONTHS = ['T1','T2','T3','T4','T5','T6','T7','T8','T9','T10','T11','T12']
@@ -637,13 +892,20 @@ function PayrollTab() {
 
   return (
     <div className="space-y-3">
-      {salaryTarget && (
-        <PayrollModal
-          staff={salaryTarget} year={year} month={month}
-          onClose={() => setSalaryTarget(null)}
-          onSaved={() => { setSalaryTarget(null); load() }}
-        />
-      )}
+      <PayrollDrawer
+        open={!!salaryTarget} staff={salaryTarget} year={year} month={month}
+        onClose={() => setSalaryTarget(null)}
+        onSaved={() => { setSalaryTarget(null); load() }}
+      />
+      <ConfirmDialog
+        open={!!confirmDlg}
+        title={confirmDlg?.title ?? 'Xác nhận thao tác'}
+        message={confirmDlg?.msg}
+        icon={confirmDlg?.icon ?? 'warning'}
+        danger={confirmDlg?.danger ?? false}
+        onClose={() => setConfirmDlg(null)}
+        onConfirm={() => { const a = confirmDlg?.action; setConfirmDlg(null); a?.() }}
+      />
 
       {/* Controls */}
       <div className="lcard p-3 flex flex-wrap gap-3 items-center">
@@ -783,7 +1045,7 @@ function PayrollTab() {
                                   color="#3B82F6" bg="rgba(59,130,246,0.08)" hoverBg="rgba(59,130,246,0.16)"
                                   onClick={() => act(pid, async () => {
                                     const r = await sendPayslip(pid)
-                                    if (!r.sent) alert(r.message)
+                                    if (!r.sent) setError(r.message)
                                   }, `Gửi phiếu lương cho ${s.fullName}`)} />
                               )}
                             </>
@@ -877,9 +1139,10 @@ export default function AdminPage() {
     else                       act(u.id, () => activate(u.id))
   }
 
+  const [userConfirmDlg, setUserConfirmDlg] = useState(null)
+
   const handleDelete = u => {
-    if (!window.confirm(`Xóa người dùng "${u.fullName}"?\nHành động này không thể hoàn tác.`)) return
-    act(u.id, () => deleteUser(u.id))
+    setUserConfirmDlg({ user: u })
   }
 
   const managerCount = users.filter(u => u.role === 'Manager').length
@@ -894,8 +1157,17 @@ export default function AdminPage() {
 
   return (
     <div className="space-y-4">
-      {showCreate && <CreateUserModal onClose={() => setShowCreate(false)} onCreated={fetchUsers} />}
-      {editUser   && <EditUserModal   user={editUser} onClose={() => setEditUser(null)} onSaved={fetchUsers} />}
+      <CreateUserDrawer open={showCreate}  onClose={() => setShowCreate(false)} onCreated={fetchUsers} />
+      <EditUserDrawer   open={!!editUser} user={editUser ?? {}} onClose={() => setEditUser(null)} onSaved={fetchUsers} />
+      <ConfirmDialog
+        open={!!userConfirmDlg}
+        title="Xác nhận xóa người dùng"
+        message={userConfirmDlg ? `Xóa người dùng "${userConfirmDlg.user?.fullName}"?` : ''}
+        icon="delete_forever"
+        danger
+        onClose={() => setUserConfirmDlg(null)}
+        onConfirm={() => { const u = userConfirmDlg?.user; setUserConfirmDlg(null); if (u) act(u.id, () => deleteUser(u.id)) }}
+      />
 
       {/* Header */}
       <div className="flex items-center justify-between gap-4">

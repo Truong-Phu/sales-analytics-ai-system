@@ -1,6 +1,7 @@
-﻿import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import DetailDrawer from '../../components/ui/DetailDrawer'
+import ConfirmDialog from '../../components/ui/ConfirmDialog'
 import { getSyncStatus, triggerSync } from '../../api/syncApi'
 import api from '../../api/axios'
 import { showToast } from '../../utils/toast'
@@ -62,6 +63,7 @@ function KeywordManager() {
   const [input,    setInput]    = useState('')
   const [busy,     setBusy]     = useState(false)
   const [error,    setError]    = useState('')
+  const [confirmDlg, setConfirmDlg] = useState(null)
 
   const load = async () => {
     setLoading(true)
@@ -91,14 +93,27 @@ function KeywordManager() {
     finally { setBusy(false) }
   }
 
-  const handleDelete = async id => {
-    if (!confirm('Xóa từ khóa này?')) return
+  const handleDelete = (id) => {
+    setConfirmDlg({ id })
+  }
+
+  const doDeleteKeyword = async (id) => {
     setBusy(true)
     try { await deleteKeyword(id); await load() } catch { /* ignore */ }
     finally { setBusy(false) }
   }
 
   return (
+    <>
+    <ConfirmDialog
+      open={!!confirmDlg}
+      title="Xóa từ khóa"
+      message="Xóa từ khóa này?"
+      icon="delete_forever"
+      danger
+      onClose={() => setConfirmDlg(null)}
+      onConfirm={() => { const id = confirmDlg?.id; setConfirmDlg(null); doDeleteKeyword(id) }}
+    />
     <div className="lcard p-5 space-y-4">
       <div className="flex items-center gap-2">
         <span className="icon" style={{ fontSize: 20, color: 'var(--primary-500)' }}>search</span>
@@ -195,6 +210,7 @@ function KeywordManager() {
         </div>
       )}
     </div>
+    </>
   )
 }
 
@@ -1033,6 +1049,7 @@ function FacebookConnectCard() {
   const [pageId,        setPageId]        = useState('')
   const [token,         setToken]         = useState('')
   const [connecting,    setConnecting]    = useState(false)
+  const [fbConfirmDlg, setFbConfirmDlg] = useState(false)
   const [scraping,      setScraping]      = useState(false)
   const [scrapeResult,  setScrapeResult]  = useState(null)
   const [error,         setError]         = useState('')
@@ -1070,8 +1087,11 @@ function FacebookConnectCard() {
     }
   }
 
-  const handleDisconnect = async () => {
-    if (!confirm('Bạn chắc chắn muốn ngắt kết nối Facebook Page này?')) return
+  const handleDisconnect = () => {
+    setFbConfirmDlg(true)
+  }
+
+  const doDisconnectFacebook = async () => {
     try {
       await disconnectFacebook()
       showToast('Đã ngắt kết nối Facebook.', 'info')
@@ -1115,6 +1135,16 @@ function FacebookConnectCard() {
   }
 
   return (
+    <>
+    <ConfirmDialog
+      open={fbConfirmDlg}
+      title="Ngắt kết nối Facebook"
+      message="Bạn chắc chắn muốn ngắt kết nối Facebook Page này?"
+      icon="link_off"
+      danger
+      onClose={() => setFbConfirmDlg(false)}
+      onConfirm={() => { setFbConfirmDlg(false); doDisconnectFacebook() }}
+    />
     <div className="lcard p-5 space-y-5">
       {/* Header */}
       <div className="flex items-center gap-3">
@@ -1339,6 +1369,7 @@ function FacebookConnectCard() {
         </div>
       )}
     </div>
+    </>
   )
 }
 
@@ -1350,6 +1381,7 @@ function ConnectorCard({ channel, label, color, icon, guideUrl, guideText, field
   const [showPwd,    setShowPwd]    = useState({})
   const [connecting, setConnecting] = useState(false)
   const [error,      setError]      = useState('')
+  const [ccConfirmDlg, setCcConfirmDlg] = useState(false)
 
   const loadStatus = async () => {
     setLoading(true)
@@ -1373,8 +1405,11 @@ function ConnectorCard({ channel, label, color, icon, guideUrl, guideText, field
     } finally { setConnecting(false) }
   }
 
-  const handleDisconnect = async () => {
-    if (!confirm(`Bạn chắc chắn muốn ngắt kết nối ${label}?`)) return
+  const handleDisconnect = () => {
+    setCcConfirmDlg(true)
+  }
+
+  const doDisconnect = async () => {
     try {
       await api.delete(disconnectUrl)
       showToast(`Đã ngắt kết nối ${label}.`, 'info')
@@ -1390,6 +1425,16 @@ function ConnectorCard({ channel, label, color, icon, guideUrl, guideText, field
   )
 
   return (
+    <>
+    <ConfirmDialog
+      open={ccConfirmDlg}
+      title={`Ngắt kết nối ${label}`}
+      message={`Bạn chắc chắn muốn ngắt kết nối ${label}?`}
+      icon="link_off"
+      danger
+      onClose={() => setCcConfirmDlg(false)}
+      onConfirm={() => { setCcConfirmDlg(false); doDisconnect() }}
+    />
     <div className="lcard p-5 space-y-5">
       {/* Header */}
       <div className="flex items-center gap-3">
@@ -1502,6 +1547,7 @@ function ConnectorCard({ channel, label, color, icon, guideUrl, guideText, field
         </div>
       )}
     </div>
+    </>
   )
 }
 

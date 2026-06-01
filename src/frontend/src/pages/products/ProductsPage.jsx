@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import DetailDrawer from '../../components/ui/DetailDrawer'
 import { getOltpProducts, createProduct, updateProduct, deleteProduct, getCategories, uploadProductImage, getChannelPrices, saveChannelPrice } from '../../api/dashboardApi'
+import ConfirmDialog from '../../components/ui/ConfirmDialog'
 import { useAuth } from '../../hooks/useAuth'
 import { useDebounce } from '../../hooks/useDebounce'
 import { exportToCsv } from '../../utils/format'
@@ -58,6 +59,7 @@ function ProductDetailModal({ product, canEdit, onClose, onSaved }) {
   const [varSaving,     setVarSaving]     = useState(false)
   const [varDeleting,   setVarDeleting]   = useState(null)
   const [varErr,        setVarErr]        = useState('')
+  const [varConfirmDlg, setVarConfirmDlg] = useState(null)
   const [showVarForm,   setShowVarForm]   = useState(false)
   const [varForm,       setVarForm]       = useState({ sku: '', color: '', size: '', salePrice: '', stockQuantity: 0 })
   const fileRef = useRef(null)
@@ -127,8 +129,11 @@ function ProductDetailModal({ product, canEdit, onClose, onSaved }) {
     } finally { setVarSaving(false) }
   }
 
-  const handleDeleteVariation = async (varId) => {
-    if (!window.confirm('Xóa biến thể này?')) return
+  const handleDeleteVariation = (varId) => {
+    setVarConfirmDlg({ varId })
+  }
+
+  const doDeleteVariation = async (varId) => {
     setVarDeleting(varId)
     try {
       await api.delete(`/api/products/${productId}/variations/${varId}`)
@@ -228,6 +233,16 @@ function ProductDetailModal({ product, canEdit, onClose, onSaved }) {
   )
 
   return (
+    <>
+    <ConfirmDialog
+      open={!!varConfirmDlg}
+      title="Xóa biến thể"
+      message="Xóa biến thể này?"
+      icon="delete_forever"
+      danger
+      onClose={() => setVarConfirmDlg(null)}
+      onConfirm={() => { const id = varConfirmDlg?.varId; setVarConfirmDlg(null); doDeleteVariation(id) }}
+    />
     <DetailDrawer
       open={true}
       onClose={onClose}
@@ -611,6 +626,7 @@ function ProductDetailModal({ product, canEdit, onClose, onSaved }) {
         )}
       </div>
     </DetailDrawer>
+    </>
   )
 }
 
@@ -692,23 +708,24 @@ function ProductFormModal({ initial, mode, onClose, onSaved }) {
     label: c.level > 1 ? `  └ ${c.categoryName}` : c.categoryName,
   }))
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-         style={{ background: 'rgba(0,0,0,0.6)' }} onClick={onClose}>
-      <div className="lcard w-full max-w-lg p-6 space-y-4 scale-in overflow-y-auto max-h-[90vh]"
-           onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between">
-          <h2 className="font-bold text-sm" style={{ color: 'var(--text-primary)' }}>
-            {isEdit ? 'Sửa sản phẩm' : 'Thêm sản phẩm mới'}
-          </h2>
-          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-lg"
-                  style={{ color: 'var(--text-secondary)' }}
-                  onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
-                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-            <span className="icon">close</span>
-          </button>
-        </div>
+  const drawerFooter = (
+    <>
+      <button onClick={onClose} className="lbtn lbtn-secondary flex-1 justify-center">Hủy</button>
+      <button onClick={handleSave} disabled={saving} className="lbtn lbtn-primary flex-1 justify-center">
+        {saving ? 'Đang lưu...' : 'Lưu sản phẩm'}
+      </button>
+    </>
+  )
 
+  return (
+    <DetailDrawer
+      open={true}
+      onClose={onClose}
+      title={isEdit ? 'Chỉnh sửa sản phẩm' : 'Thêm sản phẩm mới'}
+      width={560}
+      footer={drawerFooter}
+    >
+      <div className="p-5 space-y-4">
         {err && <p className="text-xs rounded-lg px-3 py-2" style={{ background: 'rgba(239,68,68,0.1)', color: '#EF4444' }}>{err}</p>}
 
         {/* Hình ảnh sản phẩm */}
@@ -762,15 +779,8 @@ function ProductFormModal({ initial, mode, onClose, onSaved }) {
           <textarea className="linput text-sm" rows={2} value={form.description ?? ''}
                     onChange={set('description')} />
         </div>
-
-        <div className="flex gap-2 pt-1">
-          <button onClick={onClose} className="lbtn lbtn-secondary flex-1 justify-center">Hủy</button>
-          <button onClick={handleSave} disabled={saving} className="lbtn lbtn-primary flex-1 justify-center">
-            {saving ? 'Đang lưu...' : 'Lưu'}
-          </button>
-        </div>
       </div>
-    </div>
+    </DetailDrawer>
   )
 }
 
@@ -788,6 +798,7 @@ export default function ProductsPage() {
   const [formMode,          setFormMode]          = useState(null)
   const [toast,             setToast]             = useState('')
   const [checkedIds,        setCheckedIds]        = useState(new Set())
+  const [confirmDlg, setConfirmDlg] = useState(null)
   const [catalogOnly,       setCatalogOnly]       = useState(true) // mặc định: chỉ catalog chuẩn
 
   const debouncedSearch = useDebounce(search, 350)
@@ -846,16 +857,17 @@ export default function ProductsPage() {
 
   const openCreate = () => setFormMode('create')
 
-  const handleDelete = async (p, e) => {
+  const handleDelete = (p, e) => {
     e.stopPropagation()
-    if (!window.confirm(`Xóa sản phẩm "${p.product_name ?? p.name}"?`)) return
-    try {
-      await deleteProduct(p.product_id ?? p.productId)
-      showToast('Đã xóa sản phẩm')
-      fetchData()
-    } catch (err) {
-      showToast(err.response?.data?.message ?? 'Lỗi xóa sản phẩm')
-    }
+    setConfirmDlg({ title: 'Xóa sản phẩm', msg: `Xóa sản phẩm "${p.product_name ?? p.name}"?`, action: async () => {
+      try {
+        await deleteProduct(p.product_id ?? p.productId)
+        showToast('Đã xóa sản phẩm')
+        fetchData()
+      } catch (err) {
+        showToast(err.response?.data?.message ?? 'Lỗi xóa sản phẩm')
+      }
+    }})
   }
 
   const handleToggleActive = async (p, e) => {
@@ -897,14 +909,15 @@ export default function ProductsPage() {
     const allChecked = items.length > 0 && items.every(p => checkedIds.has(getPid(p)))
     setCheckedIds(allChecked ? new Set() : new Set(items.map(getPid)))
   }
-  const handleBulkDelete = async (items) => {
-    if (!window.confirm(`Xóa ${checkedIds.size} sản phẩm đã chọn?`)) return
-    try {
-      await Promise.all([...checkedIds].map(id => deleteProduct(id)))
-      showToast(`Đã xóa ${checkedIds.size} sản phẩm`)
-      setCheckedIds(new Set())
-      fetchData()
-    } catch { showToast('Có lỗi khi xóa hàng loạt') }
+  const handleBulkDelete = (items) => {
+    setConfirmDlg({ title: 'Xóa hàng loạt', msg: `Xóa ${checkedIds.size} sản phẩm đã chọn?`, action: async () => {
+      try {
+        await Promise.all([...checkedIds].map(id => deleteProduct(id)))
+        showToast(`Đã xóa ${checkedIds.size} sản phẩm`)
+        setCheckedIds(new Set())
+        fetchData()
+      } catch { showToast('Có lỗi khi xóa hàng loạt') }
+    }})
   }
 
   // ── Export CSV ────────────────────────────────────────────────────────────────
@@ -927,6 +940,16 @@ export default function ProductsPage() {
   const totalPages = data?.totalPages ?? 1
 
   return (
+    <>
+    <ConfirmDialog
+      open={!!confirmDlg}
+      title={confirmDlg?.title ?? 'Xác nhận xóa'}
+      message={confirmDlg?.msg}
+      icon="delete_forever"
+      danger
+      onClose={() => setConfirmDlg(null)}
+      onConfirm={() => { const a = confirmDlg?.action; setConfirmDlg(null); a?.() }}
+    />
     <div className="space-y-4">
 
       {toast && (
@@ -1242,5 +1265,6 @@ export default function ProductsPage() {
         />
       )}
     </div>
+    </>
   )
 }

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import DetailDrawer from '../../components/ui/DetailDrawer'
+import ConfirmDialog from '../../components/ui/ConfirmDialog'
 import { getCustomers, createCustomer, updateCustomer, deactivateCustomer, getCustomerOrderHistory, getOltpCustomer } from '../../api/dashboardApi'
 import { useAuth } from '../../hooks/useAuth'
 import { useDebounce } from '../../hooks/useDebounce'
@@ -59,24 +60,22 @@ function CustomerFormModal({ initial, mode, onClose, onSaved }) {
   )
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-         style={{ background: 'rgba(0,0,0,0.6)' }} onClick={onClose}>
-      <div className="lcard w-full max-w-md p-6 space-y-4 scale-in overflow-y-auto max-h-[90vh]"
-           onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between">
-          <h2 className="font-bold text-base" style={{ color: 'var(--text-primary)' }}>
-            {isEdit ? 'Sửa thông tin khách hàng' : 'Thêm khách hàng mới'}
-          </h2>
-          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-lg"
-                  style={{ color: 'var(--text-secondary)' }}
-                  onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
-                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-            <span className="icon">close</span>
+    <DetailDrawer
+      open
+      onClose={onClose}
+      title={isEdit ? 'Chỉnh sửa khách hàng' : 'Thêm khách hàng mới'}
+      width={480}
+      footer={
+        <>
+          <button onClick={onClose} className="lbtn lbtn-secondary flex-1 justify-center">Hủy</button>
+          <button onClick={handleSave} disabled={saving} className="lbtn lbtn-primary flex-1 justify-center">
+            {saving ? 'Đang lưu...' : 'Lưu'}
           </button>
-        </div>
-
+        </>
+      }
+    >
+      <div className="p-5 space-y-3">
         {err && <p className="text-xs rounded-lg px-3 py-2" style={{ background: 'rgba(239,68,68,0.1)', color: '#EF4444' }}>{err}</p>}
-
         <div className="grid grid-cols-2 gap-3">
           {inp('Họ và tên', 'fullName', 'text', true)}
           {inp('Email', 'email', 'email')}
@@ -90,15 +89,8 @@ function CustomerFormModal({ initial, mode, onClose, onSaved }) {
           <textarea className="linput text-sm" rows={2} value={form.address ?? ''}
                     onChange={set('address')} />
         </div>
-
-        <div className="flex gap-2 pt-1">
-          <button onClick={onClose} className="lbtn lbtn-secondary flex-1 justify-center">Hủy</button>
-          <button onClick={handleSave} disabled={saving} className="lbtn lbtn-primary flex-1 justify-center">
-            {saving ? 'Đang lưu...' : 'Lưu'}
-          </button>
-        </div>
       </div>
-    </div>
+    </DetailDrawer>
   )
 }
 
@@ -160,6 +152,7 @@ export default function CustomersPage() {
   const [selOrders,     setSelOrders]     = useState(null)   // lịch sử đơn KH đang xem
   const [selOrdersLoad, setSelOrdersLoad] = useState(false)
   const [checkedIds,    setCheckedIds]    = useState(new Set())
+  const [confirmDlg, setConfirmDlg] = useState(null)
 
   const debouncedSearch = useDebounce(search, 350)
 
@@ -212,16 +205,17 @@ export default function CustomersPage() {
     setFormMode('edit')
   }
 
-  const handleDeactivate = async (c) => {
-    if (!window.confirm(`Ẩn khách hàng "${c.full_name ?? c.fullName}"?`)) return
-    try {
-      await deactivateCustomer(c.customer_id ?? c.customerId)
-      showToast('Đã ẩn khách hàng')
-      setSelected(null)
-      fetchData()
-    } catch (err) {
-      showToast(err.response?.data?.message ?? 'Lỗi ẩn khách hàng')
-    }
+  const handleDeactivate = (c) => {
+    setConfirmDlg({ title: 'Ẩn khách hàng', msg: `Ẩn khách hàng "${c.full_name ?? c.fullName}"?`, action: async () => {
+      try {
+        await deactivateCustomer(c.customer_id ?? c.customerId)
+        showToast('Đã ẩn khách hàng')
+        setSelected(null)
+        fetchData()
+      } catch (err) {
+        showToast(err.response?.data?.message ?? 'Lỗi ẩn khách hàng')
+      }
+    }})
   }
 
   // ── Bulk select ───────────────────────────────────────────────────────────────
@@ -234,14 +228,15 @@ export default function CustomersPage() {
     const allChecked = items.length > 0 && items.every(c => checkedIds.has(getCid(c)))
     setCheckedIds(allChecked ? new Set() : new Set(items.map(getCid)))
   }
-  const handleBulkDeactivate = async () => {
-    if (!window.confirm(`Ẩn ${checkedIds.size} khách hàng đã chọn?`)) return
-    try {
-      await Promise.all([...checkedIds].map(id => deactivateCustomer(id)))
-      showToast(`Đã ẩn ${checkedIds.size} khách hàng`)
-      setCheckedIds(new Set())
-      fetchData()
-    } catch { showToast('Có lỗi khi ẩn hàng loạt') }
+  const handleBulkDeactivate = () => {
+    setConfirmDlg({ title: 'Ẩn hàng loạt', msg: `Ẩn ${checkedIds.size} khách hàng đã chọn?`, action: async () => {
+      try {
+        await Promise.all([...checkedIds].map(id => deactivateCustomer(id)))
+        showToast(`Đã ẩn ${checkedIds.size} khách hàng`)
+        setCheckedIds(new Set())
+        fetchData()
+      } catch { showToast('Có lỗi khi ẩn hàng loạt') }
+    }})
   }
 
   // ── Export CSV ────────────────────────────────────────────────────────────────
@@ -267,6 +262,16 @@ export default function CustomersPage() {
   const fmt = n => Number(n ?? 0).toLocaleString('vi-VN')
 
   return (
+    <>
+    <ConfirmDialog
+      open={!!confirmDlg}
+      title={confirmDlg?.title ?? 'Xác nhận'}
+      message={confirmDlg?.msg}
+      icon="delete_forever"
+      danger
+      onClose={() => setConfirmDlg(null)}
+      onConfirm={() => { const a = confirmDlg?.action; setConfirmDlg(null); a?.() }}
+    />
     <div className="space-y-4">
       {toast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-xl text-sm font-medium shadow-lg"
@@ -674,5 +679,6 @@ export default function CustomersPage() {
         )
       })()}
     </div>
+    </>
   )
 }

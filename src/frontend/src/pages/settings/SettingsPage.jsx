@@ -5,6 +5,46 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { useTheme } from '../../hooks/useTheme'
 import axios from '../../api/axios'
 import SubscriptionPage from './SubscriptionPage'
+import ConfirmDialog from '../../components/ui/ConfirmDialog'
+
+// ── Cảnh báo đổi mật khẩu mặc định ──────────────────────────────────────────
+const PWD_WARNING_KEY = 'msas_pwd_warning_dismissed'
+
+function PasswordWarningBanner() {
+  const [dismissed, setDismissed] = useState(
+    () => localStorage.getItem(PWD_WARNING_KEY) === 'true'
+  )
+
+  if (dismissed) return null
+
+  return (
+    <div className="flex items-start gap-3 px-4 py-3 rounded-xl"
+         style={{ background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.35)' }}>
+      <span className="icon shrink-0 mt-0.5" style={{ fontSize: 20, color: '#D97706' }}>warning</span>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-semibold" style={{ color: '#92400E' }}>
+          Bạn đang dùng mật khẩu mặc định
+        </p>
+        <p className="text-xs mt-0.5" style={{ color: '#B45309' }}>
+          Mật khẩu mặc định <b>12345678</b> không an toàn. Hãy đổi ngay để bảo vệ tài khoản.
+        </p>
+      </div>
+      <div className="flex items-center gap-2 shrink-0">
+        <Link to="/change-password"
+              className="lbtn lbtn-primary !h-8 !px-3 text-xs">
+          Đổi ngay
+        </Link>
+        <button
+          onClick={() => { localStorage.setItem(PWD_WARNING_KEY, 'true'); setDismissed(true) }}
+          className="w-7 h-7 flex items-center justify-center rounded-lg"
+          style={{ color: '#B45309' }}
+          title="Bỏ qua">
+          <span className="icon" style={{ fontSize: 16 }}>close</span>
+        </button>
+      </div>
+    </div>
+  )
+}
 
 // ── Avatar component ──────────────────────────────────────────────────────────
 function AvatarSection({ user, avatarUrl, onAvatarChange, onContextUpdate }) {
@@ -127,6 +167,7 @@ export default function SettingsPage() {
   const [avatarUrl,  setAvatarUrl]  = useState(user?.avatarUrl ?? null)
   const [loginHistory, setLoginHistory] = useState([])
   const [histLoading,  setHistLoading]  = useState(false)
+  const [logoutConfirmDlg, setLogoutConfirmDlg] = useState(false)
 
   // Profile form state
   const [profile, setProfile] = useState({
@@ -218,8 +259,11 @@ export default function SettingsPage() {
     }
   }
 
-  const handleLogoutAll = async () => {
-    if (!window.confirm('Đăng xuất tất cả thiết bị? Bạn sẽ cần đăng nhập lại.')) return
+  const handleLogoutAll = () => {
+    setLogoutConfirmDlg(true)
+  }
+
+  const doLogoutAll = async () => {
     try {
       await axios.post('/api/users/logout-all')
       logout()
@@ -229,6 +273,16 @@ export default function SettingsPage() {
   }
 
   return (
+    <>
+    <ConfirmDialog
+      open={logoutConfirmDlg}
+      title="Đăng xuất tất cả thiết bị"
+      message="Bạn sẽ cần đăng nhập lại trên tất cả thiết bị."
+      icon="logout"
+      danger={false}
+      onClose={() => setLogoutConfirmDlg(false)}
+      onConfirm={() => { setLogoutConfirmDlg(false); doLogoutAll() }}
+    />
     <div className="space-y-4">
       <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>{t('settings.title')}</h1>
 
@@ -360,6 +414,9 @@ export default function SettingsPage() {
           {/* ── SECURITY ── */}
           {section === 'security' && (
             <div className="space-y-4">
+              {/* Cảnh báo mật khẩu mặc định */}
+              <PasswordWarningBanner />
+
               <div className="lcard p-5 space-y-3">
                 <h2 className="text-subtitle font-semibold" style={{ color: 'var(--text-primary)' }}>Bảo mật</h2>
                 <Link to="/change-password"
@@ -550,6 +607,7 @@ export default function SettingsPage() {
         </div>
       </div>
     </div>
+    </>
   )
 }
 
@@ -565,6 +623,7 @@ function LoyaltySection() {
   const [vouchers, setVouchers]   = useState([])
   const [vLoad,    setVLoad]      = useState(false)
   const [vErr,     setVErr]       = useState('')   // lỗi riêng cho voucher
+  const [voucherConfirmDlg, setVoucherConfirmDlg] = useState(null)
   const [showNew,  setShowNew]    = useState(false)
   const [newV, setNewV] = useState({ code:'', type:'PERCENT', value:'', minOrder:'', maxDiscount:'', usageLimit:'', validFrom:'', validTo:'' })
   const [editV,    setEditV]      = useState(null)   // voucher đang sửa (null = không mở)
@@ -616,8 +675,11 @@ function LoyaltySection() {
     } catch (e) { setVErr(e?.response?.data?.message ?? 'Lỗi cập nhật voucher') }
   }
 
-  const deleteVoucher = async (id, code) => {
-    if (!window.confirm(`Xóa voucher "${code}"? Hành động này không thể hoàn tác.`)) return
+  const deleteVoucher = (id, code) => {
+    setVoucherConfirmDlg({ id, code })
+  }
+
+  const doDeleteVoucher = async (id) => {
     setVErr('')
     try {
       await axios.delete(`/api/pos/vouchers/${id}`)
@@ -636,6 +698,16 @@ function LoyaltySection() {
   )
 
   return (
+    <>
+    <ConfirmDialog
+      open={!!voucherConfirmDlg}
+      title="Xóa voucher"
+      message={voucherConfirmDlg ? `Xóa voucher "${voucherConfirmDlg.code}"?` : ''}
+      icon="delete_forever"
+      danger
+      onClose={() => setVoucherConfirmDlg(null)}
+      onConfirm={() => { const id = voucherConfirmDlg?.id; setVoucherConfirmDlg(null); doDeleteVoucher(id) }}
+    />
     <div className="space-y-5">
       {/* Loyalty config */}
       <div className="lcard p-5 space-y-4">
@@ -823,6 +895,7 @@ function LoyaltySection() {
         )}
       </div>
     </div>
+    </>
   )
 }
 

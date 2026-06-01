@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams, useNavigate } from 'react-router-dom'
 import api from '../../api/axios'
 import MockToast from '../../components/ui/MockToast'
 import DetailDrawer from '../../components/ui/DetailDrawer'
+import ConfirmDialog from '../../components/ui/ConfirmDialog'
 
 const PLATFORMS = [
   { name: 'Shopee', rate: 0.040 },
@@ -403,8 +404,10 @@ function CreateDrawer({ open, onClose, onSaved, defaultProductId = '', defaultPr
 export default function PurchaseOrdersPage() {
   // Đọc URL params để pre-fill drawer khi navigate từ trang thông báo / tồn kho
   const [searchParams] = useSearchParams()
+  const navigate       = useNavigate()
   const urlProductId   = searchParams.get('productId')   || ''
   const urlProductName = searchParams.get('productName') || ''
+  const returnUrl      = searchParams.get('returnUrl')   || ''
 
   const [rows,          setRows]          = useState([])
   const [total,         setTotal]         = useState(0)
@@ -417,6 +420,7 @@ export default function PurchaseOrdersPage() {
   // Tự mở drawer nếu URL có productId (navigate từ nút "Nhập hàng")
   const [showCreate,    setShowCreate]    = useState(!!urlProductId)
   const [actionLoading, setActionLoading] = useState(null)
+  const [confirmDlg, setConfirmDlg] = useState(null)
   const [expandedId,    setExpandedId]    = useState(null)
   const [detailCache,   setDetailCache]   = useState({})
   const [detailLoading, setDetailLoading] = useState(null)
@@ -455,27 +459,45 @@ export default function PurchaseOrdersPage() {
 
   useEffect(() => { load(1) }, [load])
 
-  const action = async (id, endpoint, confirm_msg) => {
-    if (confirm_msg && !window.confirm(confirm_msg)) return
+  const action = (id, endpoint, confirm_msg) => {
+    if (confirm_msg) {
+      setConfirmDlg({ msg: confirm_msg, id, endpoint })
+    } else {
+      doAction(id, endpoint)
+    }
+  }
+
+  const doAction = async (id, endpoint) => {
     setActionLoading(id + endpoint)
     try {
       await api.post(`/api/purchase-orders/${id}/${endpoint}`)
       load(page)
     } catch (e) {
-      alert(e?.response?.data?.message ?? 'Lỗi thao tác.')
+      // Hiển thị lỗi trong alert toast nhỏ - dùng confirmDlg tạm để show err
+      console.error(e?.response?.data?.message ?? 'Lỗi thao tác.')
     } finally { setActionLoading(null) }
   }
 
   const fmtDate = (iso) => iso ? new Date(iso).toLocaleDateString('vi-VN') : '—'
 
   return (
+    <>
+    <ConfirmDialog
+      open={!!confirmDlg}
+      title="Xác nhận thao tác"
+      message={confirmDlg?.msg}
+      icon="warning"
+      danger={false}
+      onClose={() => setConfirmDlg(null)}
+      onConfirm={() => { const {id, endpoint} = confirmDlg ?? {}; setConfirmDlg(null); if (id && endpoint) doAction(id, endpoint) }}
+    />
     <div className="p-4 md:p-6 space-y-4">
       {isMock && <MockToast />}
 
       <CreateDrawer
         open={showCreate}
-        onClose={() => setShowCreate(false)}
-        onSaved={() => { setShowCreate(false); load(1) }}
+        onClose={() => returnUrl ? navigate(returnUrl) : setShowCreate(false)}
+        onSaved={() => { setShowCreate(false); load(1); if (returnUrl) navigate(returnUrl) }}
         defaultProductId={urlProductId}
         defaultProductName={urlProductName}
       />
@@ -686,5 +708,6 @@ export default function PurchaseOrdersPage() {
         </div>
       )}
     </div>
+    </>
   )
 }

@@ -10,6 +10,7 @@ import PaymentStatusBadge from '../../components/payment/PaymentStatusBadge'
 import PaymentSelectModal from '../../components/payment/PaymentSelectModal'
 import ManualConfirmModal from '../../components/payment/ManualConfirmModal'
 import MockPaymentModal from '../../components/payment/MockPaymentModal'
+import ConfirmDialog from '../../components/ui/ConfirmDialog'
 
 const STATUS_COLOR = {
   pending:    { bg: 'rgba(100,116,139,0.10)', border: 'rgba(100,116,139,0.25)', text: '#64748B',              dot: '#64748B'  },
@@ -152,6 +153,7 @@ const OrderNotes = memo(function OrderNotes({ orderId, canDelete }) {
   const [text,     setText]     = useState('')
   const [loading,  setLoading]  = useState(true)
   const [saving,   setSaving]   = useState(false)
+  const [noteConfirmDlg, setNoteConfirmDlg] = useState(null)
 
   useEffect(() => {
     setLoading(true)
@@ -172,8 +174,11 @@ const OrderNotes = memo(function OrderNotes({ orderId, canDelete }) {
     finally { setSaving(false) }
   }
 
-  const handleDelete = async (noteId) => {
-    if (!window.confirm('Xóa ghi chú này?')) return
+  const handleDelete = (noteId) => {
+    setNoteConfirmDlg({ noteId })
+  }
+
+  const doDeleteNote = async (noteId) => {
     try {
       await deleteOrderNote(orderId, noteId)
       setNotes(prev => prev.filter(n => n.id !== noteId))
@@ -181,6 +186,16 @@ const OrderNotes = memo(function OrderNotes({ orderId, canDelete }) {
   }
 
   return (
+    <>
+    <ConfirmDialog
+      open={!!noteConfirmDlg}
+      title="Xóa ghi chú"
+      message="Xóa ghi chú này?"
+      icon="delete_forever"
+      danger
+      onClose={() => setNoteConfirmDlg(null)}
+      onConfirm={() => { const id = noteConfirmDlg?.noteId; setNoteConfirmDlg(null); doDeleteNote(id) }}
+    />
     <div className="mt-4 pt-4" style={{ borderTop: '1px solid var(--border)' }}>
       <div className="flex items-center gap-1.5 mb-3">
         <span className="icon text-sm" style={{ color: 'var(--text-tertiary)', fontSize: 14 }}>note_alt</span>
@@ -239,6 +254,7 @@ const OrderNotes = memo(function OrderNotes({ orderId, canDelete }) {
         </button>
       </div>
     </div>
+    </>
   )
 })
 
@@ -377,6 +393,7 @@ export default function OrdersPage() {
   const [expanded, setExpanded] = useState(null)
   const [editOrder,  setEditOrder]  = useState(null)
   const [toast,      setToast]      = useState('')
+  const [cancelConfirmDlg, setCancelConfirmDlg] = useState(null)
 
   // Payment modals
   const [paymentOrder,   setPaymentOrder]   = useState(null)  // order đang chọn PTTT
@@ -439,9 +456,12 @@ export default function OrdersPage() {
     }
   }, [search, status, page])
 
-  const handleCancel = async (order, e) => {
+  const handleCancel = (order, e) => {
     e.stopPropagation()
-    if (!window.confirm(`Hủy đơn hàng #${order.externalOrderId}?`)) return
+    setCancelConfirmDlg({ order })
+  }
+
+  const doCancelOrder = async (order) => {
     try {
       await cancelOrder(order.orderId)
       showToast('Đã hủy đơn hàng thành công')
@@ -466,6 +486,16 @@ export default function OrdersPage() {
   )
 
   return (
+    <>
+    <ConfirmDialog
+      open={!!cancelConfirmDlg}
+      title="Hủy đơn hàng"
+      message={cancelConfirmDlg ? `Hủy đơn hàng #${cancelConfirmDlg.order?.externalOrderId}?` : ''}
+      icon="cancel"
+      danger
+      onClose={() => setCancelConfirmDlg(null)}
+      onConfirm={() => { const o = cancelConfirmDlg?.order; setCancelConfirmDlg(null); doCancelOrder(o) }}
+    />
     <div className="space-y-4">
       {/* Toast notification */}
       {toast && (
@@ -759,5 +789,6 @@ export default function OrdersPage() {
         )}
       </div>
     </div>
+    </>
   )
 }

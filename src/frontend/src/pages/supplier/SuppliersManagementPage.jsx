@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import api from '../../api/axios'
 import { useAuth } from '../../hooks/useAuth'
 import DetailDrawer from '../../components/ui/DetailDrawer'
+import ConfirmDialog from '../../components/ui/ConfirmDialog'
 import { exportToCsv } from '../../utils/format'
 import { useDebounce } from '../../hooks/useDebounce'
 
@@ -323,6 +324,7 @@ export default function SuppliersManagementPage() {
   const [activeFilter, setActiveFilter] = useState('') // '' | 'true' | 'false'
   const [modal,        setModal]        = useState(null) // null | 'create' | {supplier}
   const [checkedIds,   setCheckedIds]   = useState(new Set())
+  const [confirmDlg, setConfirmDlg] = useState(null)
 
   const debouncedSearch = useDebounce(search, 350)
 
@@ -350,14 +352,15 @@ export default function SuppliersManagementPage() {
 
   useEffect(() => { load(1) }, [load])
 
-  const softDelete = async (id) => {
-    if (!window.confirm('Tắt hoạt động nhà cung cấp này?')) return
-    try {
-      await api.delete(`/api/suppliers/${id}`)
-      load(page)
-    } catch (e) {
-      alert(e?.response?.data?.message ?? 'Lỗi khi xóa.')
-    }
+  const softDelete = (id) => {
+    setConfirmDlg({ title: 'Tắt nhà cung cấp', msg: 'Tắt hoạt động nhà cung cấp này?', action: async () => {
+      try {
+        await api.delete(`/api/suppliers/${id}`)
+        load(page)
+      } catch (e) {
+        setConfirmDlg(prev => prev ? { ...prev, errMsg: e?.response?.data?.message ?? 'Lỗi khi xóa.' } : null)
+      }
+    }})
   }
 
   // ── Bulk select ───────────────────────────────────────────────────────────────
@@ -369,13 +372,14 @@ export default function SuppliersManagementPage() {
     const allChecked = rows.length > 0 && rows.every(r => checkedIds.has(r.supplierId))
     setCheckedIds(allChecked ? new Set() : new Set(rows.map(r => r.supplierId)))
   }
-  const handleBulkDeactivate = async () => {
-    if (!window.confirm(`Tắt ${checkedIds.size} nhà cung cấp đã chọn?`)) return
-    try {
-      await Promise.all([...checkedIds].map(id => api.delete(`/api/suppliers/${id}`)))
-      setCheckedIds(new Set())
-      load(page)
-    } catch { alert('Có lỗi khi tắt hàng loạt') }
+  const handleBulkDeactivate = () => {
+    setConfirmDlg({ title: 'Tắt hàng loạt', msg: `Tắt ${checkedIds.size} nhà cung cấp đã chọn?`, action: async () => {
+      try {
+        await Promise.all([...checkedIds].map(id => api.delete(`/api/suppliers/${id}`)))
+        setCheckedIds(new Set())
+        load(page)
+      } catch { /* ignore */ }
+    }})
   }
 
   // ── Export CSV ────────────────────────────────────────────────────────────────
@@ -392,6 +396,16 @@ export default function SuppliersManagementPage() {
   }
 
   return (
+    <>
+    <ConfirmDialog
+      open={!!confirmDlg}
+      title={confirmDlg?.title ?? 'Xác nhận'}
+      message={confirmDlg?.msg}
+      icon="delete_forever"
+      danger
+      onClose={() => setConfirmDlg(null)}
+      onConfirm={() => { const a = confirmDlg?.action; setConfirmDlg(null); a?.() }}
+    />
     <div className="p-4 md:p-6 space-y-4">
       {modal && (
         <SupplierModal
@@ -579,5 +593,6 @@ export default function SuppliersManagementPage() {
         </div>
       )}
     </div>
+    </>
   )
 }

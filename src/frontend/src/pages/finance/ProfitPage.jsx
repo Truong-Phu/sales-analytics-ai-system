@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
-  BarChart, Bar, LineChart, Line,
-  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+  ComposedChart, BarChart, Bar, Line,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine,
 } from 'recharts'
 import {
   getProfitOverview, getProfitByChannel, getProfitByProduct,
@@ -9,6 +9,7 @@ import {
 } from '../../api/financeApi'
 import AiEmptyState from '../../components/ui/AiEmptyState'
 import { KPI_DEFINITIONS } from '../../utils/kpiDefinitions'
+import DateRangeFilter from '../../components/ui/DateRangeFilter'
 
 function fmtM(v) {
   if (v == null) return '—'
@@ -168,11 +169,11 @@ function FeeConfigRow({ cfg, onSave }) {
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function ProfitPage() {
-  const today = new Date().toISOString().slice(0, 10)
-  const firstOfYear = new Date(new Date().getFullYear(), 0, 1).toISOString().slice(0, 10)
+  const daysAgo30 = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10)
+  const tomorrow  = new Date(Date.now() + 86400000).toISOString().slice(0, 10)
 
-  const [from, setFrom] = useState(firstOfYear)
-  const [to,   setTo]   = useState(today)
+  const [from, setFrom] = useState(daysAgo30)
+  const [to,   setTo]   = useState(tomorrow)
   const [tab,  setTab]  = useState('overview')
 
   const [overview,  setOverview]  = useState(null)
@@ -183,28 +184,27 @@ export default function ProfitPage() {
   const [feeConfs,  setFeeConfs]  = useState([])
   const [loading, setLoading] = useState(false)
   const [page,    setPage]    = useState(1)
+  const [err,     setErr]     = useState('')
 
   const load = useCallback(async () => {
     setLoading(true)
     const p = { from, to }
-    try {
-      const [ov, ch, pr, dt, ord, fc] = await Promise.all([
-        getProfitOverview(p),
-        getProfitByChannel(p),
-        getProfitByProduct({ ...p, limit: 30 }),
-        getProfitByDate({ ...p, granularity: 'month' }),
-        getProfitOrders({ ...p, page, pageSize: 50 }),
-        getFeeConfigs(),
-      ])
-      setOverview(ov); setChannels(ch); setProducts(pr)
-      setByDate(dt); setOrders(ord); setFeeConfs(fc)
-    } catch {
-      setOverview(null); setChannels([]); setProducts([])
-      setByDate([]); setOrders({ items: [], totalCount: 0 })
-      setFeeConfs([])
-    } finally {
-      setLoading(false)
-    }
+    const [ov, ch, pr, dt, ord, fc] = await Promise.allSettled([
+      getProfitOverview(p),
+      getProfitByChannel(p),
+      getProfitByProduct({ ...p, limit: 30 }),
+      getProfitByDate({ ...p, granularity: 'month' }),
+      getProfitOrders({ ...p, page, pageSize: 50 }),
+      getFeeConfigs(),
+    ])
+    const val = r => r.status === 'fulfilled' ? r.value : null
+    setOverview(val(ov))
+    setChannels(val(ch) ?? [])
+    setProducts(val(pr) ?? [])
+    setByDate(val(dt) ?? [])
+    setOrders(val(ord) ?? { items: [], totalCount: 0 })
+    setFeeConfs(val(fc) ?? [])
+    setLoading(false)
   }, [from, to, page])
 
   useEffect(() => { load() }, [load])
@@ -214,7 +214,7 @@ export default function ProfitPage() {
       await updateFeeConfig(id, dto)
       await load()
     } catch {
-      alert('Lưu thất bại')
+      setErr('Lưu thất bại')
     }
   }
 
@@ -222,28 +222,21 @@ export default function ProfitPage() {
 
   return (
     <div className="p-6 space-y-6">
-      {!ov && !loading && <AiEmptyState title="Chưa có dữ liệu lợi nhuận" />}
+      {err && (
+        <div className="px-4 py-3 rounded-lg text-sm" style={{ background: 'rgba(239,68,68,0.08)', color: '#EF4444', border: '1px solid rgba(239,68,68,0.25)' }}>
+          {err}
+        </div>
+      )}
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-800">Phân tích lợi nhuận</h1>
           <p className="text-sm text-gray-500">Doanh thu · COGS · LN gộp · Phí sàn · Chi phí QC → Lợi nhuận vận hành</p>
         </div>
-        <div className="flex gap-2 items-center flex-wrap">
-          <label className="text-sm text-gray-600">Từ</label>
-          <input type="date" value={from} max={to}
-            className="border rounded px-2 py-1 text-sm"
-            onChange={e => setFrom(e.target.value)} />
-          <label className="text-sm text-gray-600">đến</label>
-          <input type="date" value={to} min={from} max={today}
-            className="border rounded px-2 py-1 text-sm"
-            onChange={e => setTo(e.target.value)} />
-          <button onClick={load} disabled={loading}
-            className="bg-blue-600 text-white px-3 py-1.5 rounded text-sm hover:bg-blue-700 disabled:opacity-50">
-            {loading ? 'Đang tải...' : 'Áp dụng'}
-          </button>
-        </div>
+        <DateRangeFilter from={from} to={to} onChange={(f, t) => { setFrom(f); setTo(t) }} />
       </div>
+
+      {!ov && !loading && <AiEmptyState title="Chưa có dữ liệu lợi nhuận" />}
 
       {/* Cảnh báo estimated */}
       {ov?.isEstimated && (
@@ -309,20 +302,25 @@ export default function ProfitPage() {
           <h2 className="font-semibold text-gray-700 mb-4">Doanh thu & Lợi nhuận theo tháng</h2>
           {byDate.length === 0
             ? <div className="text-center text-gray-400 py-12">Chưa có dữ liệu</div>
-            : <ResponsiveContainer width="100%" height={320}>
-                <BarChart data={byDate} margin={{ top: 5, right: 20, left: 20, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" />
+            : <ResponsiveContainer width="100%" height={340}>
+                <ComposedChart data={byDate} margin={{ top: 8, right: 20, left: 20, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
                   <XAxis dataKey="period" tick={{ fontSize: 11 }} />
-                  <YAxis tickFormatter={v => fmtM(v)} tick={{ fontSize: 11 }} />
-                  <Tooltip formatter={v => fmtM(v)} />
+                  <YAxis tickFormatter={v => fmtM(v)} tick={{ fontSize: 11 }} width={64} />
+                  <Tooltip
+                    formatter={(v, name) => [fmtM(v), name]}
+                    itemSorter={item => -item.value}
+                  />
                   <Legend />
-                  <Bar dataKey="revenue"            name="Doanh thu"          fill="#3b82f6" />
-                  <Bar dataKey="cogs"               name="Giá vốn"            fill="#f97316" />
-                  <Bar dataKey="grossProfit"        name="LN gộp"             fill="#22c55e" />
-                  <Bar dataKey="estimatedNetProfit" name="LN sau phí sàn"     fill="#14b8a6" />
-                  <Bar dataKey="advertisingCost"    name="Chi phí QC"         fill="#ec4899" />
-                  <Bar dataKey="operatingProfit"    name="LN vận hành"        fill="#6366f1" />
-                </BarChart>
+                  <ReferenceLine y={0} stroke="#94a3b8" strokeWidth={1} />
+                  {/* Stacked breakdown — COGS + Fees + AdCost + OpProfit = Revenue */}
+                  <Bar dataKey="cogs"            name="Giá vốn (COGS)"   stackId="rev" fill="#f97316" />
+                  <Bar dataKey="estimatedFees"   name="Phí sàn / vận chuyển" stackId="rev" fill="#ef4444" />
+                  <Bar dataKey="advertisingCost" name="Chi phí QC"       stackId="rev" fill="#ec4899" />
+                  <Bar dataKey="operatingProfit" name="LN vận hành"      stackId="rev" fill="#6366f1" radius={[4,4,0,0]} />
+                  {/* Đường doanh thu — phải bằng tổng 4 cột trên */}
+                  <Line type="monotone" dataKey="revenue" name="Doanh thu" stroke="#3b82f6" strokeWidth={2} dot={false} />
+                </ComposedChart>
               </ResponsiveContainer>
           }
         </div>
