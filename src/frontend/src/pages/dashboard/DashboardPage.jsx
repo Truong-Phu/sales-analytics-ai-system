@@ -1788,14 +1788,6 @@ function TabMarketing({ data, wd = {}, wl = {} }) {
         </div>
       )}
 
-      {/* ── Facebook Ads section — hướng phát triển ── */}
-      <div className="lcard">
-        <DevEmptyState
-          title="Facebook Ads Performance"
-          desc="Tích hợp Facebook Ads API để theo dõi hiệu suất quảng cáo (ROAS, CPC, CTR, CPA) trực tiếp trên Dashboard. Đây là hướng phát triển trong phiên bản tiếp theo của hệ thống."
-        />
-      </div>
-
       {/* ── Campaign mini-widget ── */}
       <MiniWidget title="Chiến dịch Marketing được đề xuất" icon="campaign" href="/campaign" loading={campLoading}>
         {campData ? (
