@@ -87,7 +87,7 @@ export default function AdSpendPage() {
             {MONTHS.map((m, i) => <option key={i+1} value={i+1}>{m}</option>)}
           </select>
           <select value={year} onChange={e => setYear(+e.target.value)} className="linput text-sm" style={{ width: 90 }}>
-            {Array.from({ length: 4 }, (_, i) => now.getFullYear() - 2 + i).map(y => <option key={y} value={y}>{y}</option>)}
+            {Array.from({ length: 4 }, (_, i) => now.getFullYear() - 3 + i).map(y => <option key={y} value={y}>{y}</option>)}
           </select>
           {channels.length > 0 && (
             <button
