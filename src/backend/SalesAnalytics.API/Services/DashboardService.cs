@@ -182,11 +182,17 @@ public class DashboardService
                 dc.channel_name,
                 SUM(fs.net_revenue)                          AS revenue,
                 SUM(fs.order_count)                          AS orders,
-                COALESCE(ad.total_spend, 0)                  AS ad_spend
+                COALESCE(ad.total_spend, 0)                  AS ad_spend,
+                -- Return rate & cancel rate thực từ OLTP orders
+                COALESCE(ret.return_count, 0)                AS return_count,
+                COALESCE(ret.cancel_count, 0)                AS cancel_count,
+                COALESCE(ret.total_count,  0)                AS total_oltp_count
             FROM dw.fact_sales fs
             JOIN dw.dim_date    dd ON fs.date_key    = dd.date_key
             JOIN dw.dim_channel dc ON fs.channel_key = dc.channel_key
-            -- LEFT JOIN chi phí QC từ OLTP (nếu đã nhập)
+            -- LEFT JOIN chi phí QC từ OLTP
+            -- LIKE matching vì dim_channel dùng tên ngắn ("shopee") còn sales_channels
+            -- dùng tên đầy đủ ("Shopee Phú Thịnh")
             LEFT JOIN (
                 SELECT LOWER(sc.channel_name) AS ch_lower, SUM(asm.amount) AS total_spend
                 FROM public.ad_spend_monthly asm
@@ -194,10 +200,23 @@ public class DashboardService
                 WHERE (@companyId IS NULL OR asm.company_id = @companyId::uuid)
                   AND (asm.year * 12 + asm.month) BETWEEN @fromYM AND @toYM
                 GROUP BY LOWER(sc.channel_name)
-            ) ad ON LOWER(dc.channel_name) = ad.ch_lower
+            ) ad ON ad.ch_lower LIKE '%' || LOWER(dc.channel_name) || '%'
+            -- LEFT JOIN tỷ lệ hoàn/huỷ thực từ OLTP orders
+            LEFT JOIN (
+                SELECT
+                    LOWER(sc2.channel_name) AS ch_lower,
+                    COUNT(*) FILTER (WHERE o.status = 'RETURNED')  AS return_count,
+                    COUNT(*) FILTER (WHERE o.status = 'CANCELLED') AS cancel_count,
+                    COUNT(*)                                        AS total_count
+                FROM public.orders o
+                JOIN public.sales_channels sc2 ON o.channel_id = sc2.channel_id
+                WHERE o.order_date BETWEEN @from AND @to
+                  AND (@companyId IS NULL OR o.company_id = @companyId::uuid)
+                GROUP BY LOWER(sc2.channel_name)
+            ) ret ON ret.ch_lower LIKE '%' || LOWER(dc.channel_name) || '%'
             WHERE dd.full_date BETWEEN @from AND @to
               AND (@companyId IS NULL OR fs.company_id = @companyId::uuid)
-            GROUP BY dc.channel_name, ad.total_spend
+            GROUP BY dc.channel_name, ad.total_spend, ret.return_count, ret.cancel_count, ret.total_count
             ORDER BY revenue DESC
             """;
 
@@ -208,21 +227,28 @@ public class DashboardService
         cmd.Parameters.AddWithValue("toYM",      toYM);
         cmd.Parameters.Add(new NpgsqlParameter("companyId", NpgsqlDbType.Text) { Value = (object?)companyId?.ToString() ?? DBNull.Value });
 
-        var rows = new List<(string channel, decimal revenue, int orders, decimal adSpend)>();
+        var rows = new List<(string channel, decimal revenue, int orders, decimal adSpend, long returnCount, long cancelCount, long totalCount)>();
         await using var reader = await cmd.ExecuteReaderAsync();
         while (await reader.ReadAsync())
-            rows.Add((reader.GetString(0), reader.GetDecimal(1), reader.GetInt32(2), reader.GetDecimal(3)));
+            rows.Add((
+                reader.GetString(0), reader.GetDecimal(1), reader.GetInt32(2), reader.GetDecimal(3),
+                reader.GetInt64(4),  reader.GetInt64(5),   reader.GetInt64(6)
+            ));
 
         var total = rows.Sum(r => r.revenue);
         return rows.Select(r => {
-            var roas = r.adSpend > 0 ? Math.Round(r.revenue / r.adSpend, 2) : 0;
+            var roas       = r.adSpend > 0 ? Math.Round(r.revenue / r.adSpend, 2) : 0;
+            var returnRate = r.totalCount > 0 ? Math.Round((decimal)r.returnCount / r.totalCount * 100, 1) : 0m;
+            var cancelRate = r.totalCount > 0 ? Math.Round((decimal)r.cancelCount / r.totalCount * 100, 1) : 0m;
             return new RevenueByChannel(
                 ChannelName: r.channel,
                 Revenue:     r.revenue,
                 Orders:      r.orders,
                 RevenuePct:  total > 0 ? Math.Round(r.revenue / total * 100, 1) : 0,
                 AdSpend:     r.adSpend,
-                Roas:        roas
+                Roas:        roas,
+                ReturnRate:  returnRate,
+                CancelRate:  cancelRate
             );
         }).ToList();
     }

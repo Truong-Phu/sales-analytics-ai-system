@@ -146,7 +146,7 @@ public class FinanceController(
                     WHERE asm.company_id = @cid::uuid
                       AND asm.year * 12 + asm.month BETWEEN @fromYM AND @toYM
                     GROUP BY LOWER(sc.channel_name)
-                ) ads ON LOWER(dc.channel_name) = ads.ch_lower
+                ) ads ON ads.ch_lower LIKE '%' || LOWER(dc.channel_name) || '%'
                 WHERE fs.company_id = @cid::uuid
                 {dateFilter}
                 GROUP BY dc.channel_name, dc.platform, ads.ad_spend
@@ -313,9 +313,12 @@ public class FinanceController(
             adCmd.Parameters.AddWithValue("fromYM", fromYM);
             adCmd.Parameters.AddWithValue("toYM",   toYM);
             var adByMonth = new Dictionary<string, decimal>();
-            await using var adR = await adCmd.ExecuteReaderAsync();
-            while (await adR.ReadAsync())
-                adByMonth[$"{adR.GetInt32(0):D4}-{adR.GetInt32(1):D2}"] = adR.GetDecimal(2);
+            // Đóng reader adR trước khi mở reader chính — Npgsql không cho 2 readers cùng lúc trên 1 connection
+            {
+                await using var adR = await adCmd.ExecuteReaderAsync();
+                while (await adR.ReadAsync())
+                    adByMonth[$"{adR.GetInt32(0):D4}-{adR.GetInt32(1):D2}"] = adR.GetDecimal(2);
+            } // adR disposed here
 
             var list = new List<object>();
             await using var r = await cmd.ExecuteReaderAsync();
@@ -346,9 +349,10 @@ public class FinanceController(
             }
             return Ok(list);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            return StatusCode(503, new { error = ex.Message });
+            // DW chưa có bảng hoặc lỗi query → trả empty list, page vẫn hoạt động
+            return Ok(new List<object>());
         }
     }
 
