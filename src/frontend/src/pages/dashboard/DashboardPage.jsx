@@ -71,173 +71,7 @@ function MiniWidget({ title, icon, href, loading, children }) {
   )
 }
 
-function generateMockData(from, to) {
-  const start = new Date(from)
-  const end   = new Date(to)
-  const days  = Math.round((end - start) / 86_400_000) + 1
-  const revenueByDay = Array.from({ length: days }, (_, i) => {
-    const d    = new Date(start.getTime() + i * 86_400_000)
-    const base = 8_000_000 + Math.sin(i / 10) * 3_000_000
-    const netRevenue  = Math.round(base + Math.random() * 2_000_000)
-    const grossProfit = Math.round(netRevenue * (0.28 + Math.random() * 0.08))
-    return { date: d.toISOString().slice(0, 10), netRevenue, grossProfit, orderCount: Math.round(15 + Math.random() * 20) }
-  })
-  const totalRevenue = revenueByDay.reduce((s, d) => s + d.netRevenue, 0)
-  const totalProfit  = revenueByDay.reduce((s, d) => s + d.grossProfit, 0)
-  const totalOrders  = revenueByDay.reduce((s, d) => s + d.orderCount, 0)
-
-  const channels = [
-    { channelName: 'Shopee',      pct: 0.38, adSpend: 12_000_000 },
-    { channelName: 'Lazada',      pct: 0.27, adSpend:  9_000_000 },
-    { channelName: 'TikTok Shop', pct: 0.22, adSpend: 15_000_000 },
-    { channelName: 'Offline',     pct: 0.13, adSpend:          0 },
-  ]
-
-  const monthlyByChannel = ['T1','T2','T3','T4','T5','T6'].map(month => {
-    const base = totalRevenue / 6
-    const row  = { month }
-    channels.forEach(ch => { row[ch.channelName] = Math.round(base * ch.pct * (0.85 + Math.random() * 0.3)) })
-    // Tổng tất cả kênh
-    row['Total'] = channels.reduce((s, ch) => s + (row[ch.channelName] || 0), 0)
-    return row
-  })
-
-  // Sparkline 7 điểm mock cho KPI cards
-  const SPARKLINE_BASE = [0.5, 0.8, 0.6, 0.9, 0.7, 1.0, 0.85]
-
-  // Tổng KH mua ≥2 lần giả định 35% tổng KH
-  const totalCustomers   = 1250
-  const returningCustomers = Math.round(totalCustomers * 0.35)
-  const retentionRate    = ((returningCustomers / totalCustomers) * 100).toFixed(1)
-
-  // Phân khúc KH: New / Returning / VIP / At Risk
-  const newCustomers  = Math.round(totalOrders * 0.3)
-  const vipCustomers  = Math.round(totalCustomers * 0.08)
-  const atRiskCustomers = Math.round(totalCustomers * 0.12)
-  const returningSeg  = totalCustomers - newCustomers - vipCustomers - atRiskCustomers
-
-  const topProductsRaw = [
-    { productName: 'Áo thun Unisex Cotton', channel: 'Shopee',      orders: 380, revenue: totalRevenue * 0.12 },
-    { productName: 'Quần jeans Slim Fit',   channel: 'Lazada',      orders: 295, revenue: totalRevenue * 0.09 },
-    { productName: 'Giày thể thao Nam',     channel: 'TikTok Shop', orders: 260, revenue: totalRevenue * 0.08 },
-    { productName: 'Túi xách Nữ HQ',        channel: 'Shopee',      orders: 225, revenue: totalRevenue * 0.07 },
-    { productName: 'Đầm maxi Boho',         channel: 'Offline',     orders: 190, revenue: totalRevenue * 0.06 },
-  ]
-  const totalTopRevenue = topProductsRaw.reduce((s, p) => s + p.revenue, 0)
-  const topProducts = topProductsRaw.map(p => ({
-    ...p,
-    revContribPct: ((p.revenue / totalRevenue) * 100).toFixed(1),
-  }))
-
-  // Top SP theo kênh: không có API → trả về [] để AiEmptyState luôn hiện
-  const productsByChannel = []
-
-  // Tồn kho mở rộng
-  const inventoryRaw = [
-    { product: 'Áo thun',    stock: 320, forecast: 280, returnRate: 2.1, dailySales: 18 },
-    { product: 'Quần jeans', stock: 180, forecast: 220, returnRate: 3.5, dailySales: 22 },
-    { product: 'Giày',       stock:  95, forecast: 150, returnRate: 5.2, dailySales: 12 },
-    { product: 'Túi xách',   stock: 240, forecast: 200, returnRate: 1.8, dailySales: 10 },
-    { product: 'Đầm maxi',   stock: 160, forecast: 130, returnRate: 4.0, dailySales: 14 },
-    { product: 'Áo khoác',   stock: 410, forecast: 200, returnRate: 1.2, dailySales:  8 },
-    { product: 'Quần short',  stock:  42, forecast:  90, returnRate: 3.0, dailySales: 16 },
-  ]
-  const inventory = inventoryRaw.map(item => ({
-    ...item,
-    stockDiffPct: item.forecast > 0 ? (((item.stock - item.forecast) / item.forecast) * 100).toFixed(1) : '0.0',
-    daysOfStock:  item.dailySales > 0 ? Math.round(item.stock / item.dailySales) : 999,
-  }))
-
-  // KPI tồn kho
-  const avgDIO         = inventory.length > 0 ? Math.round(inventory.reduce((s, i) => s + i.daysOfStock, 0) / inventory.length) : 0
-  const overstockItems = inventory.filter(i => i.stock > i.forecast * 1.3).length
-  const stockoutItems  = inventory.filter(i => i.stock < i.dailySales * 7).length
-  const overstockRate  = ((overstockItems / inventory.length) * 100).toFixed(1)
-  const stockoutRate   = ((stockoutItems  / inventory.length) * 100).toFixed(1)
-
-  // Top 5 tồn cao nhất và sắp hết
-  const top5Overstock = [...inventory].sort((a, b) => b.stock - a.stock).slice(0, 5)
-  const top5LowStock  = [...inventory].filter(i => i.stock < i.dailySales * 14).sort((a, b) => (a.stock / a.dailySales) - (b.stock / b.dailySales)).slice(0, 5)
-
-  // Tỷ lệ hoàn trả theo kênh — giá trị cố định hợp lý cho demo
-  const RETURN_RATES = { Shopee: 4.2, Lazada: 3.8, 'TikTok Shop': 5.1, Offline: 1.8 }
-  const returnByChannel = channels.map(ch => ({
-    channelName: ch.channelName,
-    returnRate:  (RETURN_RATES[ch.channelName] ?? 3.0).toFixed(1),
-  }))
-
-  return {
-    kpi: {
-      totalRevenue, totalProfit, totalOrders,
-      avgOrderValue:      totalOrders > 0 ? Math.round(totalRevenue / totalOrders) : 0,
-      conversionRate:     4.2,
-      newCustomers,
-      retentionRate,
-      roi:                totalRevenue > 0 ? ((totalProfit / (totalRevenue * 0.25)) * 100).toFixed(1) : '0.0',
-      revenueGrowthPct:   12.5,
-      ordersGrowthPct:    8.3,
-      customersGrowthPct: 5.1,
-      profitMarginPct:    Math.round(totalProfit / totalRevenue * 1000) / 10,
-    },
-    sparklines: {
-      revenue:     SPARKLINE_BASE.map(v => ({ v: v * totalRevenue / days * 7 })),
-      orders:      SPARKLINE_BASE.map(v => ({ v: Math.round(v * 30) })),
-      newCustomers:SPARKLINE_BASE.map(v => ({ v: Math.round(v * 20) })),
-      retention:   [0.32, 0.34, 0.33, 0.36, 0.35, 0.37, 0.35].map(v => ({ v: Math.round(v * 100) })),
-      profit:      SPARKLINE_BASE.map(v => ({ v: v * totalProfit / days * 7 })),
-      conversion:  [3.2, 3.5, 3.8, 3.4, 3.9, 4.1, 3.8].map(v => ({ v })),
-    },
-    revenueByDay,
-    revenueByChannel: channels.map(ch => ({
-      channelName:  ch.channelName,
-      revenue:      totalRevenue * ch.pct,
-      orders:       Math.round(totalOrders * ch.pct),
-      revenuePct:   ch.pct * 100,
-      adSpend:      ch.adSpend,
-      roas:         ch.adSpend > 0 ? ((totalRevenue * ch.pct) / ch.adSpend).toFixed(1) : '0.0',
-      cac:          ch.adSpend > 0 ? Math.round(ch.adSpend / (totalOrders * ch.pct * 0.3)) : 0,
-      growth:       ({ Shopee: '15.2', Lazada: '8.4', 'TikTok Shop': '22.7', Offline: '3.1' }[ch.channelName] ?? '0.0'),
-      roasTarget:   4.0,
-    })),
-    topProducts,
-    productsByChannel,
-    monthlyByChannel,
-    customerSegments: [
-      { name: 'VIP (>10tr)',      value: vipCustomers,   clv: 25_000_000, freq: 8   },
-      { name: 'Thân thiết',       value: returningSeg,   clv:  8_000_000, freq: 4   },
-      { name: 'Mới',              value: newCustomers,   clv:  2_000_000, freq: 1   },
-      { name: 'Không hoạt động',  value: atRiskCustomers,clv:    500_000, freq: 0.5 },
-    ],
-    customerSegmentCards: [
-      { key: 'new',       label: 'Mới',         count: newCustomers,    total: totalCustomers, color: '#6366F1', icon: 'person_add' },
-      { key: 'returning', label: 'Quay lại',     count: returningSeg,    total: totalCustomers, color: '#10B981', icon: 'replay' },
-      { key: 'vip',       label: 'VIP',          count: vipCustomers,    total: totalCustomers, color: '#F59E0B', icon: 'workspace_premium' },
-      { key: 'atrisk',    label: 'Nguy cơ rời',  count: atRiskCustomers, total: totalCustomers, color: '#EF4444', icon: 'warning' },
-    ],
-    funnel: [
-      { stage: 'Lượt truy cập', value: 45000 },
-      { stage: 'Xem sản phẩm',  value: 18000 },
-      { stage: 'Thêm giỏ hàng', value:  6200 },
-      { stage: 'Đặt hàng',      value:  2800 },
-      { stage: 'Thanh toán',    value:  2450 },
-    ],
-    heatmap: (() => {
-      const rows = []
-      for (let h = 0; h < 24; h += 2)
-        ['T2','T3','T4','T5','T6','T7','CN'].forEach(day =>
-          rows.push({ hour: `${h}:00`, day, orders: Math.round(Math.random() * 60 + (h >= 8 && h <= 20 ? 30 : 5)) }))
-      return rows
-    })(),
-    radarData: [], // không có API endpoint → AiEmptyState luôn hiện
-    inventory,
-    inventoryKpi: { avgDIO, overstockRate, stockoutRate, returnRate: 3.2, cancelRate: 5.1, deliverySuccess: 91.7 },
-    top5Overstock,
-    top5LowStock,
-    returnByChannel,
-    adTypeCosts: [], // không có API endpoint → AiEmptyState luôn hiện
-    totalCustomers,
-  }
-}
+// generateMockData đã bị xóa — hệ thống chỉ dùng dữ liệu thực từ API/DB
 
 const CHANNEL_KEYS  = ['all', 'shopee', 'lazada', 'tiktok', 'facebook']
 const CHART_COLORS  = ['#6366F1', '#10B981', '#F59E0B', '#3B82F6', '#EC4899', '#8B5CF6', '#14B8A6', '#F97316']
@@ -668,6 +502,18 @@ function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd 
 
   return (
     <div className="space-y-5">
+      {/* ── Cảnh báo missing cost_price ─────────────────────────────────── */}
+      {financeKpi?.missingCostOrders > 0 && (
+        <div className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm"
+          style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.35)', color: '#92400e' }}>
+          <span className="icon shrink-0" style={{ fontSize: 18, color: '#f59e0b' }}>warning</span>
+          <span>
+            <strong>{financeKpi.missingCostOrders.toLocaleString('vi-VN')} đơn hàng</strong> chưa có giá vốn (cost_price) — COGS và lợi nhuận chưa chính xác.{' '}
+            Vào <strong>Quản lý sản phẩm</strong> để bổ sung giá vốn.
+          </span>
+        </div>
+      )}
+
       {/* ── KPI 3 nhóm ─────────────────────────────────────────────────── */}
       <div className="space-y-3">
         {/* Nhóm 1: Doanh thu */}
@@ -1756,7 +1602,8 @@ function HeatmapGrid({ data = [] }) {
 
 // ── Tab: 5 — Marketing & ROI ──────────────────────────────────────────────────
 function TabMarketing({ data, wd = {}, wl = {} }) {
-  const { t } = useTranslation()
+  const { t }       = useTranslation()
+  const navigate    = useNavigate()
   const campData    = wd.campaign ?? null
   const campLoading = wl.campaign ?? false
 
@@ -1800,10 +1647,11 @@ function TabMarketing({ data, wd = {}, wl = {} }) {
               {missingAdSpend.map(c => c.channelName).join(', ')}
             </p>
           </div>
-          <a href="/marketing/ad-spend"
+          <button
+            onClick={() => navigate('/finance/ad-spend')}
             className="lbtn lbtn-secondary text-xs !h-8 !px-3 shrink-0">
             Nhập chi phí QC
-          </a>
+          </button>
         </div>
       )}
 
@@ -2145,10 +1993,12 @@ function TabInventory({ data, wd = {}, wl = {} }) {
                       <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
                         <td className="py-2 px-2" style={{ color: 'var(--text-secondary)' }}>{item.product}</td>
                         <td className="py-2 px-2 text-right font-mono font-bold" style={{ color: 'var(--color-error)' }}>{item.stock}</td>
-                        <td className="py-2 px-2 text-right font-mono" style={{ color: 'var(--text-tertiary)' }}>{item.dailySales}</td>
+                        <td className="py-2 px-2 text-right font-mono" style={{ color: 'var(--text-tertiary)' }}>
+                          {item.dailySales > 0 ? Number(item.dailySales).toFixed(1) : '—'}
+                        </td>
                         <td className="py-2 px-2 text-right font-mono font-bold"
-                          style={{ color: daysLeft <= 7 ? 'var(--color-error)' : '#F59E0B' }}>
-                          {daysLeft}d
+                          style={{ color: item.stock === 0 ? 'var(--color-error)' : daysLeft <= 7 ? 'var(--color-error)' : '#F59E0B' }}>
+                          {item.stock === 0 ? 'Hết hàng' : `${daysLeft}d`}
                         </td>
                       </tr>
                     )
@@ -2307,77 +2157,78 @@ export default function DashboardPage() {
       const resData = res.status === 'fulfilled' ? res.value : null
       if (resData?.kpi == null) throw new Error('no_data')
 
-      // Merge real DW data với mock-generated fields cho các tabs chưa có endpoint riêng
-      const mock = generateMockData(from, to)
-
-      // Ops KPI (hoàn/huỷ/giao thành công) từ OLTP
+      // Chỉ dùng dữ liệu thực — không fallback mock
       const opsData = opsReal.status === 'fulfilled' ? opsReal.value : null
-      // Inventory thực từ OLTP products + order_items
       const invData = invReal.status === 'fulfilled' ? invReal.value : null
 
+      // Top products: gộp trùng tên, tính % đóng góp
+      const topProductsReal = (() => {
+        const raw = resData.topProducts ?? []
+        const byName = {}
+        raw.forEach(p => {
+          const key = p.productName
+          if (!byName[key]) byName[key] = { ...p, revenue: 0, orders: 0 }
+          byName[key].revenue += Number(p.revenue ?? 0)
+          byName[key].orders  += Number(p.orders  ?? 0)
+        })
+        const sorted     = Object.values(byName).sort((a, b) => b.revenue - a.revenue).slice(0, 5)
+        const grandTotal = sorted.reduce((s, p) => s + p.revenue, 0)
+        return sorted.map(p => ({ ...p, revContribPct: grandTotal > 0 ? ((p.revenue / grandTotal) * 100).toFixed(1) : '0.0' }))
+      })()
+
       const merged = {
-        ...mock,                    // base mock (fallback cho tabs chưa có endpoint riêng)
+        // ── KPI từ DW (DashboardService) ──────────────────────────────────────
         kpi: {
-          ...mock.kpi,
-          totalRevenue:     Number(resData.kpi.totalRevenue   ?? mock.kpi.totalRevenue),
-          totalProfit:      Number(resData.kpi.totalProfit    ?? mock.kpi.totalProfit),
-          totalOrders:      Number(resData.kpi.totalOrders    ?? mock.kpi.totalOrders),
-          avgOrderValue:    Number(resData.kpi.avgOrderValue  ?? mock.kpi.avgOrderValue),
-          newCustomers:     Number(resData.kpi.newCustomers   ?? mock.kpi.newCustomers),
-          revenueGrowthPct: Number(resData.kpi.revenueGrowthPct ?? mock.kpi.revenueGrowthPct),
-          ordersGrowthPct:  Number(resData.kpi.ordersGrowthPct  ?? mock.kpi.ordersGrowthPct),
-          profitMarginPct:  Number(resData.kpi.profitMarginPct  ?? mock.kpi.profitMarginPct),
+          totalRevenue:     Number(resData.kpi.totalRevenue    ?? 0),
+          totalProfit:      Number(resData.kpi.totalProfit     ?? 0),
+          totalOrders:      Number(resData.kpi.totalOrders     ?? 0),
+          avgOrderValue:    Number(resData.kpi.avgOrderValue   ?? 0),
+          newCustomers:     Number(resData.kpi.newCustomers    ?? 0),
+          revenueGrowthPct: Number(resData.kpi.revenueGrowthPct ?? 0),
+          ordersGrowthPct:  Number(resData.kpi.ordersGrowthPct  ?? 0),
+          profitMarginPct:  Number(resData.kpi.profitMarginPct  ?? 0),
         },
-        revenueByDay:      resData.revenueByDay?.length     ? resData.revenueByDay     : mock.revenueByDay,
-        revenueByChannel:  resData.revenueByChannel?.length ? resData.revenueByChannel : mock.revenueByChannel,
-        topProducts: (() => {
-          const raw = resData.topProducts?.length ? resData.topProducts : mock.topProducts
-          // Gộp trùng tên sản phẩm, lấy top 5, tính % đóng góp
-          const byName = {}
-          raw.forEach(p => {
-            const key = p.productName
-            if (!byName[key]) byName[key] = { ...p, revenue: 0, orders: 0 }
-            byName[key].revenue += Number(p.revenue ?? 0)
-            byName[key].orders  += Number(p.orders  ?? 0)
-          })
-          const sorted    = Object.values(byName).sort((a, b) => b.revenue - a.revenue).slice(0, 5)
-          const grandTotal = sorted.reduce((s, p) => s + p.revenue, 0)
-          return sorted.map(p => ({ ...p, revContribPct: grandTotal > 0 ? ((p.revenue / grandTotal) * 100).toFixed(1) : '0.0' }))
-        })(),
-        // Dữ liệu thật từ DB (thay mock nếu API thành công)
-        monthlyByChannel:  monthlyReal.status === 'fulfilled' && monthlyReal.value?.length
-                             ? monthlyReal.value : mock.monthlyByChannel,
-        heatmap:           heatmapReal.status === 'fulfilled' && heatmapReal.value?.length
-                             ? heatmapReal.value : mock.heatmap,
-        funnel:            funnelReal.status === 'fulfilled'  && funnelReal.value?.length
-                             ? funnelReal.value  : mock.funnel,
-        // Inventory: merge real data nếu có, giữ mock nếu API lỗi
-        inventory:         invData?.inventory?.length ? invData.inventory : mock.inventory,
-        top5Overstock:     invData?.top5Overstock?.length ? invData.top5Overstock : mock.top5Overstock,
-        top5LowStock:      invData?.top5LowStock?.length  ? invData.top5LowStock  : mock.top5LowStock,
+        // ── Xu hướng và kênh từ DW ─────────────────────────────────────────
+        revenueByDay:     resData.revenueByDay     ?? [],
+        revenueByChannel: resData.revenueByChannel ?? [],
+        topProducts:      topProductsReal,
+        // ── Monthly + Heatmap + Funnel từ OLTP ───────────────────────────────
+        monthlyByChannel:  monthlyReal.status === 'fulfilled' ? (monthlyReal.value ?? []) : [],
+        heatmap:           heatmapReal.status === 'fulfilled'  ? (heatmapReal.value  ?? []) : [],
+        funnel:            funnelReal.status === 'fulfilled'   ? (funnelReal.value   ?? []) : [],
+        productsByChannel: topByChannelReal.status === 'fulfilled' ? (topByChannelReal.value ?? []) : [],
+        // ── Inventory từ OLTP ─────────────────────────────────────────────────
+        inventory:     invData?.inventory     ?? [],
+        top5Overstock: invData?.top5Overstock ?? [],
+        top5LowStock:  invData?.top5LowStock  ?? [],
         inventoryKpi: {
-          ...mock.inventoryKpi,
           ...(invData?.inventoryKpi ?? {}),
-          // Safe parse — backend có thể trả NaN/null
-          overstockRate:   (() => { const n = parseFloat(invData?.inventoryKpi?.overstockRate ?? mock.inventoryKpi?.overstockRate); return Number.isFinite(n) ? n : 0 })(),
-          stockoutRate:    (() => { const n = parseFloat(invData?.inventoryKpi?.stockoutRate  ?? mock.inventoryKpi?.stockoutRate);  return Number.isFinite(n) ? n : 0 })(),
-          // Ops KPI từ OLTP orders (ghi đè nếu có)
-          returnRate:      Number(opsData?.returnRate      ?? mock.inventoryKpi?.returnRate      ?? 0),
-          cancelRate:      Number(opsData?.cancelRate      ?? mock.inventoryKpi?.cancelRate      ?? 0),
-          deliverySuccess: Number(opsData?.deliverySuccess ?? mock.inventoryKpi?.deliverySuccess ?? 0),
+          overstockRate:   (() => { const n = parseFloat(invData?.inventoryKpi?.overstockRate); return Number.isFinite(n) ? n : 0 })(),
+          stockoutRate:    (() => { const n = parseFloat(invData?.inventoryKpi?.stockoutRate);  return Number.isFinite(n) ? n : 0 })(),
+          returnRate:      Number(opsData?.returnRate      ?? 0),
+          cancelRate:      Number(opsData?.cancelRate      ?? 0),
+          deliverySuccess: Number(opsData?.deliverySuccess ?? 0),
         },
-        returnByChannel: opsData?.returnByChannel ?? mock.returnByChannel ?? [],
-        // Top sản phẩm theo kênh — dữ liệu thật từ OLTP (không có → [] → DevEmptyState)
-        productsByChannel: topByChannelReal.status === 'fulfilled' && topByChannelReal.value?.length
-          ? topByChannelReal.value : [],
+        // Return/cancel theo kênh từ revenueByChannel (backend tính từ OLTP)
+        returnByChannel: (resData.revenueByChannel ?? []).map(ch => ({
+          channelName: ch.channelName,
+          returnRate:  Number(ch.returnRate ?? 0).toFixed(1),
+          cancelRate:  Number(ch.cancelRate ?? 0).toFixed(1),
+        })),
+        // ── Sections chưa có real API → hiện "Không có dữ liệu" ──────────────
+        customerSegments:     [],   // chờ RFM API trả segment data
+        customerSegmentCards: [],
+        radarData:            [],
+        adTypeCosts:          [],
+        sparklines:           {},
       }
-      // Tính sparklines từ revenueByDay thực — lấy 7 điểm cuối
+
+      // Sparklines từ revenueByDay thực (7 điểm cuối) — hình dạng thực, không random
       const last7 = merged.revenueByDay.slice(-7)
       if (last7.length > 0) {
         merged.sparklines = {
-          ...mock.sparklines,
-          revenue: last7.map(d => ({ v: Number(d.netRevenue) })),
-          orders:  last7.map(d => ({ v: Number(d.orderCount) })),
+          revenue: last7.map(d => ({ v: Number(d.netRevenue)  })),
+          orders:  last7.map(d => ({ v: Number(d.orderCount)  })),
           profit:  last7.map(d => ({ v: Number(d.grossProfit) })),
         }
       }

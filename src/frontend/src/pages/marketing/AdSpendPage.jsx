@@ -62,6 +62,12 @@ export default function AdSpendPage() {
 
   const totalSpend = Object.values(spend).reduce((s, v) => s + (parseFloat(v) || 0), 0)
 
+  const handleSaveAll = async () => {
+    setErr('')
+    const pending = channels.filter(ch => spend[ch.channelId] !== undefined)
+    await Promise.all(pending.map(ch => handleSave(ch.channelId)))
+  }
+
   return (
     <div className="space-y-5">
       {/* Header */}
@@ -75,14 +81,23 @@ export default function AdSpendPage() {
           </p>
         </div>
 
-        {/* Bộ chọn tháng / năm */}
+        {/* Bộ chọn tháng / năm + Lưu tất cả */}
         <div className="flex gap-2 items-center">
           <select value={month} onChange={e => setMonth(+e.target.value)} className="linput text-sm" style={{ width: 120 }}>
             {MONTHS.map((m, i) => <option key={i+1} value={i+1}>{m}</option>)}
           </select>
           <select value={year} onChange={e => setYear(+e.target.value)} className="linput text-sm" style={{ width: 90 }}>
-            {[2024,2025,2026,2027].map(y => <option key={y} value={y}>{y}</option>)}
+            {Array.from({ length: 4 }, (_, i) => now.getFullYear() - 2 + i).map(y => <option key={y} value={y}>{y}</option>)}
           </select>
+          {channels.length > 0 && (
+            <button
+              onClick={handleSaveAll}
+              disabled={loading}
+              className="lbtn lbtn-primary text-sm !h-9 !px-4"
+            >
+              Lưu tất cả
+            </button>
+          )}
         </div>
       </div>
 
@@ -176,10 +191,11 @@ export default function AdSpendPage() {
       <div className="rounded-xl p-4 text-sm" style={{ background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.2)' }}>
         <p className="font-semibold mb-2" style={{ color: 'var(--primary-500)' }}>💡 Hướng dẫn</p>
         <ul className="space-y-1" style={{ color: 'var(--text-secondary)' }}>
-          <li>• Nhập tổng chi phí quảng cáo của từng kênh trong tháng này</li>
-          <li>• Dữ liệu sẽ tự động tính ROAS = Doanh thu / Chi phí QC trong Dashboard → Tab Marketing</li>
+          <li>• Nhập tổng chi phí quảng cáo của từng kênh trong tháng đã chọn</li>
+          <li>• Dữ liệu sẽ tự động tính ROAS = Doanh thu / Chi phí QC trong <strong>Dashboard → Tab Marketing &amp; ROI</strong></li>
+          <li>• Đảm bảo nhập đúng tháng/năm khớp với khoảng thời gian đang xem trên Dashboard</li>
           <li>• Nguồn dữ liệu: xuất báo cáo từ Shopee Ads, TikTok Ads Center, Lazada Sponsored</li>
-          <li>• Nếu kênh không chạy QC, nhập 0 hoặc bỏ trống</li>
+          <li>• Nếu kênh không chạy QC tháng đó, nhập 0 hoặc bỏ trống</li>
         </ul>
       </div>
     </div>
