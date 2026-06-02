@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { useSearchParams, useNavigate } from 'react-router-dom'
 import MockToast from '../../components/ui/MockToast'
 import AiEmptyState from '../../components/ui/AiEmptyState'
 import { getCampaignPlan } from '../../api/aiApi'
@@ -10,7 +11,112 @@ const REC_CONFIG = {
   LOW_SEASON:   { textColor: '#F59E0B', bg: 'rgba(245,158,11,0.08)',  border: 'rgba(245,158,11,0.25)',  icon: '⬇️', label: 'Thấp điểm' },
 }
 
+// ── Hiển thị card gợi ý từ URL params (basket / rfm / churn) ─────────────────
+function ActionSuggestionBanner({ params, onDismiss }) {
+  const action = params.get('action')
+  if (!action) return null
+
+  if (action === 'bundle') {
+    const products = (params.get('products') ?? '').split('|').filter(Boolean)
+    const lift     = params.get('lift')
+    const conf     = params.get('conf')
+    return (
+      <div className="rounded-xl p-4 flex items-start gap-3 relative"
+        style={{ background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.30)' }}>
+        <span className="icon text-2xl shrink-0 mt-0.5" style={{ color: 'var(--primary-500)' }}>local_offer</span>
+        <div className="flex-1">
+          <div className="font-semibold text-sm" style={{ color: 'var(--primary-700)' }}>
+            Gợi ý Bundle từ Market Basket Analysis
+          </div>
+          <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
+            Khách hay mua chung: {products.map((p, i) => (
+              <span key={i}>
+                {i > 0 && <span className="mx-1" style={{ color: 'var(--text-tertiary)' }}>+</span>}
+                <strong style={{ color: 'var(--primary-600)' }}>{p}</strong>
+              </span>
+            ))}{lift && <span className="ml-2 text-green-600 font-medium">Lift {lift}x</span>}{conf && <span className="ml-1" style={{ color: 'var(--text-tertiary)' }}>(conf {conf}%)</span>}
+          </p>
+          <p className="text-xs mt-1.5 font-medium" style={{ color: 'var(--text-primary)' }}>
+            Đề xuất: Tạo combo giảm giá 10–15% khi mua kèm {products.join(' + ')} — chạy vào thời điểm cao điểm bên dưới.
+          </p>
+        </div>
+        <button onClick={onDismiss} className="icon shrink-0 text-sm transition-colors"
+          style={{ color: 'var(--text-tertiary)', fontSize: 18 }}
+          onMouseEnter={e => e.currentTarget.style.color = '#EF4444'}
+          onMouseLeave={e => e.currentTarget.style.color = 'var(--text-tertiary)'}>
+          close
+        </button>
+      </div>
+    )
+  }
+
+  if (action === 'winback') {
+    const segment = params.get('segment') ?? ''
+    const count   = params.get('count') ?? '?'
+    const segColor = segment === 'At Risk' ? '#EF4444' : segment === 'Lost' ? '#6B7280' : '#3B82F6'
+    return (
+      <div className="rounded-xl p-4 flex items-start gap-3 relative"
+        style={{ background: `${segColor}10`, border: `1px solid ${segColor}40` }}>
+        <span className="icon text-2xl shrink-0 mt-0.5" style={{ color: segColor }}>person_search</span>
+        <div className="flex-1">
+          <div className="font-semibold text-sm" style={{ color: segColor }}>
+            Gợi ý Campaign Win-back — phân khúc {segment}
+          </div>
+          <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
+            <strong>{count}</strong> khách hàng phân khúc <strong>{segment}</strong> cần chiến dịch kích hoạt lại.
+          </p>
+          <p className="text-xs mt-1.5 font-medium" style={{ color: 'var(--text-primary)' }}>
+            Đề xuất: Gửi voucher giảm giá 20% + email cá nhân hóa cho {count} khách này — chạy vào thời điểm cao điểm bên dưới.
+          </p>
+        </div>
+        <button onClick={onDismiss} className="icon shrink-0 transition-colors"
+          style={{ color: 'var(--text-tertiary)', fontSize: 18 }}
+          onMouseEnter={e => e.currentTarget.style.color = '#EF4444'}
+          onMouseLeave={e => e.currentTarget.style.color = 'var(--text-tertiary)'}>
+          close
+        </button>
+      </div>
+    )
+  }
+
+  if (action === 'retain') {
+    const customer = params.get('customer') ?? ''
+    const prob     = params.get('prob') ?? '?'
+    const risk     = params.get('risk') ?? 'HIGH'
+    const channel  = params.get('channel') ?? ''
+    const riskColor = risk === 'HIGH' ? '#EF4444' : '#F59E0B'
+    return (
+      <div className="rounded-xl p-4 flex items-start gap-3 relative"
+        style={{ background: `${riskColor}0D`, border: `1px solid ${riskColor}40` }}>
+        <span className="icon text-2xl shrink-0 mt-0.5" style={{ color: riskColor }}>favorite</span>
+        <div className="flex-1">
+          <div className="font-semibold text-sm" style={{ color: riskColor }}>
+            Giữ chân khách hàng — Nguy cơ churn {risk}
+          </div>
+          <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
+            <strong style={{ color: 'var(--text-primary)' }}>{customer}</strong> có xác suất rời bỏ <strong style={{ color: riskColor }}>{prob}%</strong>
+            {channel && <span className="ml-1 text-xs" style={{ color: 'var(--text-tertiary)' }}>qua {channel}</span>}
+          </p>
+          <p className="text-xs mt-1.5 font-medium" style={{ color: 'var(--text-primary)' }}>
+            Đề xuất: Gửi ngay voucher cá nhân hóa hoặc gọi điện chăm sóc — chọn thời điểm tốt nhất bên dưới để liên hệ.
+          </p>
+        </div>
+        <button onClick={onDismiss} className="icon shrink-0 transition-colors"
+          style={{ color: 'var(--text-tertiary)', fontSize: 18 }}
+          onMouseEnter={e => e.currentTarget.style.color = '#EF4444'}
+          onMouseLeave={e => e.currentTarget.style.color = 'var(--text-tertiary)'}>
+          close
+        </button>
+      </div>
+    )
+  }
+
+  return null
+}
+
 export default function CampaignPage() {
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [showBanner, setShowBanner] = useState(true)
   const [data,   setData]   = useState(null)
   const [loading,setLoading]= useState(true)
   const [isMock, setIsMock] = useState(false)
@@ -39,6 +145,14 @@ export default function CampaignPage() {
         <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Lịch Chiến dịch Thông minh</h1>
         <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>Gợi ý thời điểm tốt nhất để chạy marketing dựa trên seasonal analysis</p>
       </div>
+
+      {/* Banner gợi ý từ Basket / RFM / Churn */}
+      {showBanner && (
+        <ActionSuggestionBanner
+          params={searchParams}
+          onDismiss={() => { setShowBanner(false); setSearchParams({}); }}
+        />
+      )}
 
       {!data && !loading && <AiEmptyState title="Chưa đủ dữ liệu lịch chiến dịch" />}
 

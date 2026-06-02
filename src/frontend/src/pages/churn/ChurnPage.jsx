@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useNavigate } from 'react-router-dom'
 import AiEmptyState from '../../components/ui/AiEmptyState'
 import { getChurnPrediction } from '../../api/aiApi'
 
@@ -50,6 +51,7 @@ function ProbBar({ pct }) {
 
 export default function ChurnPage() {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const [data,    setData]    = useState(null)
   const [loading, setLoading] = useState(true)
   const fetchedRef = useRef(false)
@@ -149,6 +151,7 @@ export default function ChurnPage() {
                   { label: 'Xác suất churn', cls: 'p-3 text-left' },
                   { label: 'Rủi ro',         cls: 'p-3 text-center' },
                   { label: 'Gợi ý hành động', cls: 'p-3 text-left' },
+                  { label: '',               cls: 'p-3' },
                 ].map(h => (
                   <th key={h.label} className={`${h.cls} text-xs font-semibold tracking-wide`}
                     style={{ color: 'var(--text-tertiary)', borderBottom: '2px solid var(--border)' }}>
@@ -238,9 +241,38 @@ export default function ChurnPage() {
 
                     {/* Gợi ý hành động — riêng theo kênh */}
                     <td className="px-3 py-2 text-xs"
-                      style={{ verticalAlign: 'middle', color: 'var(--text-tertiary)', maxWidth: 260 }}>
+                      style={{ verticalAlign: 'middle', color: 'var(--text-tertiary)', maxWidth: 220 }}>
                       {ch.action ?? c.action}
                     </td>
+
+                    {/* Nút tạo chiến dịch giữ chân — chỉ hiện ở dòng đầu của mỗi khách */}
+                    {ci === 0 && (
+                      <td rowSpan={span} className="px-3 py-2"
+                        style={{ verticalAlign: 'middle', borderLeft: '1px solid var(--border)' }}>
+                        {c.risk !== 'LOW' && (
+                          <button
+                            onClick={() => {
+                              const params = new URLSearchParams({
+                                action:   'retain',
+                                customer:  c.full_name,
+                                prob:      String(c.churn_prob),
+                                risk:      c.risk,
+                                channel:   c.channels?.[0]?.channel ?? '',
+                              })
+                              navigate(`/campaign?${params}`)
+                            }}
+                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-all whitespace-nowrap"
+                            style={{ borderColor: 'rgba(239,68,68,0.35)', color: '#EF4444', background: 'rgba(239,68,68,0.06)' }}
+                            onMouseEnter={e => { e.currentTarget.style.background='#EF4444'; e.currentTarget.style.color='white' }}
+                            onMouseLeave={e => { e.currentTarget.style.background='rgba(239,68,68,0.06)'; e.currentTarget.style.color='#EF4444' }}
+                            title={`Tạo chiến dịch giữ chân ${c.full_name} (churn ${c.churn_prob}%)`}
+                          >
+                            <span className="icon" style={{ fontSize: 13 }}>campaign</span>
+                            Giữ chân
+                          </button>
+                        )}
+                      </td>
+                    )}
                   </tr>
                 )
               })}

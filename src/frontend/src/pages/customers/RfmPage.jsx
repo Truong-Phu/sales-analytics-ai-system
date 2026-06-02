@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useNavigate } from 'react-router-dom'
 import {
   ScatterChart, Scatter, XAxis, YAxis, ZAxis,
   CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -27,7 +28,7 @@ function fmtVND(v) {
   return `${v} ₫`
 }
 
-function SegmentCard({ name, data }) {
+function SegmentCard({ name, data, onCreateCampaign }) {
   const cfg = SEGMENT_CONFIG[name] ?? SEGMENT_CONFIG.Other
   return (
     <div className="lcard p-4 flex flex-col gap-2" style={{ borderLeft: `3px solid ${cfg.color}` }}>
@@ -59,9 +60,25 @@ function SegmentCard({ name, data }) {
           </div>
         </div>
       </div>
-      <div className="text-xs p-2 rounded-md" style={{ background: 'var(--bg-elevated)', color: 'var(--text-secondary)' }}>
-        <span className="icon icon-sm mr-1" style={{ color: cfg.color }}>lightbulb</span>
-        {cfg.action}
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex-1 text-xs p-2 rounded-md" style={{ background: 'var(--bg-elevated)', color: 'var(--text-secondary)' }}>
+          <span className="icon icon-sm mr-1" style={{ color: cfg.color }}>lightbulb</span>
+          {cfg.action}
+        </div>
+        {/* Nút tạo campaign cho segment này */}
+        {(name === 'At Risk' || name === 'Lost' || name === 'Returning') && (
+          <button
+            onClick={() => onCreateCampaign(name, data.count)}
+            className="shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-all"
+            style={{ borderColor: `${cfg.color}60`, color: cfg.color, background: `${cfg.color}08` }}
+            onMouseEnter={e => { e.currentTarget.style.background = cfg.color; e.currentTarget.style.color = 'white' }}
+            onMouseLeave={e => { e.currentTarget.style.background = `${cfg.color}08`; e.currentTarget.style.color = cfg.color }}
+            title={`Tạo chiến dịch cho ${data.count} khách hàng phân khúc ${name}`}
+          >
+            <span className="icon" style={{ fontSize: 13 }}>campaign</span>
+            Tạo campaign
+          </button>
+        )}
       </div>
     </div>
   )
@@ -69,6 +86,7 @@ function SegmentCard({ name, data }) {
 
 export default function RfmPage() {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const [data,      setData]      = useState(null)
   const [loading,   setLoading]   = useState(true)
   const [activeTab, setActiveTab] = useState('overview')
@@ -128,6 +146,11 @@ export default function RfmPage() {
     .filter(c => !searchKH || c.full_name?.toLowerCase().includes(searchKH.toLowerCase()))
 
   const totalRevenue = Object.values(summary).reduce((s, v) => s + (v.total_revenue ?? 0), 0)
+
+  const handleCreateCampaign = (segment, count) => {
+    const params = new URLSearchParams({ action: 'winback', segment, count: String(count) })
+    navigate(`/campaign?${params}`)
+  }
 
   return (
     <div className="space-y-4">
@@ -189,7 +212,7 @@ export default function RfmPage() {
             {/* Segment Cards */}
             <div className="space-y-3">
               {Object.entries(summary).map(([name, s]) => (
-                <SegmentCard key={name} name={name} data={s} />
+                <SegmentCard key={name} name={name} data={s} onCreateCampaign={handleCreateCampaign} />
               ))}
             </div>
             {/* Pie Chart */}

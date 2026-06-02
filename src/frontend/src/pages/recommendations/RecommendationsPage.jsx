@@ -1,5 +1,6 @@
 ﻿import { useState, useEffect, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useNavigate } from 'react-router-dom'
 import AiEmptyState from '../../components/ui/AiEmptyState'
 import { getRecommendations } from '../../api/aiApi'
 import api from '../../api/axios'
@@ -82,6 +83,21 @@ const INTENT_LABEL = {
 }
 const PRIORITY_DOT = { high: '#EF4444', medium: '#F59E0B', low: 'var(--primary-500)' }
 const TYPE_FILTER_KEYS = ['all', 'revenue', 'channel', 'product', 'anomaly', 'general']
+
+// Map category gợi ý → trang liên quan
+const CATEGORY_LINK = {
+  REVENUE:   { path: '/forecast',    label: 'Xem dự báo',       icon: 'trending_up' },
+  INVENTORY: { path: '/inventory',   label: 'Xem tồn kho',      icon: 'inventory_2' },
+  CHANNEL:   { path: '/attribution', label: 'Xem phân bổ kênh', icon: 'store' },
+  MARKETING: { path: '/price',       label: 'Xem giá thị trường', icon: 'price_change' },
+}
+// Map type gợi ý → trang (fallback khi không có category)
+const TYPE_LINK = {
+  revenue: { path: '/forecast',    label: 'Xem dự báo',       icon: 'trending_up' },
+  channel: { path: '/attribution', label: 'Xem phân bổ kênh', icon: 'store' },
+  product: { path: '/basket',      label: 'Xem basket',       icon: 'inventory_2' },
+  anomaly: { path: '/anomaly',     label: 'Xem bất thường',   icon: 'warning' },
+}
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
@@ -375,6 +391,7 @@ function ChatTab({ tab }) {
 export default function RecommendationsPage() {
   const { t } = useTranslation()
 
+  const navigate = useNavigate()
   // Trạng thái tab đang active
   const [activeTab, setActiveTab] = useState('business')
 
@@ -527,6 +544,24 @@ export default function RecommendationsPage() {
                   {rec.detail && (
                     <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>{rec.detail}</p>
                   )}
+                  {/* Nút link đến trang liên quan */}
+                  {(() => {
+                    const link = CATEGORY_LINK[rec.category] ?? TYPE_LINK[rec.type]
+                    if (!link) return null
+                    return (
+                      <button
+                        onClick={() => navigate(link.path)}
+                        className="mt-2 flex items-center gap-1 text-xs font-medium transition-colors"
+                        style={{ color: 'var(--primary-500)' }}
+                        onMouseEnter={e => e.currentTarget.style.color = 'var(--primary-700)'}
+                        onMouseLeave={e => e.currentTarget.style.color = 'var(--primary-500)'}
+                      >
+                        <span className="icon" style={{ fontSize: 13 }}>{link.icon}</span>
+                        {link.label}
+                        <span className="icon" style={{ fontSize: 13 }}>arrow_forward</span>
+                      </button>
+                    )
+                  })()}
                 </div>
               </div>
             ))}

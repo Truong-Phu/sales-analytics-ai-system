@@ -1,15 +1,28 @@
 import { useState, useEffect, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import MockToast from '../../components/ui/MockToast'
 import AiEmptyState from '../../components/ui/AiEmptyState'
 import { getBasketAnalysis } from '../../api/aiApi'
 
 export default function BasketPage() {
+  const navigate   = useNavigate()
   const [data,    setData]    = useState(null)
   const [loading, setLoading] = useState(true)
   const [isMock,  setIsMock]  = useState(false)
   const [minConf, setMinConf] = useState(0.3)
   const [minLift, setMinLift] = useState(1.0)
   const fetchedRef = useRef(false)
+
+  const handleCreateBundle = (rule) => {
+    const products = [...rule.antecedents, ...rule.consequents].join('|')
+    const params = new URLSearchParams({
+      action:   'bundle',
+      products,
+      lift:     rule.lift.toString(),
+      conf:     (rule.confidence * 100).toFixed(0),
+    })
+    navigate(`/campaign?${params}`)
+  }
 
   const load = async () => {
     setLoading(true)
@@ -91,11 +104,22 @@ export default function BasketPage() {
                 <span key={p} className="px-2 py-1 rounded text-sm font-medium"
                   style={{ background: 'rgba(16,185,129,0.12)', color: '#059669' }}>{p}</span>
               ))}
-              <div className="ml-auto flex gap-3 text-xs" style={{ color: 'var(--text-tertiary)' }}>
+              <div className="ml-auto flex items-center gap-3 text-xs" style={{ color: 'var(--text-tertiary)' }}>
                 <span>Support: <strong style={{ color: 'var(--text-primary)' }}>{(rule.support*100).toFixed(1)}%</strong></span>
                 <span>Confidence: <strong style={{ color: 'var(--text-primary)' }}>{(rule.confidence*100).toFixed(1)}%</strong></span>
                 <span>Lift: <strong style={{ color: liftColor(rule.lift) }}>{rule.lift}x</strong></span>
                 <span>Đơn: <strong style={{ color: 'var(--text-primary)' }}>{rule.transactions}</strong></span>
+                <button
+                  onClick={() => handleCreateBundle(rule)}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium border transition-all"
+                  style={{ borderColor: 'rgba(99,102,241,0.4)', color: 'var(--primary-600)', background: 'rgba(99,102,241,0.06)' }}
+                  onMouseEnter={e => { e.currentTarget.style.background='var(--primary-500)'; e.currentTarget.style.color='white'; e.currentTarget.style.borderColor='var(--primary-500)' }}
+                  onMouseLeave={e => { e.currentTarget.style.background='rgba(99,102,241,0.06)'; e.currentTarget.style.color='var(--primary-600)'; e.currentTarget.style.borderColor='rgba(99,102,241,0.4)' }}
+                  title="Tạo chương trình bundle giảm giá cho cặp sản phẩm này"
+                >
+                  <span className="icon" style={{ fontSize: 13 }}>campaign</span>
+                  Tạo bundle
+                </button>
               </div>
             </div>
             <p className="text-sm mt-2" style={{ color: 'var(--text-secondary)' }}>{rule.recommendation}</p>
