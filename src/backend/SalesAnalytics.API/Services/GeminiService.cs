@@ -39,6 +39,7 @@ public class GeminiService(
         "top_channel", "channel_comparison",
         "customer_overview", "inventory_alert",
         "business_recommendation", "performance_overview",
+        "employee_performance",
         "unknown",  // câu hỏi ngoài phạm vi hệ thống
     ];
 
@@ -138,8 +139,14 @@ public class GeminiService(
         if (Has(q, "doanh thu", "doanh số", "tiền về", "thu nhập", "bán được bao nhiêu tiền") && !Has(q, "kênh"))
             return "revenue_summary";
 
+        // employee_performance phải kiểm tra TRƯỚC order_summary vì "bán được nhiều nhất" dễ nhầm
+        if (Has(q, "nhân viên", "nhân viên nào", "staff", "kpi nhân viên", "hiệu suất nhân viên",
+                   "nhân viên bán", "top nhân viên", "nhân viên đạt", "sales team", "ai bán được",
+                   "ai xử lý", "người bán", "bán được nhiều nhất tháng", "bán nhiều nhất trong"))
+            return "employee_performance";
+
         if (Has(q, "đơn hàng", "số đơn", "bao nhiêu đơn", "đơn bán", "bao nhiêu đơn hàng")
-            || (Has(q, "bán được") && !Has(q, "tiền", "doanh thu")))
+            || (Has(q, "bán được") && !Has(q, "tiền", "doanh thu") && !Has(q, "nhân viên", "người")))
             return "order_summary";
 
         if (Has(q, "phản hồi", "đánh giá khách", "review", "bình luận", "nhận xét", "cảm xúc khách", "sentiment"))
@@ -176,6 +183,7 @@ public class GeminiService(
                 - inventory_alert: tồn kho, sắp hết hàng, cần nhập thêm
                 - business_recommendation: gợi ý, chiến lược, nên làm gì, cách tăng doanh thu
                 - performance_overview: tổng quan tình hình kinh doanh, tóm tắt, không rõ mục tiêu cụ thể
+                - employee_performance: nhân viên bán nhiều nhất, KPI nhân viên, hiệu suất nhân viên, ai bán được nhiều
                 - unknown: câu hỏi hoàn toàn ngoài phạm vi kinh doanh (thời tiết, lịch sử, giải trí, v.v.)
 
                 QUESTION: {question}
@@ -229,6 +237,7 @@ public class GeminiService(
             "performance_overview"    => "Tóm tắt ngắn gọn theo thứ tự: doanh thu → đơn hàng → sản phẩm nổi bật → kênh dẫn đầu. Mỗi mục 1 câu.",
             "market"                  => "Phân tích xu hướng thị trường từ dữ liệu Google được cung cấp. Nêu từ khóa hot, xu hướng nổi bật.",
             "cross_analysis"          => "Phân tích mối liên hệ giữa dữ liệu nội bộ và dữ liệu ngoài. Nêu rõ nếu thiếu dữ liệu từ bất kỳ nguồn nào.",
+            "employee_performance"    => "Xếp hạng nhân viên theo doanh thu POS. Nêu rõ top 3-5 nhân viên và % đóng góp. Nhắc rõ chỉ tính đơn POS, không tính đơn online sàn.",
             _                         => "Trả lời đúng câu hỏi dựa trên dữ liệu có sẵn. Không liệt kê toàn bộ dashboard.",
         };
 
@@ -770,87 +779,410 @@ public class GeminiService(
         return null;
     }
 
-    private async Task<string> BuildContext_Revenue(Guid companyId, string question = "")
+    // ── Parse năm từ câu hỏi: "năm 2025", "năm nay vs năm ngoái", "2025 vs 2026" ──
+    private static (int Year1, int? Year2)? ParseYearsFromQuestion(string question)
     {
-        var now     = DateTime.UtcNow;
-        var parsed  = ParseDateFromQuestion(question);
+        var q   = question.ToLowerInvariant();
+        var now = DateTime.UtcNow.Year;
 
-        DateTime monthStart, prevMonthStart;
-        if (parsed.HasValue)
+        // Lấy tất cả năm có trong câu hỏi (2020-2030)
+        var yearMatches = System.Text.RegularExpressions.Regex
+            .Matches(q, @"\b(20[2-9]\d)\b")
+            .Cast<System.Text.RegularExpressions.Match>()
+            .Select(m => int.Parse(m.Value))
+            .Distinct().OrderBy(y => y).ToList();
+
+        if (yearMatches.Count >= 2) return (yearMatches[0], yearMatches[1]);
+        if (yearMatches.Count == 1)
         {
-            monthStart     = new DateTime(parsed.Value.Year, parsed.Value.Month, 1, 0, 0, 0, DateTimeKind.Utc);
-            prevMonthStart = monthStart.AddMonths(-1);
-        }
-        else
-        {
-            monthStart     = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
-            prevMonthStart = monthStart.AddMonths(-1);
+            // "năm 2025 vs năm ngoái" hoặc chỉ "năm 2025"
+            var y = yearMatches[0];
+            var wantsCompare = q.Contains("so sánh") || q.Contains(" vs ") || q.Contains(" với ");
+            if (wantsCompare && (q.Contains("năm ngoái") || q.Contains("năm trước")))
+                return (y, y - 1);
+            return (y, null);
         }
 
-        var periodLabel = $"{monthStart:MM/yyyy}";
+        // Không có số năm → kiểm tra từ khoá tương đối
+        if (q.Contains("năm nay") && (q.Contains("năm ngoái") || q.Contains("năm trước")))
+            return (now, now - 1);
+        if (q.Contains("năm ngoái") || q.Contains("năm trước"))
+            return (now - 1, null);
+        if (q.Contains("năm nay"))
+            return (now, null);
+
+        return null;
+    }
+
+    // ── Phát hiện câu hỏi về năm (không phải câu hỏi tháng cụ thể) ──────────
+    private static bool IsYearLevelQuery(string question)
+    {
+        var q = question.ToLowerInvariant();
+        // Có "năm" hoặc 2 năm khác nhau, và KHÔNG phải "tháng X/năm Y"
+        var hasYearKw  = q.Contains("năm nay") || q.Contains("năm ngoái") || q.Contains("năm trước")
+                      || System.Text.RegularExpressions.Regex.IsMatch(q, @"\bnăm\s+20[2-9]\d\b")
+                      || (System.Text.RegularExpressions.Regex.Matches(q, @"\b20[2-9]\d\b").Count >= 2);
+        var hasMonthKw = q.Contains("tháng ");
+        return hasYearKw && !hasMonthKw;
+    }
+
+    // ── Parse quý từ câu hỏi: "quý 1", "Q1/2025", "quý 2 năm 2025" ──────────
+    private static (int Quarter, int Year)? ParseQuarterFromQuestion(string question)
+    {
+        var q   = question.ToLowerInvariant();
+        var now = DateTime.UtcNow;
+
+        var m = System.Text.RegularExpressions.Regex.Match(q,
+            @"(?:quý|q)\s*([1-4])(?:[/\-\s]+(?:năm\s*)?(20[2-9]\d))?");
+        if (!m.Success) return null;
+        if (!int.TryParse(m.Groups[1].Value, out var qn)) return null;
+        var yr = m.Groups[2].Success && int.TryParse(m.Groups[2].Value, out var y) ? y : now.Year;
+        return (qn, yr);
+    }
+
+    // ── Parse "N tháng" hoặc "nửa năm" từ câu hỏi ───────────────────────────
+    // Trả về (startMonth, endMonth, year)
+    private static (int StartMonth, int EndMonth, int Year)? ParseMonthRangeFromQuestion(string question)
+    {
+        var q   = question.ToLowerInvariant();
+        var now = DateTime.UtcNow;
+
+        // "6 tháng đầu năm" / "nửa đầu năm"
+        if (q.Contains("6 tháng đầu") || q.Contains("nửa đầu năm") || q.Contains("6 tháng đầu năm"))
+        {
+            var yr = System.Text.RegularExpressions.Regex.Match(q, @"\b(20[2-9]\d)\b") is { Success: true } ym
+                && int.TryParse(ym.Value, out var y) ? y : now.Year;
+            return (1, 6, yr);
+        }
+        // "6 tháng cuối năm" / "nửa cuối năm"
+        if (q.Contains("6 tháng cuối") || q.Contains("nửa cuối năm"))
+        {
+            var yr = System.Text.RegularExpressions.Regex.Match(q, @"\b(20[2-9]\d)\b") is { Success: true } ym
+                && int.TryParse(ym.Value, out var y) ? y : now.Year;
+            return (7, 12, yr);
+        }
+        // "từ tháng X đến tháng Y"
+        var fm = System.Text.RegularExpressions.Regex.Match(q,
+            @"từ tháng\s*(\d{1,2})(?:[/\-\s]+\d{4})?\s*đến\s*tháng\s*(\d{1,2})");
+        if (fm.Success
+            && int.TryParse(fm.Groups[1].Value, out var sm) && sm >= 1 && sm <= 12
+            && int.TryParse(fm.Groups[2].Value, out var em) && em >= 1 && em <= 12)
+        {
+            var yr = System.Text.RegularExpressions.Regex.Match(q, @"\b(20[2-9]\d)\b") is { Success: true } ym
+                && int.TryParse(ym.Value, out var y) ? y : now.Year;
+            return (sm, em, yr);
+        }
+        return null;
+    }
+
+    // ── Parse "tuần này", "tuần trước" → (startDate, endDate) ────────────────
+    private static (DateTime Start, DateTime End, string Label)? ParseWeekFromQuestion(string question)
+    {
+        var q   = question.ToLowerInvariant();
+        var now = DateTime.UtcNow;
+        // Đầu tuần = thứ Hai
+        var dayOffset = (int)now.DayOfWeek == 0 ? -6 : 1 - (int)now.DayOfWeek;
+
+        if (q.Contains("tuần này"))
+        {
+            var start = now.AddDays(dayOffset).Date;
+            return (start, start.AddDays(7), "tuần này");
+        }
+        if (q.Contains("tuần trước") || q.Contains("tuần vừa rồi"))
+        {
+            var start = now.AddDays(dayOffset - 7).Date;
+            return (start, start.AddDays(7), "tuần trước");
+        }
+        return null;
+    }
+
+    // ── Helper: doanh thu + đơn theo khoảng ngày ─────────────────────────────
+    private async Task<(decimal Revenue, int Orders)> GetRevenueInRange(Guid companyId, DateTime start, DateTime end)
+    {
+        var rev = await db.OrderDetails
+            .Join(db.Orders, od => od.OrderId, o => o.OrderId, (od, o) => new { od, o })
+            .Where(x => x.o.CompanyId == companyId && x.o.OrderDate >= start && x.o.OrderDate < end
+                     && x.o.Status != "CANCELLED" && x.o.Status != "RETURNED")
+            .SumAsync(x => (decimal?)x.od.Subtotal) ?? 0;
+        var cnt = await db.Orders.CountAsync(o => o.CompanyId == companyId
+            && o.OrderDate >= start && o.OrderDate < end && o.Status != "CANCELLED");
+        return (rev, cnt);
+    }
+
+    // ── Helper: doanh thu theo từng tháng trong năm ──────────────────────────
+    private async Task<string> GetMonthlyBreakdown(Guid companyId, int year)
+    {
+        var start = new DateTime(year, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        var end   = start.AddYears(1);
         try
         {
-            var rev  = await db.OrderDetails.Join(db.Orders, od => od.OrderId, o => o.OrderId, (od, o) => new { od, o })
-                .Where(x => x.o.CompanyId == companyId && x.o.OrderDate >= monthStart
-                         && x.o.OrderDate < monthStart.AddMonths(1)
+            var monthly = await db.OrderDetails
+                .Join(db.Orders, od => od.OrderId, o => o.OrderId, (od, o) => new { od, o })
+                .Where(x => x.o.CompanyId == companyId && x.o.OrderDate >= start && x.o.OrderDate < end
                          && x.o.Status != "CANCELLED" && x.o.Status != "RETURNED")
-                .SumAsync(x => (decimal?)x.od.Subtotal) ?? 0;
-            var prev = await db.OrderDetails.Join(db.Orders, od => od.OrderId, o => o.OrderId, (od, o) => new { od, o })
-                .Where(x => x.o.CompanyId == companyId
-                         && x.o.OrderDate >= prevMonthStart && x.o.OrderDate < monthStart
-                         && x.o.Status != "CANCELLED" && x.o.Status != "RETURNED")
-                .SumAsync(x => (decimal?)x.od.Subtotal) ?? 0;
+                .GroupBy(x => x.o.OrderDate.Month)
+                .Select(g => new { Month = g.Key, Revenue = g.Sum(x => x.od.Subtotal), Cnt = g.Select(x => x.o.OrderId).Distinct().Count() })
+                .OrderBy(x => x.Month).ToListAsync();
 
-            var change = prev > 0
-                ? $"{(rev >= prev ? "+" : "")}{(rev - prev) / prev * 100:F1}% so với tháng {prevMonthStart:MM/yyyy}"
+            if (!monthly.Any()) return "  (Chưa có dữ liệu)";
+            return string.Join("\n", monthly.Select(m =>
+                $"  T{m.Month:D2}/{year}: {m.Revenue:N0} VND ({m.Cnt} đơn)"));
+        }
+        catch { return "  (Lỗi lấy dữ liệu)"; }
+    }
+
+    private async Task<string> BuildContext_Revenue(Guid companyId, string question = "")
+    {
+        var now = DateTime.UtcNow;
+        try
+        {
+            // Ưu tiên 1: Năm (năm 2025, so sánh 2025 vs 2026, năm nay vs năm ngoái)
+            if (IsYearLevelQuery(question))
+            {
+                var years = ParseYearsFromQuestion(question);
+                if (years.HasValue)
+                    return await BuildContext_Revenue_Year(companyId, years.Value.Year1, years.Value.Year2);
+            }
+
+            // Ưu tiên 2: Quý (quý 1, Q2/2025)
+            var quarter = ParseQuarterFromQuestion(question);
+            if (quarter.HasValue)
+                return await BuildContext_Revenue_Quarter(companyId, quarter.Value.Quarter, quarter.Value.Year);
+
+            // Ưu tiên 3: Khoảng tháng (6 tháng đầu năm, từ tháng X đến Y)
+            var range = ParseMonthRangeFromQuestion(question);
+            if (range.HasValue)
+            {
+                var (sm, em, yr) = range.Value;
+                var start = new DateTime(yr, sm, 1, 0, 0, 0, DateTimeKind.Utc);
+                var end   = new DateTime(yr, em, 1, 0, 0, 0, DateTimeKind.Utc).AddMonths(1);
+                var (rev, cnt) = await GetRevenueInRange(companyId, start, end);
+                return $"""
+                    INTENT: revenue_summary | T{sm:D2}-T{em:D2}/{yr}
+                    [Doanh thu từ tháng {sm} đến tháng {em}/{yr}]
+                    - Tổng doanh thu: {rev:N0} VND ({cnt} đơn)
+                    """;
+            }
+
+            // Ưu tiên 4: Tuần (tuần này, tuần trước)
+            var week = ParseWeekFromQuestion(question);
+            if (week.HasValue)
+            {
+                var (ws, we, wlabel) = week.Value;
+                var (rev, cnt) = await GetRevenueInRange(companyId, ws, we);
+                var (prevRev, prevCnt) = await GetRevenueInRange(companyId, ws.AddDays(-7), ws);
+                var change = prevRev > 0
+                    ? $"{(rev >= prevRev ? "+" : "")}{(rev - prevRev) / prevRev * 100:F1}% so với tuần trước"
+                    : "(chưa có dữ liệu tuần trước)";
+                return $"""
+                    INTENT: revenue_summary | {wlabel} ({ws:dd/MM} – {we.AddDays(-1):dd/MM/yyyy})
+                    [Doanh thu {wlabel}]
+                    - Doanh thu: {rev:N0} VND, {cnt} đơn ({change})
+                    - Tuần trước: {prevRev:N0} VND, {prevCnt} đơn
+                    """;
+            }
+
+            // Mặc định: Tháng (tháng X/Y hoặc tháng hiện tại)
+            var parsed = ParseDateFromQuestion(question);
+            DateTime monthStart, prevMonthStart;
+            if (parsed.HasValue)
+            {
+                monthStart     = new DateTime(parsed.Value.Year, parsed.Value.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+                prevMonthStart = monthStart.AddMonths(-1);
+            }
+            else
+            {
+                monthStart     = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+                prevMonthStart = monthStart.AddMonths(-1);
+            }
+
+            var (revM, _) = await GetRevenueInRange(companyId, monthStart, monthStart.AddMonths(1));
+            var (prevM, _) = await GetRevenueInRange(companyId, prevMonthStart, monthStart);
+            var changeM = prevM > 0
+                ? $"{(revM >= prevM ? "+" : "")}{(revM - prevM) / prevM * 100:F1}% so với tháng {prevMonthStart:MM/yyyy}"
                 : "(chưa có dữ liệu tháng trước để so sánh)";
 
             return $"""
-                INTENT: revenue_summary | Kỳ truy vấn: {periodLabel}
+                INTENT: revenue_summary | Kỳ truy vấn: {monthStart:MM/yyyy}
                 [Doanh thu]
-                - Tháng {periodLabel}   : {rev:N0} VND ({change})
-                - Tháng {prevMonthStart:MM/yyyy}: {prev:N0} VND
+                - Tháng {monthStart:MM/yyyy}   : {revM:N0} VND ({changeM})
+                - Tháng {prevMonthStart:MM/yyyy}: {prevM:N0} VND
                 """;
         }
         catch (Exception ex) { logger.LogWarning("BuildContext_Revenue lỗi: {M}", ex.Message); return "Chưa có dữ liệu doanh thu."; }
     }
 
-    private async Task<string> BuildContext_OrderSummary(Guid companyId, string question = "")
+    // ── Doanh thu theo năm với breakdown tháng ────────────────────────────────
+    private async Task<string> BuildContext_Revenue_Year(Guid companyId, int year1, int? year2)
     {
-        var now    = DateTime.UtcNow;
-        var parsed = ParseDateFromQuestion(question);
-
-        DateTime monthStart, prevMonthStart;
-        if (parsed.HasValue)
-        {
-            monthStart     = new DateTime(parsed.Value.Year, parsed.Value.Month, 1, 0, 0, 0, DateTimeKind.Utc);
-            prevMonthStart = monthStart.AddMonths(-1);
-        }
-        else
-        {
-            monthStart     = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
-            prevMonthStart = monthStart.AddMonths(-1);
-        }
-
-        var periodLabel = $"{monthStart:MM/yyyy}";
         try
         {
-            var cnt  = await db.Orders.CountAsync(o => o.CompanyId == companyId
-                                                    && o.OrderDate >= monthStart
-                                                    && o.OrderDate < monthStart.AddMonths(1)
-                                                    && o.Status != "CANCELLED");
-            var prev = await db.Orders.CountAsync(o => o.CompanyId == companyId
-                                                    && o.OrderDate >= prevMonthStart && o.OrderDate < monthStart
-                                                    && o.Status != "CANCELLED");
+            var (rev1, cnt1) = await GetRevenueInRange(companyId,
+                new DateTime(year1, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+                new DateTime(year1 + 1, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+
+            var monthly1 = await GetMonthlyBreakdown(companyId, year1);
+
+            if (year2.HasValue)
+            {
+                var (rev2, cnt2) = await GetRevenueInRange(companyId,
+                    new DateTime(year2.Value, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+                    new DateTime(year2.Value + 1, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+
+                var revChange = rev2 > 0
+                    ? $"{(rev1 >= rev2 ? "+" : "")}{(rev1 - rev2) / rev2 * 100:F1}%"
+                    : "(chưa có dữ liệu để so sánh)";
+                var cntChange = cnt2 > 0
+                    ? $"{(cnt1 >= cnt2 ? "+" : "")}{cnt1 - cnt2} đơn"
+                    : "";
+
+                var monthly2 = await GetMonthlyBreakdown(companyId, year2.Value);
+
+                return $"""
+                    INTENT: revenue_summary | So sánh năm {year1} vs {year2}
+                    [Tổng quan so sánh]
+                    - Năm {year1}: {rev1:N0} VND, {cnt1} đơn  ({revChange} so năm {year2}; {cntChange})
+                    - Năm {year2}: {rev2:N0} VND, {cnt2} đơn
+
+                    [Breakdown tháng — Năm {year1}]
+                    {monthly1}
+
+                    [Breakdown tháng — Năm {year2}]
+                    {monthly2}
+                    """;
+            }
+
+            return $"""
+                INTENT: revenue_summary | Năm {year1}
+                [Doanh thu năm {year1}]
+                - Tổng doanh thu: {rev1:N0} VND
+                - Tổng đơn hàng : {cnt1} đơn
+
+                [Breakdown theo tháng]
+                {monthly1}
+                """;
+        }
+        catch (Exception ex) { logger.LogWarning("BuildContext_Revenue_Year lỗi: {M}", ex.Message); return "Chưa có dữ liệu doanh thu theo năm."; }
+    }
+
+    // ── Doanh thu theo quý ────────────────────────────────────────────────────
+    private async Task<string> BuildContext_Revenue_Quarter(Guid companyId, int quarter, int year)
+    {
+        var sm      = (quarter - 1) * 3 + 1;
+        var start   = new DateTime(year, sm, 1, 0, 0, 0, DateTimeKind.Utc);
+        var end     = start.AddMonths(3);
+        var prevStart = start.AddMonths(-3);
+        var prevQ   = quarter == 1 ? 4 : quarter - 1;
+        var prevY   = quarter == 1 ? year - 1 : year;
+        try
+        {
+            var (rev, cnt)   = await GetRevenueInRange(companyId, start, end);
+            var (prev, pcnt) = await GetRevenueInRange(companyId, prevStart, start);
+
             var change = prev > 0
-                ? $"{(cnt >= prev ? "+" : "")}{cnt - prev} đơn so với tháng {prevMonthStart:MM/yyyy} ({prev} đơn)"
+                ? $"{(rev >= prev ? "+" : "")}{(rev - prev) / prev * 100:F1}% so Q{prevQ}/{prevY}"
+                : "(chưa có Q trước để so sánh)";
+
+            var monthly = await GetMonthlyBreakdown(companyId, year);
+            // Chỉ lấy tháng thuộc quý
+            var qMonths = Enumerable.Range(sm, 3).Select(m => $"T{m:D2}/{year}");
+
+            return $"""
+                INTENT: revenue_summary | Q{quarter}/{year} (T{sm:D2}–T{sm + 2:D2}/{year})
+                [Doanh thu Quý {quarter}/{year}]
+                - Tổng doanh thu: {rev:N0} VND, {cnt} đơn ({change})
+                - Q{prevQ}/{prevY}        : {prev:N0} VND, {pcnt} đơn
+
+                [Chi tiết tháng trong Q{quarter}/{year}]
+                {string.Join("\n", monthly.Split('\n').Where(l => qMonths.Any(qm => l.Contains(qm))))}
+                """;
+        }
+        catch (Exception ex) { logger.LogWarning("BuildContext_Revenue_Quarter lỗi: {M}", ex.Message); return "Chưa có dữ liệu doanh thu theo quý."; }
+    }
+
+    private async Task<string> BuildContext_OrderSummary(Guid companyId, string question = "")
+    {
+        var now = DateTime.UtcNow;
+        try
+        {
+            // Năm
+            if (IsYearLevelQuery(question))
+            {
+                var years = ParseYearsFromQuestion(question);
+                if (years.HasValue)
+                {
+                    var (_, cnt1) = await GetRevenueInRange(companyId,
+                        new DateTime(years.Value.Year1, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+                        new DateTime(years.Value.Year1 + 1, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+                    if (years.Value.Year2.HasValue)
+                    {
+                        var (_, cnt2) = await GetRevenueInRange(companyId,
+                            new DateTime(years.Value.Year2.Value, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+                            new DateTime(years.Value.Year2.Value + 1, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+                        var chg = cnt2 > 0 ? $"{(cnt1 >= cnt2 ? "+" : "")}{cnt1 - cnt2} đơn" : "";
+                        return $"""
+                            INTENT: order_summary | Năm {years.Value.Year1} vs {years.Value.Year2}
+                            [Số đơn hàng]
+                            - Năm {years.Value.Year1}: {cnt1} đơn {(chg.Length > 0 ? $"({chg} so năm {years.Value.Year2})" : "")}
+                            - Năm {years.Value.Year2}: {cnt2} đơn
+                            """;
+                    }
+                    return $"INTENT: order_summary | Năm {years.Value.Year1}\n[Số đơn hàng năm {years.Value.Year1}]\n- Tổng đơn: {cnt1} đơn";
+                }
+            }
+
+            // Quý
+            var quarter = ParseQuarterFromQuestion(question);
+            if (quarter.HasValue)
+            {
+                var sm = (quarter.Value.Quarter - 1) * 3 + 1;
+                var start = new DateTime(quarter.Value.Year, sm, 1, 0, 0, 0, DateTimeKind.Utc);
+                var (_, cnt) = await GetRevenueInRange(companyId, start, start.AddMonths(3));
+                return $"INTENT: order_summary | Q{quarter.Value.Quarter}/{quarter.Value.Year}\n[Đơn hàng Q{quarter.Value.Quarter}/{quarter.Value.Year}]\n- Tổng đơn: {cnt} đơn";
+            }
+
+            // Tuần
+            var week = ParseWeekFromQuestion(question);
+            if (week.HasValue)
+            {
+                var (_, wcnt) = await GetRevenueInRange(companyId, week.Value.Start, week.Value.End);
+                var (_, pcnt) = await GetRevenueInRange(companyId, week.Value.Start.AddDays(-7), week.Value.Start);
+                var chg = pcnt > 0 ? $"{(wcnt >= pcnt ? "+" : "")}{wcnt - pcnt} đơn so tuần trước" : "";
+                return $"""
+                    INTENT: order_summary | {week.Value.Label}
+                    [Số đơn {week.Value.Label}]
+                    - {week.Value.Label}: {wcnt} đơn {(chg.Length > 0 ? $"({chg})" : "")}
+                    - Tuần trước: {pcnt} đơn
+                    """;
+            }
+
+            // Tháng (mặc định)
+            var parsed = ParseDateFromQuestion(question);
+            DateTime monthStart, prevMonthStart;
+            if (parsed.HasValue)
+            {
+                monthStart     = new DateTime(parsed.Value.Year, parsed.Value.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+                prevMonthStart = monthStart.AddMonths(-1);
+            }
+            else
+            {
+                monthStart     = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+                prevMonthStart = monthStart.AddMonths(-1);
+            }
+
+            var cntM  = await db.Orders.CountAsync(o => o.CompanyId == companyId
+                && o.OrderDate >= monthStart && o.OrderDate < monthStart.AddMonths(1) && o.Status != "CANCELLED");
+            var prevM = await db.Orders.CountAsync(o => o.CompanyId == companyId
+                && o.OrderDate >= prevMonthStart && o.OrderDate < monthStart && o.Status != "CANCELLED");
+            var changeM2 = prevM > 0
+                ? $"{(cntM >= prevM ? "+" : "")}{cntM - prevM} đơn so với tháng {prevMonthStart:MM/yyyy} ({prevM} đơn)"
                 : "(chưa có dữ liệu tháng trước)";
 
             return $"""
-                INTENT: order_summary | Kỳ truy vấn: {periodLabel}
+                INTENT: order_summary | Kỳ truy vấn: {monthStart:MM/yyyy}
                 [Đơn hàng]
-                - Tháng {periodLabel}   : {cnt} đơn ({change})
-                - Tháng {prevMonthStart:MM/yyyy}: {prev} đơn
+                - Tháng {monthStart:MM/yyyy}   : {cntM} đơn ({changeM2})
+                - Tháng {prevMonthStart:MM/yyyy}: {prevM} đơn
                 """;
         }
         catch (Exception ex) { logger.LogWarning("BuildContext_OrderSummary lỗi: {M}", ex.Message); return "Chưa có dữ liệu đơn hàng."; }
@@ -1078,6 +1410,88 @@ public class GeminiService(
         catch (Exception ex) { logger.LogWarning("BuildContext_PerformanceOverview lỗi: {M}", ex.Message); return "Chưa có dữ liệu tổng quan."; }
     }
 
+    // ── Build context hiệu suất nhân viên ────────────────────────────────────
+    // Dùng CreatedByUserId (đơn POS) + join Users để xếp hạng nhân viên bán offline.
+    private async Task<string> BuildContext_EmployeePerformance(Guid companyId, string question)
+    {
+        var now   = DateTime.UtcNow;
+        var q     = question.ToLowerInvariant();
+
+        // Xác định kỳ từ câu hỏi
+        DateTime start, end;
+        string   label;
+
+        if (IsYearLevelQuery(question))
+        {
+            var years = ParseYearsFromQuestion(question) ?? (now.Year, (int?)null);
+            start = new DateTime(years.Year1, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+            end   = start.AddYears(1);
+            label = $"Năm {years.Year1}";
+        }
+        else if (ParseQuarterFromQuestion(question) is { } qtr)
+        {
+            var sm2 = (qtr.Quarter - 1) * 3 + 1;
+            start = new DateTime(qtr.Year, sm2, 1, 0, 0, 0, DateTimeKind.Utc);
+            end   = start.AddMonths(3);
+            label = $"Q{qtr.Quarter}/{qtr.Year}";
+        }
+        else
+        {
+            var parsed = ParseDateFromQuestion(question);
+            start = parsed.HasValue
+                ? new DateTime(parsed.Value.Year, parsed.Value.Month, 1, 0, 0, 0, DateTimeKind.Utc)
+                : new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+            end   = start.AddMonths(1);
+            label = $"Tháng {start:MM/yyyy}";
+        }
+
+        try
+        {
+            // Xếp hạng theo đơn POS do nhân viên tạo (CreatedByUserId != null)
+            var posRank = await db.Orders
+                .Join(db.Users, o => o.CreatedByUserId, u => u.Id, (o, u) => new { o, u })
+                .Where(x => x.o.CompanyId == companyId
+                         && x.o.OrderDate >= start && x.o.OrderDate < end
+                         && x.o.Status != "CANCELLED"
+                         && x.o.CreatedByUserId != null)
+                .GroupBy(x => new { x.u.Id, x.u.FullName, x.u.Username })
+                .Select(g => new {
+                    g.Key.FullName, g.Key.Username,
+                    OrderCount = g.Count(),
+                    Revenue    = g.Sum(x => x.o.TotalAmount)
+                })
+                .OrderByDescending(x => x.Revenue)
+                .Take(10)
+                .ToListAsync();
+
+            // Tổng đơn và doanh thu POS trong kỳ để tính %
+            var totalPosRev = posRank.Sum(x => x.Revenue);
+
+            if (!posRank.Any())
+            {
+                return $"""
+                    INTENT: employee_performance | {label}
+                    Hệ thống chưa có dữ liệu bán hàng POS của nhân viên trong {label}.
+                    Lưu ý: Chỉ có thể theo dõi hiệu suất nhân viên cho đơn hàng tại quầy (POS). Đơn từ sàn (Shopee/Lazada/TikTok) không gắn nhân viên cụ thể.
+                    """;
+            }
+
+            return $"""
+                INTENT: employee_performance | {label}
+                [Xếp hạng nhân viên theo doanh thu POS — {label}]
+                {string.Join("\n", posRank.Select((e, i) =>
+                    $"  {i + 1}. {e.FullName} ({e.Username}): {e.OrderCount} đơn — {e.Revenue:N0} VND"
+                    + (totalPosRev > 0 ? $" ({e.Revenue / totalPosRev * 100:F1}%)" : "")))}
+
+                [Tổng POS trong kỳ]
+                - Tổng đơn : {posRank.Sum(x => x.OrderCount)} đơn
+                - Tổng doanh thu: {totalPosRev:N0} VND
+                Ghi chú: Chỉ tính đơn POS do nhân viên nhập trực tiếp. Đơn online (sàn TMĐT) không có dữ liệu nhân viên.
+                """;
+        }
+        catch (Exception ex) { logger.LogWarning("BuildContext_EmployeePerformance lỗi: {M}", ex.Message); return "Chưa có dữ liệu hiệu suất nhân viên."; }
+    }
+
     // ── Build context phân tích chéo nhiều nguồn ─────────────────────────────
     // Kết hợp dữ liệu nội bộ + Facebook/thị trường theo nội dung câu hỏi.
     private async Task<string> BuildContext_CrossAnalysis(Guid companyId, string question, List<string> keywords)
@@ -1223,12 +1637,13 @@ public class GeminiService(
                 (_,                   "trending_product")       => await BuildContext_TrendingProduct    (companyId.Value),
                 (_,                   "revenue_summary")        => await BuildContext_Revenue            (companyId.Value, userMessage),
                 (_,                   "order_summary")          => await BuildContext_OrderSummary       (companyId.Value, userMessage),
-                (_,                   "top_channel")            => await BuildContext_Channels           (companyId.Value, topOnly: true),
-                (_,                   "channel_comparison")     => await BuildContext_Channels           (companyId.Value, topOnly: false),
+                (_,                   "top_channel")            => await BuildContext_Channels              (companyId.Value, topOnly: true),
+                (_,                   "channel_comparison")     => await BuildContext_Channels              (companyId.Value, topOnly: false),
                 (_,                   "business_recommendation")=> await BuildContext_BusinessRecommendation(companyId.Value),
-                (_,                   "customer_overview")      => await BuildContext_CustomerOverview   (companyId.Value),
-                (_,                   "inventory_alert")        => await BuildContext_Inventory          (companyId.Value),
-                _                                               => await BuildContext_PerformanceOverview(companyId.Value),
+                (_,                   "customer_overview")      => await BuildContext_CustomerOverview      (companyId.Value),
+                (_,                   "inventory_alert")        => await BuildContext_Inventory             (companyId.Value),
+                (_,                   "employee_performance")   => await BuildContext_EmployeePerformance   (companyId.Value, userMessage),
+                _                                               => await BuildContext_PerformanceOverview   (companyId.Value),
             };
         }
 
