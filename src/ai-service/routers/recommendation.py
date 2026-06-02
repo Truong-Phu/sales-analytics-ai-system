@@ -458,60 +458,79 @@ async def ask_recommendation(body: AskRequest):
             "Dựa trên dữ liệu được cung cấp, hãy đưa ra gợi ý ngắn gọn, thực tế. " + base
         )
 
-    # Bước 3: Gọi AI hoặc fallback
+    # Bước 3: Gọi AI theo thứ tự ưu tiên: Gemini → Groq → rule-based
     recommendation_text = ""
     confidence          = "LOW"
     ai_used             = "fallback"
 
-    anthropic_key = os.getenv("ANTHROPIC_API_KEY", "")
-    openai_key    = os.getenv("OPENAI_API_KEY", "")
+    gemini_key = os.getenv("GEMINI_API_KEY", "")
+    groq_key   = os.getenv("GROQ_API_KEY", "")
+    gemini_model = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+    groq_model   = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 
-    if anthropic_key:
+    sys_prompt   = _build_system_prompt(ctx_type or "", language)
+    context_text = json.dumps(context, ensure_ascii=False, indent=2, default=str)
+    user_prompt  = f"Câu hỏi: {question}\n\nDữ liệu:\n{context_text[:3000]}"
+
+    # Tier 1: Gemini API (khớp với cấu hình chính của hệ thống)
+    if gemini_key:
         try:
-            import anthropic
-            client       = anthropic.Anthropic(api_key=anthropic_key)
-            sys_prompt   = _build_system_prompt(ctx_type or "", language)
-            context_text = json.dumps(context, ensure_ascii=False, indent=2, default=str)
-            user_prompt  = f"Câu hỏi: {question}\n\nDữ liệu:\n{context_text[:3000]}"
-
-            msg = client.messages.create(
-                model="claude-haiku-4-5-20251001",
-                max_tokens=500,
-                system=sys_prompt,
-                messages=[{"role": "user", "content": user_prompt}],
+            import httpx
+            full_prompt = f"{sys_prompt}\n\n{user_prompt}"
+            payload = {
+                "contents": [{"role": "user", "parts": [{"text": full_prompt}]}],
+                "generationConfig": {"temperature": 0.5, "maxOutputTokens": 500, "candidateCount": 1},
+            }
+            resp = httpx.post(
+                f"https://generativelanguage.googleapis.com/v1beta/models/{gemini_model}:generateContent?key={gemini_key}",
+                json=payload, timeout=25,
             )
-            recommendation_text = msg.content[0].text
-            confidence          = "MEDIUM"
-            ai_used             = "claude"
-            logger.info("Đã dùng Claude API, context=%s", ctx_type)
-        except ImportError:
-            logger.warning("anthropic chưa được cài – fallback sang OpenAI")
+            if resp.status_code == 200:
+                data = resp.json()
+                recommendation_text = (
+                    data.get("candidates", [{}])[0]
+                        .get("content", {})
+                        .get("parts", [{}])[0]
+                        .get("text", "")
+                )
+                if recommendation_text:
+                    confidence = "MEDIUM"
+                    ai_used    = f"gemini-{gemini_model}"
+                    logger.info("Đã dùng Gemini API, context=%s", ctx_type)
         except Exception as e:
-            logger.error("Lỗi Claude API: %s – fallback", e)
+            logger.error("Lỗi Gemini API: %s – thử Groq", e)
 
-    if not recommendation_text and openai_key:
+    # Tier 2: Groq fallback (OpenAI-compatible, miễn phí)
+    if not recommendation_text and groq_key:
         try:
-            import openai
-            client       = openai.OpenAI(api_key=openai_key)
-            sys_prompt   = _build_system_prompt(ctx_type or "", language)
-            context_text = json.dumps(context, ensure_ascii=False, indent=2, default=str)
-            user_prompt  = f"Câu hỏi: {question}\n\nDữ liệu:\n{context_text[:3000]}"
-
-            resp = client.chat.completions.create(
-                model="gpt-3.5-turbo", max_tokens=500,
-                messages=[
+            import httpx
+            payload = {
+                "model": groq_model,
+                "messages": [
                     {"role": "system", "content": sys_prompt},
                     {"role": "user",   "content": user_prompt},
                 ],
+                "temperature": 0.5,
+                "max_tokens": 500,
+            }
+            headers = {"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"}
+            resp = httpx.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                json=payload, headers=headers, timeout=25,
             )
-            recommendation_text = resp.choices[0].message.content
-            confidence          = "MEDIUM"
-            ai_used             = "openai"
-            logger.info("Đã dùng OpenAI API, context=%s", ctx_type)
-        except ImportError:
-            logger.warning("openai chưa được cài – rule-based fallback")
+            if resp.status_code == 200:
+                data = resp.json()
+                recommendation_text = (
+                    data.get("choices", [{}])[0]
+                        .get("message", {})
+                        .get("content", "")
+                )
+                if recommendation_text:
+                    confidence = "MEDIUM"
+                    ai_used    = f"groq-{groq_model}"
+                    logger.info("Đã dùng Groq API, context=%s", ctx_type)
         except Exception as e:
-            logger.error("Lỗi OpenAI API: %s – rule-based fallback", e)
+            logger.error("Lỗi Groq API: %s – rule-based fallback", e)
 
     if not recommendation_text:
         # Rule-based fallback phân biệt theo context

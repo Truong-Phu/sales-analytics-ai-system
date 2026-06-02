@@ -39,7 +39,30 @@ public class GeminiService(
         "top_channel", "channel_comparison",
         "customer_overview", "inventory_alert",
         "business_recommendation", "performance_overview",
+        "unknown",  // câu hỏi ngoài phạm vi hệ thống
     ];
+
+    // ── Phát hiện câu hỏi phân tích chéo nhiều nguồn dữ liệu ────────────────
+    // Trả true khi câu hỏi đề cập dữ liệu nội bộ VÀ ít nhất một nguồn ngoài (Facebook/thị trường).
+    private static bool IsCrossAnalysis(string question)
+    {
+        var q = question.ToLowerInvariant();
+        static bool Has(string text, params string[] words) => words.Any(text.Contains);
+
+        var hasInternal = Has(q, "doanh thu", "bán chậm", "bán kém", "sản phẩm", "đơn hàng", "giảm", "tăng");
+        var hasFacebook = Has(q, "facebook", "phàn nàn", "khách chê", "bình luận", "phản hồi", "sentiment", "khách hàng chê");
+        var hasMarket   = Has(q, "đối thủ", "thị trường", "giá đối thủ", "google", "sàn", "xu hướng thị trường");
+
+        return hasInternal && (hasFacebook || hasMarket);
+    }
+
+    // ── Map UI tab + nội dung câu hỏi → taxonomy tab chuẩn ───────────────────
+    private static string MapToTaxonomyTab(string uiTab, string question) => uiTab switch
+    {
+        "market"   => "scraped_market",
+        "feedback" => "facebook_feedback",
+        _          => IsCrossAnalysis(question) ? "cross_analysis" : "internal_business",
+    };
 
     // ── Trích xuất từ khóa đơn giản từ câu hỏi ──────────────────────────────
     private static List<string> ExtractKeywords(string question)
@@ -153,6 +176,7 @@ public class GeminiService(
                 - inventory_alert: tồn kho, sắp hết hàng, cần nhập thêm
                 - business_recommendation: gợi ý, chiến lược, nên làm gì, cách tăng doanh thu
                 - performance_overview: tổng quan tình hình kinh doanh, tóm tắt, không rõ mục tiêu cụ thể
+                - unknown: câu hỏi hoàn toàn ngoài phạm vi kinh doanh (thời tiết, lịch sử, giải trí, v.v.)
 
                 QUESTION: {question}
                 """;
@@ -186,8 +210,8 @@ public class GeminiService(
         }
     }
 
-    // ── System prompt tập trung theo intent ──────────────────────────────────
-    private static string BuildFocusedSystemPrompt(string question, string intent, string context)
+    // ── System prompt tập trung theo intent — đúng cấu trúc spec ────────────
+    private static string BuildFocusedSystemPrompt(string question, string intent, string context, string taxonomyTab = "internal_business")
     {
         var intentRule = intent switch
         {
@@ -203,24 +227,47 @@ public class GeminiService(
             "customer_overview"       => "Nêu số KH mới, top KH chi tiêu cao, phân khúc RFM nếu có. Không đề cập doanh thu hay sản phẩm cụ thể.",
             "inventory_alert"         => "Liệt kê sản phẩm sắp hết hàng (tồn kho thấp nhất trước). Đề xuất nhập thêm sản phẩm nào. Không đề cập doanh thu hay kênh.",
             "performance_overview"    => "Tóm tắt ngắn gọn theo thứ tự: doanh thu → đơn hàng → sản phẩm nổi bật → kênh dẫn đầu. Mỗi mục 1 câu.",
+            "market"                  => "Phân tích xu hướng thị trường từ dữ liệu Google được cung cấp. Nêu từ khóa hot, xu hướng nổi bật.",
+            "cross_analysis"          => "Phân tích mối liên hệ giữa dữ liệu nội bộ và dữ liệu ngoài. Nêu rõ nếu thiếu dữ liệu từ bất kỳ nguồn nào.",
             _                         => "Trả lời đúng câu hỏi dựa trên dữ liệu có sẵn. Không liệt kê toàn bộ dashboard.",
         };
 
+        var tabDesc = taxonomyTab switch
+        {
+            "scraped_market"    => "scraped_market (dữ liệu thị trường – Google Search)",
+            "facebook_feedback" => "facebook_feedback (phản hồi khách hàng Facebook)",
+            "cross_analysis"    => "cross_analysis (phân tích chéo nhiều nguồn dữ liệu)",
+            _                   => "internal_business (dữ liệu kinh doanh nội bộ)",
+        };
+
         return $"""
-            Bạn là trợ lý AI phân tích dữ liệu kinh doanh trong hệ thống MSAS.
+            [ROLE]
+            Bạn là Trợ lý AI phân tích dữ liệu kinh doanh đa kênh cho hệ thống MSAS.
 
-            QUY TẮC BẮT BUỘC:
-            1. Chỉ trả lời dựa trên CONTEXT bên dưới — không bịa số liệu, không suy đoán.
-            2. Trả lời trực tiếp đúng câu hỏi, tối đa 3-4 câu, bằng tiếng Việt.
-            3. Nếu dữ liệu không đủ, nói rõ: "Hệ thống chưa có đủ dữ liệu để trả lời."
-            4. {intentRule}
-            5. Tuyệt đối không liệt kê đồng thời doanh thu + đơn hàng + sản phẩm + kênh trừ intent = business_recommendation.
+            [STRICT RULES]
+            1. Chỉ trả lời dựa trên dữ liệu trong CONTEXT — không bịa số liệu, không suy đoán.
+            2. Câu hỏi thuộc tab {tabDesc} — chỉ dùng dữ liệu tab đó, trừ khi tab là cross_analysis.
+            3. Nếu dữ liệu không đủ, trả lời rõ: "Hệ thống chưa có đủ dữ liệu để trả lời câu hỏi này."
+            4. Trả lời ngắn gọn, đúng trọng tâm, tối đa 3-4 câu, bằng tiếng Việt.
+            5. Giữ nguyên số liệu backend cung cấp — không tự làm tròn hoặc thay đổi.
+            6. Không liệt kê thông tin không liên quan đến câu hỏi.
+            7. {intentRule}
 
-            CÂU HỎI: {question}
-            INTENT: {intent}
+            [USER QUESTION]
+            {question}
 
-            CONTEXT:
+            [ROUTE RESULT]
+            tab={tabDesc} | sub_intent={intent}
+
+            [CONTEXT]
             {(string.IsNullOrEmpty(context) ? "Chưa có dữ liệu từ hệ thống." : context)}
+
+            [OUTPUT FORMAT]
+            Nếu câu hỏi phức tạp, trả lời theo:
+            - Kết luận: (1 câu trực tiếp)
+            - Số liệu liên quan: (nếu có)
+            - Gợi ý hành động: (nếu phù hợp)
+            Nếu câu hỏi đơn giản, trả lời 1-2 câu, không cần đủ 3 mục.
             """;
     }
 
@@ -698,15 +745,54 @@ public class GeminiService(
         catch (Exception ex) { logger.LogWarning("BuildContext_TrendingProduct lỗi: {M}", ex.Message); return "Chưa có dữ liệu xu hướng."; }
     }
 
-    private async Task<string> BuildContext_Revenue(Guid companyId)
+    // ── Parse tháng/năm từ câu hỏi: "tháng 7/2025", "7/2025", "tháng 7 năm 2025" ──
+    private static (int Month, int Year)? ParseDateFromQuestion(string question)
     {
-        var now = DateTime.UtcNow;
-        var monthStart     = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
-        var prevMonthStart = monthStart.AddMonths(-1);
+        var q = question.ToLowerInvariant();
+
+        // "tháng 7/2025" | "tháng 7 năm 2025" | "tháng 07/2025"
+        var m = System.Text.RegularExpressions.Regex.Match(
+            q, @"tháng\s*(\d{1,2})(?:[/\-\s]+(?:năm\s*)?(\d{4}))?");
+        if (m.Success && int.TryParse(m.Groups[1].Value, out var mo) && mo >= 1 && mo <= 12)
+        {
+            if (m.Groups[2].Success && int.TryParse(m.Groups[2].Value, out var yr) && yr >= 2020 && yr <= 2030)
+                return (mo, yr);
+            return (mo, DateTime.UtcNow.Year);
+        }
+
+        // "7/2025" (standalone)
+        m = System.Text.RegularExpressions.Regex.Match(q, @"\b(\d{1,2})/(\d{4})\b");
+        if (m.Success
+            && int.TryParse(m.Groups[1].Value, out var mo2) && mo2 >= 1 && mo2 <= 12
+            && int.TryParse(m.Groups[2].Value, out var yr2) && yr2 >= 2020 && yr2 <= 2030)
+            return (mo2, yr2);
+
+        return null;
+    }
+
+    private async Task<string> BuildContext_Revenue(Guid companyId, string question = "")
+    {
+        var now     = DateTime.UtcNow;
+        var parsed  = ParseDateFromQuestion(question);
+
+        DateTime monthStart, prevMonthStart;
+        if (parsed.HasValue)
+        {
+            monthStart     = new DateTime(parsed.Value.Year, parsed.Value.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+            prevMonthStart = monthStart.AddMonths(-1);
+        }
+        else
+        {
+            monthStart     = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+            prevMonthStart = monthStart.AddMonths(-1);
+        }
+
+        var periodLabel = $"{monthStart:MM/yyyy}";
         try
         {
             var rev  = await db.OrderDetails.Join(db.Orders, od => od.OrderId, o => o.OrderId, (od, o) => new { od, o })
                 .Where(x => x.o.CompanyId == companyId && x.o.OrderDate >= monthStart
+                         && x.o.OrderDate < monthStart.AddMonths(1)
                          && x.o.Status != "CANCELLED" && x.o.Status != "RETURNED")
                 .SumAsync(x => (decimal?)x.od.Subtotal) ?? 0;
             var prev = await db.OrderDetails.Join(db.Orders, od => od.OrderId, o => o.OrderId, (od, o) => new { od, o })
@@ -716,38 +802,55 @@ public class GeminiService(
                 .SumAsync(x => (decimal?)x.od.Subtotal) ?? 0;
 
             var change = prev > 0
-                ? $"{(rev >= prev ? "+" : "")}{(rev - prev) / prev * 100:F1}% so với tháng trước"
+                ? $"{(rev >= prev ? "+" : "")}{(rev - prev) / prev * 100:F1}% so với tháng {prevMonthStart:MM/yyyy}"
                 : "(chưa có dữ liệu tháng trước để so sánh)";
 
             return $"""
-                INTENT: revenue_summary | Tháng: {now:MM/yyyy}
+                INTENT: revenue_summary | Kỳ truy vấn: {periodLabel}
                 [Doanh thu]
-                - Tháng này  : {rev:N0} VND ({change})
-                - Tháng trước: {prev:N0} VND
+                - Tháng {periodLabel}   : {rev:N0} VND ({change})
+                - Tháng {prevMonthStart:MM/yyyy}: {prev:N0} VND
                 """;
         }
         catch (Exception ex) { logger.LogWarning("BuildContext_Revenue lỗi: {M}", ex.Message); return "Chưa có dữ liệu doanh thu."; }
     }
 
-    private async Task<string> BuildContext_OrderSummary(Guid companyId)
+    private async Task<string> BuildContext_OrderSummary(Guid companyId, string question = "")
     {
-        var now = DateTime.UtcNow;
-        var monthStart     = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
-        var prevMonthStart = monthStart.AddMonths(-1);
+        var now    = DateTime.UtcNow;
+        var parsed = ParseDateFromQuestion(question);
+
+        DateTime monthStart, prevMonthStart;
+        if (parsed.HasValue)
+        {
+            monthStart     = new DateTime(parsed.Value.Year, parsed.Value.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+            prevMonthStart = monthStart.AddMonths(-1);
+        }
+        else
+        {
+            monthStart     = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+            prevMonthStart = monthStart.AddMonths(-1);
+        }
+
+        var periodLabel = $"{monthStart:MM/yyyy}";
         try
         {
-            var cnt  = await db.Orders.CountAsync(o => o.CompanyId == companyId && o.OrderDate >= monthStart
+            var cnt  = await db.Orders.CountAsync(o => o.CompanyId == companyId
+                                                    && o.OrderDate >= monthStart
+                                                    && o.OrderDate < monthStart.AddMonths(1)
                                                     && o.Status != "CANCELLED");
             var prev = await db.Orders.CountAsync(o => o.CompanyId == companyId
                                                     && o.OrderDate >= prevMonthStart && o.OrderDate < monthStart
                                                     && o.Status != "CANCELLED");
-            var change = prev > 0 ? $"{(cnt >= prev ? "+" : "")}{cnt - prev} đơn so với tháng trước ({prev} đơn)" : "(chưa có dữ liệu tháng trước)";
+            var change = prev > 0
+                ? $"{(cnt >= prev ? "+" : "")}{cnt - prev} đơn so với tháng {prevMonthStart:MM/yyyy} ({prev} đơn)"
+                : "(chưa có dữ liệu tháng trước)";
 
             return $"""
-                INTENT: order_summary | Tháng: {now:MM/yyyy}
+                INTENT: order_summary | Kỳ truy vấn: {periodLabel}
                 [Đơn hàng]
-                - Tháng này  : {cnt} đơn ({change})
-                - Tháng trước: {prev} đơn
+                - Tháng {periodLabel}   : {cnt} đơn ({change})
+                - Tháng {prevMonthStart:MM/yyyy}: {prev} đơn
                 """;
         }
         catch (Exception ex) { logger.LogWarning("BuildContext_OrderSummary lỗi: {M}", ex.Message); return "Chưa có dữ liệu đơn hàng."; }
@@ -975,6 +1078,35 @@ public class GeminiService(
         catch (Exception ex) { logger.LogWarning("BuildContext_PerformanceOverview lỗi: {M}", ex.Message); return "Chưa có dữ liệu tổng quan."; }
     }
 
+    // ── Build context phân tích chéo nhiều nguồn ─────────────────────────────
+    // Kết hợp dữ liệu nội bộ + Facebook/thị trường theo nội dung câu hỏi.
+    private async Task<string> BuildContext_CrossAnalysis(Guid companyId, string question, List<string> keywords)
+    {
+        var q     = question.ToLowerInvariant();
+        var parts = new List<string>();
+
+        // Luôn bao gồm tổng quan kinh doanh nội bộ
+        var bizCtx = await BuildContext_PerformanceOverview(companyId);
+        parts.Add(bizCtx);
+
+        // Thêm dữ liệu Facebook nếu câu hỏi đề cập phản hồi KH
+        static bool Has(string text, params string[] words) => words.Any(text.Contains);
+        if (Has(q, "facebook", "phàn nàn", "khách chê", "bình luận", "phản hồi", "khách hàng chê"))
+        {
+            var fbCtx = await BuildFeedbackContext(companyId, keywords);
+            parts.Add("\n--- DỮ LIỆU PHẢN HỒI FACEBOOK ---\n" + fbCtx);
+        }
+
+        // Thêm dữ liệu thị trường nếu câu hỏi đề cập đối thủ/xu hướng
+        if (Has(q, "đối thủ", "thị trường", "giá đối thủ", "google", "xu hướng thị trường"))
+        {
+            var mktCtx = await BuildMarketContext(companyId, keywords);
+            parts.Add("\n--- DỮ LIỆU XU HƯỚNG THỊ TRƯỜNG ---\n" + mktCtx);
+        }
+
+        return string.Join("\n", parts);
+    }
+
     // ── Gợi ý câu hỏi thông minh theo tab ────────────────────────────────────
 
     public Task<List<string>> GetSmartSuggestions(Guid? companyId, string tab)
@@ -1020,53 +1152,93 @@ public class GeminiService(
             result.IsAiGenerated = false;
             result.FallbackUsed  = true;
             result.FallbackReason = "API key not configured";
+            result.ModelUsed  = "none";
             return result;
         }
 
-        // 1. Detect intent — rule-based fast path trước, Gemini classify nếu không nhận ra
-        var intent = tab == "feedback" ? "customer_feedback"
-                   : tab == "market"   ? "market"
-                   : DetectIntent(userMessage);
+        // 1. Xác định taxonomy tab từ UI tab + nội dung câu hỏi
+        var taxonomyTab = MapToTaxonomyTab(tab, userMessage);
+        result.Tab = taxonomyTab;
+
+        // Xác định DataSource theo tab
+        result.DataSource = taxonomyTab switch
+        {
+            "scraped_market"    => "google_data",
+            "facebook_feedback" => "facebook_data",
+            "cross_analysis"    => "mixed",
+            _                   => "database",
+        };
+
+        // 2. Detect sub-intent — rule-based fast path
+        var intent = taxonomyTab switch
+        {
+            "facebook_feedback" => "customer_feedback",
+            "scraped_market"    => "market",
+            "cross_analysis"    => "cross_analysis",
+            _                   => DetectIntent(userMessage),  // internal_business
+        };
 
         if (intent == "unknown")
         {
             intent = await ClassifyIntentWithGeminiAsync(userMessage);
             logger.LogInformation("[CHATBOT] Gemini classified intent: {I}", intent);
         }
-        result.Intent = intent;
 
-        // 2. Extract keywords để lọc DB (dùng cho market/feedback tab)
+        // 3. Nếu intent vẫn là unknown → câu hỏi ngoài phạm vi hệ thống, trả template
+        if (intent == "unknown")
+        {
+            result.Tab       = "unknown";
+            result.Intent    = "unknown";
+            result.SubIntent = "unknown";
+            result.DataSource = "none";
+            result.ModelUsed = "template_fallback";
+            result.Answer    = "Câu hỏi này hiện chưa nằm trong phạm vi dữ liệu mà hệ thống có thể phân tích. " +
+                               "Bạn có thể hỏi về doanh thu, sản phẩm, kênh bán hàng, tồn kho, " +
+                               "phản hồi khách hàng hoặc xu hướng thị trường.";
+            result.IsAiGenerated = false;
+            result.FallbackUsed  = true;
+            result.FallbackReason = "unknown intent — template response, no LLM call";
+            logger.LogInformation("[CHATBOT] unknown intent, trả template cho câu hỏi: {Q}",
+                userMessage[..Math.Min(60, userMessage.Length)]);
+            return result;
+        }
+
+        result.Intent    = intent;
+        result.SubIntent = intent;
+
+        // 4. Extract keywords để lọc DB (dùng cho market/feedback/cross tab)
         var keywords = ExtractKeywords(userMessage);
 
-        // 3. Build focused context theo intent — mỗi intent có context riêng, không dump toàn bộ data
+        // 5. Build focused context theo taxonomy tab + intent
         var context = string.Empty;
         if (companyId.HasValue)
         {
-            context = (tab, intent) switch
+            context = (taxonomyTab, intent) switch
             {
-                ("market",   _)                        => await BuildMarketContext             (companyId.Value, keywords),
-                ("feedback", _)                        => await BuildFeedbackContext           (companyId.Value, keywords),
-                ("business", "top_product")            => await BuildContext_TopProduct        (companyId.Value),
-                ("business", "declining_product")      => await BuildContext_DecliningProduct  (companyId.Value),
-                ("business", "trending_product")       => await BuildContext_TrendingProduct   (companyId.Value),
-                ("business", "revenue_summary")        => await BuildContext_Revenue           (companyId.Value),
-                ("business", "order_summary")          => await BuildContext_OrderSummary      (companyId.Value),
-                ("business", "top_channel")            => await BuildContext_Channels          (companyId.Value, topOnly: true),
-                ("business", "channel_comparison")     => await BuildContext_Channels          (companyId.Value, topOnly: false),
-                ("business", "business_recommendation")=> await BuildContext_BusinessRecommendation(companyId.Value),
-                ("business", "customer_overview")      => await BuildContext_CustomerOverview  (companyId.Value),
-                ("business", "inventory_alert")        => await BuildContext_Inventory         (companyId.Value),
-                _                                      => await BuildContext_PerformanceOverview(companyId.Value), // performance_overview + unknown fallback
+                ("scraped_market",    _)                        => await BuildMarketContext              (companyId.Value, keywords),
+                ("facebook_feedback", _)                        => await BuildFeedbackContext            (companyId.Value, keywords),
+                ("cross_analysis",    _)                        => await BuildContext_CrossAnalysis      (companyId.Value, userMessage, keywords),
+                (_,                   "top_product")            => await BuildContext_TopProduct         (companyId.Value),
+                (_,                   "declining_product")      => await BuildContext_DecliningProduct   (companyId.Value),
+                (_,                   "trending_product")       => await BuildContext_TrendingProduct    (companyId.Value),
+                (_,                   "revenue_summary")        => await BuildContext_Revenue            (companyId.Value, userMessage),
+                (_,                   "order_summary")          => await BuildContext_OrderSummary       (companyId.Value, userMessage),
+                (_,                   "top_channel")            => await BuildContext_Channels           (companyId.Value, topOnly: true),
+                (_,                   "channel_comparison")     => await BuildContext_Channels           (companyId.Value, topOnly: false),
+                (_,                   "business_recommendation")=> await BuildContext_BusinessRecommendation(companyId.Value),
+                (_,                   "customer_overview")      => await BuildContext_CustomerOverview   (companyId.Value),
+                (_,                   "inventory_alert")        => await BuildContext_Inventory          (companyId.Value),
+                _                                               => await BuildContext_PerformanceOverview(companyId.Value),
             };
         }
 
-        // 4. Debug log
+        // 6. Debug log
         logger.LogInformation(
-            "[CHATBOT] user_question={Q} | detected_intent={I} | tab={T} | context_len={L}",
-            userMessage[..Math.Min(80, userMessage.Length)], intent, tab, context.Length);
+            "[CHATBOT] user_question={Q} | taxonomy_tab={TT} | sub_intent={I} | context_len={L}",
+            userMessage[..Math.Min(80, userMessage.Length)], taxonomyTab, intent, context.Length);
 
-        // 5. Build focused system prompt
-        var systemPrompt = BuildFocusedSystemPrompt(userMessage, intent, context);
+        // 7. Build focused system prompt theo spec
+        var systemPrompt = BuildFocusedSystemPrompt(userMessage, intent, context, taxonomyTab);
 
         // 6. Build request body
         var contents = new List<object>();
@@ -1102,7 +1274,8 @@ public class GeminiService(
                 var groqText = await CallGroqAsync(systemPrompt, userMessage, history);
                 if (groqText is not null)
                 {
-                    result.Answer = groqText;
+                    result.Answer         = groqText;
+                    result.ModelUsed      = _groqModel;
                     result.FallbackUsed   = true;
                     result.FallbackReason = $"Gemini {status}, dùng Groq ({_groqModel})";
                     logger.LogInformation("[CHATBOT] Groq trả lời thành công cho intent={I}", intent);
@@ -1116,25 +1289,34 @@ public class GeminiService(
 
                 if (status == 403)
                 {
-                    result.Answer = "AI chưa được cấp quyền (403). Vui lòng báo quản trị viên kiểm tra API key.";
-                    result.IsAiGenerated = false; result.FallbackUsed = true; result.FallbackReason = "Gemini 403";
+                    result.Answer        = "AI chưa được cấp quyền (403). Vui lòng báo quản trị viên kiểm tra API key.";
+                    result.ModelUsed     = "none";
+                    result.IsAiGenerated = false;
+                    result.FallbackUsed  = true;
+                    result.FallbackReason = "Gemini 403";
                     return result;
                 }
 
-                // market/feedback tab: thử FastAPI QueryEngine
-                if (tab != "business")
+                // Thử FastAPI fallback cho non-business tab
+                if (taxonomyTab != "internal_business")
                 {
                     var fastApi = await CallRecommendationFallbackAsync(userMessage, tab, companyId);
                     if (fastApi is not null)
                     {
-                        result.Answer = fastApi; result.FallbackUsed = true; result.FallbackReason = $"Gemini HTTP {status}, FastAPI";
+                        result.Answer         = fastApi;
+                        result.ModelUsed      = "fastapi_fallback";
+                        result.FallbackUsed   = true;
+                        result.FallbackReason = $"Gemini HTTP {status}, FastAPI";
                         return result;
                     }
                 }
 
                 var rb = BuildRuleBasedResponse(userMessage, intent, context);
-                result.Answer = rb; result.IsAiGenerated = false;
-                result.FallbackUsed = true; result.FallbackReason = $"Gemini HTTP {status}, rule-based intent={intent}";
+                result.Answer         = rb;
+                result.ModelUsed      = "template_fallback";
+                result.IsAiGenerated  = false;
+                result.FallbackUsed   = true;
+                result.FallbackReason = $"Gemini HTTP {status}, rule-based intent={intent}";
                 return result;
             }
 
@@ -1143,7 +1325,8 @@ public class GeminiService(
                 .GetProperty("candidates")[0].GetProperty("content")
                 .GetProperty("parts")[0].GetProperty("text").GetString() ?? "";
 
-            result.Answer = aiText;
+            result.Answer    = aiText;
+            result.ModelUsed = _model;
             logger.LogInformation("[CHATBOT] Gemini trả lời ({I}): {A}", intent, aiText[..Math.Min(120, aiText.Length)]);
             return result;
         }
@@ -1155,25 +1338,32 @@ public class GeminiService(
             var groqText = await CallGroqAsync(systemPrompt, userMessage, history);
             if (groqText is not null)
             {
-                result.Answer = groqText;
+                result.Answer         = groqText;
+                result.ModelUsed      = _groqModel;
                 result.FallbackUsed   = true;
                 result.FallbackReason = "Gemini exception, dùng Groq";
                 return result;
             }
 
-            if (tab != "business")
+            if (taxonomyTab != "internal_business")
             {
                 var fastApi = await CallRecommendationFallbackAsync(userMessage, tab, companyId);
                 if (fastApi is not null)
                 {
-                    result.Answer = fastApi; result.FallbackUsed = true; result.FallbackReason = "Gemini exception, FastAPI";
+                    result.Answer         = fastApi;
+                    result.ModelUsed      = "fastapi_fallback";
+                    result.FallbackUsed   = true;
+                    result.FallbackReason = "Gemini exception, FastAPI";
                     return result;
                 }
             }
 
             var rb = BuildRuleBasedResponse(userMessage, intent, context);
-            result.Answer = rb; result.IsAiGenerated = false;
-            result.FallbackUsed = true; result.FallbackReason = $"Gemini exception, rule-based intent={intent}";
+            result.Answer         = rb;
+            result.ModelUsed      = "template_fallback";
+            result.IsAiGenerated  = false;
+            result.FallbackUsed   = true;
+            result.FallbackReason = $"Gemini exception, rule-based intent={intent}";
             return result;
         }
     }
@@ -1296,35 +1486,89 @@ public class GeminiService(
 
     private static string BuildRuleBasedResponse(string question, string intent, string context)
     {
-        var note = "\n\n*(Trả lời tự động — AI đang tạm quá tải)*";
+        var note = "\n\n*(Dữ liệu từ hệ thống — AI đang xử lý, vui lòng thử lại sau)*";
 
-        // Dữ liệu đã có trong context → trích đúng phần liên quan theo intent
         if (!string.IsNullOrWhiteSpace(context))
         {
             return intent switch
             {
                 "top_product"       => $"Dựa trên dữ liệu hệ thống:\n{ExtractSection(context, "Sản phẩm bán chạy")}{note}",
                 "declining_product" => context.Contains("KHÔNG ĐỦ DỮ LIỆU")
-                    ? "Hệ thống chưa có đủ dữ liệu theo thời gian để xác định sản phẩm đang giảm doanh số." + note
+                    ? "Hệ thống chưa có đủ dữ liệu để xác định sản phẩm đang giảm doanh số." + note
                     : $"Dựa trên dữ liệu:\n{ExtractSection(context, "Sản phẩm giảm")}{note}",
                 "trending_product"  => context.Contains("KHÔNG ĐỦ DỮ LIỆU")
                     ? "Hệ thống chưa có đủ dữ liệu tháng trước để xác định xu hướng tăng." + note
                     : $"Dựa trên dữ liệu:\n{ExtractSection(context, "xu hướng tăng")}{note}",
-                "revenue_summary"   => $"Dựa trên dữ liệu:\n{ExtractSection(context, "Doanh thu")}{note}",
-                "order_summary"     => $"Dựa trên dữ liệu:\n{ExtractSection(context, "Đơn hàng")}{note}",
+                "revenue_summary"   => FormatRevenueAnswer(context, note),
+                "order_summary"     => FormatOrderAnswer(context, note),
                 "top_channel"
                 or "channel_comparison" => $"Dựa trên dữ liệu:\n{ExtractSection(context, "Kênh bán hàng")}{note}",
                 _ => $"Dựa trên dữ liệu hệ thống:\n{context.Split('\n').Take(8).Aggregate((a, b) => a + "\n" + b)}{note}",
             };
         }
 
-        // Không có context → trả lời chung theo câu hỏi
-        var q = question.ToLowerInvariant();
-        if (q.Contains("xu hướng") || q.Contains("trend"))
-            return "Thương mại điện tử Việt Nam đang tăng trưởng mạnh, đặc biệt TikTok Shop và Shopee. Livestream và video ngắn là xu hướng chủ đạo." + note;
-        if (q.Contains("phản hồi") || q.Contains("review") || q.Contains("đánh giá"))
-            return "Để tăng đánh giá tốt: phản hồi khách trong 2 giờ, giao hàng đúng hẹn, đóng gói cẩn thận." + note;
-        return "AI đang tạm thời quá tải. Vui lòng thử lại sau vài phút hoặc xem Dashboard để tra cứu số liệu." + note;
+        // Không có context → thông báo rõ ràng
+        return "Hệ thống đang tải dữ liệu. Vui lòng thử lại sau vài giây hoặc kiểm tra Dashboard để tra cứu số liệu." + note;
+    }
+
+    // Định dạng câu trả lời doanh thu trực tiếp từ context
+    private static string FormatRevenueAnswer(string context, string note)
+    {
+        // Trích kỳ truy vấn từ context header
+        var periodMatch = System.Text.RegularExpressions.Regex.Match(
+            context, @"Kỳ truy vấn:\s*(\d{2}/\d{4})");
+        var period = periodMatch.Success ? periodMatch.Groups[1].Value : "";
+
+        var section = ExtractSection(context, "Doanh thu");
+
+        // Parse dòng "Tháng XX/YYYY : NNN VND (change)"
+        var lines = section.Split('\n')
+            .Where(l => l.TrimStart().StartsWith("- Tháng"))
+            .Select(l => l.Trim())
+            .ToList();
+
+        if (lines.Count == 0)
+            return $"Dựa trên dữ liệu:\n{section}{note}";
+
+        var sb = new System.Text.StringBuilder();
+        if (!string.IsNullOrEmpty(period))
+            sb.AppendLine($"Doanh thu tháng {period}:");
+        else
+            sb.AppendLine("Doanh thu:");
+
+        foreach (var l in lines)
+            sb.AppendLine(l.TrimStart('-').Trim());
+
+        sb.Append(note);
+        return sb.ToString().Trim();
+    }
+
+    // Định dạng câu trả lời số đơn hàng
+    private static string FormatOrderAnswer(string context, string note)
+    {
+        var periodMatch = System.Text.RegularExpressions.Regex.Match(
+            context, @"Kỳ truy vấn:\s*(\d{2}/\d{4})");
+        var period = periodMatch.Success ? periodMatch.Groups[1].Value : "";
+
+        var section = ExtractSection(context, "Đơn hàng");
+        var lines   = section.Split('\n')
+            .Where(l => l.TrimStart().StartsWith("- Tháng"))
+            .Select(l => l.Trim())
+            .ToList();
+
+        if (lines.Count == 0)
+            return $"Dựa trên dữ liệu:\n{section}{note}";
+
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine(!string.IsNullOrEmpty(period)
+            ? $"Số đơn hàng tháng {period}:"
+            : "Số đơn hàng:");
+
+        foreach (var l in lines)
+            sb.AppendLine(l.TrimStart('-').Trim());
+
+        sb.Append(note);
+        return sb.ToString().Trim();
     }
 
     private static string ExtractSection(string context, string keyword)
