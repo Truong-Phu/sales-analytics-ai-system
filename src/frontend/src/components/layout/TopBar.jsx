@@ -301,8 +301,8 @@ function MegaMenu({ items, onClose, columns = 1 }) {
       className="lcard scale-in absolute top-full left-0 mt-1 p-3 z-[200]"
       style={{
         boxShadow: 'var(--shadow-lg)',
-        width: columns === 2 ? 540 : 272,
-        maxHeight: '75vh',
+        width: columns === 3 ? 960 : columns === 2 ? 680 : 300,
+        maxHeight: '80vh',
         overflowY: 'auto',
       }}
     >
@@ -314,17 +314,17 @@ function MegaMenu({ items, onClose, columns = 1 }) {
           <button
             key={item.href}
             onClick={() => { navigate(item.href); onClose() }}
-            className="flex items-start gap-2 p-2.5 rounded-lg text-left
+            className="flex items-start gap-2.5 p-2.5 rounded-lg text-left
                        transition-colors hover:bg-[--bg-elevated] cursor-pointer"
           >
             <span className="icon icon-sm mt-0.5 shrink-0" style={{ color: 'var(--primary-500)' }}>
               {item.icon}
             </span>
             <div className="min-w-0">
-              <div className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>
+              <div className="text-sm font-medium leading-snug" style={{ color: 'var(--text-primary)' }}>
                 {item.label}
               </div>
-              <div className="text-xs truncate" style={{ color: 'var(--text-tertiary)' }}>
+              <div className="text-xs mt-0.5 leading-relaxed" style={{ color: 'var(--text-tertiary)' }}>
                 {item.desc}
               </div>
             </div>
@@ -495,12 +495,11 @@ export default function TopBar() {
   const invMenuItems = [
     { label: t('nav.invDashboard',   'Dashboard Tồn kho'),  desc: 'KPI, biến động kho, gợi ý nhập hàng',   icon: 'bar_chart',     href: '/inventory/dashboard' },
     { label: t('nav.inventory',      'Thông minh Tồn kho'), desc: 'Dự báo hết hàng & đặt thêm (AI)',        icon: 'inventory',     href: '/inventory' },
-    { label: t('nav.invTransactions','Lịch sử giao dịch'),  desc: 'Nhật ký nhập/xuất/chỉnh kho',            icon: 'history',       href: '/inventory/transactions' },
+{ label: t('nav.invTransactions','Lịch sử giao dịch'),  desc: 'Nhật ký nhập/xuất/chỉnh kho',            icon: 'history',       href: '/inventory/transactions' },
     { label: t('nav.stockAdjust',    'Chỉnh kho thủ công'), desc: 'Kiểm kê thực tế, điều chỉnh sai lệch',  icon: 'tune',          href: '/stock-adjustments' },
     { label: t('nav.suppliers',      'Nhà cung cấp'),       desc: 'Danh sách & thông tin liên hệ NCC',      icon: 'business',      href: '/suppliers' },
     { label: t('nav.purchaseOrders', 'Phiếu đặt hàng'),     desc: 'Tạo và theo dõi đơn đặt hàng NCC',      icon: 'shopping_cart', href: '/purchase-orders' },
     { label: t('nav.goodsReceipts',  'Phiếu nhập kho'),     desc: 'Xác nhận hàng về & cập nhật tồn kho',   icon: 'move_to_inbox', href: '/goods-receipts' },
-    { label: t('nav.supplier',       'Hiệu suất NCC (AI)'), desc: 'Phân tích & đánh giá nhà cung cấp',     icon: 'local_shipping',href: '/supplier' },
   ]
 
   // ── Nhóm Phân tích: AI + Báo cáo (Tài chính đã tách thành tab riêng) ─────
@@ -564,7 +563,7 @@ export default function TopBar() {
       label: t('nav.finance', 'Tài chính'),
       hasMega: true,
       menuItems: financeMenuItems,
-      columns: 1,
+      columns: 2,
     }] : []),
     ...(canSeeAI ? [{
       href: '/forecast',
@@ -580,6 +579,7 @@ export default function TopBar() {
       label: t('nav.operations', 'Vận hành'),
       hasMega: true,
       menuItems: opsMenuItems,
+      columns: 1,
     }] : []),
   ]
 

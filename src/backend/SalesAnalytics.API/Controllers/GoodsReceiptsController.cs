@@ -34,6 +34,7 @@ public class GoodsReceiptsController(
     [Authorize(Roles = "Owner,Manager,Staff_Warehouse,DataIT,SuperAdmin")]
     public async Task<IActionResult> GetAll(
         [FromQuery] long? purchaseOrderId = null,
+        [FromQuery] bool  myOnly   = false,
         [FromQuery] int   page     = 1,
         [FromQuery] int   pageSize = 20)
     {
@@ -47,12 +48,15 @@ public class GoodsReceiptsController(
 
             var where = new List<string> { "gr.company_id = @cid::uuid" };
             if (purchaseOrderId.HasValue) where.Add("gr.purchase_order_id = @poid");
+            // Staff_Warehouse chỉ tự lọc mình khi bật myOnly; Owner/Manager luôn thấy tất cả
+            if (myOnly && UserId > 0) where.Add("gr.created_by = @uid");
             var wc = "WHERE " + string.Join(" AND ", where);
 
             await using var cntCmd = new NpgsqlCommand(
                 $"SELECT COUNT(*) FROM public.goods_receipts gr {wc}", conn);
             cntCmd.Parameters.AddWithValue("cid", tenant.CompanyId!.Value.ToString());
             if (purchaseOrderId.HasValue) cntCmd.Parameters.AddWithValue("poid", purchaseOrderId.Value);
+            if (myOnly && UserId > 0) cntCmd.Parameters.AddWithValue("uid", UserId);
             var total = Convert.ToInt64(await cntCmd.ExecuteScalarAsync());
 
             await using var cmd = new NpgsqlCommand($"""
@@ -60,7 +64,7 @@ public class GoodsReceiptsController(
                        gr.purchase_order_id, po.purchase_code,
                        s.supplier_name,
                        gr.total_quantity, gr.total_amount, gr.note,
-                       gr.created_at, u.username AS created_by_name
+                       gr.created_at, u.full_name AS created_by_name
                 FROM public.goods_receipts gr
                 JOIN public.purchase_orders po ON po.purchase_order_id = gr.purchase_order_id
                 JOIN public.suppliers s ON s.supplier_id = po.supplier_id
@@ -71,6 +75,7 @@ public class GoodsReceiptsController(
                 """, conn);
             cmd.Parameters.AddWithValue("cid", tenant.CompanyId!.Value.ToString());
             if (purchaseOrderId.HasValue) cmd.Parameters.AddWithValue("poid", purchaseOrderId.Value);
+            if (myOnly && UserId > 0) cmd.Parameters.AddWithValue("uid", UserId);
             cmd.Parameters.AddWithValue("lim", pageSize);
             cmd.Parameters.AddWithValue("off", (page - 1) * pageSize);
 
@@ -121,7 +126,7 @@ public class GoodsReceiptsController(
                        gr.purchase_order_id, po.purchase_code,
                        s.supplier_name,
                        gr.total_quantity, gr.total_amount, gr.note,
-                       gr.created_at, u.username
+                       gr.created_at, u.full_name
                 FROM public.goods_receipts gr
                 JOIN public.purchase_orders po ON po.purchase_order_id = gr.purchase_order_id
                 JOIN public.suppliers s ON s.supplier_id = po.supplier_id
@@ -152,10 +157,17 @@ public class GoodsReceiptsController(
 
             await using var iCmd = new NpgsqlCommand("""
                 SELECT gri.goods_receipt_item_id, gri.product_id, p.product_name,
-                       gri.received_quantity, gri.import_price, gri.total_price
+                       gri.received_quantity, gri.import_price, gri.total_price,
+                       gri.variation_id,
+                       pv.sku         AS variation_sku,
+                       pv.attribute_color AS color,
+                       pv.attribute_size  AS size,
+                       pv.variation_name
                 FROM public.goods_receipt_items gri
                 JOIN public.products p ON p.product_id = gri.product_id
+                LEFT JOIN public.product_variations pv ON pv.id = gri.variation_id
                 WHERE gri.goods_receipt_id = @id
+                ORDER BY gri.goods_receipt_item_id
                 """, conn);
             iCmd.Parameters.AddWithValue("id", id);
 
@@ -170,6 +182,11 @@ public class GoodsReceiptsController(
                     receivedQuantity   = ir.GetInt32(3),
                     importPrice        = ir.GetDecimal(4),
                     totalPrice         = ir.GetDecimal(5),
+                    variationId        = ir.IsDBNull(6) ? (int?)null : ir.GetInt32(6),
+                    variationSku       = ir.IsDBNull(7) ? null : ir.GetString(7),
+                    color              = ir.IsDBNull(8) ? null : ir.GetString(8),
+                    size               = ir.IsDBNull(9) ? null : ir.GetString(9),
+                    variationName      = ir.IsDBNull(10) ? null : ir.GetString(10),
                 });
 
             return Ok(new { receipt = gr, items = its });

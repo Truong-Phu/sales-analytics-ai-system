@@ -89,42 +89,6 @@ def _message(status: str, name: str, days: float, qty: int) -> str:
     return f"{name}: Tình trạng bình thường ({days:.0f} ngày còn hàng)"
 
 
-# ── Mock data khi DB chưa có đủ dữ liệu ─────────────────────────────────────
-
-def _mock_inventory() -> InventoryResponse:
-    items = [
-        InventoryItem(
-            product_id="P001", product_name="Áo thun nam cổ tròn",
-            current_stock=12, avg_daily_sales=3.2, days_until_stockout=3.8,
-            status="CRITICAL", reorder_qty=86, reorder_urgency="IMMEDIATE",
-            message="Áo thun nam cổ tròn: Còn 4 ngày hết hàng – Đặt ngay 86 đơn vị!",
-        ),
-        InventoryItem(
-            product_id="P002", product_name="Váy hoa mùa hè",
-            current_stock=28, avg_daily_sales=2.1, days_until_stockout=13.3,
-            status="WARNING", reorder_qty=35, reorder_urgency="SOON",
-            message="Váy hoa mùa hè: Sắp hết trong 13 ngày – Lên kế hoạch đặt thêm 35 đơn vị",
-        ),
-        InventoryItem(
-            product_id="P003", product_name="Giày sneaker trắng",
-            current_stock=85, avg_daily_sales=1.5, days_until_stockout=56.7,
-            status="OK", reorder_qty=0, reorder_urgency="LATER",
-            message="Giày sneaker trắng: Tình trạng bình thường (57 ngày còn hàng)",
-        ),
-        InventoryItem(
-            product_id="P004", product_name="Khẩu trang vải",
-            current_stock=340, avg_daily_sales=0.8, days_until_stockout=425.0,
-            status="OVERSTOCK", reorder_qty=0, reorder_urgency="NONE",
-            message="Khẩu trang vải: Tồn kho nhiều (425 ngày cung cấp) – Xem xét khuyến mãi để giải phóng hàng",
-        ),
-    ]
-    return InventoryResponse(
-        total_products=4, critical_count=1, warning_count=1,
-        ok_count=1, overstock_count=1, analysis_days=30,
-        items=items,
-        note="Đang dùng dữ liệu mẫu (DB chưa có đủ dữ liệu)",
-        is_mock=True,
-    )
 
 
 # ── Endpoint ──────────────────────────────────────────────────────────────────
@@ -148,31 +112,42 @@ def get_inventory_intelligence(
     company_id: Optional[str] = Query(default=None, description="UUID công ty"),
     status:     Optional[str] = Query(default=None, description="Lọc: CRITICAL|WARNING|OK|OVERSTOCK"),
 ):
-    cmp_filter = "AND o.company_id = %(cid)s::uuid" if company_id else ""
+    # LEFT JOIN để hiện TẤT CẢ sản phẩm đang có tồn kho (is_active=TRUE, stock >= 0).
+    # Sản phẩm không có đơn trong kỳ → avg_daily_sales = 0 → status = NO_SALES.
+    cmp_prod   = "AND p.company_id = %(cid)s::uuid" if company_id else ""
+    cmp_order  = "AND o.company_id = %(cid)s::uuid" if company_id else ""
     params: dict = {}
     if company_id:
         params["cid"] = company_id
 
-    # Tốc độ bán trung bình theo sản phẩm
     sales_sql = f"""
         SELECT
             p.product_id::text,
             p.product_name,
             p.stock_quantity,
-            SUM(oi.quantity)::float / {int(days)} AS avg_daily_sales
-        FROM public.order_items oi
-        JOIN public.orders   o ON oi.order_id   = o.order_id
-        JOIN public.products p ON oi.product_id = p.product_id
-        WHERE o.status NOT IN ('CANCELLED', 'RETURNED')
-          AND o.order_date >= NOW() - INTERVAL '{int(days)} days'
-          {cmp_filter}
+            COALESCE(SUM(oi.quantity)::float, 0) / {int(days)} AS avg_daily_sales
+        FROM public.products p
+        LEFT JOIN public.order_items oi ON oi.product_id = p.product_id
+        LEFT JOIN public.orders o ON o.order_id = oi.order_id
+            AND o.status NOT IN ('CANCELLED', 'RETURNED')
+            AND o.order_date >= NOW() - INTERVAL '{int(days)} days'
+            {cmp_order}
+        WHERE p.is_active = TRUE
+          AND p.stock_quantity > 0
+          {cmp_prod}
         GROUP BY p.product_id, p.product_name, p.stock_quantity
-        ORDER BY avg_daily_sales DESC
+        ORDER BY avg_daily_sales DESC, p.product_name
     """
     df = query_df(sales_sql, params or None)
 
     if df.empty:
-        return _mock_inventory()
+        return InventoryResponse(
+            total_products=0, critical_count=0, warning_count=0,
+            ok_count=0, overstock_count=0, analysis_days=days,
+            items=[],
+            note="Chưa có sản phẩm nào trong kho",
+            is_mock=False,
+        )
 
     items: List[InventoryItem] = []
     for _, row in df.iterrows():

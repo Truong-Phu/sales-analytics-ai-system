@@ -2,17 +2,24 @@ import { useState, useEffect } from 'react'
 import MockToast from '../../components/ui/MockToast'
 import AiEmptyState from '../../components/ui/AiEmptyState'
 import { getNarrative } from '../../api/aiApi'
+import DateRangeFilter from '../../components/ui/DateRangeFilter'
 
 export default function NarrativePage() {
+  const daysAgo30 = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10)
+  const tomorrow  = new Date(Date.now() + 86400000).toISOString().slice(0, 10)
   const [data,   setData]   = useState(null)
   const [loading,setLoading]= useState(true)
   const [isMock, setIsMock] = useState(false)
-  const [days,   setDays]   = useState(30)
+  const [from,   setFrom]   = useState(daysAgo30)
+  const [to,     setTo]     = useState(tomorrow)
   const [lang,   setLang]   = useState('vi')
+
+  const computeDays = (f, t) => Math.max(1, Math.round((new Date(t) - new Date(f)) / 86400000))
 
   const load = async () => {
     setLoading(true)
     try {
+      const days = computeDays(from, to)
       const res = await getNarrative({ days, language: lang })
       setData(res)
       setIsMock(res.is_mock ?? false)
@@ -21,7 +28,7 @@ export default function NarrativePage() {
     } finally { setLoading(false) }
   }
 
-  useEffect(() => { load() }, [days, lang])
+  useEffect(() => { load() }, [from, to, lang]) // eslint-disable-line
 
   const renderBold = (text) => text.split('**').map((part, i) =>
     i % 2 === 0 ? part : <strong key={i} style={{ color: 'var(--text-primary)' }}>{part}</strong>
@@ -33,24 +40,23 @@ export default function NarrativePage() {
   return (
     <div className="space-y-5">
       <MockToast show={isMock} />
-      {!data && !loading && <AiEmptyState title="Chưa đủ dữ liệu sinh nhận xét tự động" />}
-
       {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Nhận xét Thông minh</h1>
-          <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>Tự động sinh nhận xét doanh thu bằng ngôn ngữ tự nhiên</p>
-        </div>
-        <div className="flex gap-2">
-          <select value={days} onChange={e => setDays(+e.target.value)} className="linput text-sm" style={{ width: 110 }}>
-            {[7,14,30,90].map(d => <option key={d} value={d}>{d} ngày</option>)}
-          </select>
+      <div className="space-y-3">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Nhận xét Thông minh</h1>
+            <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>Tự động sinh nhận xét doanh thu bằng ngôn ngữ tự nhiên</p>
+          </div>
           <button onClick={() => setLang(l => l === 'vi' ? 'en' : 'vi')} className="lbtn lbtn-secondary text-sm">
             {lang === 'vi' ? '🇻🇳 VI' : '🇬🇧 EN'}
           </button>
-          <button onClick={load} className="lbtn lbtn-primary text-sm">Làm mới</button>
         </div>
+        {/* Filter ngày — dòng riêng để không wrap */}
+        <DateRangeFilter from={from} to={to} onChange={(f, t) => { setFrom(f); setTo(t) }}
+          presets={['all','today','days_7','days_30','days_90','custom']} />
       </div>
+
+      {!data && !loading && <AiEmptyState title="Chưa đủ dữ liệu sinh nhận xét tự động" />}
 
       {loading ? (
         <div className="lcard p-12 flex items-center justify-center">

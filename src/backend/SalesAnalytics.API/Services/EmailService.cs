@@ -11,6 +11,7 @@ public interface IEmailService
     Task<bool> SendAlertAsync(string toEmail, string title, string body);
     Task<bool> SendSubscriptionConfirmedAsync(string toEmail, string companyName, string plan, DateTime expiresAt);
     Task<bool> SendSubscriptionExpiryWarningAsync(string toEmail, string companyName, DateTime expiresAt, int daysLeft);
+    Task<bool> SendTrialExpiredAsync(string toEmail, string companyName);
     Task<bool> SendInviteUserAsync(string toEmail, string fullName, string companyName, string role, string tempPassword);
     Task<bool> SendPurchaseOrderAsync(string toEmail, string supplierName, string poCode,
         decimal totalAmount, List<(string ProductName, int Qty, decimal Price)> items,
@@ -22,6 +23,16 @@ public interface IEmailService
         decimal actualRevenue, decimal? revenueTarget,
         long actualOrders, int? orderTarget,
         bool isKpiAchieved, string status);
+
+    Task<bool> SendKpiNotificationAsync(
+        string toEmail, string fullName, string companyName,
+        int year, int month,
+        decimal? revenueTarget, int? orderTarget, int? custTarget,
+        string? note = null);
+
+    Task<bool> SendRoleChangeNotificationAsync(
+        string toEmail, string fullName, string oldRole, string newRole,
+        bool isActive, string companyName);
 }
 
 public class ResendEmailService(
@@ -79,6 +90,13 @@ public class ResendEmailService(
             ? $"[MSAS] Gói Pro của {companyName} hết hạn hôm nay!"
             : $"[MSAS] Gói Pro của {companyName} sắp hết hạn trong {daysLeft} ngày";
         var html = BuildExpiryWarningHtml(companyName, expiresAt, daysLeft);
+        return await SendAsync(toEmail, subject, html);
+    }
+
+    public async Task<bool> SendTrialExpiredAsync(string toEmail, string companyName)
+    {
+        var subject = $"[MSAS] Thời gian dùng thử của {companyName} đã kết thúc";
+        var html    = BuildTrialExpiredHtml(companyName);
         return await SendAsync(toEmail, subject, html);
     }
 
@@ -425,20 +443,31 @@ public class ResendEmailService(
     {
         var approvalSection = approvalUrl != null
             ? $"""
-              <div style="text-align:center;margin-bottom:20px">
-                <a href="{approvalUrl}" style="display:inline-block;background:#6366f1;color:#fff;font-size:15px;
-                          font-weight:700;padding:14px 36px;border-radius:10px;text-decoration:none">
-                  ✅ Duyệt phiếu đặt hàng
-                </a>
-                <p style="margin:12px 0 0;color:#94a3b8;font-size:12px">
-                  Nhấn nút trên để xác nhận đơn hàng. Link dùng được 1 lần, hiệu lực 72 giờ.
+              <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:20px 24px;margin-bottom:20px">
+                <p style="margin:0 0 10px;color:#166534;font-size:14px;font-weight:600">
+                  📋 Để xác nhận đơn hàng, quý vị cần:
+                </p>
+                <ol style="margin:0 0 16px;padding-left:20px;color:#15803d;font-size:13px;line-height:1.9">
+                  <li>Nhấn nút <strong>"Xác nhận & Hẹn ngày giao"</strong> bên dưới</li>
+                  <li>Chọn <strong>ngày giao hàng dự kiến</strong> mà quý vị có thể thực hiện</li>
+                  <li>Thêm ghi chú nếu cần (điều kiện giao hàng, lịch trình...)</li>
+                  <li>Nhấn <strong>"Xác nhận"</strong> để hoàn tất</li>
+                </ol>
+                <div style="text-align:center">
+                  <a href="{approvalUrl}" style="display:inline-block;background:#6366f1;color:#fff;font-size:15px;
+                            font-weight:700;padding:14px 36px;border-radius:10px;text-decoration:none">
+                    📅 Xác nhận & Hẹn ngày giao hàng
+                  </a>
+                </div>
+                <p style="margin:12px 0 0;color:#94a3b8;font-size:11px;text-align:center">
+                  Ngày giao hàng quý vị cam kết sẽ được dùng để đánh giá hiệu suất giao hàng. Link hiệu lực 72 giờ.
                 </p>
               </div>
               """
             : """
               <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:16px 20px;margin-bottom:20px">
                 <p style="margin:0;color:#1e40af;font-size:14px;line-height:1.7">
-                  📩 Vui lòng <strong>trả lời email này</strong> hoặc liên hệ trực tiếp để xác nhận đơn hàng.
+                  📩 Vui lòng <strong>trả lời email này</strong> hoặc liên hệ trực tiếp để xác nhận đơn hàng và hẹn ngày giao hàng.
                 </p>
               </div>
               """;
@@ -636,4 +665,171 @@ public class ResendEmailService(
         </body></html>
         """;
     }
+
+    // ── Thông báo KPI target cho nhân viên ──────────────────────────────────
+    public async Task<bool> SendKpiNotificationAsync(
+        string toEmail, string fullName, string companyName,
+        int year, int month,
+        decimal? revenueTarget, int? orderTarget, int? custTarget,
+        string? note = null)
+    {
+        var subject = $"[{companyName}] KPI tháng {month}/{year} của bạn đã được cập nhật";
+        static string Row(string label, string val) =>
+            $"<tr><td style='padding:8px 12px;color:#64748b;font-size:13px'>{label}</td><td style='padding:8px 12px;font-weight:600;font-size:13px;color:#0f172a'>{val}</td></tr>";
+        var fmtMoney = (decimal? v) => v.HasValue ? v.Value.ToString("N0") + " ₫" : "—";
+        var fmtNum   = (int? v)     => v.HasValue ? v.Value.ToString("N0")         : "—";
+        var noteRow  = string.IsNullOrEmpty(note) ? "" : $"<tr><td colspan='2' style='padding:8px 12px;font-size:12px;color:#64748b'>💬 {note}</td></tr>";
+
+        var html = $"""
+            <!DOCTYPE html><html lang="vi"><head><meta charset="UTF-8"></head>
+            <body style="margin:0;padding:0;background:#f4f6f8;font-family:'Segoe UI',Arial,sans-serif">
+              <table width="100%" cellpadding="0" cellspacing="0" style="padding:32px 16px">
+                <tr><td align="center">
+                  <table width="560" cellpadding="0" cellspacing="0"
+                         style="background:#fff;border-radius:16px;box-shadow:0 4px 24px rgba(0,0,0,0.08);overflow:hidden">
+                    <tr>
+                      <td style="background:linear-gradient(135deg,#6366f1,#8b5cf6);padding:28px 32px;text-align:center">
+                        <h1 style="margin:0;color:#fff;font-size:20px">🎯 KPI tháng {month}/{year}</h1>
+                        <p style="margin:6px 0 0;color:rgba(255,255,255,0.85);font-size:13px">{companyName}</p>
+                      </td>
+                    </tr>
+                    <tr><td style="padding:28px 32px">
+                      <p style="color:#1e293b;font-size:15px;margin:0 0 20px">
+                        Kính gửi <strong>{fullName}</strong>,
+                      </p>
+                      <p style="color:#64748b;font-size:13px;line-height:1.7;margin:0 0 20px">
+                        Quản lý đã thiết lập mục tiêu KPI cho kỳ <strong>tháng {month}/{year}</strong>.
+                        Hãy cố gắng đạt mục tiêu để nhận thưởng KPI!
+                      </p>
+                      <table width="100%" cellpadding="0" cellspacing="0"
+                             style="border-collapse:collapse;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden">
+                        <thead>
+                          <tr style="background:#f8fafc">
+                            <th style="padding:10px 12px;text-align:left;font-size:12px;color:#94a3b8;font-weight:500">Chỉ tiêu</th>
+                            <th style="padding:10px 12px;text-align:left;font-size:12px;color:#94a3b8;font-weight:500">Mục tiêu</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {Row("🎯 Doanh thu",       fmtMoney(revenueTarget))}
+                          {Row("📦 Số đơn hàng",     fmtNum(orderTarget))}
+                          {Row("👥 Khách hàng mới",  fmtNum(custTarget))}
+                          {noteRow}
+                        </tbody>
+                      </table>
+                      <p style="margin:24px 0 0;font-size:12px;color:#94a3b8;text-align:center">
+                        MSAS — Hệ thống phân tích bán hàng đa kênh
+                      </p>
+                    </td></tr>
+                  </table>
+                </td></tr>
+              </table>
+            </body></html>
+            """;
+
+        return await SendAsync(toEmail, subject, html);
+    }
+
+    // ── Thông báo thay đổi role/trạng thái tài khoản ───────────────────────
+    public async Task<bool> SendRoleChangeNotificationAsync(
+        string toEmail, string fullName, string oldRole, string newRole,
+        bool isActive, string companyName)
+    {
+        var subject = $"[{companyName}] Thông tin tài khoản của bạn đã thay đổi";
+        var statusText = isActive ? "✅ Đang hoạt động" : "🔒 Bị vô hiệu hóa";
+        var roleChanged = oldRole != newRole;
+        var changeDesc  = roleChanged
+            ? $"Vai trò thay đổi từ <strong>{oldRole}</strong> → <strong>{newRole}</strong>."
+            : $"Trạng thái tài khoản: <strong>{statusText}</strong>.";
+
+        var html = $"""
+            <!DOCTYPE html><html lang="vi"><head><meta charset="UTF-8"></head>
+            <body style="margin:0;padding:0;background:#f4f6f8;font-family:'Segoe UI',Arial,sans-serif">
+              <table width="100%" cellpadding="0" cellspacing="0" style="padding:32px 16px">
+                <tr><td align="center">
+                  <table width="520" cellpadding="0" cellspacing="0"
+                         style="background:#fff;border-radius:16px;box-shadow:0 4px 24px rgba(0,0,0,0.08);overflow:hidden">
+                    <tr>
+                      <td style="background:linear-gradient(135deg,#3b82f6,#6366f1);padding:24px 32px;text-align:center">
+                        <h1 style="margin:0;color:#fff;font-size:18px">🔔 Thông báo tài khoản</h1>
+                        <p style="margin:4px 0 0;color:rgba(255,255,255,0.85);font-size:12px">{companyName}</p>
+                      </td>
+                    </tr>
+                    <tr><td style="padding:24px 32px">
+                      <p style="color:#1e293b;font-size:14px;margin:0 0 16px">Kính gửi <strong>{fullName}</strong>,</p>
+                      <p style="color:#475569;font-size:13px;line-height:1.7;margin:0 0 16px">
+                        Thông tin tài khoản của bạn tại <strong>{companyName}</strong> đã được cập nhật:
+                      </p>
+                      <div style="background:#f8fafc;border-radius:10px;padding:16px 20px;margin-bottom:16px">
+                        <p style="margin:0;font-size:14px;color:#1e293b">{changeDesc}</p>
+                        <p style="margin:8px 0 0;font-size:12px;color:#64748b">Trạng thái: {statusText}</p>
+                      </div>
+                      <p style="color:#94a3b8;font-size:11px;text-align:center;margin:0">
+                        Nếu bạn không yêu cầu thay đổi này, hãy liên hệ quản trị viên ngay.
+                      </p>
+                    </td></tr>
+                  </table>
+                </td></tr>
+              </table>
+            </body></html>
+            """;
+
+        return await SendAsync(toEmail, subject, html);
+    }
+
+    private static string BuildTrialExpiredHtml(string companyName) => $"""
+        <!DOCTYPE html>
+        <html lang="vi">
+        <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+        <body style="margin:0;padding:0;background:#f4f6f8;font-family:'Segoe UI',Arial,sans-serif">
+          <table width="100%" cellpadding="0" cellspacing="0" style="padding:40px 20px">
+            <tr><td align="center">
+              <table width="560" cellpadding="0" cellspacing="0"
+                     style="background:#ffffff;border-radius:16px;box-shadow:0 4px 24px rgba(0,0,0,0.08);overflow:hidden">
+                <tr>
+                  <td style="background:linear-gradient(135deg,#f59e0b,#ef4444);padding:32px 40px;text-align:center">
+                    <h1 style="margin:0;color:#fff;font-size:24px;font-weight:700">⏰ Thời gian dùng thử đã kết thúc</h1>
+                    <p style="margin:8px 0 0;color:rgba(255,255,255,0.85);font-size:13px">SalesAnalytics MSAS</p>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:40px">
+                    <p style="margin:0 0 16px;color:#1e293b;font-size:16px">Kính gửi <strong>{companyName}</strong>,</p>
+                    <p style="margin:0 0 20px;color:#64748b;font-size:15px;line-height:1.7">
+                      7 ngày dùng thử miễn phí gói <strong>Pro</strong> của bạn đã kết thúc. Tài khoản hiện đã chuyển về gói
+                      <strong>Free</strong> với tính năng cơ bản.
+                    </p>
+                    <div style="background:#fef3c7;border-radius:10px;padding:18px 20px;margin-bottom:24px">
+                      <p style="margin:0 0 8px;color:#92400e;font-size:14px;font-weight:600">Tính năng bị giới hạn khi về Free:</p>
+                      <ul style="margin:0;padding-left:20px;color:#92400e;font-size:14px;line-height:1.8">
+                        <li>Dự báo doanh thu AI (Prophet)</li>
+                        <li>Phân tích churn khách hàng</li>
+                        <li>Báo cáo nâng cao &amp; xuất PDF</li>
+                        <li>Phân tích lợi nhuận đa kênh</li>
+                      </ul>
+                    </div>
+                    <p style="margin:0 0 24px;color:#64748b;font-size:14px;line-height:1.6">
+                      Nâng cấp lên <strong>Pro</strong> để tiếp tục sử dụng đầy đủ tính năng và đưa ra quyết định kinh doanh
+                      dựa trên dữ liệu thực tế.
+                    </p>
+                    <div style="text-align:center">
+                      <a href="#" style="display:inline-block;background:linear-gradient(135deg,#6366f1,#8b5cf6);
+                                         color:#fff;text-decoration:none;padding:14px 32px;border-radius:10px;
+                                         font-size:15px;font-weight:600">
+                        Nâng cấp lên Pro ngay →
+                      </a>
+                    </div>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="background:#f8fafc;padding:20px 40px;border-top:1px solid #e2e8f0">
+                    <p style="margin:0;color:#94a3b8;font-size:12px;text-align:center">
+                      © 2026 SalesAnalytics · Hệ thống phân tích bán hàng MSAS
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td></tr>
+          </table>
+        </body></html>
+        """;
 }

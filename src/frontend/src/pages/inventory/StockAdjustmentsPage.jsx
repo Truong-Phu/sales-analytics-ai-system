@@ -37,7 +37,7 @@ function AdjustmentFormContent({ onCreated, onClose, initialProductId = null }) 
   useEffect(() => {
     if (!initialProductId) return
     api.get(`/api/products/${initialProductId}/variations`)
-      .then(r => setVariations(r.data ?? []))
+      .then(r => setVariations(r.data?.data ?? r.data ?? []))
       .catch(() => setVariations([]))
   }, [initialProductId])
 
@@ -65,7 +65,7 @@ function AdjustmentFormContent({ onCreated, onClose, initialProductId = null }) 
     if (!pid) return
     try {
       const r = await api.get(`/api/products/${pid}/variations`)
-      setVariations(r.data ?? [])
+      setVariations(r.data?.data ?? r.data ?? [])
     } catch { setVariations([]) }
   }
 

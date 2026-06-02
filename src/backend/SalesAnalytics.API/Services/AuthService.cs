@@ -146,12 +146,13 @@ public class AuthService
             var subscription = new Subscription
             {
                 CompanyId       = company.Id,
-                Plan            = "free",
-                Status          = "active",
-                MaxChannels     = 2,
-                MaxUsers        = 3,
-                AiEnabled       = false,
-                AdvancedReports = false,
+                Plan            = "pro",
+                Status          = "trial",
+                TrialEndsAt     = DateTime.UtcNow.AddDays(7),
+                MaxChannels     = 5,
+                MaxUsers        = 10,
+                AiEnabled       = true,
+                AdvancedReports = true,
             };
             _db.Subscriptions.Add(subscription);
             await _db.SaveChangesAsync();

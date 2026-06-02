@@ -444,7 +444,13 @@ export default function DashboardScreen({ navigation }) {
     setChannelRevenue(channels)
     setAlerts(alertList)
     setAiInsights(insightList)
-    setIsMock(kpiResult.mock)
+    // Báo mock nếu bất kỳ section nào dùng dữ liệu mẫu
+    setIsMock(
+      kpiResult.mock ||
+      trend     === MOCK_TREND ||
+      products  === MOCK_TOP_PRODUCTS ||
+      channels  === MOCK_CHANNEL_REVENUE
+    )
   }
 
   useEffect(() => {

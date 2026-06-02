@@ -1,46 +1,70 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useSearchParams, useNavigate } from 'react-router-dom'
 import api from '../../api/axios'
 import MockToast from '../../components/ui/MockToast'
 import DetailDrawer from '../../components/ui/DetailDrawer'
+import { useAuth } from '../../hooks/useAuth'
 
 // ── Drawer tạo phiếu nhập kho ─────────────────────────────────────────────────
-function CreateReceiptDrawer({ open, onClose, onSaved, initialPoId = '' }) {
+function CreateReceiptDrawer({ open, onClose, onSaved, initialPoId = '', productId = '', productName = '', returnUrl = '' }) {
+  const navigate = useNavigate()
   const [approvedPOs, setApprovedPOs] = useState([])
-  const [poId,        setPoId]        = useState(String(initialPoId))
+  const [poId,        setPoId]        = useState('')
   const [selectedPO,  setSelectedPO]  = useState(null)
   const [poItems,     setPoItems]     = useState([])
   const [note,        setNote]        = useState('')
   const [receiveQtys, setReceiveQtys] = useState({})
   const [loading,     setLoading]     = useState(false)
   const [err,         setErr]         = useState('')
+  const [loadingPOs,  setLoadingPOs]  = useState(true) // true để tránh flash warning trước khi API xong
 
-  useEffect(() => {
-    api.get('/api/purchase-orders', { params: { pageSize: 100 } })
-       .then(r => setApprovedPOs(
-         (r.data.items ?? []).filter(p => ['APPROVED', 'PARTIALLY_RECEIVED'].includes(p.status))
-       ))
-       .catch(() => {})
-  }, [])
-
-  // Tự load PO khi có initialPoId
-  useEffect(() => {
-    if (initialPoId) loadPODetails(String(initialPoId))
-  }, [initialPoId]) // eslint-disable-line
-
-  const loadPODetails = async (id) => {
+  // loadPODetails define trước useEffect để closure không bị stale
+  const loadPODetails = useCallback(async (id) => {
     if (!id) { setSelectedPO(null); setPoItems([]); return }
     try {
       const res = await api.get(`/api/purchase-orders/${id}`)
       setSelectedPO(res.data.order)
       const its = res.data.items ?? []
-      // Chỉ hiện item còn chưa nhận đủ
       const pending = its.filter(i => (i.remainingQuantity ?? i.quantity - i.receivedQuantity) > 0)
       setPoItems(pending)
       const initQtys = {}
       pending.forEach(i => { initQtys[i.purchaseOrderItemId] = i.remainingQuantity ?? (i.quantity - i.receivedQuantity) })
       setReceiveQtys(initQtys)
     } catch { setErr('Không tải được chi tiết phiếu nhập.') }
-  }
+  }, [])
+
+  // Load danh sách PO đã duyệt, lọc theo productId nếu có; auto-select khi chỉ có 1
+  useEffect(() => {
+    setLoadingPOs(true)
+    setPoId('')
+    setSelectedPO(null)
+    setPoItems([])
+    setReceiveQtys({})
+    setErr('')
+    const params = { pageSize: 100 }
+    if (productId) params.productId = productId
+    api.get('/api/purchase-orders', { params })
+      .then(r => {
+        const approved = (r.data.items ?? []).filter(
+          p => ['APPROVED', 'PARTIALLY_RECEIVED'].includes(p.status)
+        )
+        setApprovedPOs(approved)
+        // Tự chọn luôn nếu chỉ có 1 PO phù hợp
+        if (approved.length === 1) {
+          setPoId(String(approved[0].purchaseOrderId))
+          loadPODetails(String(approved[0].purchaseOrderId))
+        }
+      })
+      .catch(() => setApprovedPOs([]))
+      .finally(() => setLoadingPOs(false))
+  }, [productId, loadPODetails])
+
+  // Nếu navigate từ pending PO list (initialPoId được set), tự chọn PO đó
+  useEffect(() => {
+    if (!initialPoId) return
+    setPoId(String(initialPoId))
+    loadPODetails(String(initialPoId))
+  }, [initialPoId, loadPODetails])
 
   const handlePoChange = (id) => {
     setPoId(id)
@@ -102,6 +126,41 @@ function CreateReceiptDrawer({ open, onClose, onSaved, initialPoId = '' }) {
       }
     >
       <div style={{ padding: '20px 20px 24px' }}>
+        {/* Loading POs */}
+        {loadingPOs && (
+          <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8,
+                        fontSize: 13, color: '#64748b' }}>
+            <span style={{ width: 16, height: 16, border: '2px solid #e5e7eb',
+                           borderTopColor: '#6366f1', borderRadius: '50%',
+                           display: 'inline-block', animation: 'spin 0.8s linear infinite' }} />
+            Đang tìm phiếu đặt hàng phù hợp...
+          </div>
+        )}
+
+        {/* Không có PO đã duyệt */}
+        {!loadingPOs && approvedPOs.length === 0 && (
+          <div style={{ marginBottom: 16, padding: '14px 16px', borderRadius: 10,
+                        background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.35)' }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: '#92400e', marginBottom: 6 }}>
+              ⚠ Chưa có phiếu đặt hàng nào đã được duyệt
+              {productName ? ` cho "${productName}"` : ''}
+            </div>
+            <div style={{ fontSize: 12, color: '#78350f', marginBottom: 10 }}>
+              Cần tạo và duyệt phiếu đặt hàng NCC trước khi nhập kho.
+            </div>
+            <button
+              onClick={() => {
+                onClose()
+                const url = `/purchase-orders?productId=${productId}&productName=${encodeURIComponent(productName)}&returnUrl=${encodeURIComponent(returnUrl || '/goods-receipts')}`
+                navigate(url)
+              }}
+              style={{ fontSize: 12, padding: '6px 14px', borderRadius: 7, border: 'none',
+                       background: '#f59e0b', color: '#fff', cursor: 'pointer', fontWeight: 600 }}>
+              Đặt hàng NCC ngay
+            </button>
+          </div>
+        )}
+
         {err && (
           <div style={{ marginBottom: 16, padding: '8px 12px', borderRadius: 8,
                         background: 'rgba(239,68,68,0.1)', color: '#EF4444', fontSize: 13 }}>
@@ -109,9 +168,12 @@ function CreateReceiptDrawer({ open, onClose, onSaved, initialPoId = '' }) {
           </div>
         )}
 
-        {/* Chọn phiếu nhập hàng đã duyệt */}
+        {/* Chọn phiếu nhập hàng đã duyệt — chỉ hiện khi có PO */}
+        {!loadingPOs && approvedPOs.length > 0 && (
         <div style={{ marginBottom: 20 }}>
-          <label style={labelStyle}>Phiếu nhập hàng đã duyệt <span style={{ color: '#EF4444' }}>*</span></label>
+          <label style={labelStyle}>
+            Phiếu đặt hàng đã duyệt <span style={{ color: '#EF4444' }}>*</span>
+          </label>
           <select value={poId} onChange={e => handlePoChange(e.target.value)} style={inputStyle}>
             <option value="">-- Chọn phiếu nhập --</option>
             {approvedPOs.map(p => (
@@ -122,6 +184,7 @@ function CreateReceiptDrawer({ open, onClose, onSaved, initialPoId = '' }) {
             ))}
           </select>
         </div>
+        )}
 
         {/* Danh sách sản phẩm còn thiếu */}
         {poItems.length > 0 && (
@@ -192,14 +255,24 @@ function CreateReceiptDrawer({ open, onClose, onSaved, initialPoId = '' }) {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function GoodsReceiptsPage() {
+  const [searchParams, setSearchParams] = useSearchParams()
+  const navigate = useNavigate()
+  const { user } = useAuth()
+  const urlProductId   = searchParams.get('productId')   || ''
+  const urlProductName = searchParams.get('productName') || ''
+  const returnUrl      = searchParams.get('returnUrl')   || ''
+
+  const isWarehouseOnly = user?.role === 'Staff_Warehouse'
+
   const [rows,          setRows]          = useState([])
   const [total,         setTotal]         = useState(0)
   const [page,          setPage]          = useState(1)
   const [totalPages,    setTotalPages]    = useState(1)
   const [loading,       setLoading]       = useState(true)
   const [isMock,        setIsMock]        = useState(false)
-  const [showCreate,    setShowCreate]    = useState(false)
+  const [showCreate,    setShowCreate]    = useState(searchParams.get('action') === 'create')
   const [initialPoId,   setInitialPoId]   = useState('')
+  const [myOnly,        setMyOnly]        = useState(false)
   // Expandable detail
   const [expandedId,    setExpandedId]    = useState(null)
   const [detailCache,   setDetailCache]   = useState({})
@@ -212,7 +285,7 @@ export default function GoodsReceiptsPage() {
   const load = useCallback(async (p = 1) => {
     setLoading(true)
     try {
-      const res = await api.get('/api/goods-receipts', { params: { page: p, pageSize: PAGE_SIZE } })
+      const res = await api.get('/api/goods-receipts', { params: { page: p, pageSize: PAGE_SIZE, myOnly } })
       const d = res.data
       setRows(d.items ?? [])
       setTotal(d.total ?? 0)
@@ -234,7 +307,7 @@ export default function GoodsReceiptsPage() {
     } catch { setPendingPOs([]) }
   }, [])
 
-  useEffect(() => { load(1); loadPendingPOs() }, [load, loadPendingPOs])
+  useEffect(() => { load(1); loadPendingPOs() }, [load, loadPendingPOs, myOnly])
 
   const toggleDetail = async (grId) => {
     if (expandedId === grId) { setExpandedId(null); return }
@@ -253,6 +326,16 @@ export default function GoodsReceiptsPage() {
     setShowCreate(true)
   }
 
+  const closeCreate = () => {
+    setShowCreate(false)
+    setInitialPoId('')
+    if (returnUrl) {
+      navigate(returnUrl)
+    } else if (searchParams.get('action')) {
+      setSearchParams({})
+    }
+  }
+
   const fmtDate = (iso) => iso
     ? new Date(iso).toLocaleString('vi-VN', { dateStyle: 'short', timeStyle: 'short' })
     : '—'
@@ -264,8 +347,11 @@ export default function GoodsReceiptsPage() {
       <CreateReceiptDrawer
         open={showCreate}
         initialPoId={initialPoId}
-        onClose={() => setShowCreate(false)}
-        onSaved={() => { setShowCreate(false); load(1); loadPendingPOs() }}
+        productId={urlProductId}
+        productName={urlProductName}
+        returnUrl={returnUrl}
+        onClose={closeCreate}
+        onSaved={() => { load(1); loadPendingPOs(); closeCreate() }}
       />
 
       {/* Header */}
@@ -276,11 +362,25 @@ export default function GoodsReceiptsPage() {
             Lịch sử nhận hàng thực tế ({total} phiếu)
           </p>
         </div>
-        <button onClick={() => openCreate()}
-          className="px-4 py-2 rounded-lg text-sm text-white font-medium"
-          style={{ background: 'var(--primary-500)' }}>
-          + Nhập kho
-        </button>
+        <div className="flex items-center gap-2">
+          {/* Toggle "Của tôi" — chỉ hiện với Staff_Warehouse */}
+          {isWarehouseOnly && (
+            <button
+              onClick={() => setMyOnly(v => !v)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium border transition-all"
+              style={myOnly
+                ? { background: 'var(--primary-500)', borderColor: 'var(--primary-500)', color: '#fff' }
+                : { borderColor: 'var(--border)', color: 'var(--text-secondary)', background: 'transparent' }}>
+              <span className="icon text-sm">person</span>
+              Của tôi
+            </button>
+          )}
+          <button onClick={() => openCreate()}
+            className="px-4 py-2 rounded-lg text-sm text-white font-medium"
+            style={{ background: 'var(--primary-500)' }}>
+            + Nhập kho
+          </button>
+        </div>
       </div>
 
       {/* Phiếu đặt hàng đang chờ nhập */}
@@ -345,7 +445,7 @@ export default function GoodsReceiptsPage() {
           <table className="w-full text-sm">
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-elevated)' }}>
-                {['', 'Mã phiếu NK', 'Phiếu nhập hàng', 'Nhà cung cấp', 'Tổng SL', 'Tổng tiền', 'Thời gian'].map(h => (
+                {['', 'Mã phiếu NK', 'Phiếu nhập hàng', 'Nhà cung cấp', 'Người nhận', 'Tổng SL', 'Tổng tiền', 'Thời gian'].map(h => (
                   <th key={h} className="px-4 py-3 text-left text-xs font-medium"
                       style={{ color: 'var(--text-tertiary)' }}>{h}</th>
                 ))}
@@ -381,6 +481,12 @@ export default function GoodsReceiptsPage() {
                       <td className="px-4 py-3 text-sm" style={{ color: 'var(--text-primary)' }}>
                         {gr.supplierName}
                       </td>
+                      <td className="px-4 py-3 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                        <div className="flex items-center gap-1.5">
+                          <span className="icon text-sm" style={{ color: 'var(--text-tertiary)' }}>person</span>
+                          {gr.createdByName ?? '—'}
+                        </div>
+                      </td>
                       <td className="px-4 py-3 tabular-nums text-sm font-medium"
                           style={{ color: 'var(--text-primary)' }}>
                         {gr.totalQuantity}
@@ -400,7 +506,7 @@ export default function GoodsReceiptsPage() {
                             borderBottom: !isLast ? '1px solid var(--border)' : 'none',
                             background: 'var(--bg-elevated)',
                           }}>
-                        <td colSpan={7} className="px-8 py-3">
+                        <td colSpan={8} className="px-8 py-3">
                           {detailLoading === gr.goodsReceiptId ? (
                             <div className="text-xs py-2" style={{ color: 'var(--text-tertiary)' }}>Đang tải...</div>
                           ) : items.length === 0 ? (

@@ -199,11 +199,16 @@ public class InventoryDashboardController(
                 SELECT
                     p.product_id, p.product_name, p.sku, p.stock_quantity,
                     COALESCE(
-                        (SELECT ABS(SUM(t.quantity_change))::numeric / 30
-                         FROM public.inventory_transactions t
-                         WHERE t.product_id = p.product_id
-                           AND t.transaction_type IN ('POS_SALE','MARKETPLACE_IMPORT_SALE')
-                           AND t.created_at >= NOW() - INTERVAL '30 days'),
+                        (SELECT SUM(oi.quantity)::numeric /
+                            GREATEST(
+                                EXTRACT(EPOCH FROM (NOW() - MIN(o.order_date))) / 86400,
+                                1
+                            )
+                         FROM public.order_items oi
+                         JOIN public.orders o ON o.order_id = oi.order_id
+                         WHERE oi.product_id = p.product_id
+                           AND o.company_id = @cid::uuid
+                           AND o.status NOT IN ('CANCELLED', 'RETURNED')),
                         0
                     ) AS avg_daily_sales
                 FROM public.products p
@@ -266,14 +271,17 @@ public class InventoryDashboardController(
             await using var cmd = new NpgsqlCommand($"""
                 SELECT
                     p.product_id, p.product_name, p.sku, p.stock_quantity,
-                    COALESCE(ABS(SUM(t.quantity_change)), 0) AS total_sold
+                    COALESCE(
+                        (SELECT SUM(oi.quantity)
+                         FROM public.order_items oi
+                         JOIN public.orders o ON o.order_id = oi.order_id
+                         WHERE oi.product_id = p.product_id
+                           AND o.company_id = @cid::uuid
+                           AND o.status NOT IN ('CANCELLED', 'RETURNED')),
+                        0
+                    ) AS total_sold
                 FROM public.products p
-                LEFT JOIN public.inventory_transactions t
-                       ON t.product_id = p.product_id
-                      AND t.transaction_type IN ('POS_SALE','MARKETPLACE_IMPORT_SALE')
-                      AND t.created_at >= NOW() - INTERVAL '{days} days'
                 WHERE p.company_id = @cid::uuid AND p.is_active = TRUE
-                GROUP BY p.product_id, p.product_name, p.sku, p.stock_quantity
                 ORDER BY total_sold DESC
                 """, conn);
             cmd.Parameters.AddWithValue("cid", Cid);
@@ -339,16 +347,31 @@ public class InventoryDashboardController(
                 SELECT
                     s.supplier_id,
                     s.supplier_name,
-                    COUNT(DISTINCT po.purchase_order_id)  AS total_pos,
-                    COALESCE(SUM(gri.received_quantity), 0) AS total_received_qty,
-                    COALESCE(SUM(gri.total_price), 0)       AS total_received_amount,
-                    MAX(gr.created_at)                       AS last_receipt_date,
-                    CASE
-                        WHEN SUM(poi.quantity) > 0
-                        THEN ROUND(
-                            COALESCE(SUM(gri.received_quantity), 0)::numeric / SUM(poi.quantity), 4)
-                        ELSE NULL
-                    END AS fulfillment_rate
+                    -- PO breakdown
+                    COUNT(DISTINCT po.purchase_order_id)                                                               AS total_pos,
+                    COUNT(DISTINCT po.purchase_order_id) FILTER (WHERE po.status = 'RECEIVED')                         AS po_received,
+                    COUNT(DISTINCT po.purchase_order_id) FILTER (WHERE po.status IN ('APPROVED','PARTIALLY_RECEIVED')) AS po_pending,
+                    COUNT(DISTINCT po.purchase_order_id) FILTER (WHERE po.status = 'CANCELLED')                        AS po_cancelled,
+                    -- Số lượng và giá trị
+                    COALESCE(SUM(poi.received_quantity), 0)                          AS total_received_qty,
+                    COALESCE(SUM(poi.received_quantity * poi.import_price), 0)       AS total_received_amount,
+                    MAX(gr.created_at)                                               AS last_receipt_date,
+                    -- Fill Rate (chuẩn): SL thực nhận / SL đặt hàng
+                    CASE WHEN SUM(poi.quantity) > 0
+                         THEN ROUND(SUM(poi.received_quantity)::numeric / SUM(poi.quantity), 4)
+                         ELSE NULL END                                               AS fill_rate,
+                    -- Lead Time thực tế (ngày từ tạo PO đến nhận hàng)
+                    ROUND(AVG(EXTRACT(EPOCH FROM (gr.created_at - po.created_at)) / 86400)::numeric, 1)
+                                                                                     AS avg_lead_days,
+                    -- SLA (ngày hẹn - ngày tạo PO)
+                    ROUND(AVG(po.expected_delivery_date - po.created_at::date)::numeric, 0)
+                                                                                     AS sla_days,
+                    -- On-Time Rate: phiếu nhập kho trước hoặc đúng ngày hẹn
+                    CASE WHEN COUNT(gr.goods_receipt_id) > 0
+                         THEN ROUND(
+                             COUNT(gr.goods_receipt_id) FILTER (WHERE gr.created_at::date <= po.expected_delivery_date)::numeric
+                             / COUNT(gr.goods_receipt_id), 4)
+                         ELSE NULL END                                               AS on_time_rate
                 FROM public.suppliers s
                 LEFT JOIN public.purchase_orders po
                        ON po.supplier_id = s.supplier_id AND po.company_id = @cid::uuid
@@ -356,11 +379,9 @@ public class InventoryDashboardController(
                        ON poi.purchase_order_id = po.purchase_order_id
                 LEFT JOIN public.goods_receipts gr
                        ON gr.purchase_order_id = po.purchase_order_id
-                LEFT JOIN public.goods_receipt_items gri
-                       ON gri.goods_receipt_id = gr.goods_receipt_id
                 WHERE s.company_id = @cid::uuid AND s.is_active = TRUE
                 GROUP BY s.supplier_id, s.supplier_name
-                ORDER BY total_received_amount DESC NULLS LAST, s.supplier_name
+                ORDER BY on_time_rate DESC NULLS LAST, fill_rate DESC NULLS LAST
                 """, conn);
             cmd.Parameters.AddWithValue("cid", Cid);
 
@@ -372,10 +393,16 @@ public class InventoryDashboardController(
                     supplierId            = r.GetInt32(0),
                     supplierName          = r.GetString(1),
                     totalPurchaseOrders   = r.GetInt64(2),
-                    totalReceivedQuantity = r.GetInt64(3),
-                    totalReceivedAmount   = r.GetDecimal(4),
-                    lastReceiptDate       = r.IsDBNull(5) ? (DateTime?)null : r.GetDateTime(5),
-                    fulfillmentRate       = r.IsDBNull(6) ? (decimal?)null : r.GetDecimal(6),
+                    poReceived            = r.GetInt64(3),
+                    poPending             = r.GetInt64(4),
+                    poCancelled           = r.GetInt64(5),
+                    totalReceivedQuantity = r.GetInt64(6),
+                    totalReceivedAmount   = r.GetDecimal(7),
+                    lastReceiptDate       = r.IsDBNull(8) ? (DateTime?)null : r.GetDateTime(8),
+                    fillRate              = r.IsDBNull(9)  ? (decimal?)null : r.GetDecimal(9),
+                    avgLeadDays           = r.IsDBNull(10) ? (decimal?)null : r.GetDecimal(10),
+                    slaDays               = r.IsDBNull(11) ? (decimal?)null : r.GetDecimal(11),
+                    onTimeRate            = r.IsDBNull(12) ? (decimal?)null : r.GetDecimal(12),
                 });
 
             return Ok(items);
@@ -410,11 +437,16 @@ public class InventoryDashboardController(
                     p.sku,
                     p.stock_quantity,
                     COALESCE(
-                        (SELECT ABS(SUM(t.quantity_change))::numeric / 30
-                         FROM public.inventory_transactions t
-                         WHERE t.product_id = p.product_id
-                           AND t.transaction_type IN ('POS_SALE','MARKETPLACE_IMPORT_SALE')
-                           AND t.created_at >= NOW() - INTERVAL '30 days'),
+                        (SELECT SUM(oi.quantity)::numeric /
+                            GREATEST(
+                                EXTRACT(EPOCH FROM (NOW() - MIN(o.order_date))) / 86400,
+                                1
+                            )
+                         FROM public.order_items oi
+                         JOIN public.orders o ON o.order_id = oi.order_id
+                         WHERE oi.product_id = p.product_id
+                           AND o.company_id = @cid::uuid
+                           AND o.status NOT IN ('CANCELLED', 'RETURNED')),
                         0
                     ) AS avg_daily_sales,
                     (SELECT sup.supplier_name

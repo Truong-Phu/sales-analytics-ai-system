@@ -85,7 +85,7 @@ def get_metrics() -> dict:
         _load_model()
     except FileNotFoundError:
         return {}
-    keys = ["mae", "rmse", "mape_pct", "cv_mape_pct",
+    keys = ["mae", "rmse", "mape_pct", "smape_pct", "cv_mape_pct",
             "train_from", "train_to", "train_rows",
             "data_source", "seasonality_mode"]
     return {k: _metadata[k] for k in keys if k in _metadata}

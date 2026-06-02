@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useLocation } from 'react-router-dom'
 import MockToast from '../../components/ui/MockToast'
 import { getInventoryIntelligence } from '../../api/aiApi'
 import api from '../../api/axios'
@@ -15,37 +15,28 @@ const STATUS_CONFIG = {
 
 export default function InventoryPage() {
   const navigate = useNavigate()
-  const [data,         setData]         = useState(null)
-  const [loading,      setLoading]      = useState(true)
-  const [isMock,       setIsMock]       = useState(false)
-  const [filter,       setFilter]       = useState('ALL')
-  const [days,         setDays]         = useState(30)
-  const [expandedIds,  setExpandedIds]  = useState(new Set())
-  const [varCache,     setVarCache]     = useState({})
-  const [varLoading,   setVarLoading]   = useState(new Set())
+  const location = useLocation()
+  const [data,        setData]       = useState(null)
+  const [loading,     setLoading]    = useState(true)
+  const [isMock,      setIsMock]     = useState(false)
+  const [filter,      setFilter]     = useState('ALL')
+  const [expandedIds, setExpandedIds]= useState(new Set())
+  const [varCache,    setVarCache]   = useState({})
+  const [varLoading,  setVarLoading] = useState(new Set())
 
   const load = async () => {
     setLoading(true)
     try {
-      const res = await getInventoryIntelligence({ days })
+      const res = await getInventoryIntelligence({ days: 30 })
       setData(res)
       setIsMock(res.is_mock ?? false)
     } catch {
-      setData({
-        total_products: 4, critical_count: 1, warning_count: 1, ok_count: 1, overstock_count: 1,
-        analysis_days: 30, is_mock: true, note: 'Đang dùng dữ liệu mẫu',
-        items: [
-          { product_id:'P001', product_name:'Áo thun nam cổ tròn',  current_stock:12, avg_daily_sales:3.2, days_until_stockout:3.8,   status:'CRITICAL',  reorder_qty:86,  reorder_urgency:'IMMEDIATE', message:'Còn 4 ngày hết hàng – Đặt ngay 86 đơn vị!' },
-          { product_id:'P002', product_name:'Váy hoa mùa hè',       current_stock:28, avg_daily_sales:2.1, days_until_stockout:13.3,  status:'WARNING',   reorder_qty:35,  reorder_urgency:'SOON',      message:'Sắp hết trong 13 ngày – Lên kế hoạch đặt thêm 35 đơn vị' },
-          { product_id:'P003', product_name:'Giày sneaker trắng',   current_stock:85, avg_daily_sales:1.5, days_until_stockout:56.7,  status:'OK',        reorder_qty:0,   reorder_urgency:'LATER',     message:'Tình trạng bình thường (57 ngày còn hàng)' },
-          { product_id:'P004', product_name:'Khẩu trang vải',       current_stock:340,avg_daily_sales:0.8, days_until_stockout:425.0, status:'OVERSTOCK', reorder_qty:0,   reorder_urgency:'NONE',      message:'Tồn kho nhiều – Xem xét khuyến mãi để giải phóng hàng' },
-        ],
-      })
-      setIsMock(true)
+      setData(null)
+      setIsMock(false)
     } finally { setLoading(false) }
   }
 
-  useEffect(() => { load() }, [days])
+  useEffect(() => { load() }, [])
 
   const toggleVariations = async (productId) => {
     setExpandedIds(prev => {
@@ -58,7 +49,7 @@ export default function InventoryPage() {
     setVarLoading(prev => new Set(prev).add(productId))
     try {
       const r = await api.get(`/api/products/${productId}/variations`)
-      setVarCache(c => ({ ...c, [productId]: r.data ?? [] }))
+      setVarCache(c => ({ ...c, [productId]: r.data?.data ?? r.data ?? [] }))
     } catch {
       setVarCache(c => ({ ...c, [productId]: [] }))
     } finally {
@@ -79,18 +70,15 @@ export default function InventoryPage() {
           <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>Dự báo ngày hết hàng và gợi ý đặt thêm</p>
         </div>
         <div className="flex items-center gap-2">
+          <span className="text-xs px-2 py-1 rounded-md"
+            style={{ background: 'var(--bg-elevated)', color: 'var(--text-tertiary)', border: '1px solid var(--border)' }}>
+            Tốc độ bán 30 ngày
+          </span>
           <Link to="/inventory/dashboard"
             className="text-xs px-3 py-1.5 rounded-lg border transition-colors"
             style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>
             Dashboard vận hành →
           </Link>
-          <select value={days} onChange={e => setDays(+e.target.value)} className="linput text-sm" style={{ width: 120 }}>
-          <option value={7}>7 ngày</option>
-          <option value={14}>14 ngày</option>
-          <option value={30}>30 ngày</option>
-          <option value={60}>60 ngày</option>
-          <option value={90}>90 ngày</option>
-        </select>
         </div>
       </div>
 
@@ -98,10 +86,10 @@ export default function InventoryPage() {
       {data && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {[
-            { label: '⛔ Hết / Sắp hết', value: data.critical_count + data.warning_count, color: '#EF4444' },
-            { label: '🔴 Khẩn cấp',       value: data.critical_count,  color: '#EF4444' },
-            { label: '🟡 Sắp hết',         value: data.warning_count,   color: '#F59E0B' },
-            { label: '🔵 Dư hàng',         value: data.overstock_count, color: '#3B82F6' },
+            { label: '🔴 Khẩn cấp',  value: data.critical_count,  color: '#EF4444' },
+            { label: '🟡 Sắp hết',   value: data.warning_count,   color: '#F59E0B' },
+            { label: '🟢 Bình thường', value: data.ok_count,       color: '#22C55E' },
+            { label: '🔵 Dư hàng',   value: data.overstock_count, color: '#3B82F6' },
           ].map(k => (
             <div key={k.label} className="lcard p-4">
               <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{k.label}</div>
@@ -153,8 +141,8 @@ export default function InventoryPage() {
                     <div className="flex items-center gap-4 text-right text-sm shrink-0">
                       {[
                         { label: 'Tồn kho', value: item.current_stock, colored: true },
-                        { label: 'Bán/ngày', value: item.avg_daily_sales },
-                        { label: 'Còn lại', value: item.days_until_stockout >= 999 ? '∞' : `${item.days_until_stockout}d`, colored: true },
+                        { label: 'Bán/ngày', value: item.avg_daily_sales > 0 ? Number(item.avg_daily_sales).toFixed(1) : '—' },
+                        { label: 'Còn lại', value: item.current_stock === 0 ? 'Hết hàng' : item.days_until_stockout >= 999 ? '∞' : `${Math.round(item.days_until_stockout)}d`, colored: true },
                         ...(item.reorder_qty > 0 ? [{ label: 'Cần đặt', value: item.reorder_qty, special: '#F97316' }] : []),
                       ].map((col, ci) => (
                         <div key={ci}>
@@ -165,21 +153,12 @@ export default function InventoryPage() {
                         </div>
                       ))}
                       {item.reorder_qty > 0 && (
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <button
-                            onClick={() => navigate(`/stock-adjustments?productId=${item.product_id}`)}
-                            className="text-xs px-3 py-1.5 rounded-lg font-semibold whitespace-nowrap flex items-center gap-1"
-                            style={{ background: 'rgba(34,197,94,0.12)', color: '#16A34A', border: '1px solid rgba(34,197,94,0.3)' }}>
-                            <span style={{ fontSize: 12 }}>↑</span> Nhập kho
-                          </button>
-                          <button
-                            onClick={() => navigate(`/purchase-orders?productId=${item.product_id}&productName=${encodeURIComponent(item.product_name)}`)}
-                            className="text-xs px-2 py-1.5 rounded-lg whitespace-nowrap"
-                            style={{ background: 'transparent', color: 'var(--text-tertiary)', border: '1px solid var(--border)' }}
-                            title="Tạo phiếu đặt hàng nhà cung cấp">
-                            Đặt hàng NCC
-                          </button>
-                        </div>
+                        <button
+                          onClick={() => navigate(`/goods-receipts?action=create&productId=${item.product_id}&productName=${encodeURIComponent(item.product_name)}&returnUrl=${encodeURIComponent(location.pathname)}`)}
+                          className="text-xs px-3 py-1.5 rounded-lg font-semibold whitespace-nowrap flex items-center gap-1"
+                          style={{ background: 'rgba(34,197,94,0.12)', color: '#16A34A', border: '1px solid rgba(34,197,94,0.3)' }}>
+                          <span style={{ fontSize: 12 }}>↑</span> Nhập kho
+                        </button>
                       )}
                       {!isMock && (
                         <button

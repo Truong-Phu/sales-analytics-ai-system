@@ -4,7 +4,12 @@ from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
+import json
+from pathlib import Path
+
 from services.prophet_service import forecast_revenue, get_model_info, get_metrics, get_actual_revenue
+
+_COMPARISON_PATH = Path(__file__).resolve().parents[1] / "models" / "comparison_metrics.json"
 
 router = APIRouter(prefix="/forecast", tags=["Forecast"])
 
@@ -86,3 +91,18 @@ def forecast_metrics():
         return get_metrics()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Lỗi tính metrics: {e}")
+
+
+@router.get("/model-comparison", summary="So sánh các model dự báo")
+def model_comparison():
+    """
+    Trả về kết quả so sánh Prophet vs Holt-Winters vs LightGBM.
+    Dữ liệu từ file comparison_metrics.json (tạo bởi train_compare.py).
+    """
+    if not _COMPARISON_PATH.exists():
+        raise HTTPException(
+            status_code=503,
+            detail="Chưa có dữ liệu so sánh. Chạy train_compare.py để tạo.",
+        )
+    with open(_COMPARISON_PATH, encoding="utf-8") as f:
+        return json.load(f)

@@ -50,6 +50,10 @@ public class AiProxyService
     public async Task<object?> GetForecastMetricsAsync()
         => await GetJsonAsync("/forecast/metrics");
 
+    /// <summary>So sánh Prophet vs Holt-Winters vs LightGBM.</summary>
+    public async Task<object?> GetModelComparisonAsync()
+        => await GetJsonAsync("/forecast/model-comparison");
+
     /// <summary>
     /// Forward POST /recommendation lên FastAPI AI Service.
     /// Payload: { question, language, context?, sources? }

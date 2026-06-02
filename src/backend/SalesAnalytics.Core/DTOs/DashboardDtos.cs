@@ -25,8 +25,10 @@ public record RevenueByChannel(
     decimal  Revenue,
     int      Orders,
     decimal  RevenuePct,
-    decimal  AdSpend = 0,          // Chi phí QC từ ad_spend_monthly
-    decimal  Roas    = 0           // Revenue / AdSpend (0 nếu chưa nhập chi phí)
+    decimal  AdSpend    = 0,   // Chi phí QC từ ad_spend_monthly
+    decimal  Roas       = 0,   // Revenue / AdSpend
+    decimal  ReturnRate = 0,   // % đơn hoàn hàng (thực từ OLTP)
+    decimal  CancelRate = 0    // % đơn hủy (thực từ OLTP)
 );
 
 public record TopProduct(

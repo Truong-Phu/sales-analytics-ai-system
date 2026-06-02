@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { getProfitOverview, getExpensesSummary } from '../../api/financeApi'
+import DateRangeFilter from '../../components/ui/DateRangeFilter'
 
 function fmtVND(v) {
   if (v == null) return '—'
@@ -125,16 +126,7 @@ export default function PnLPage() {
             Profit &amp; Loss — Doanh thu → COGS → Lợi nhuận gộp → Operating Profit → Business Net Profit
           </p>
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <input type="date" value={from} max={to}
-                 onChange={e => setFrom(e.target.value)} className="linput text-sm" style={{ width: 140 }} />
-          <span style={{ color: 'var(--text-tertiary)' }}>—</span>
-          <input type="date" value={to} min={from} max={today()}
-                 onChange={e => setTo(e.target.value)} className="linput text-sm" style={{ width: 140 }} />
-          <button onClick={load} disabled={loading} className="lbtn lbtn-secondary text-sm !h-9">
-            {loading ? 'Đang tải...' : <span className="icon icon-sm">refresh</span>}
-          </button>
-        </div>
+        <DateRangeFilter from={from} to={to} onChange={(f, t) => { setFrom(f); setTo(t) }} />
       </div>
 
       {/* Banners */}

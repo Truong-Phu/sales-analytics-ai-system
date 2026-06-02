@@ -223,25 +223,29 @@ def _analyze_channel_performance() -> List[Recommendation]:
         if df.empty:
             return recs
 
+        _DISPLAY = {"shopee": "Shopee", "tiktok": "TikTok Shop", "lazada": "Lazada",
+                    "facebook": "Facebook", "website": "Website"}
         total_revenue = df["revenue"].sum()
         for _, row in df.iterrows():
-            pct = row["revenue"] / total_revenue * 100 if total_revenue else 0
+            pct  = row["revenue"] / total_revenue * 100 if total_revenue else 0
+            ch   = row["channel_name"]
+            name = _DISPLAY.get(ch.lower(), ch.title())
             # Kênh chiếm < 10% doanh thu
             if pct < 10:
                 recs.append(Recommendation(
                     priority="MEDIUM",
                     category="CHANNEL",
-                    title=f"Kênh {row['channel_name']} đang yếu",
-                    detail=f"Kênh {row['channel_name']} chỉ chiếm {pct:.1f}% doanh thu 30 ngày qua.",
-                    action=f"Xem xét tăng ngân sách quảng cáo hoặc chạy flash sale trên {row['channel_name']}.",
+                    title=f"Kênh {name} đang yếu",
+                    detail=f"Kênh {name} chỉ chiếm {pct:.1f}% doanh thu 30 ngày qua.",
+                    action=f"Xem xét tăng ngân sách quảng cáo hoặc chạy flash sale trên {name}.",
                 ))
             # Kênh có margin thấp
             if row["avg_margin"] and row["avg_margin"] < 10:
                 recs.append(Recommendation(
                     priority="HIGH",
                     category="REVENUE",
-                    title=f"Biên lợi nhuận thấp trên {row['channel_name']}",
-                    detail=f"Biên lợi nhuận TB chỉ {row['avg_margin']:.1f}% trên kênh {row['channel_name']}.",
+                    title=f"Biên lợi nhuận thấp trên {name}",
+                    detail=f"Biên lợi nhuận TB chỉ {row['avg_margin']:.1f}% trên kênh {name}.",
                     action="Rà soát chính sách giảm giá và phí vận chuyển, tăng giá bán hoặc giảm chi phí.",
                 ))
     except Exception:

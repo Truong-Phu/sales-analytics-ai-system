@@ -108,6 +108,7 @@ def trigger_oltp_to_dw(req: EtlRequest = EtlRequest()):
         "duration_s":   duration,
         "total_orders": result.get("total_orders", 0),
         "inserted":     result.get("inserted", 0),
+        "updated":      result.get("updated", 0),
         "skipped":      result.get("skipped", 0),
         "channel":      req.channel or "all",
     }

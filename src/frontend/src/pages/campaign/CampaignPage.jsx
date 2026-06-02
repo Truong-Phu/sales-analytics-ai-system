@@ -34,13 +34,13 @@ export default function CampaignPage() {
   return (
     <div className="space-y-5">
       <MockToast show={isMock} />
-      {!data && !loading && <AiEmptyState title="Chưa đủ dữ liệu lịch chiến dịch" />}
-
       {/* Header */}
       <div>
         <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Lịch Chiến dịch Thông minh</h1>
         <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>Gợi ý thời điểm tốt nhất để chạy marketing dựa trên seasonal analysis</p>
       </div>
+
+      {!data && !loading && <AiEmptyState title="Chưa đủ dữ liệu lịch chiến dịch" />}
 
       {loading ? (
         <div className="lcard p-10 flex items-center justify-center">

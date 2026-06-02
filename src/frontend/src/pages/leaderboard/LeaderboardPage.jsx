@@ -3,59 +3,133 @@ import AiEmptyState from '../../components/ui/AiEmptyState'
 import { getLeaderboard } from '../../api/aiApi'
 
 const CATEGORIES = [
-  { value: 'product',  label: 'Sản phẩm',   icon: '📦' },
-  { value: 'customer', label: 'Khách hàng',  icon: '👑' },
-  { value: 'channel',  label: 'Kênh bán',    icon: '🏪' },
-  { value: 'staff',    label: 'Nhân viên',   icon: '🏆' },
+  { value: 'product',  label: 'Sản phẩm',  icon: '📦' },
+  { value: 'customer', label: 'Khách hàng', icon: '👑' },
+  { value: 'channel',  label: 'Kênh bán',   icon: '🏪' },
+  { value: 'staff',    label: 'Nhân viên',  icon: '🏆' },
+]
+
+// Sub-tabs chỉ hiện khi category = 'staff'
+const STAFF_SUBTABS = [
+  { value: 'staff',           label: 'Bán hàng', icon: 'storefront',   unit: 'đơn offline' },
+  { value: 'staff_warehouse', label: 'Kho',       icon: 'warehouse',    unit: 'phiếu nhập'  },
+  { value: 'staff_marketing', label: 'Marketing', icon: 'campaign',     unit: 'tháng chi phí' },
+]
+
+const TIME_FILTERS = [
+  { value: 'all',        label: 'Tất cả' },
+  { value: 'this_month', label: 'Tháng này' },
+  { value: 'last_month', label: 'Tháng trước' },
+  { value: 'days_30',    label: '30 ngày' },
+  { value: 'days_90',    label: '90 ngày' },
+  { value: 'custom',     label: 'Tùy chỉnh' },
 ]
 
 const TREND_ICON  = { UP: '↑', DOWN: '↓', STABLE: '→' }
 const TREND_COLOR = { UP: '#22C55E', DOWN: '#EF4444', STABLE: 'var(--text-tertiary)' }
 
+function buildApiParams(mode, customStart, customEnd, category) {
+  const today    = new Date()
+  const tomorrow = new Date(today.getTime() + 86400000).toISOString().split('T')[0]
+  const base     = { category, top_n: 10 }
+  switch (mode) {
+    case 'all':
+      return { ...base, start_date: '2020-01-01', end_date: tomorrow }
+    case 'this_month': {
+      const start = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0]
+      return { ...base, start_date: start, end_date: tomorrow }
+    }
+    case 'last_month': {
+      const firstThis = new Date(today.getFullYear(), today.getMonth(), 1)
+      const firstLast = new Date(today.getFullYear(), today.getMonth() - 1, 1)
+      return { ...base, start_date: firstLast.toISOString().split('T')[0], end_date: firstThis.toISOString().split('T')[0] }
+    }
+    case 'days_90':
+      return { ...base, days: 90 }
+    case 'custom': {
+      if (!customStart || !customEnd) return { ...base, days: 30 }
+      const endExcl = new Date(new Date(customEnd).getTime() + 86400000).toISOString().split('T')[0]
+      return { ...base, start_date: customStart, end_date: endExcl }
+    }
+    default: // days_30
+      return { ...base, days: 30 }
+  }
+}
+
 export default function LeaderboardPage() {
-  const [data,     setData]     = useState(null)
-  const [loading,  setLoading]  = useState(true)
-  const [category, setCategory] = useState('product')
-  const [days,     setDays]     = useState(30)
+  const [data,        setData]        = useState(null)
+  const [loading,     setLoading]     = useState(true)
+  const [category,    setCategory]    = useState('product')
+  const [staffTab,    setStaffTab]    = useState('staff')   // sub-tab khi category=staff
+  const [timeMode,    setTimeMode]    = useState('days_30')
+  const [customStart, setCustomStart] = useState('')
+  const [customEnd,   setCustomEnd]   = useState('')
+
+  // Category thực sự gửi lên API
+  const apiCategory = category === 'staff' ? staffTab : category
+
+  const activeSubtab = STAFF_SUBTABS.find(t => t.value === staffTab) ?? STAFF_SUBTABS[0]
 
   const load = async () => {
+    if (timeMode === 'custom' && (!customStart || !customEnd)) return
     setLoading(true)
     try {
-      const res = await getLeaderboard({ category, days, top_n: 10 })
+      const params = buildApiParams(timeMode, customStart, customEnd, apiCategory)
+      const res = await getLeaderboard(params)
       setData(res)
     } catch {
       setData(null)
     } finally { setLoading(false) }
   }
 
-  useEffect(() => { load() }, [category, days])
+  useEffect(() => { load() }, [apiCategory, timeMode, customStart, customEnd])
 
   const hasData = data && (data.entries ?? []).length > 0
 
+  // Label đơn vị đếm theo loại leaderboard
+  const orderUnit = category !== 'staff' ? 'đơn'
+    : activeSubtab.unit
+
   return (
     <div className="space-y-5">
-      {!loading && !hasData && (
-        <AiEmptyState
-          title="Chưa đủ dữ liệu bảng xếp hạng"
-          desc={`Cần có đơn hàng đã giao thành công trong ${days} ngày gần nhất để xếp hạng theo danh mục "${CATEGORIES.find(c => c.value === category)?.label ?? category}". Thử chọn khoảng thời gian dài hơn.`}
-        />
-      )}
-
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Bảng Xếp hạng Hiệu suất</h1>
           <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>Top performers – so sánh với kỳ trước</p>
         </div>
-        <select value={days} onChange={e => setDays(+e.target.value)} className="linput text-sm" style={{ width: 120 }}>
-          {[7,14,30,90].map(d => <option key={d} value={d}>{d} ngày</option>)}
-        </select>
+        {/* Time filter pills */}
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {TIME_FILTERS.map(f => (
+            <button key={f.value} onClick={() => setTimeMode(f.value)}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium border transition-all"
+              style={timeMode === f.value
+                ? { background: 'var(--primary-500)', borderColor: 'var(--primary-500)', color: '#fff' }
+                : { borderColor: 'var(--border)', color: 'var(--text-secondary)', background: 'transparent' }}>
+              {f.label}
+            </button>
+          ))}
+        </div>
       </div>
+
+      {/* Custom date range */}
+      {timeMode === 'custom' && (
+        <div className="lcard p-4 flex items-center gap-3 flex-wrap">
+          <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>Từ</span>
+          <input type="date" value={customStart} onChange={e => setCustomStart(e.target.value)}
+            className="linput text-sm" style={{ width: 150 }} />
+          <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>đến</span>
+          <input type="date" value={customEnd} onChange={e => setCustomEnd(e.target.value)}
+            max={new Date().toISOString().split('T')[0]}
+            className="linput text-sm" style={{ width: 150 }} />
+        </div>
+      )}
 
       {/* Category tabs */}
       <div className="flex gap-2 flex-wrap">
         {CATEGORIES.map(c => (
-          <button key={c.value} onClick={() => setCategory(c.value)}
+          <button key={c.value}
+            onClick={() => { setCategory(c.value); if (c.value !== 'staff') setStaffTab('staff') }}
             className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium border transition-all"
             style={category === c.value
               ? { background: 'var(--primary-500)', borderColor: 'var(--primary-500)', color: '#fff' }
@@ -64,6 +138,26 @@ export default function LeaderboardPage() {
           </button>
         ))}
       </div>
+
+      {/* Staff sub-tabs — chỉ hiện khi category = staff */}
+      {category === 'staff' && (
+        <div className="flex gap-0 px-1"
+             style={{ borderBottom: '1px solid var(--border)' }}>
+          {STAFF_SUBTABS.map(t => (
+            <button key={t.value}
+              onClick={() => setStaffTab(t.value)}
+              className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium transition-all"
+              style={{
+                borderBottom: `2px solid ${staffTab === t.value ? 'var(--primary-500)' : 'transparent'}`,
+                color: staffTab === t.value ? 'var(--primary-500)' : 'var(--text-secondary)',
+                marginBottom: -1,
+              }}>
+              <span className="icon" style={{ fontSize: 16 }}>{t.icon}</span>
+              {t.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {loading ? (
         <div className="lcard p-12 flex items-center justify-center">
@@ -95,11 +189,10 @@ export default function LeaderboardPage() {
 
                 {/* Rank */}
                 <div className="w-8 text-center shrink-0">
-                  {entry.badge ? (
-                    <span className="text-2xl">{entry.badge}</span>
-                  ) : (
-                    <span className="font-bold text-lg" style={{ color: 'var(--text-tertiary)' }}>#{entry.rank}</span>
-                  )}
+                  {entry.badge
+                    ? <span className="text-2xl">{entry.badge}</span>
+                    : <span className="font-bold text-lg" style={{ color: 'var(--text-tertiary)' }}>#{entry.rank}</span>
+                  }
                 </div>
 
                 {/* Bar */}
@@ -112,7 +205,9 @@ export default function LeaderboardPage() {
                         background: 'var(--primary-500)',
                       }} />
                     </div>
-                    <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{entry.orders} đơn</span>
+                    <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                      {entry.orders} {orderUnit}
+                    </span>
                   </div>
                 </div>
 
@@ -128,7 +223,20 @@ export default function LeaderboardPage() {
             ))}
           </div>
         </div>
-      ) : null}
+      ) : (
+        <AiEmptyState
+          title="Chưa đủ dữ liệu bảng xếp hạng"
+          desc={
+            category === 'staff' && staffTab === 'staff'
+              ? 'Chưa có đơn bán tại quầy trong kỳ này. Thử chọn khoảng thời gian rộng hơn.'
+              : category === 'staff' && staffTab === 'staff_warehouse'
+              ? 'Chưa có phiếu nhập kho trong kỳ này. Thử chọn khoảng thời gian rộng hơn.'
+              : category === 'staff' && staffTab === 'staff_marketing'
+              ? 'Chưa có chi phí quảng cáo được ghi nhận trong kỳ này.'
+              : `Không có dữ liệu trong kỳ đã chọn. Thử chọn khoảng thời gian khác.`
+          }
+        />
+      )}
     </div>
   )
 }

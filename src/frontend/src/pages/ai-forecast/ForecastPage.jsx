@@ -1,11 +1,11 @@
 ﻿import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
-  ComposedChart, Area, Line, ReferenceLine,
+  ComposedChart, Area, Line, ReferenceLine, Legend,
   ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid,
 } from 'recharts'
 import AiEmptyState from '../../components/ui/AiEmptyState'
-import { getForecast, getTrend, getForecastMetrics } from '../../api/aiApi'
+import { getForecast, getTrend, getForecastMetrics, getModelComparison } from '../../api/aiApi'
 
 const HORIZONS   = [7, 14, 30, 60, 90]
 const CHANNEL_KEYS = ['all', 'shopee', 'lazada', 'tiktok']
@@ -44,22 +44,25 @@ export default function ForecastPage() {
   const [trend,        setTrend]        = useState(null)
   const [metrics,      setMetrics]      = useState(null)
   const [loading,       setLoading]       = useState(false)
-  const [metricsIsMock, setMetricsIsMock] = useState(false)
+  const [metricsIsMock,   setMetricsIsMock]   = useState(false)
+  const [comparison,      setComparison]      = useState(null)
 
   const handleRun = async () => {
     setLoading(true)
     setMetricsIsMock(false)
     try {
       let metricsFallback = false
-      const [fc, tr, mt] = await Promise.all([
+      const [fc, tr, mt, cmp] = await Promise.all([
         getForecast(horizon, channel),
         getTrend(30, channel),
         getForecastMetrics().catch(() => { metricsFallback = true; return null }),
+        getModelComparison().catch(() => null),
       ])
       setResult(fc)
       setTrend(tr)
       setMetrics(mt)
       setMetricsIsMock(metricsFallback)
+      setComparison(cmp)
     } catch {
       setResult(null)
       setTrend(null)
@@ -94,8 +97,6 @@ export default function ForecastPage() {
 
   return (
     <div className="space-y-4">
-
-      {!result && !loading && <AiEmptyState title="Chưa có dữ liệu dự báo" />}
 
       <div className="flex flex-col md:flex-row gap-5">
 
@@ -327,6 +328,151 @@ export default function ForecastPage() {
           </div>
         </div>
       )}
+
+      {/* ── Bảng so sánh + chart + feature importance ── */}
+      {comparison?.models && (
+        <div className="lcard p-5 space-y-6">
+          {/* Header */}
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="icon text-base" style={{ color: 'var(--primary-500)' }}>compare_arrows</span>
+              <h2 className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
+                Đánh giá và so sánh mô hình dự báo
+              </h2>
+            </div>
+            <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+              Cùng tập dữ liệu · Train {comparison.train_period?.days} ngày
+              ({comparison.train_period?.from} → {comparison.train_period?.to})
+              · Test {comparison.test_period?.days} ngày
+              ({comparison.test_period?.from} → {comparison.test_period?.to})
+            </p>
+          </div>
+
+          {/* Bảng so sánh */}
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                  {['Mô hình', 'Loại', 'MAE (VNĐ)', 'RMSE (VNĐ)', 'MAPE', 'SMAPE'].map(h => (
+                    <th key={h} className="pb-2 text-left font-semibold text-xs"
+                        style={{ color: 'var(--text-secondary)' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {(() => {
+                  const models    = comparison.models
+                  const bestSmape = Math.min(...Object.values(models).map(m => m.smape_pct))
+                  const rows = [
+                    { key: 'Naive',        label: 'Naive',        type: 'Baseline',          dim: true },
+                    { key: 'MA-7',         label: 'MA-7',         type: 'Baseline',          dim: true },
+                    { key: 'Holt-Winters', label: 'Holt-Winters', type: 'Thống kê cổ điển',  dim: false },
+                    { key: 'LightGBM',     label: 'LightGBM',     type: 'Machine Learning',  dim: false },
+                    { key: 'Prophet',      label: 'Prophet',      type: 'Time-series AI',    dim: false },
+                  ]
+                  return rows.filter(r => models[r.key]).map(({ key, label, type, dim }) => {
+                    const m         = models[key]
+                    const isBest    = m.smape_pct === bestSmape
+                    const isProphet = key === 'Prophet'
+                    return (
+                      <tr key={key} style={{
+                        borderBottom: '1px solid var(--border)',
+                        background:   isProphet ? 'rgba(99,102,241,0.05)' : 'transparent',
+                        opacity:      dim ? 0.6 : 1,
+                      }}>
+                        <td className="py-2.5 pr-4">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-xs" style={{ color: 'var(--text-primary)' }}>{label}</span>
+                            {isProphet && <span className="lbadge lbadge-primary text-xs">Đang dùng</span>}
+                          </div>
+                        </td>
+                        <td className="py-2.5 pr-4 text-xs" style={{ color: 'var(--text-tertiary)' }}>{type}</td>
+                        <td className="py-2.5 pr-4 font-mono text-xs" style={{ color: 'var(--text-secondary)' }}>
+                          {m.mae != null ? (m.mae / 1_000_000).toFixed(2) + 'M' : '–'}
+                        </td>
+                        <td className="py-2.5 pr-4 font-mono text-xs" style={{ color: 'var(--text-secondary)' }}>
+                          {m.rmse != null ? (m.rmse / 1_000_000).toFixed(2) + 'M' : '–'}
+                        </td>
+                        <td className="py-2.5 pr-4 font-mono text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                          {m.mape_pct != null ? m.mape_pct + '%' : '–'}
+                        </td>
+                        <td className="py-2.5">
+                          <span className="font-mono text-sm font-bold" style={{
+                            color: isBest ? 'var(--accent-500)' : 'var(--text-primary)',
+                          }}>
+                            {m.smape_pct}%
+                          </span>
+                          {isBest && <span className="ml-1 text-xs" style={{ color: 'var(--accent-500)' }}>↑</span>}
+                        </td>
+                      </tr>
+                    )
+                  })
+                })()}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Chart Actual vs Predicted */}
+          {comparison.chart_data?.dates && (
+            <div>
+              <p className="text-xs font-semibold mb-2" style={{ color: 'var(--text-secondary)' }}>
+                Actual vs Predicted — tập test ({comparison.test_period?.days} ngày)
+              </p>
+              <ResponsiveContainer width="100%" height={220}>
+                <ComposedChart
+                  data={comparison.chart_data.dates.map((d, i) => ({
+                    date:         d.slice(5),
+                    actual:       comparison.chart_data.actual[i],
+                    holtwinters:  comparison.chart_data.predictions['Holt-Winters']?.[i],
+                    lightgbm:     comparison.chart_data.predictions['LightGBM']?.[i],
+                    prophet:      comparison.chart_data.predictions['Prophet']?.[i],
+                  }))}
+                  margin={{ top: 4, right: 8, left: 0, bottom: 0 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                  <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'var(--text-tertiary)' }}
+                         axisLine={false} tickLine={false} interval={19} />
+                  <YAxis tickFormatter={v => v >= 1e6 ? `${(v/1e6).toFixed(0)}M` : v}
+                         tick={{ fontSize: 10, fill: 'var(--text-tertiary)' }}
+                         axisLine={false} tickLine={false} width={44} />
+                  <Tooltip formatter={(v, n) => [fmtM(v), n]} />
+                  <Line type="monotone" dataKey="actual"      name="Actual"       stroke="#94a3b8" strokeWidth={1.5} dot={false} />
+                  <Line type="monotone" dataKey="holtwinters" name="Holt-Winters" stroke="#f59e0b" strokeWidth={1.5} dot={false} strokeDasharray="4 2" />
+                  <Line type="monotone" dataKey="lightgbm"    name="LightGBM"     stroke="#10b981" strokeWidth={1.5} dot={false} strokeDasharray="4 2" />
+                  <Line type="monotone" dataKey="prophet"     name="Prophet"      stroke="#6366f1" strokeWidth={2}   dot={false} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          {/* Feature importance LightGBM */}
+          {comparison.lgbm_feature_importance && (
+            <div>
+              <p className="text-xs font-semibold mb-2" style={{ color: 'var(--text-secondary)' }}>
+                Feature Importance — LightGBM (top 6)
+              </p>
+              <div className="space-y-1.5">
+                {Object.entries(comparison.lgbm_feature_importance).slice(0, 6).map(([feat, pct]) => (
+                  <div key={feat} className="flex items-center gap-2">
+                    <span className="text-xs w-24 shrink-0 font-mono" style={{ color: 'var(--text-secondary)' }}>{feat}</span>
+                    <div className="flex-1 rounded-full overflow-hidden" style={{ background: 'var(--bg-elevated)', height: 6 }}>
+                      <div style={{ width: `${pct}%`, height: '100%', background: 'var(--primary-500)', borderRadius: 9999 }} />
+                    </div>
+                    <span className="text-xs font-mono w-10 text-right" style={{ color: 'var(--text-tertiary)' }}>{pct}%</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Lý do chọn Prophet */}
+          <p className="text-xs p-3 rounded-xl" style={{ background: 'var(--bg-elevated)', color: 'var(--text-tertiary)' }}>
+            <strong style={{ color: 'var(--text-secondary)' }}>Lý do chọn Prophet:</strong>{' '}
+            {comparison.selection_reason}
+          </p>
+        </div>
+      )}
+
     </div>
   )
 }

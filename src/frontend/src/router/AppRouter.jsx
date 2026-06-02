@@ -65,7 +65,7 @@ const CampaignPage    = lazy(() => import('../pages/campaign/CampaignPage'))
 const LeaderboardPage = lazy(() => import('../pages/leaderboard/LeaderboardPage'))
 const NarrativePage   = lazy(() => import('../pages/narrative/NarrativePage'))
 const GeoPage         = lazy(() => import('../pages/geo/GeoPage'))
-const SupplierPage    = lazy(() => import('../pages/supplier/SupplierPage'))
+
 const PricePage       = lazy(() => import('../pages/price/PricePage'))
 const SentimentPage   = lazy(() => import('../pages/sentiment/SentimentPage'))
 const PosPage         = lazy(() => import('../pages/pos/PosPage'))
@@ -248,11 +248,13 @@ export default function AppRouter() {
         } />
         <Route path="/inventory/dashboard" element={
           <ProtectedRoute roles={['Owner', 'Manager', 'DataIT']}>
-            <Shell><InventoryDashboardPage /></Shell>
+            <PlanRoute minPlan="pro" feature="Tồn kho thông minh AI">
+              <Shell><InventoryDashboardPage /></Shell>
+            </PlanRoute>
           </ProtectedRoute>
         } />
         <Route path="/stock-adjustments" element={
-          <ProtectedRoute roles={['Owner', 'Manager']}>
+          <ProtectedRoute roles={['Owner', 'Manager', 'DataIT']}>
             <Shell><StockAdjustmentsPage /></Shell>
           </ProtectedRoute>
         } />
@@ -294,7 +296,9 @@ export default function AppRouter() {
         } />
         <Route path="/leaderboard" element={
           <ProtectedRoute roles={VIEWER_ROUTES}>
-            <Shell><LeaderboardPage /></Shell>
+            <PlanRoute minPlan="pro" feature="Bảng xếp hạng nhân viên">
+              <Shell><LeaderboardPage /></Shell>
+            </PlanRoute>
           </ProtectedRoute>
         } />
         <Route path="/narrative" element={
@@ -311,13 +315,7 @@ export default function AppRouter() {
             </PlanRoute>
           </ProtectedRoute>
         } />
-        <Route path="/supplier" element={
-          <ProtectedRoute roles={ANALYST_ROLES}>
-            <PlanRoute minPlan="pro" feature="Phân tích nhà cung cấp">
-              <Shell><SupplierPage /></Shell>
-            </PlanRoute>
-          </ProtectedRoute>
-        } />
+        {/* /supplier removed — supplier analytics covered by /inventory/dashboard */}
         <Route path="/price" element={
           <ProtectedRoute roles={ANALYST_ROLES}>
             <PlanRoute minPlan="pro" feature="Phân tích giá">
@@ -355,7 +353,9 @@ export default function AppRouter() {
         {/* Finance Module — tất cả routes /finance/* */}
         <Route path="/finance/profit" element={
           <ProtectedRoute roles={ANALYST_ROLES}>
-            <Shell><ProfitPage /></Shell>
+            <PlanRoute minPlan="pro" feature="Phân tích lợi nhuận nâng cao">
+              <Shell><ProfitPage /></Shell>
+            </PlanRoute>
           </ProtectedRoute>
         } />
         <Route path="/finance/ad-spend" element={
@@ -365,12 +365,16 @@ export default function AppRouter() {
         } />
         <Route path="/finance/operating-expenses" element={
           <ProtectedRoute roles={ANALYST_ROLES}>
-            <Shell><OperatingExpensesPage /></Shell>
+            <PlanRoute minPlan="pro" feature="Quản lý chi phí vận hành">
+              <Shell><OperatingExpensesPage /></Shell>
+            </PlanRoute>
           </ProtectedRoute>
         } />
         <Route path="/finance/pnl" element={
           <ProtectedRoute roles={ANALYST_ROLES}>
-            <Shell><PnLPage /></Shell>
+            <PlanRoute minPlan="pro" feature="Báo cáo P&L đầy đủ">
+              <Shell><PnLPage /></Shell>
+            </PlanRoute>
           </ProtectedRoute>
         } />
         <Route path="/finance/kpi-formulas" element={

@@ -72,8 +72,8 @@ def _oltp_params(channel: str = None, company_id: str = None) -> tuple[str, str,
     ch_filter  = ""
     cmp_filter = ""
     if channel:
-        ch_filter = "AND c.channel_name = %(channel)s"
-        params["channel"] = channel
+        ch_filter = "AND c.channel_name ILIKE %(channel)s"
+        params["channel"] = f"%{channel}%"
     if company_id:
         cmp_filter = "AND o.company_id = %(company_id)s"
         params["company_id"] = company_id
@@ -148,9 +148,9 @@ def load_revenue_series(channel: str = None, company_id: str = None) -> pd.DataF
     # Thử DW trước
     if _dw_available():
         try:
-            ch_filter = f"AND dc.channel_name = %(channel)s" if channel else ""
+            ch_filter = "AND dc.channel_name ILIKE %(channel)s" if channel else ""
             sql    = SQL_DW_DAILY_REVENUE.format(channel_filter=ch_filter)
-            params = {"channel": channel} if channel else None
+            params = {"channel": f"%{channel}%"} if channel else None
             df = query_df(sql, params)
             if not df.empty:
                 df["ds"] = pd.to_datetime(df["ds"])

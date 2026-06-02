@@ -3,12 +3,13 @@ import api from '../../api/axios'
 
 const TYPE_CFG = {
   POS_SALE:               { label: 'Bán POS',        bg: 'rgba(239,68,68,0.10)',   text: '#EF4444' },
+  SALE_OUT:               { label: 'Xuất bán',       bg: 'rgba(239,68,68,0.10)',   text: '#EF4444' },
   ORDER_CANCEL_REFUND:    { label: 'Hoàn kho',        bg: 'rgba(16,185,129,0.10)',  text: '#10B981' },
+  RETURN_REFUND:          { label: 'Hoàn trả',        bg: 'rgba(139,92,246,0.10)', text: '#7C3AED' },
   MARKETPLACE_IMPORT_SALE:{ label: 'Sàn thương mại', bg: 'rgba(245,158,11,0.10)',  text: '#F59E0B' },
   IMPORT_STOCK:           { label: 'Nhập kho',        bg: 'rgba(59,130,246,0.10)',  text: '#3B82F6' },
   MANUAL_ADJUST_UP:       { label: 'Điều chỉnh +',   bg: 'rgba(99,102,241,0.10)',  text: '#6366F1' },
   MANUAL_ADJUST_DOWN:     { label: 'Điều chỉnh -',   bg: 'rgba(249,115,22,0.10)',  text: '#F97316' },
-  RETURN_REFUND:          { label: 'Hoàn trả',        bg: 'rgba(139,92,246,0.10)', text: '#7C3AED' },
 }
 
 function TypeBadge({ type }) {

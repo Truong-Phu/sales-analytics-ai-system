@@ -3,6 +3,7 @@
 
 Jobs được đăng ký:
   - retrain_prophet    : CN 02:00 (Asia/Ho_Chi_Minh) — train lại Prophet nếu MAPE cải thiện
+  - retrain_churn      : T2 02:30 — retrain RandomForest churn model
   - update_anomaly     : hàng ngày 01:00 — tính lại Z-score cache
   - update_rfm         : T2 03:00 — cập nhật RFM segments cache
   - send_daily_kpi     : hàng ngày 08:00 — gửi email KPI tóm tắt cho Owner/Manager
@@ -22,6 +23,7 @@ from prophet import Prophet
 
 from services.anomaly_service import compute_and_cache_anomaly
 from services.db_service import load_revenue_series, query_df
+from services.churn_service import predict_churn
 
 logger = logging.getLogger("ai.scheduler")
 
@@ -426,6 +428,23 @@ scheduler.add_job(
     id="update_anomaly",
     replace_existing=True,
     misfire_grace_time=1800,
+)
+
+# T2 02:30 — retrain churn model (sau Prophet, trước RFM)
+def retrain_churn_job():
+    try:
+        logger.info("retrain_churn: bắt đầu")
+        predict_churn(retrain=True)
+        logger.info("retrain_churn: hoàn thành")
+    except Exception as e:
+        logger.error("retrain_churn lỗi: %s", e)
+
+scheduler.add_job(
+    retrain_churn_job,
+    CronTrigger(day_of_week="mon", hour=2, minute=30),
+    id="retrain_churn",
+    replace_existing=True,
+    misfire_grace_time=3600,
 )
 
 # T2 03:00 — cập nhật RFM segments (đầu tuần)

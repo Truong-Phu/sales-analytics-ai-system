@@ -29,13 +29,13 @@ export default function BasketPage() {
   return (
     <div className="space-y-5">
       <MockToast show={isMock} />
-      {!data && !loading && <AiEmptyState title="Chưa đủ dữ liệu phân tích sản phẩm hay mua chung" />}
-
       {/* Header */}
       <div>
         <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Phân tích sản phẩm hay mua chung</h1>
         <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>Market Basket Analysis – Thuật toán Apriori</p>
       </div>
+
+      {!data && !loading && <AiEmptyState title="Chưa đủ dữ liệu phân tích sản phẩm hay mua chung" />}
 
       {/* Params */}
       <div className="lcard p-4 flex gap-6 flex-wrap items-end">

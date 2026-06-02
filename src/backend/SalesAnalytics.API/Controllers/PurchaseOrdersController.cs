@@ -32,10 +32,11 @@ public class PurchaseOrdersController(
     [HttpGet]
     [Authorize(Roles = "Owner,Manager,Staff_Warehouse,DataIT,SuperAdmin")]
     public async Task<IActionResult> GetAll(
-        [FromQuery] string? status   = null,
-        [FromQuery] int?    supplier = null,
-        [FromQuery] int     page     = 1,
-        [FromQuery] int     pageSize = 20)
+        [FromQuery] string? status    = null,
+        [FromQuery] int?    supplier  = null,
+        [FromQuery] int?    productId = null,
+        [FromQuery] int     page      = 1,
+        [FromQuery] int     pageSize  = 20)
     {
         if (page     < 1) page     = 1;
         if (pageSize < 1 || pageSize > 100) pageSize = 20;
@@ -48,6 +49,7 @@ public class PurchaseOrdersController(
             var where = new List<string> { "po.company_id = @cid::uuid" };
             if (!string.IsNullOrWhiteSpace(status))  where.Add("po.status = @status");
             if (supplier.HasValue)                   where.Add("po.supplier_id = @sup");
+            if (productId.HasValue)                  where.Add("EXISTS (SELECT 1 FROM public.purchase_order_items poi2 WHERE poi2.purchase_order_id = po.purchase_order_id AND poi2.product_id = @productId)");
             var wc = "WHERE " + string.Join(" AND ", where);
 
             await using var cntCmd = new NpgsqlCommand(
@@ -55,6 +57,7 @@ public class PurchaseOrdersController(
             cntCmd.Parameters.AddWithValue("cid", tenant.CompanyId!.Value.ToString());
             if (!string.IsNullOrWhiteSpace(status)) cntCmd.Parameters.AddWithValue("status", status);
             if (supplier.HasValue)                  cntCmd.Parameters.AddWithValue("sup",    supplier.Value);
+            if (productId.HasValue)                 cntCmd.Parameters.AddWithValue("productId", productId.Value);
             var total = Convert.ToInt64(await cntCmd.ExecuteScalarAsync());
 
             await using var cmd = new NpgsqlCommand($"""
@@ -74,6 +77,7 @@ public class PurchaseOrdersController(
             cmd.Parameters.AddWithValue("cid", tenant.CompanyId!.Value.ToString());
             if (!string.IsNullOrWhiteSpace(status)) cmd.Parameters.AddWithValue("status", status);
             if (supplier.HasValue)                  cmd.Parameters.AddWithValue("sup",    supplier.Value);
+            if (productId.HasValue)                 cmd.Parameters.AddWithValue("productId", productId.Value);
             cmd.Parameters.AddWithValue("lim", pageSize);
             cmd.Parameters.AddWithValue("off", (page - 1) * pageSize);
 
@@ -581,12 +585,14 @@ public class PurchaseOrdersController(
 
     // ─────────────────────────────────────────────────────────────────────────
     // GET /api/purchase-orders/supplier-approve/{token}
-    // NCC click link trong email → duyệt phiếu → trả về HTML xác nhận
+    // NCC click link trong email → hiện form chọn ngày giao + xác nhận
+    // POST /api/purchase-orders/supplier-approve/{token}
+    // NCC submit form → lưu expected_delivery_date + APPROVED
     // AllowAnonymous vì NCC không có tài khoản trong hệ thống
     // ─────────────────────────────────────────────────────────────────────────
     [HttpGet("supplier-approve/{token:guid}")]
     [AllowAnonymous]
-    public async Task<IActionResult> SupplierApprove(Guid token)
+    public async Task<IActionResult> SupplierApproveForm(Guid token)
     {
         try
         {
@@ -595,7 +601,9 @@ public class PurchaseOrdersController(
 
             await using var chk = new NpgsqlCommand("""
                 SELECT po.purchase_order_id, po.status, po.purchase_code,
-                       s.supplier_name, c.name AS company_name
+                       s.supplier_name, c.name AS company_name,
+                       po.total_amount, po.created_at,
+                       po.expected_delivery_date
                 FROM public.purchase_orders po
                 JOIN public.suppliers s ON s.supplier_id = po.supplier_id
                 JOIN public.companies c ON c.id = po.company_id
@@ -612,27 +620,224 @@ public class PurchaseOrdersController(
             var poCode       = r.GetString(2);
             var supplierName = r.GetString(3);
             var companyName  = r.GetString(4);
+            var totalAmount  = r.GetDecimal(5);
+            var createdAt    = r.GetDateTime(6);
+            var existingDate = r.IsDBNull(7) ? (DateOnly?)null : DateOnly.FromDateTime(r.GetDateTime(7));
             await r.CloseAsync();
 
             if (status == "APPROVED")
-                return Content(HtmlResult("✅ Đã duyệt trước đó", $"Phiếu <strong>{poCode}</strong> đã được xác nhận trước đó. Cảm ơn {supplierName}!", true), "text/html");
+                return Content(HtmlResult("✅ Đã xác nhận", $"Phiếu <strong>{poCode}</strong> đã được xác nhận trước đó. Cảm ơn <strong>{supplierName}</strong>!", true), "text/html");
 
-            if (status != "PENDING")
-                return Content(HtmlResult("⚠️ Không thể duyệt", $"Phiếu <strong>{poCode}</strong> đang ở trạng thái {status}, không thể duyệt.", false), "text/html");
+            if (status is not ("PENDING" or "DRAFT"))
+                return Content(HtmlResult("⚠️ Không thể xác nhận", $"Phiếu <strong>{poCode}</strong> đang ở trạng thái {status}, không thể xác nhận.", false), "text/html");
 
-            // Duyệt phiếu + xóa token
+            // Lấy danh sách sản phẩm trong PO
+            await using var itemsCmd = new NpgsqlCommand("""
+                SELECT p.product_name, pv.sku, pv.attribute_color, pv.attribute_size,
+                       poi.quantity, poi.import_price
+                FROM public.purchase_order_items poi
+                JOIN public.products p ON p.product_id = poi.product_id
+                LEFT JOIN public.product_variations pv ON pv.id = poi.variation_id
+                WHERE poi.purchase_order_id = @id
+                ORDER BY poi.purchase_order_item_id
+                """, conn);
+            itemsCmd.Parameters.AddWithValue("id", poId);
+
+            var itemRows = new System.Text.StringBuilder();
+            await using var ir = await itemsCmd.ExecuteReaderAsync();
+            while (await ir.ReadAsync())
+            {
+                var name    = ir.GetString(0);
+                var sku     = ir.IsDBNull(1) ? "—" : ir.GetString(1);
+                var color   = ir.IsDBNull(2) ? "" : ir.GetString(2);
+                var size    = ir.IsDBNull(3) ? "" : ir.GetString(3);
+                var varInfo = string.Join(" · ", new[] { color, size }.Where(x => !string.IsNullOrEmpty(x)));
+                var qty     = ir.GetInt32(4);
+                var price   = ir.GetDecimal(5);
+                itemRows.Append($"""
+                    <tr>
+                      <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9">{name}
+                        {(string.IsNullOrEmpty(varInfo) ? "" : $"<span style='font-size:11px;color:#94a3b8;margin-left:6px'>{varInfo}</span>")}
+                      </td>
+                      <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;color:#64748b;font-size:12px">{sku}</td>
+                      <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;text-align:center;font-weight:600">{qty}</td>
+                      <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;text-align:right;color:#475569">{price.ToString("N0")}₫</td>
+                    </tr>
+                    """);
+            }
+
+            var minDate = DateTime.Now.AddDays(1).ToString("yyyy-MM-dd");
+            var defDate = existingDate?.ToString("yyyy-MM-dd") ?? DateTime.Now.AddDays(7).ToString("yyyy-MM-dd");
+            var postUrl = $"/api/purchase-orders/supplier-approve/{token}";
+
+            var html = $"""
+                <!DOCTYPE html>
+                <html lang="vi">
+                <head>
+                  <meta charset="UTF-8">
+                  <meta name="viewport" content="width=device-width,initial-scale=1">
+                  <title>Xác nhận đơn hàng {poCode}</title>
+                </head>
+                <body style="margin:0;padding:24px 16px;background:#f8fafc;font-family:'Segoe UI',Arial,sans-serif;min-height:100vh">
+                  <div style="max-width:640px;margin:0 auto">
+
+                    <!-- Header -->
+                    <div style="text-align:center;margin-bottom:24px">
+                      <div style="font-size:36px;margin-bottom:8px">📦</div>
+                      <h1 style="margin:0;font-size:20px;color:#0f172a">Xác nhận đơn đặt hàng</h1>
+                      <p style="margin:6px 0 0;color:#64748b;font-size:14px">
+                        <strong>{companyName}</strong> gửi đến <strong>{supplierName}</strong>
+                      </p>
+                    </div>
+
+                    <!-- PO info card -->
+                    <div style="background:#fff;border-radius:12px;padding:20px;margin-bottom:16px;box-shadow:0 1px 8px rgba(0,0,0,0.06)">
+                      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+                        <div>
+                          <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px">Mã phiếu</div>
+                          <div style="font-weight:700;font-size:17px;color:#0f172a;font-family:monospace">{poCode}</div>
+                        </div>
+                        <div style="text-align:right">
+                          <div style="font-size:11px;color:#94a3b8">Ngày đặt hàng</div>
+                          <div style="font-size:13px;color:#475569">{createdAt:dd/MM/yyyy}</div>
+                        </div>
+                      </div>
+
+                      <!-- Items table -->
+                      <table style="width:100%;border-collapse:collapse;font-size:13px">
+                        <thead>
+                          <tr style="background:#f8fafc">
+                            <th style="padding:8px 12px;text-align:left;font-size:11px;color:#94a3b8;font-weight:500">Sản phẩm</th>
+                            <th style="padding:8px 12px;text-align:left;font-size:11px;color:#94a3b8;font-weight:500">SKU</th>
+                            <th style="padding:8px 12px;text-align:center;font-size:11px;color:#94a3b8;font-weight:500">SL</th>
+                            <th style="padding:8px 12px;text-align:right;font-size:11px;color:#94a3b8;font-weight:500">Đơn giá</th>
+                          </tr>
+                        </thead>
+                        <tbody>{itemRows}</tbody>
+                      </table>
+
+                      <div style="margin-top:12px;padding-top:12px;border-top:2px solid #f1f5f9;display:flex;justify-content:flex-end">
+                        <span style="font-size:13px;color:#64748b;margin-right:12px">Tổng cộng:</span>
+                        <span style="font-weight:700;font-size:16px;color:#0f172a">{totalAmount.ToString("N0")}₫</span>
+                      </div>
+                    </div>
+
+                    <!-- Confirm form -->
+                    <div style="background:#fff;border-radius:12px;padding:24px;box-shadow:0 1px 8px rgba(0,0,0,0.06)">
+                      <h2 style="margin:0 0 20px;font-size:16px;color:#0f172a">📅 Hẹn ngày giao hàng</h2>
+                      <form method="POST" action="{postUrl}">
+                        <div style="margin-bottom:16px">
+                          <label style="display:block;font-size:13px;font-weight:500;color:#374151;margin-bottom:6px">
+                            Ngày giao hàng dự kiến <span style="color:#ef4444">*</span>
+                          </label>
+                          <input type="date" name="expectedDeliveryDate"
+                            value="{defDate}" min="{minDate}" required
+                            style="width:100%;box-sizing:border-box;padding:10px 14px;border:1px solid #e2e8f0;
+                                   border-radius:8px;font-size:14px;color:#0f172a;outline:none">
+                          <p style="margin:6px 0 0;font-size:11px;color:#94a3b8">
+                            Ngày bạn cam kết giao hàng đến kho của {companyName}
+                          </p>
+                        </div>
+                        <div style="margin-bottom:20px">
+                          <label style="display:block;font-size:13px;font-weight:500;color:#374151;margin-bottom:6px">
+                            Ghi chú (nếu có)
+                          </label>
+                          <textarea name="supplierNote" rows="3"
+                            placeholder="Điều kiện giao hàng, lịch trình, yêu cầu đặc biệt..."
+                            style="width:100%;box-sizing:border-box;padding:10px 14px;border:1px solid #e2e8f0;
+                                   border-radius:8px;font-size:13px;color:#0f172a;resize:vertical;outline:none"></textarea>
+                        </div>
+                        <button type="submit"
+                          style="width:100%;padding:13px;background:#6366f1;color:#fff;border:none;
+                                 border-radius:8px;font-size:15px;font-weight:600;cursor:pointer">
+                          ✅ Xác nhận nhận đơn & Hẹn ngày giao
+                        </button>
+                      </form>
+                    </div>
+
+                    <p style="text-align:center;margin-top:20px;font-size:11px;color:#94a3b8">
+                      MSAS — Hệ thống phân tích bán hàng đa kênh
+                    </p>
+                  </div>
+                </body>
+                </html>
+                """;
+
+            return Content(html, "text/html; charset=utf-8");
+        }
+        catch (Exception ex)
+        {
+            return Content(HtmlResult("❌ Lỗi hệ thống", ex.Message, false), "text/html");
+        }
+    }
+
+    [HttpPost("supplier-approve/{token:guid}")]
+    [AllowAnonymous]
+    public async Task<IActionResult> SupplierApproveSubmit(Guid token, [FromForm] string expectedDeliveryDate, [FromForm] string? supplierNote)
+    {
+        if (!DateOnly.TryParse(expectedDeliveryDate, out var deliveryDate))
+            return Content(HtmlResult("❌ Ngày không hợp lệ", "Vui lòng chọn ngày giao hàng hợp lệ.", false), "text/html");
+
+        if (deliveryDate < DateOnly.FromDateTime(DateTime.Now))
+            return Content(HtmlResult("❌ Ngày không hợp lệ", "Ngày giao hàng phải từ hôm nay trở đi.", false), "text/html");
+
+        try
+        {
+            await using var conn = new NpgsqlConnection(_connStr);
+            await conn.OpenAsync();
+
+            await using var chk = new NpgsqlCommand("""
+                SELECT po.purchase_order_id, po.status, po.purchase_code,
+                       s.supplier_name, c.name AS company_name
+                FROM public.purchase_orders po
+                JOIN public.suppliers s ON s.supplier_id = po.supplier_id
+                JOIN public.companies c ON c.id = po.company_id
+                WHERE po.confirmation_token = @token
+                """, conn);
+            chk.Parameters.AddWithValue("token", token);
+            await using var r = await chk.ExecuteReaderAsync();
+
+            if (!await r.ReadAsync())
+                return Content(HtmlResult("❌ Link không hợp lệ", "Link không tồn tại hoặc đã hết hiệu lực.", false), "text/html");
+
+            var poId         = r.GetInt64(0);
+            var status       = r.GetString(1);
+            var poCode       = r.GetString(2);
+            var supplierName = r.GetString(3);
+            var companyName  = r.GetString(4);
+            await r.CloseAsync();
+
+            if (status == "APPROVED")
+                return Content(HtmlResult("✅ Đã xác nhận", $"Phiếu <strong>{poCode}</strong> đã được xác nhận trước đó.", true), "text/html");
+
+            if (status is not ("PENDING" or "DRAFT"))
+                return Content(HtmlResult("⚠️ Không thể xác nhận", $"Phiếu ở trạng thái {status}, không thể xác nhận.", false), "text/html");
+
+            // Lưu expected_delivery_date + note + APPROVED + xóa token
             await using var upd = new NpgsqlCommand("""
                 UPDATE public.purchase_orders
-                SET status = 'APPROVED', approved_at = NOW(), updated_at = NOW(),
-                    confirmation_token = NULL
+                SET status                 = 'APPROVED',
+                    approved_at            = NOW(),
+                    updated_at             = NOW(),
+                    expected_delivery_date = @delivDate,
+                    note                   = CASE WHEN @note IS NOT NULL AND @note <> ''
+                                                  THEN COALESCE(note || E'\n', '') || '[NCC] ' || @note
+                                                  ELSE note END,
+                    confirmation_token     = NULL
                 WHERE purchase_order_id = @id
                 """, conn);
-            upd.Parameters.AddWithValue("id", poId);
+            upd.Parameters.AddWithValue("id",       poId);
+            upd.Parameters.AddWithValue("delivDate", deliveryDate.ToDateTime(TimeOnly.MinValue));
+            upd.Parameters.AddWithValue("note",      (object?)supplierNote ?? DBNull.Value);
             await upd.ExecuteNonQueryAsync();
 
             return Content(HtmlResult(
                 "✅ Xác nhận thành công!",
-                $"Cảm ơn <strong>{supplierName}</strong>!<br>Phiếu đặt hàng <strong>{poCode}</strong> của <strong>{companyName}</strong> đã được xác nhận.<br>Chúng tôi sẽ liên hệ để sắp xếp giao hàng.",
+                $"Cảm ơn <strong>{supplierName}</strong>!<br><br>" +
+                $"Phiếu đặt hàng <strong>{poCode}</strong> của <strong>{companyName}</strong> " +
+                $"đã được xác nhận.<br>" +
+                $"<strong>Ngày giao hàng cam kết: {deliveryDate:dd/MM/yyyy}</strong><br><br>" +
+                $"Chúng tôi sẽ liên hệ nếu cần thêm thông tin.",
                 true), "text/html");
         }
         catch (Exception ex)

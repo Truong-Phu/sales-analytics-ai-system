@@ -119,6 +119,13 @@ export const getForecastMetrics = async () => {
 }
 
 /**
+ * So sánh model: Prophet vs Holt-Winters vs LightGBM.
+ * FastAPI: { generated_at, train_period, test_period, models: { Prophet, Holt-Winters, LightGBM } }
+ */
+export const getModelComparison = () =>
+  api.get('/api/ai/forecast/model-comparison').then(r => r.data)
+
+/**
  * AI Insights tổng hợp từ forecast + anomaly + RFM.
  * FastAPI trả về { generated_at, count, insights: [string] }
  * Cache 1 giờ ở phía server.

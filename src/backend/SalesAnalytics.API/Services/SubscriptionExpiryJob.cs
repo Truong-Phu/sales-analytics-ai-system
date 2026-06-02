@@ -49,7 +49,38 @@ public class SubscriptionExpiryJob : BackgroundService
             var email = scope.ServiceProvider.GetRequiredService<IEmailService>();
             var now   = DateTime.UtcNow;
 
-            // 1. Đánh dấu expired cho subscriptions quá hạn nhưng còn trong grace period
+            // 1. Hết trial → downgrade về Free + gửi email
+            var trialExpired = await db.Subscriptions
+                .Include(s => s.Company)
+                .Where(s => s.Status == "trial"
+                         && s.TrialEndsAt.HasValue
+                         && s.TrialEndsAt.Value < now)
+                .ToListAsync();
+
+            foreach (var sub in trialExpired)
+            {
+                sub.Plan            = "free";
+                sub.Status          = "active";
+                sub.AiEnabled       = false;
+                sub.AdvancedReports = false;
+                sub.MaxChannels     = 2;
+                sub.MaxUsers        = 3;
+                sub.TrialEndsAt     = null;
+                sub.ExpiresAt       = null;
+                sub.UpdatedAt       = now;
+                _logger.LogInformation("Trial hết hạn → downgrade Free: company_id={CompanyId}", sub.CompanyId);
+
+                if (sub.Company is null) continue;
+                var ownerEmail = await db.Users
+                    .Where(u => u.CompanyId == sub.CompanyId && u.Role == UserRole.Owner && u.IsActive)
+                    .Select(u => u.Email)
+                    .FirstOrDefaultAsync();
+                var target = ownerEmail ?? sub.Company.Email;
+                if (!string.IsNullOrEmpty(target))
+                    await email.SendTrialExpiredAsync(target, sub.Company.Name);
+            }
+
+            // 2. Đánh dấu expired cho subscriptions quá hạn nhưng còn trong grace period
             var justExpired = await db.Subscriptions
                 .Where(s => s.Status == "active"
                          && s.Plan != "free"
@@ -127,8 +158,8 @@ public class SubscriptionExpiryJob : BackgroundService
             }
 
             _logger.LogInformation(
-                "SubscriptionExpiryJob hoàn thành: {Expired} hết hạn, {Downgraded} downgrade",
-                justExpired.Count, gracePassed.Count);
+                "SubscriptionExpiryJob hoàn thành: {Trial} trial→free, {Expired} hết hạn, {Downgraded} downgrade",
+                trialExpired.Count, justExpired.Count, gracePassed.Count);
         }
         catch (Exception ex)
         {

@@ -194,17 +194,23 @@ def train_model(df, holidays, label="ALL"):
     rmse = float(np.sqrt(mean_squared_error(df_eval["y"], df_eval["yhat"])))
     mask = df_eval["y"] > 0
     mape = float(np.mean(np.abs((df_eval.loc[mask, "y"] - df_eval.loc[mask, "yhat"]) / df_eval.loc[mask, "y"])) * 100) if mask.sum() > 0 else None
+    # SMAPE: cân bằng hơn MAPE khi actual gần 0 (phổ biến trong e-commerce)
+    smape = float(np.mean(
+        2 * np.abs(df_eval["y"] - df_eval["yhat"])
+        / (np.abs(df_eval["y"]) + np.abs(df_eval["yhat"]) + 1e-8)
+    ) * 100)
 
     metrics = {
-        "mae":       round(float(mae), 0),
-        "rmse":      round(float(rmse), 0),
-        "mape_pct":  round(mape, 2) if mape else None,
+        "mae":        round(float(mae), 0),
+        "rmse":       round(float(rmse), 0),
+        "mape_pct":   round(mape, 2) if mape else None,
+        "smape_pct":  round(smape, 2),
         "train_rows": int(len(df_train)),
         "test_rows":  int(len(df_test)),
         "train_from": str(df_train["ds"].min().date()),
         "train_to":   str(df_train["ds"].max().date()),
     }
-    print(f"    MAE={mae:,.0f}  RMSE={rmse:,.0f}  MAPE={mape:.1f}%")
+    print(f"    MAE={mae:,.0f}  RMSE={rmse:,.0f}  MAPE={mape:.1f}%  SMAPE={smape:.1f}%")
 
     # Cross-validation (chỉ khi đủ data)
     cv_mape = None
@@ -337,6 +343,8 @@ def main():
     print(f"  RMSE      : {metrics_all['rmse']:>15,.0f} VNĐ")
     if metrics_all.get("mape_pct"):
         print(f"  MAPE      : {metrics_all['mape_pct']:>14.2f}%")
+    if metrics_all.get("smape_pct"):
+        print(f"  SMAPE     : {metrics_all['smape_pct']:>14.2f}%")
     if metrics_all.get("cv_mape_pct"):
         print(f"  CV MAPE   : {metrics_all['cv_mape_pct']:>14.2f}%")
     print(f"\n  Models: {', '.join(str(p.name) for p in MODELS_DIR.glob('*.pkl'))}")

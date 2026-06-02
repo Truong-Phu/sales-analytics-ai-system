@@ -129,6 +129,9 @@ public class AdminController(
         if (user.Role == UserRole.Owner)
             return BadRequest(new { message = "Không thể chỉnh sửa tài khoản Owner." });
 
+        var oldRole     = user.Role.ToString();
+        var wasActive   = user.IsActive;
+
         if (req.FullName is not null) user.FullName = req.FullName.Trim();
         if (req.Role is not null && Enum.TryParse<UserRole>(req.Role, true, out var newRole)
             && newRole is not UserRole.Owner and not UserRole.SuperAdmin)
@@ -143,6 +146,17 @@ public class AdminController(
             newValue: $"{{\"fullName\":\"{user.FullName}\",\"role\":\"{user.Role}\",\"isActive\":{user.IsActive.ToString().ToLower()}}}",
             ipAddress: HttpContext.Connection.RemoteIpAddress?.ToString(),
             userAgent: HttpContext.Request.Headers["User-Agent"].ToString());
+
+        // Gửi email thông báo khi role hoặc trạng thái thay đổi (fire-and-forget)
+        if (req.NotifyEmail && !string.IsNullOrEmpty(user.Email))
+        {
+            var companyName = (await db.Set<SalesAnalytics.Core.Entities.Company>()
+                .FirstOrDefaultAsync(c => c.Id == tenant.CompanyId))?.Name ?? "Công ty";
+            _ = email.SendRoleChangeNotificationAsync(
+                user.Email, user.FullName ?? user.Email,
+                oldRole, user.Role.ToString(),
+                user.IsActive, companyName);
+        }
 
         return Ok(new { message = $"Đã cập nhật tài khoản {user.Email}." });
     }
@@ -755,7 +769,24 @@ public class AdminController(
         cmd.Parameters.AddWithValue("cust",  (object?)dto.NewCustomerTarget ?? DBNull.Value);
 
         await cmd.ExecuteNonQueryAsync();
-        return Ok(new { message = "Đã lưu KPI target." });
+
+        // Gửi email thông báo KPI cho nhân viên (fire-and-forget, không block)
+        if (dto.NotifyEmail)
+        {
+            var staffUser = await db.Users.FindAsync(dto.UserId);
+            if (staffUser != null && !string.IsNullOrEmpty(staffUser.Email))
+            {
+                var companyName = (await db.Set<SalesAnalytics.Core.Entities.Company>()
+                    .FirstOrDefaultAsync(c => c.Id == tenant.CompanyId))?.Name ?? "Công ty";
+                _ = email.SendKpiNotificationAsync(
+                    staffUser.Email, staffUser.FullName ?? staffUser.Email,
+                    companyName, dto.Year, dto.Month,
+                    dto.RevenueTarget, dto.OrderCountTarget, dto.NewCustomerTarget,
+                    dto.Note);
+            }
+        }
+
+        return Ok(new { message = "Đã lưu KPI target." + (dto.NotifyEmail ? " Đã gửi email thông báo cho nhân viên." : "") });
     }
 
     // ── GET /api/admin/customers/{id}/history ──────────────────────────────────
@@ -943,7 +974,8 @@ public record CreateUserRequest(
 public record UpdateUserRequest(
     string? FullName,
     string? Role,
-    bool?   IsActive
+    bool?   IsActive,
+    bool    NotifyEmail = false
 );
 
 public record ChangeRoleRequest([System.ComponentModel.DataAnnotations.Required] string Role);
@@ -963,5 +995,7 @@ public record SetKpiTargetDto(
     int       Month,
     decimal?  RevenueTarget,
     int?      OrderCountTarget,
-    int?      NewCustomerTarget
+    int?      NewCustomerTarget,
+    bool      NotifyEmail = false,
+    string?   Note        = null
 );

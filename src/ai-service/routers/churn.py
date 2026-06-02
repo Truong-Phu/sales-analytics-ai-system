@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """Router /churn – Dự báo khách hàng có nguy cơ rời bỏ (Churn Prediction)."""
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
@@ -14,12 +14,13 @@ class ChurnCustomer(BaseModel):
     full_name:    str
     email:        str
     phone:        str
+    channels:     List[Dict[str, Any]]  # [{channel, orders, revenue}] sắp xếp theo revenue
     recency_days: int
     frequency:    int
     monetary:     float
-    churn_prob:   float   # % xác suất churn
-    risk:         str     # "HIGH" | "MEDIUM" | "LOW"
-    action:       str     # Gợi ý hành động
+    churn_prob:   float
+    risk:         str
+    action:       str
 
 
 class ChurnResponse(BaseModel):

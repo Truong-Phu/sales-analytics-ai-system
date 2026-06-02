@@ -84,8 +84,6 @@ export default function SentimentPage() {
   return (
     <div className="space-y-5">
       <MockToast show={isMock} />
-      {!data && !loading && <AiEmptyState title="Chưa đủ dữ liệu phân tích cảm xúc khách hàng" />}
-
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
@@ -94,6 +92,8 @@ export default function SentimentPage() {
         </div>
         <button onClick={load} className="lbtn lbtn-primary text-sm">Làm mới</button>
       </div>
+
+      {!data && !loading && <AiEmptyState title="Chưa đủ dữ liệu phân tích cảm xúc khách hàng" />}
 
       {loading ? (
         <div className="lcard p-10 flex items-center justify-center">

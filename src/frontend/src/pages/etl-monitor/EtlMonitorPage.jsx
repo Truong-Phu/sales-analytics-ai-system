@@ -75,8 +75,6 @@ export default function EtlMonitorPage() {
 
   return (
     <div className="space-y-4">
-      {!data && !loading && <AiEmptyState title="ETL Service chưa khởi động hoặc không kết nối được" />}
-
       {/* Header */}
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
@@ -89,6 +87,8 @@ export default function EtlMonitorPage() {
           {t('common.refresh')}
         </button>
       </div>
+
+      {!data && !loading && <AiEmptyState title="ETL Service chưa khởi động hoặc không kết nối được" />}
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import axios from '../../api/axios'
+import ConfirmDialog from '../../components/ui/ConfirmDialog'
 
 // ── Countdown hook: cập nhật mỗi phút ────────────────────────────────────────
 function useCountdown(expiresAt) {
@@ -232,9 +233,9 @@ function UpgradeModal({ onClose, onSuccess, t }) {
             </label>
             <div className="grid grid-cols-3 gap-2">
               {[
-                { key: 'vnpay', label: 'VNPay', icon: '💳' },
-                { key: 'momo',  label: 'Momo',  icon: '📱' },
-                { key: 'bank_transfer', label: t('subscription.upgrade.bank'), icon: '🏦' },
+                { key: 'vnpay',   label: 'VNPay',  icon: '💳' },
+                { key: 'momo',    label: 'Momo',   icon: '📱' },
+                { key: 'vietqr',  label: 'VietQR', icon: '📲' },
               ].map(({ key, label, icon }) => (
                 <button key={key}
                   onClick={() => setMethod(key)}
@@ -297,7 +298,9 @@ function UpgradeModal({ onClose, onSuccess, t }) {
 // ── Payment result modal (sau khi tạo invoice thành công) ─────────────────────
 function PaymentResultModal({ result, onClose, t }) {
   if (!result) return null
-  const isBankTransfer = result.paymentMethod === 'bank_transfer'
+  const method = (result.paymentMethod ?? '').toUpperCase()
+  const isVietQR = method === 'VIETQR'
+  const qr = result.vietQRInfo  // { qrDataUrl, bankName, accountNumber, accountHolder, transferContent, amount }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center"
@@ -305,27 +308,46 @@ function PaymentResultModal({ result, onClose, t }) {
       <div className="rounded-xl shadow-2xl w-full max-w-md mx-4 overflow-hidden"
         style={{ background: 'var(--bg-surface)' }}>
         <div className="p-6">
-          {isBankTransfer ? (
+          {isVietQR ? (
             <>
-              <h3 className="font-semibold text-base mb-4" style={{ color: 'var(--text-primary)' }}>
-                {t('subscription.bankInfo.title')}
+              <h3 className="font-semibold text-base mb-4 text-center" style={{ color: 'var(--text-primary)' }}>
+                Thanh toán qua VietQR
               </h3>
-              <div className="space-y-3 text-sm">
+
+              {/* QR code */}
+              {qr?.qrDataUrl ? (
+                <div className="flex justify-center mb-4">
+                  <img src={qr.qrDataUrl} alt="VietQR" className="rounded-xl border"
+                    style={{ width: 200, height: 200, objectFit: 'contain', border: '1px solid var(--border)' }} />
+                </div>
+              ) : (
+                <div className="flex justify-center items-center mb-4 rounded-xl"
+                  style={{ width: 200, height: 200, margin: '0 auto', background: 'var(--bg-elevated)', border: '1px dashed var(--border)' }}>
+                  <span className="text-xs text-center px-4" style={{ color: 'var(--text-tertiary)' }}>
+                    QR chưa sẵn sàng — dùng thông tin bên dưới để chuyển khoản
+                  </span>
+                </div>
+              )}
+
+              {/* Thông tin chuyển khoản */}
+              <div className="rounded-xl p-4 space-y-2 text-sm"
+                style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)' }}>
                 {[
-                  { label: t('subscription.bankInfo.bank'),    value: result.bankInfo?.bankName },
-                  { label: t('subscription.bankInfo.account'), value: result.bankInfo?.accountNumber },
-                  { label: t('subscription.bankInfo.name'),    value: result.bankInfo?.accountName },
-                  { label: t('subscription.bankInfo.content'), value: result.bankInfo?.content },
-                  { label: t('subscription.upgrade.total'),    value: fmtVnd(result.total) },
-                ].map(({ label, value }) => (
-                  <div key={label} className="flex justify-between">
-                    <span style={{ color: 'var(--text-secondary)' }}>{label}:</span>
-                    <span className="font-medium" style={{ color: 'var(--text-primary)' }}>{value}</span>
+                  { label: 'Ngân hàng',     value: qr?.bankName },
+                  { label: 'Số tài khoản',  value: qr?.accountNumber },
+                  { label: 'Chủ tài khoản', value: qr?.accountHolder },
+                  { label: 'Nội dung CK',   value: qr?.transferContent },
+                  { label: 'Số tiền',       value: qr?.amount != null ? fmtVnd(qr.amount) : null },
+                ].filter(r => r.value).map(({ label, value }) => (
+                  <div key={label} className="flex justify-between gap-3">
+                    <span style={{ color: 'var(--text-tertiary)', flexShrink: 0 }}>{label}</span>
+                    <span className="font-medium text-right" style={{ color: 'var(--text-primary)' }}>{value}</span>
                   </div>
                 ))}
               </div>
-              <p className="text-xs mt-4" style={{ color: 'var(--text-tertiary)' }}>
-                {t('subscription.bankInfo.note')}
+
+              <p className="text-xs mt-3 text-center" style={{ color: 'var(--text-tertiary)' }}>
+                Gói Pro sẽ được kích hoạt tự động sau khi thanh toán được xác nhận.
               </p>
             </>
           ) : (
@@ -333,14 +355,14 @@ function PaymentResultModal({ result, onClose, t }) {
               <div className="text-center mb-4">
                 <div className="text-4xl mb-2">✅</div>
                 <h3 className="font-semibold" style={{ color: 'var(--text-primary)' }}>
-                  Hóa đơn #{result.invoiceCode} đã được tạo
+                  Hóa đơn đã được tạo
                 </h3>
                 <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>
-                  Bạn sẽ được chuyển đến cổng thanh toán {result.paymentMethod?.toUpperCase()}
+                  Bạn sẽ được chuyển đến cổng thanh toán {method}
                 </p>
               </div>
-              {result.paymentUrl && (
-                <a href={result.paymentUrl} target="_blank" rel="noopener noreferrer"
+              {result.mockPaymentUrl && (
+                <a href={result.mockPaymentUrl} target="_blank" rel="noopener noreferrer"
                   className="lbtn lbtn-primary w-full text-center block">
                   Thanh toán ngay
                 </a>
@@ -358,9 +380,10 @@ function PaymentResultModal({ result, onClose, t }) {
 
 // ── Tab 1: Gói dịch vụ hiện tại ───────────────────────────────────────────────
 function PlanTab({ sub, onUpgradeSuccess, t }) {
-  const [showUpgrade,   setShowUpgrade]   = useState(false)
-  const [payResult,     setPayResult]     = useState(null)
-  const [togglingRenew, setTogglingRenew] = useState(false)
+  const [showUpgrade,    setShowUpgrade]    = useState(false)
+  const [payResult,      setPayResult]      = useState(null)
+  const [togglingRenew,  setTogglingRenew]  = useState(false)
+  const [cancelRenewDlg, setCancelRenewDlg] = useState(false)
 
   const toggleAutoRenew = async () => {
     setTogglingRenew(true)
@@ -371,61 +394,116 @@ function PlanTab({ sub, onUpgradeSuccess, t }) {
     finally { setTogglingRenew(false) }
   }
 
+  const expiryLabel = sub?.expiresAt
+    ? new Date(sub.expiresAt).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })
+    : null
+
+  const isPro  = sub?.plan === 'pro' || sub?.plan === 'enterprise'
+  const isFree = !isPro
+
   return (
-    <div className="space-y-6">
-      {/* Card gói hiện tại */}
-      <div className="rounded-xl p-5" style={{ border: '1px solid var(--border)', background: 'var(--bg-elevated)' }}>
-        <div className="flex items-start justify-between">
-          <div>
-            <div className="text-xs font-medium mb-1" style={{ color: 'var(--text-tertiary)' }}>
-              {t('subscription.currentPlan')}
-            </div>
-            <div className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
-              {t(`subscription.plan.${sub?.plan ?? 'free'}`)}
-            </div>
-            {!sub?.expiresAt && sub?.plan === 'free' && (
-              <div className="text-sm mt-1" style={{ color: 'var(--text-tertiary)' }}>
-                {t('subscription.neverExpires')}
+    <div className="space-y-5">
+      {/* Dialog xác nhận hủy gia hạn */}
+      <ConfirmDialog
+        open={cancelRenewDlg}
+        onClose={() => setCancelRenewDlg(false)}
+        onConfirm={() => { setCancelRenewDlg(false); toggleAutoRenew() }}
+        title="Hủy gia hạn tự động"
+        icon="event_busy"
+        message={
+          expiryLabel
+            ? `Gói Pro của bạn vẫn tiếp tục hoạt động đến hết ngày ${expiryLabel}. Sau ngày này, tài khoản sẽ tự động chuyển về gói Free — bạn có thể đăng ký lại bất kỳ lúc nào.`
+            : 'Gói Pro sẽ không được gia hạn sau kỳ hiện tại. Bạn có thể kích hoạt lại gia hạn tự động bất kỳ lúc nào.'
+        }
+        confirmText="Hủy gia hạn"
+        cancelText="Giữ nguyên"
+      />
+
+      {/* 2 cột: trạng thái gói (trái) + so sánh (phải) */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+
+        {/* ── Cột trái: Gói hiện tại ── */}
+        <div className="rounded-2xl p-5 space-y-4"
+          style={{ border: `1px solid ${isPro ? 'rgba(99,102,241,0.35)' : 'var(--border)'}`,
+                   background: isPro ? 'var(--primary-50, rgba(99,102,241,0.04))' : 'var(--bg-elevated)' }}>
+
+          {/* Badge gói + tên */}
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <div className="text-xs font-medium mb-1" style={{ color: 'var(--text-tertiary)' }}>
+                {t('subscription.currentPlan')}
               </div>
+              <div className="flex items-center gap-2">
+                {isPro && <span className="icon" style={{ color: 'var(--primary-500)', fontSize: 24 }}>workspace_premium</span>}
+                <span className="text-2xl font-bold" style={{ color: isPro ? 'var(--primary-500)' : 'var(--text-primary)' }}>
+                  {t(`subscription.plan.${sub?.plan ?? 'free'}`)}
+                </span>
+              </div>
+              {isFree && (
+                <div className="text-sm mt-1" style={{ color: 'var(--text-tertiary)' }}>
+                  {t('subscription.neverExpires')}
+                </div>
+              )}
+            </div>
+            <StatusBadge status={sub?.status ?? 'active'} t={t} />
+          </div>
+
+          {/* Countdown / cảnh báo chưa kích hoạt */}
+          {isPro && (
+            sub?.expiresAt
+              ? <CountdownBadge expiresAt={sub.expiresAt} />
+              : <div className="px-3 py-2 rounded-lg text-sm"
+                  style={{ background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.30)', color: '#854D0E' }}>
+                  Gói Pro chưa được kích hoạt — hoàn tất thanh toán để kích hoạt.
+                </div>
+          )}
+
+          {/* Thông tin gia hạn (chỉ khi Pro) */}
+          {isPro && sub?.autoRenew !== undefined && (
+            <div className="flex items-center gap-2 text-sm"
+              style={{ color: sub.autoRenew ? '#16A34A' : 'var(--text-tertiary)' }}>
+              <span className="icon" style={{ fontSize: 16 }}>
+                {sub.autoRenew ? 'autorenew' : 'sync_disabled'}
+              </span>
+              {sub.autoRenew ? 'Gia hạn tự động đang bật' : 'Gia hạn tự động đã tắt'}
+            </div>
+          )}
+
+          {/* Nút hành động */}
+          <div className="flex flex-col gap-2 pt-1">
+            {isFree && (
+              <button onClick={() => setShowUpgrade(true)} className="lbtn lbtn-primary w-full">
+                <span className="icon icon-sm">arrow_upward</span>
+                {t('subscription.upgradeBtn')}
+              </button>
+            )}
+            {isPro && (
+              <button
+                onClick={() => sub?.autoRenew ? setCancelRenewDlg(true) : toggleAutoRenew()}
+                disabled={togglingRenew}
+                className="lbtn lbtn-secondary w-full text-sm">
+                {togglingRenew
+                  ? <span className="icon animate-spin icon-sm">refresh</span>
+                  : <span className="icon icon-sm">{sub?.autoRenew ? 'cancel' : 'autorenew'}</span>}
+                {sub?.autoRenew
+                  ? t('subscription.cancelAutoRenew')
+                  : t('subscription.enableAutoRenew')}
+              </button>
             )}
           </div>
-          <StatusBadge status={sub?.status ?? 'active'} t={t} />
         </div>
 
-        {/* Countdown đếm ngược — hiện khi Pro có expiresAt; nếu Pro nhưng null thì báo chưa kích hoạt */}
-        {sub?.plan !== 'free' && (
-          sub?.expiresAt
-            ? <CountdownBadge expiresAt={sub.expiresAt} />
-            : <div className="mt-3 px-3 py-2 rounded-lg text-sm"
-                style={{ background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.30)', color: '#854D0E' }}>
-                Gói Pro chưa được kích hoạt — liên hệ admin hoặc hoàn tất thanh toán để kích hoạt.
-              </div>
-        )}
-
-        <div className="flex flex-wrap gap-3 mt-5">
-          {sub?.plan !== 'pro' && sub?.plan !== 'enterprise' && (
-            <button onClick={() => setShowUpgrade(true)} className="lbtn lbtn-primary">
-              <span className="icon icon-sm">arrow_upward</span>
-              {t('subscription.upgradeBtn')}
-            </button>
-          )}
-          {(sub?.plan === 'pro' || sub?.plan === 'enterprise') && (
-            <button onClick={toggleAutoRenew} disabled={togglingRenew}
-              className="lbtn lbtn-secondary text-sm">
-              {sub?.autoRenew
-                ? t('subscription.cancelAutoRenew')
-                : t('subscription.enableAutoRenew')}
-            </button>
-          )}
+        {/* ── Cột phải: So sánh gói ── */}
+        <div className="rounded-2xl p-5"
+          style={{ border: '1px solid var(--border)', background: 'var(--bg-surface)' }}>
+          <div className="flex items-center gap-2 mb-3">
+            <span className="icon" style={{ color: 'var(--text-tertiary)', fontSize: 18 }}>compare</span>
+            <h3 className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>
+              So sánh các gói
+            </h3>
+          </div>
+          <PlanCompare t={t} />
         </div>
-      </div>
-
-      {/* Bảng so sánh */}
-      <div className="rounded-xl p-5" style={{ border: '1px solid var(--border)', background: 'var(--bg-surface)' }}>
-        <h3 className="font-semibold text-sm mb-1" style={{ color: 'var(--text-primary)' }}>
-          So sánh các gói
-        </h3>
-        <PlanCompare t={t} />
       </div>
 
       {showUpgrade && (
@@ -480,8 +558,8 @@ function PaymentTab({ onSuccess, t, pendingInvoice }) {
   }
 
   return (
-    <div className="max-w-lg space-y-5">
-      {/* Banner hóa đơn pending nếu có */}
+    <div className="space-y-4">
+      {/* Banner hóa đơn pending */}
       {pendingInvoice && (
         <div className="flex items-start gap-3 px-4 py-3 rounded-xl text-sm"
           style={{ background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.30)', color: '#854D0E' }}>
@@ -489,96 +567,138 @@ function PaymentTab({ onSuccess, t, pendingInvoice }) {
           <div>
             <p className="font-semibold">Bạn có hóa đơn chưa thanh toán</p>
             <p className="text-xs mt-0.5">
-              Mã hóa đơn: <strong>{pendingInvoice.invoiceCode}</strong> —
-              Số tiền: <strong>{fmtVnd(pendingInvoice.amount)}</strong>
+              Mã: <strong>{pendingInvoice.invoiceCode}</strong> — Số tiền: <strong>{fmtVnd(pendingInvoice.amount)}</strong>
             </p>
             <p className="text-xs mt-0.5" style={{ color: '#92400E' }}>
-              Chọn phương thức thanh toán bên dưới và xác nhận để hoàn tất.
+              Chọn phương thức bên dưới và xác nhận để hoàn tất.
             </p>
           </div>
         </div>
       )}
-      {/* Chọn gói + chu kỳ */}
-      <div>
-        <label className="text-sm font-medium block mb-2" style={{ color: 'var(--text-primary)' }}>
-          Chu kỳ thanh toán
-        </label>
-        <div className="grid grid-cols-2 gap-3">
-          {['monthly', 'yearly'].map(c => (
-            <button key={c} onClick={() => setCycle(c)}
-              className="p-3 rounded-lg border-2 text-left transition-all"
-              style={{
-                borderColor: cycle === c ? 'var(--primary-500)' : 'var(--border)',
-                background:  cycle === c ? 'var(--primary-50, #EEF2FF)' : 'var(--bg-elevated)',
-              }}>
-              <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                {t(`subscription.upgrade.cycle.${c}`)}
-              </div>
-              <div className="text-xs mt-0.5" style={{ color: 'var(--primary-500)' }}>
-                {c === 'monthly'
-                  ? t('subscription.upgrade.monthlyPrice')
-                  : t('subscription.upgrade.yearlyPrice')}
-              </div>
-            </button>
-          ))}
-        </div>
-      </div>
 
-      {/* Phương thức */}
-      <div>
-        <label className="text-sm font-medium block mb-2" style={{ color: 'var(--text-primary)' }}>
-          {t('subscription.upgrade.paymentMethod')}
-        </label>
-        <div className="grid grid-cols-3 gap-2">
-          {[
-            { key: 'vnpay',         label: 'VNPay',    icon: '💳' },
-            { key: 'momo',          label: 'Momo',     icon: '📱' },
-            { key: 'bank_transfer', label: t('subscription.upgrade.bank'), icon: '🏦' },
-          ].map(({ key, label, icon }) => (
-            <button key={key} onClick={() => setMethod(key)}
-              className="p-3 rounded-lg border-2 text-center text-sm transition-all"
-              style={{
-                borderColor: method === key ? 'var(--primary-500)' : 'var(--border)',
-                background:  method === key ? 'var(--primary-50, #EEF2FF)' : 'var(--bg-elevated)',
-                color:       'var(--text-primary)',
-              }}>
-              <div className="text-xl">{icon}</div>
-              <div className="text-xs mt-1">{label}</div>
-            </button>
-          ))}
-        </div>
-      </div>
+      {/* 2 cột: cấu hình (trái) + tóm tắt hóa đơn (phải) */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
 
-      {/* Preview hóa đơn */}
-      <div className="rounded-lg p-4"
-        style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)' }}>
-        <p className="text-sm font-medium mb-3" style={{ color: 'var(--text-primary)' }}>
-          {t('subscription.upgrade.previewTitle')}
-        </p>
-        {[
-          { label: t('subscription.upgrade.planLabel'), value: `Pro – ${t(`subscription.upgrade.cycle.${cycle}`)}` },
-          { label: t('subscription.upgrade.price'),     value: fmtVnd(basePrice) },
-          { label: t('subscription.upgrade.tax'),       value: fmtVnd(tax) },
-        ].map(({ label, value }) => (
-          <div key={label} className="flex justify-between text-sm py-1">
-            <span style={{ color: 'var(--text-secondary)' }}>{label}</span>
-            <span style={{ color: 'var(--text-primary)' }}>{value}</span>
+        {/* ── Cột trái: Chu kỳ + Phương thức ── */}
+        <div className="space-y-5">
+          {/* Chu kỳ */}
+          <div>
+            <label className="text-sm font-semibold block mb-3" style={{ color: 'var(--text-primary)' }}>
+              Chu kỳ thanh toán
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                { key: 'monthly', priceKey: 'monthlyPrice', badge: null },
+                { key: 'yearly',  priceKey: 'yearlyPrice',  badge: 'Tiết kiệm 20%' },
+              ].map(({ key, priceKey, badge }) => (
+                <button key={key} onClick={() => setCycle(key)}
+                  className="p-4 rounded-xl border-2 text-left transition-all relative"
+                  style={{
+                    borderColor: cycle === key ? 'var(--primary-500)' : 'var(--border)',
+                    background:  cycle === key ? 'var(--primary-50, rgba(99,102,241,0.06))' : 'var(--bg-elevated)',
+                  }}>
+                  {badge && (
+                    <span className="absolute top-2 right-2 text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
+                      style={{ background: 'rgba(34,197,94,0.15)', color: '#16A34A' }}>
+                      {badge}
+                    </span>
+                  )}
+                  <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                    {t(`subscription.upgrade.cycle.${key}`)}
+                  </div>
+                  <div className="text-xs mt-1 font-semibold" style={{ color: 'var(--primary-500)' }}>
+                    {t(`subscription.upgrade.${priceKey}`)}
+                  </div>
+                </button>
+              ))}
+            </div>
           </div>
-        ))}
-        <div className="flex justify-between text-sm font-semibold pt-2 mt-1"
-          style={{ borderTop: '1px solid var(--border)', color: 'var(--text-primary)' }}>
-          <span>{t('subscription.upgrade.total')}</span>
-          <span style={{ color: 'var(--primary-500)' }}>{fmtVnd(total)}</span>
+
+          {/* Phương thức thanh toán */}
+          <div>
+            <label className="text-sm font-semibold block mb-3" style={{ color: 'var(--text-primary)' }}>
+              {t('subscription.upgrade.paymentMethod')}
+            </label>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { key: 'vnpay',  label: 'VNPay',  icon: '💳' },
+                { key: 'momo',   label: 'Momo',   icon: '📱' },
+                { key: 'vietqr', label: 'VietQR', icon: '📲' },
+              ].map(({ key, label, icon }) => (
+                <button key={key} onClick={() => setMethod(key)}
+                  className="py-3 rounded-xl border-2 text-center transition-all"
+                  style={{
+                    borderColor: method === key ? 'var(--primary-500)' : 'var(--border)',
+                    background:  method === key ? 'var(--primary-50, rgba(99,102,241,0.06))' : 'var(--bg-elevated)',
+                    color: 'var(--text-primary)',
+                  }}>
+                  <div className="text-2xl">{icon}</div>
+                  <div className="text-xs mt-1.5 font-medium">{label}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* ── Cột phải: Tóm tắt + CTA ── */}
+        <div className="rounded-2xl p-5 space-y-4"
+          style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)' }}>
+          {/* Header */}
+          <div className="flex items-center gap-2">
+            <span className="icon" style={{ color: 'var(--primary-500)', fontSize: 20 }}>receipt_long</span>
+            <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+              {t('subscription.upgrade.previewTitle')}
+            </p>
+          </div>
+
+          {/* Dòng mục */}
+          <div className="space-y-2">
+            {[
+              { label: 'Gói',       value: 'Pro' },
+              { label: 'Chu kỳ',    value: t(`subscription.upgrade.cycle.${cycle}`) },
+              { label: 'Phương thức', value: method === 'vietqr' ? 'VietQR' : method === 'momo' ? 'Momo' : 'VNPay' },
+              { label: t('subscription.upgrade.price'), value: fmtVnd(basePrice) },
+              { label: t('subscription.upgrade.tax'),   value: fmtVnd(tax) },
+            ].map(({ label, value }) => (
+              <div key={label} className="flex justify-between text-sm">
+                <span style={{ color: 'var(--text-tertiary)' }}>{label}</span>
+                <span style={{ color: 'var(--text-secondary)' }}>{value}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Tổng */}
+          <div className="flex justify-between items-center pt-3"
+            style={{ borderTop: '1px solid var(--border)' }}>
+            <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+              {t('subscription.upgrade.total')}
+            </span>
+            <span className="text-xl font-bold" style={{ color: 'var(--primary-500)' }}>
+              {fmtVnd(total)}
+            </span>
+          </div>
+
+          {error && (
+            <p className="text-xs text-red-500 flex items-center gap-1">
+              <span className="icon" style={{ fontSize: 14 }}>error_outline</span>
+              {error}
+            </p>
+          )}
+
+          {/* Nút thanh toán */}
+          <button onClick={handlePay} disabled={loading}
+            className="lbtn lbtn-primary w-full flex items-center justify-center gap-2 mt-1">
+            {loading
+              ? <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+              : <span className="icon" style={{ fontSize: 18 }}>lock</span>}
+            {t('subscription.upgrade.confirmBtn')}
+          </button>
+
+          <p className="text-[11px] text-center" style={{ color: 'var(--text-tertiary)' }}>
+            Giao dịch được mã hóa và bảo mật
+          </p>
         </div>
       </div>
-
-      {error && <p className="text-sm text-red-500">{error}</p>}
-
-      <button onClick={handlePay} disabled={loading}
-        className="lbtn lbtn-primary w-full flex items-center justify-center gap-2">
-        {loading && <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />}
-        {t('subscription.upgrade.confirmBtn')}
-      </button>
     </div>
   )
 }

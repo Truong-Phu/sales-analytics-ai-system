@@ -30,7 +30,7 @@ const ITEMS = [
   { id: 'geo',           label: 'Phân tích địa lý',         desc: 'Bản đồ doanh thu theo vùng',             href: '/geo',             icon: 'map',                 roles: AI_ROLES },
   { id: 'campaign',      label: 'Phân tích chiến dịch',     desc: 'Hiệu quả marketing campaigns',           href: '/campaign',        icon: 'campaign',            roles: AI_ROLES },
   { id: 'attribution',   label: 'Phân bổ kênh',             desc: 'Marketing attribution model',            href: '/attribution',     icon: 'account_tree',        roles: AI_ROLES },
-  { id: 'supplier',      label: 'Nhà cung cấp',             desc: 'Đánh giá supplier performance',          href: '/supplier',        icon: 'local_shipping',      roles: AI_ROLES },
+  { id: 'suppliers',     label: 'Nhà cung cấp',             desc: 'Quản lý danh sách nhà cung cấp',         href: '/suppliers',       icon: 'local_shipping',      roles: AI_ROLES },
   { id: 'leaderboard',   label: 'Bảng xếp hạng',           desc: 'Top sản phẩm & nhân viên',               href: '/leaderboard',     icon: 'leaderboard',         roles: [...AI_ROLES, 'Staff'] },
   { id: 'inventory',     label: 'Tồn kho thông minh',       desc: 'Dự báo và cảnh báo tồn kho',            href: '/inventory',       icon: 'inventory',           roles: [...AI_ROLES, 'Staff'] },
   { id: 'sentiment',     label: 'Phân tích cảm xúc',        desc: 'Sentiment từ đánh giá khách hàng',       href: '/sentiment',       icon: 'sentiment_satisfied', roles: AI_ROLES },

@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using SalesAnalytics.API.Attributes;
@@ -63,6 +64,15 @@ public class AiController(AiProxyService ai, ITenantContext tenant) : Controller
     public async Task<IActionResult> ForecastMetrics()
     {
         var result = await ai.GetForecastMetricsAsync();
+        if (result is null) return StatusCode(503, new { message = "AI Service không khả dụng." });
+        return Ok(result);
+    }
+
+    /// <summary>So sánh Prophet vs Holt-Winters vs LightGBM (từ comparison_metrics.json)</summary>
+    [HttpGet("forecast/model-comparison")]
+    public async Task<IActionResult> ForecastModelComparison()
+    {
+        var result = await ai.GetModelComparisonAsync();
         if (result is null) return StatusCode(503, new { message = "AI Service không khả dụng." });
         return Ok(result);
     }
@@ -173,7 +183,8 @@ public class AiController(AiProxyService ai, ITenantContext tenant) : Controller
         [FromQuery] int topN = 20)
     {
         var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
-        var qs = $"basket?days={days}&min_support={minSupport}&min_confidence={minConfidence}&min_lift={minLift}&top_n={topN}"
+        static string F(double v) => v.ToString("G", CultureInfo.InvariantCulture);
+        var qs = $"basket?days={days}&min_support={F(minSupport)}&min_confidence={F(minConfidence)}&min_lift={F(minLift)}&top_n={topN}"
             + (companyId.HasValue ? $"&company_id={companyId}" : "");
         var result = await ai.ProxyGetAsync(qs);
         if (result is null) return StatusCode(503, new { message = "AI Service không khả dụng." });
@@ -249,11 +260,15 @@ public class AiController(AiProxyService ai, ITenantContext tenant) : Controller
     public async Task<IActionResult> Leaderboard(
         [FromQuery] string category = "product",
         [FromQuery] int days = 30,
-        [FromQuery] int topN = 10)
+        [FromQuery] int topN = 10,
+        [FromQuery(Name = "start_date")] string? startDate = null,
+        [FromQuery(Name = "end_date")]   string? endDate = null)
     {
         var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
         var qs = $"leaderboard?category={category}&days={days}&top_n={topN}"
-            + (companyId.HasValue ? $"&company_id={companyId}" : "");
+            + (companyId.HasValue ? $"&company_id={companyId}" : "")
+            + (!string.IsNullOrEmpty(startDate) ? $"&start_date={startDate}" : "")
+            + (!string.IsNullOrEmpty(endDate) ? $"&end_date={endDate}" : "");
         var result = await ai.ProxyGetAsync(qs);
         if (result is null) return StatusCode(503, new { message = "AI Service không khả dụng." });
         return Ok(result);

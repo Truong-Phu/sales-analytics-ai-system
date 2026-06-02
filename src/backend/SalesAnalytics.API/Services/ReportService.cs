@@ -908,10 +908,10 @@ public class ReportService
     {
         var data = await _dashboard.GetDashboardAsync(from, to, channel, companyId);
 
+        // Không dùng dữ liệu mẫu cứng — hiển thị dữ liệu thực dù có thể trống
         var usingSample = data.Kpi.TotalRevenue == 0
-                       || data.RevenueByChannel.Count == 0
-                       || data.TopProducts.Count == 0;
-        if (usingSample) data = GenerateSampleData(from, to);
+                       && data.RevenueByChannel.Count == 0
+                       && data.TopProducts.Count == 0;
 
         QuestPDF.Settings.License = LicenseType.Community;
 

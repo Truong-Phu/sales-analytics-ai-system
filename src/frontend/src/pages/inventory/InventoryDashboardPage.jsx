@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { Chart, registerables } from 'chart.js'
 import {
   getInventoryOverview,
@@ -107,6 +107,7 @@ function StockMovementChart({ data }) {
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function InventoryDashboardPage() {
   const navigate = useNavigate()
+  const location = useLocation()
   const [overview,    setOverview]    = useState(null)
   const [movement,    setMovement]    = useState(null)
   const [lowStock,    setLowStock]    = useState(null)
@@ -149,7 +150,6 @@ export default function InventoryDashboardPage() {
 
   return (
     <div className="space-y-4">
-      {!overview && !loadingMain && <AiEmptyState title="Không kết nối được dữ liệu tồn kho" />}
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
@@ -164,6 +164,8 @@ export default function InventoryDashboardPage() {
           ← Thông minh Tồn kho (AI)
         </Link>
       </div>
+
+      {!overview && !loadingMain && <AiEmptyState title="Không kết nối được dữ liệu tồn kho" />}
 
       {/* ── KPI Overview ── */}
       {loadingMain ? (
@@ -207,7 +209,7 @@ export default function InventoryDashboardPage() {
         {errors.movement ? <ErrorState label="biểu đồ biến động" /> : <StockMovementChart data={movement} />}
       </div>
 
-      {/* ── Low Stock ── */}
+      {/* ── Low Stock + Gợi ý nhập hàng (gộp) ── */}
       <SectionTitle>Sản phẩm sắp hết hàng</SectionTitle>
       {errors.lowStock ? <ErrorState label="danh sách tồn kho thấp" /> : !lowStock || lowStock.length === 0 ? (
         <EmptyState message="Không có sản phẩm dưới ngưỡng tồn kho" />
@@ -223,32 +225,53 @@ export default function InventoryDashboardPage() {
               </tr>
             </thead>
             <tbody>
-              {lowStock.map(item => (
+              {lowStock.map(item => {
+                // Lấy thêm thông tin từ recs (risk level, NCC) nếu có
+                const rec = recs?.items?.find(r => r.productId === item.productId)
+                const cfg = rec ? (RISK_CFG[rec.riskLevel] ?? RISK_CFG.LOW) : null
+                return (
                 <tr key={item.productId} style={{ borderBottom: '1px solid var(--border)' }}>
-                  <td className="px-4 py-2 font-medium" style={{ color: 'var(--text-primary)' }}>{item.productName}</td>
+                  <td className="px-4 py-2" style={{ color: 'var(--text-primary)' }}>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {cfg && (
+                        <span className="text-xs font-bold px-1.5 py-0.5 rounded-full shrink-0"
+                          style={{ background: cfg.color + '20', color: cfg.color }}>
+                          {cfg.label}
+                        </span>
+                      )}
+                      <span className="font-medium">{item.productName}</span>
+                    </div>
+                    {rec?.lastSupplier && (
+                      <div className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
+                        NCC: {rec.lastSupplier}
+                      </div>
+                    )}
+                  </td>
                   <td className="px-4 py-2 font-mono text-xs" style={{ color: 'var(--text-tertiary)' }}>{item.sku ?? '—'}</td>
                   <td className="px-4 py-2 font-bold" style={{ color: item.stockQuantity === 0 ? '#EF4444' : '#F59E0B' }}>
                     {fmt(item.stockQuantity)}
                   </td>
-                  <td className="px-4 py-2" style={{ color: 'var(--text-secondary)' }}>{item.avgDailySales}</td>
                   <td className="px-4 py-2" style={{ color: 'var(--text-secondary)' }}>
-                    {item.estimatedDaysLeft != null ? `${item.estimatedDaysLeft}d` : '∞'}
+                    {item.avgDailySales > 0 ? item.avgDailySales.toFixed(1) : '—'}
+                  </td>
+                  <td className="px-4 py-2" style={{ color: item.stockQuantity === 0 ? '#EF4444' : 'var(--text-secondary)' }}>
+                    {item.stockQuantity === 0
+                      ? 'Hết hàng'
+                      : item.estimatedDaysLeft != null ? `${item.estimatedDaysLeft}d` : '∞'}
                   </td>
                   <td className="px-4 py-2 font-semibold" style={{ color: item.recommendedReorderQuantity > 0 ? '#F97316' : 'var(--text-tertiary)' }}>
                     {item.recommendedReorderQuantity > 0 ? `+${fmt(item.recommendedReorderQuantity)}` : '—'}
                   </td>
                   <td className="px-4 py-2">
                     <div className="flex items-center gap-1.5 flex-wrap">
-                      {/* Nút chính: điều chỉnh tồn kho trực tiếp — không cần PO */}
                       <button
-                        onClick={() => navigate(`/stock-adjustments?productId=${item.productId}`)}
+                        onClick={() => navigate(`/goods-receipts?action=create&productId=${item.productId}&productName=${encodeURIComponent(item.productName)}&returnUrl=${encodeURIComponent(location.pathname)}`)}
                         className="text-xs px-3 py-1 rounded-lg font-semibold whitespace-nowrap flex items-center gap-1"
                         style={{ background: 'rgba(34,197,94,0.12)', color: '#16A34A', border: '1px solid rgba(34,197,94,0.3)' }}>
                         <span style={{ fontSize: 12 }}>↑</span> Nhập kho
                       </button>
-                      {/* Nút phụ: tạo PO đặt hàng nhà cung cấp */}
                       <button
-                        onClick={() => navigate(`/purchase-orders?productId=${item.productId}&productName=${encodeURIComponent(item.productName)}`)}
+                        onClick={() => navigate(`/purchase-orders?productId=${item.productId}&productName=${encodeURIComponent(item.productName)}&returnUrl=${encodeURIComponent(location.pathname)}`)}
                         className="text-xs px-2 py-1 rounded-lg whitespace-nowrap"
                         style={{ background: 'transparent', color: 'var(--text-tertiary)', border: '1px solid var(--border)' }}
                         title="Tạo phiếu đặt hàng nhà cung cấp">
@@ -257,7 +280,8 @@ export default function InventoryDashboardPage() {
                     </div>
                   </td>
                 </tr>
-              ))}
+                )
+              })}
             </tbody>
           </table>
         </div>
@@ -324,93 +348,128 @@ export default function InventoryDashboardPage() {
           <table className="w-full text-sm">
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                {['Nhà cung cấp','Số PO','SL đã nhận','Tổng giá trị','Tỷ lệ hoàn thành','Lần cuối nhập'].map(h => (
-                  <th key={h} className="text-left px-4 py-2 text-xs font-medium"
-                    style={{ color: 'var(--text-tertiary)' }}>{h}</th>
+                {[
+                  { label: 'Nhà cung cấp',       tip: null },
+                  { label: 'Tổng PO',             tip: 'Hoàn thành / Chờ / Hủy' },
+                  { label: 'SL nhận / Đặt',       tip: 'Fill Rate: tỷ lệ thực nhận vs đặt hàng' },
+                  { label: 'Tỷ lệ thực nhận',     tip: 'Fill Rate chuẩn supply chain' },
+                  { label: 'Lead Time',            tip: 'Thực tế vs SLA (ngày hẹn giao)' },
+                  { label: 'Đúng hạn',             tip: 'Tỷ lệ giao trước hoặc đúng ngày hẹn' },
+                  { label: 'Tổng giá trị',         tip: null },
+                  { label: 'Lần cuối nhập',        tip: null },
+                ].map(h => (
+                  <th key={h.label} className="text-left px-3 py-2.5 text-xs font-semibold"
+                    style={{ color: 'var(--text-tertiary)', whiteSpace: 'nowrap' }}
+                    title={h.tip ?? ''}>
+                    {h.label}
+                    {h.tip && <span className="icon ml-0.5" style={{ fontSize: 11, opacity: 0.5 }}>info</span>}
+                  </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {suppliers.map(s => (
-                <tr key={s.supplierId} style={{ borderBottom: '1px solid var(--border)' }}>
-                  <td className="px-4 py-2 font-medium" style={{ color: 'var(--text-primary)' }}>{s.supplierName}</td>
-                  <td className="px-4 py-2" style={{ color: 'var(--text-secondary)' }}>{fmt(s.totalPurchaseOrders)}</td>
-                  <td className="px-4 py-2" style={{ color: 'var(--text-secondary)' }}>{fmt(s.totalReceivedQuantity)}</td>
-                  <td className="px-4 py-2" style={{ color: 'var(--text-secondary)' }}>{fmtCur(s.totalReceivedAmount)}</td>
-                  <td className="px-4 py-2 font-semibold"
-                    style={{ color: s.fulfillmentRate == null ? 'var(--text-tertiary)' : s.fulfillmentRate >= 0.9 ? '#22C55E' : '#F59E0B' }}>
-                    {fmtPct(s.fulfillmentRate)}
-                  </td>
-                  <td className="px-4 py-2 text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                    {s.lastReceiptDate ? new Date(s.lastReceiptDate).toLocaleDateString('vi-VN') : '—'}
-                  </td>
-                </tr>
-              ))}
+              {suppliers.map(s => {
+                const fill   = s.fillRate   != null ? Number(s.fillRate)   : null
+                const ontime = s.onTimeRate != null ? Number(s.onTimeRate) : null
+                const lead   = s.avgLeadDays != null ? Number(s.avgLeadDays) : null
+                const sla    = s.slaDays    != null ? Number(s.slaDays)    : null
+
+                const fillColor   = fill   == null ? 'var(--text-tertiary)' : fill   >= 0.95 ? '#16A34A' : fill   >= 0.80 ? '#D97706' : '#DC2626'
+                const ontimeColor = ontime == null ? 'var(--text-tertiary)' : ontime >= 0.85 ? '#16A34A' : ontime >= 0.70 ? '#D97706' : '#DC2626'
+                const leadColor   = lead   == null ? 'var(--text-tertiary)' : sla == null ? 'var(--text-secondary)' : lead <= sla ? '#16A34A' : lead <= sla * 1.2 ? '#D97706' : '#DC2626'
+
+                const fmtPctVal = v => v == null ? '—' : `${(v * 100).toFixed(1)}%`
+
+                return (
+                  <tr key={s.supplierId} style={{ borderBottom: '1px solid var(--border)' }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+
+                    {/* Nhà cung cấp */}
+                    <td className="px-3 py-3 font-medium" style={{ color: 'var(--text-primary)', maxWidth: 180 }}>
+                      {s.supplierName}
+                    </td>
+
+                    {/* Tổng PO + breakdown badges */}
+                    <td className="px-3 py-3">
+                      <div className="font-semibold text-sm mb-1" style={{ color: 'var(--text-primary)' }}>
+                        {s.totalPurchaseOrders} đơn
+                      </div>
+                      <div className="flex items-center gap-1 flex-wrap">
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium"
+                          style={{ background: 'rgba(34,197,94,0.10)', color: '#16A34A' }}>
+                          ✓{s.poReceived}
+                        </span>
+                        {s.poPending > 0 && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium"
+                            style={{ background: 'rgba(245,158,11,0.10)', color: '#D97706' }}>
+                            ⏳{s.poPending}
+                          </span>
+                        )}
+                        {s.poCancelled > 0 && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium"
+                            style={{ background: 'rgba(239,68,68,0.10)', color: '#DC2626' }}>
+                            ✕{s.poCancelled}
+                          </span>
+                        )}
+                      </div>
+                    </td>
+
+                    {/* SL nhận / đặt */}
+                    <td className="px-3 py-3 tabular-nums text-xs" style={{ color: 'var(--text-secondary)' }}>
+                      <span style={{ color: fillColor, fontWeight: 600 }}>{s.totalReceivedQuantity.toLocaleString()}</span>
+                      <span style={{ color: 'var(--text-tertiary)' }}> / {(s.totalReceivedQuantity / (fill ?? 1)).toFixed(0)}</span>
+                    </td>
+
+                    {/* Fill Rate */}
+                    <td className="px-3 py-3">
+                      <div className="font-bold text-sm" style={{ color: fillColor }}>
+                        {fmtPctVal(fill)}
+                      </div>
+                      <div className="w-20 h-1.5 rounded-full mt-1" style={{ background: 'var(--bg-elevated)' }}>
+                        <div className="h-full rounded-full" style={{ width: `${(fill ?? 0) * 100}%`, background: fillColor }} />
+                      </div>
+                    </td>
+
+                    {/* Lead Time vs SLA */}
+                    <td className="px-3 py-3">
+                      <div className="font-semibold text-sm" style={{ color: leadColor }}>
+                        {lead != null ? `${lead} ngày` : '—'}
+                      </div>
+                      {sla != null && (
+                        <div className="text-[10px] mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
+                          SLA: {sla} ngày
+                        </div>
+                      )}
+                    </td>
+
+                    {/* On-Time Rate */}
+                    <td className="px-3 py-3">
+                      <div className="font-bold text-sm" style={{ color: ontimeColor }}>
+                        {fmtPctVal(ontime)}
+                      </div>
+                      <div className="w-20 h-1.5 rounded-full mt-1" style={{ background: 'var(--bg-elevated)' }}>
+                        <div className="h-full rounded-full" style={{ width: `${(ontime ?? 0) * 100}%`, background: ontimeColor }} />
+                      </div>
+                    </td>
+
+                    {/* Tổng giá trị */}
+                    <td className="px-3 py-3 tabular-nums text-sm" style={{ color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+                      {fmtCur(s.totalReceivedAmount)}
+                    </td>
+
+                    {/* Lần cuối nhập */}
+                    <td className="px-3 py-3 text-xs" style={{ color: 'var(--text-tertiary)', whiteSpace: 'nowrap' }}>
+                      {s.lastReceiptDate ? new Date(s.lastReceiptDate).toLocaleDateString('vi-VN') : '—'}
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>
       )}
 
-      {/* ── Recommendations ── */}
-      <SectionTitle>Gợi ý nhập hàng</SectionTitle>
-      {errors.recs ? <ErrorState label="gợi ý nhập hàng" /> : !recs || recs.count === 0 ? (
-        <EmptyState message="Không có sản phẩm nào cần chú ý — tồn kho đang ổn định" />
-      ) : (
-        <div className="space-y-2">
-          {recs.items?.map(item => {
-            const cfg = RISK_CFG[item.riskLevel] ?? RISK_CFG.LOW
-            return (
-              <div key={item.productId} className="rounded-xl p-4"
-                style={{ background: cfg.bg, border: `1px solid ${cfg.border}` }}>
-                <div className="flex items-start justify-between gap-4 flex-wrap">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-xs font-bold px-2 py-0.5 rounded-full"
-                        style={{ background: cfg.color + '20', color: cfg.color }}>
-                        {cfg.label}
-                      </span>
-                      <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>{item.productName}</span>
-                      {item.sku && <span className="text-xs font-mono" style={{ color: 'var(--text-tertiary)' }}>{item.sku}</span>}
-                    </div>
-                    <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>{item.reason}</p>
-                    <p className="text-xs mt-0.5 font-medium" style={{ color: cfg.color }}>{item.recommendedAction}</p>
-                    {item.lastSupplier && (
-                      <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
-                        NCC gần nhất: {item.lastSupplier}
-                      </p>
-                    )}
-                  </div>
-                  <div className="flex gap-4 text-right text-sm shrink-0">
-                    <div>
-                      <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Tồn kho</div>
-                      <div className="font-bold" style={{ color: cfg.color }}>{fmt(item.currentStock)}</div>
-                    </div>
-                    <div>
-                      <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Bán/ngày</div>
-                      <div className="font-bold" style={{ color: 'var(--text-primary)' }}>{item.avgDailySales}</div>
-                    </div>
-                    <div>
-                      <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Còn lại</div>
-                      <div className="font-bold" style={{ color: cfg.color }}>
-                        {item.estimatedDaysLeft != null ? `${item.estimatedDaysLeft}d` : '∞'}
-                      </div>
-                    </div>
-                    {item.recommendedReorderQuantity > 0 && (
-                      <div>
-                        <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Cần nhập</div>
-                        <div className="font-bold" style={{ color: '#F97316' }}>+{fmt(item.recommendedReorderQuantity)}</div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )
-          })}
-          <div className="text-xs pt-1" style={{ color: 'var(--text-tertiary)' }}>
-            Dự trên dữ liệu bán thực tế 30 ngày gần nhất — không phải dự đoán AI
-          </div>
-        </div>
-      )}
 
       {/* Quick links */}
       <div className="flex flex-wrap gap-2 pt-2">

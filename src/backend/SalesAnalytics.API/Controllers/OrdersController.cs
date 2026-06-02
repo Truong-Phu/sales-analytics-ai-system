@@ -345,6 +345,7 @@ public class OrdersController(
 
     /// <summary>
     /// [OLTP] Cập nhật trạng thái đơn hàng.
+    /// Khi chuyển PENDING → CONFIRMED: tự động trừ kho + ghi SALE_OUT (atomic).
     /// Roles: Owner, Manager, Staff
     /// </summary>
     [HttpPut("oltp/{id:int}")]
@@ -361,20 +362,89 @@ public class OrdersController(
             if (!tenant.IsSuperAdmin && order.CompanyId != tenant.CompanyId)
                 return StatusCode(403, new { message = "Không có quyền chỉnh sửa đơn hàng này." });
 
-            if (dto.Status         is not null) order.Status         = dto.Status;
-            if (dto.PaymentStatus  is not null) order.PaymentStatus  = dto.PaymentStatus;
-            if (dto.ShippingStatus is not null) order.ShippingStatus = dto.ShippingStatus;
-            if (dto.DeliveredAt    is not null) order.DeliveredAt    = dto.DeliveredAt;
-            order.UpdatedAt = DateTime.UtcNow;
+            var oldStatus = order.Status;
+            var confirmingOrder = dto.Status == "CONFIRMED"
+                               && order.Status == "PENDING"
+                               && !order.IsStockDeducted;
 
-            await orderRepo.UpdateAsync(order);
+            if (confirmingOrder)
+            {
+                // Dùng raw SQL transaction để atomic: trừ kho + ghi SALE_OUT + đổi status
+                var actorId = int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var actorVal)
+                    ? (object)actorVal : DBNull.Value;
+
+                await using var conn = new NpgsqlConnection(_connStr);
+                await conn.OpenAsync();
+                await using var tx = await conn.BeginTransactionAsync();
+                try
+                {
+                    // Trừ kho per sản phẩm (aggregate per product_id trong đơn) + lấy before/after
+                    await using var stockCmd = new NpgsqlCommand("""
+                        WITH upd AS (
+                            UPDATE public.products p
+                            SET stock_quantity = GREATEST(0, stock_quantity - oi.quantity),
+                                updated_at = NOW()
+                            FROM public.order_items oi
+                            WHERE oi.order_id   = @orderId
+                              AND oi.product_id = p.product_id
+                            RETURNING p.product_id,
+                                      p.stock_quantity          AS after_stock,
+                                      oi.quantity               AS sold_qty
+                        )
+                        INSERT INTO public.inventory_transactions
+                            (company_id, product_id, transaction_type, quantity_change,
+                             before_stock, after_stock, reference_type, reference_id, note, created_by)
+                        SELECT @cid::uuid, product_id, 'SALE_OUT', -sold_qty,
+                               after_stock + sold_qty, after_stock,
+                               'order', @orderId, 'Xuat kho theo don hang xac nhan', @uid
+                        FROM upd
+                        """, conn, tx);
+                    stockCmd.Parameters.AddWithValue("orderId", id);
+                    stockCmd.Parameters.AddWithValue("cid",     order.CompanyId!.Value.ToString());
+                    stockCmd.Parameters.AddWithValue("uid",     actorId);
+                    await stockCmd.ExecuteNonQueryAsync();
+
+                    // Cập nhật status + is_stock_deducted trong cùng transaction
+                    await using var updCmd = new NpgsqlCommand("""
+                        UPDATE public.orders
+                        SET status            = 'CONFIRMED',
+                            is_stock_deducted = TRUE,
+                            payment_status    = COALESCE(@pay::text,  payment_status),
+                            shipping_status   = COALESCE(@ship::text, shipping_status),
+                            updated_at        = NOW()
+                        WHERE order_id = @id
+                        """, conn, tx);
+                    updCmd.Parameters.AddWithValue("id",   id);
+                    updCmd.Parameters.AddWithValue("pay",  (object?)(dto.PaymentStatus)  ?? DBNull.Value);
+                    updCmd.Parameters.AddWithValue("ship", (object?)(dto.ShippingStatus) ?? DBNull.Value);
+                    await updCmd.ExecuteNonQueryAsync();
+
+                    await tx.CommitAsync();
+                }
+                catch
+                {
+                    await tx.RollbackAsync();
+                    throw;
+                }
+            }
+            else
+            {
+                // Không cần trừ kho → cập nhật bình thường qua EF
+                if (dto.Status         is not null) order.Status         = dto.Status;
+                if (dto.PaymentStatus  is not null) order.PaymentStatus  = dto.PaymentStatus;
+                if (dto.ShippingStatus is not null) order.ShippingStatus = dto.ShippingStatus;
+                if (dto.DeliveredAt    is not null) order.DeliveredAt    = dto.DeliveredAt;
+                order.UpdatedAt = DateTime.UtcNow;
+                await orderRepo.UpdateAsync(order);
+            }
 
             await audit.LogAsync(
                 userId:     int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var uid) ? (int?)uid : null,
                 username:   User.FindFirstValue(ClaimTypes.Name) ?? "",
                 action:     "UPDATE_ORDER",
                 entityType: "Order", entityId: id.ToString(),
-                newValue:   $"{{\"status\":\"{order.Status}\",\"paymentStatus\":\"{order.PaymentStatus}\"}}",
+                oldValue:   $"{{\"status\":\"{oldStatus}\"}}",
+                newValue:   $"{{\"status\":\"{dto.Status ?? order.Status}\",\"isStockDeducted\":{confirmingOrder.ToString().ToLower()}}}",
                 ipAddress:  HttpContext.Connection.RemoteIpAddress?.ToString(),
                 userAgent:  HttpContext.Request.Headers["User-Agent"].ToString());
 

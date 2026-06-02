@@ -2,6 +2,7 @@
 import MockToast from '../../components/ui/MockToast'
 import AiEmptyState from '../../components/ui/AiEmptyState'
 import { getGeoDistribution } from '../../api/aiApi'
+import DateRangeFilter from '../../components/ui/DateRangeFilter'
 
 const VN_COORDS = {
   'Hà Nội':           [21.0285, 105.8542],
@@ -32,14 +33,21 @@ export default function GeoPage() {
   const [loading,  setLoading]  = useState(true)
   const [isMock,   setIsMock]   = useState(false)
   const [metric,   setMetric]   = useState('customers')
-  const [days,     setDays]     = useState(30)
+  const daysAgo30 = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10)
+  const tomorrow  = new Date(Date.now() + 86400000).toISOString().slice(0, 10)
+  const [from,     setFrom]     = useState(daysAgo30)
+  const [to,       setTo]       = useState(tomorrow)
   const [selected, setSelected] = useState(null)
   const mapRef     = useRef(null)
   const leafletRef = useRef(null)
 
+  // Tính days từ from/to để truyền vào AI service
+  const computeDays = (f, t) => Math.max(1, Math.round((new Date(t) - new Date(f)) / 86400000))
+
   const load = async () => {
     setLoading(true)
     try {
+      const days = computeDays(from, to)
       const res = await getGeoDistribution({ days, metric })
       setData(res)
       setIsMock(res.is_mock ?? false)
@@ -48,7 +56,7 @@ export default function GeoPage() {
     } finally { setLoading(false) }
   }
 
-  useEffect(() => { load() }, [days, metric])
+  useEffect(() => { load() }, [from, to, metric]) // eslint-disable-line
 
   useEffect(() => {
     if (!data || loading) return
@@ -110,25 +118,24 @@ export default function GeoPage() {
   return (
     <div className="space-y-5">
       <MockToast show={isMock} />
-      {!data && !loading && <AiEmptyState title="Chưa đủ dữ liệu phân tích phân bổ địa lý" />}
-
       {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
+      <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Bản đồ Nhiệt Khách hàng</h1>
           <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>Phân bổ khách hàng và doanh thu theo 63 tỉnh/thành Việt Nam</p>
         </div>
-        <div className="flex gap-2">
-          <select value={metric} onChange={e => setMetric(e.target.value)} className="linput text-sm">
+        <div className="flex items-center gap-2 flex-wrap justify-end">
+          <select value={metric} onChange={e => setMetric(e.target.value)} className="linput text-sm" style={{ width: 130 }}>
             <option value="customers">Khách hàng</option>
             <option value="revenue">Doanh thu</option>
             <option value="orders">Đơn hàng</option>
           </select>
-          <select value={days} onChange={e => setDays(+e.target.value)} className="linput text-sm" style={{ width: 110 }}>
-            {[7,14,30,90,365].map(d => <option key={d} value={d}>{d} ngày</option>)}
-          </select>
+          <DateRangeFilter from={from} to={to} onChange={(f, t) => { setFrom(f); setTo(t) }}
+            presets={['all','today','days_7','days_30','days_90','custom']} />
         </div>
       </div>
+
+      {!data && !loading && <AiEmptyState title="Chưa đủ dữ liệu phân tích phân bổ địa lý" />}
 
       {/* Summary cards */}
       {data && (

@@ -18,7 +18,11 @@ namespace SalesAnalytics.API.Controllers;
 [ApiController]
 [Route("api/import")]
 [Authorize(Roles = "Owner,Manager")]
-public class ImportController(IConfiguration cfg, ITenantContext tenant, IAuditLogService audit) : ControllerBase
+public class ImportController(
+    IConfiguration cfg,
+    ITenantContext tenant,
+    IAuditLogService audit,
+    AiProxyService aiProxy) : ControllerBase
 {
     private readonly string _connStr = cfg.GetConnectionString("Default")!;
 
@@ -119,18 +123,16 @@ public class ImportController(IConfiguration cfg, ITenantContext tenant, IAuditL
     }
 
     // ── GET /api/import/template/platform/{source} ────────────────────────────
-    // Trả về template CSV chuẩn format của từng sàn TMĐT (backward compat — mặc định orders).
     [HttpGet("template/platform/{source}")]
-    public IActionResult GetPlatformTemplate(string source) =>
+    public Task<IActionResult> GetPlatformTemplate(string source) =>
         GetPlatformTemplateByType(source, "orders");
 
     // ── GET /api/import/template/platform/{source}/{fileType} ────────────────
-    // Trả về template đúng theo sàn + loại file (orders / products).
     [HttpGet("template/platform/{source}/{fileType}")]
-    public IActionResult GetPlatformTemplateTyped(string source, string fileType) =>
+    public Task<IActionResult> GetPlatformTemplateTyped(string source, string fileType) =>
         GetPlatformTemplateByType(source, fileType);
 
-    private IActionResult GetPlatformTemplateByType(string source, string fileType)
+    private async Task<IActionResult> GetPlatformTemplateByType(string source, string fileType)
     {
         var src  = source.ToLower();
         var type = fileType.ToLower();
@@ -142,7 +144,6 @@ public class ImportController(IConfiguration cfg, ITenantContext tenant, IAuditL
 
         var displayName = $"template_{src}_{type}_{DateTime.Now:yyyyMMdd}.csv";
 
-        // Đơn hàng: header chuẩn Open Platform + 10 hàng mẫu ngày D-5 đến D
         if (type == "orders")
         {
             var header = src switch
@@ -175,12 +176,12 @@ public class ImportController(IConfiguration cfg, ITenantContext tenant, IAuditL
             };
             var sbOrd = new StringBuilder();
             sbOrd.AppendLine(header);
-            foreach (var row in BuildSampleRows(src, DateTime.Now))
+            var sampleRows = await BuildSampleRowsFromDb(src, tenant.CompanyId!.Value);
+            foreach (var row in sampleRows)
                 sbOrd.AppendLine(row);
             return File(Encoding.UTF8.GetBytes(sbOrd.ToString()), "text/csv", displayName);
         }
 
-        // Sản phẩm: header chuẩn Open Platform (không có trường ngày biến động)
         var productHeader = src switch
         {
             "shopee" => "Mã sản phẩm Shopee,Tên sản phẩm,Mã SKU gốc,Danh mục,ID danh mục,Thương hiệu,Giá gốc (VND),Giá bán (VND),Tồn kho,Tồn kho đặt trước,Trạng thái,Tình trạng,Cân nặng (kg),Chiều dài (cm),Chiều rộng (cm),Chiều cao (cm),Mô tả,Ảnh chính,Có phân loại,Ngày tạo,Ngày cập nhật",
@@ -189,6 +190,160 @@ public class ImportController(IConfiguration cfg, ITenantContext tenant, IAuditL
             _ => ""
         };
         return File(Encoding.UTF8.GetBytes(productHeader + "\r\n"), "text/csv", displayName);
+    }
+
+    // ── Query DB lấy 6 variation thực tế để điền vào template ───────────────
+    private record SampleVariation(
+        int ProductId, string ProductName, string ParentSku,
+        string VarSku, string VarName, string Color, string Size,
+        decimal SalePrice, decimal OriginalPrice);
+
+    private async Task<string[]> BuildSampleRowsFromDb(string platform, Guid companyId)
+    {
+        var now = DateTime.Now;
+        string D(int d) => now.AddDays(-d).ToString("dd/MM/yyyy 09:00");
+        string I(int d) => now.AddDays(-d).ToString("yyyy-MM-dd 09:00:00");
+        // yyMMddHHmm: thay đổi mỗi phút → tải lại template luôn có order codes mới
+        var c = now.ToString("yyMMddHHmm");
+
+        // Lấy 6 biến thể active từ 6 sản phẩm khác nhau trong catalog
+        var vars = new List<SampleVariation>();
+        try
+        {
+            await using var conn = new NpgsqlConnection(_connStr);
+            await conn.OpenAsync();
+            await using var cmd = new NpgsqlCommand("""
+                SELECT DISTINCT ON (pv.product_id)
+                    p.product_id, p.product_name, p.sku AS parent_sku,
+                    pv.sku AS var_sku, pv.variation_name,
+                    COALESCE(pv.attribute_color, '') AS color,
+                    COALESCE(pv.attribute_size,  '') AS size,
+                    pv.sale_price, COALESCE(pv.original_price, pv.sale_price) AS original_price
+                FROM product_variations pv
+                JOIN products p ON pv.product_id = p.product_id
+                WHERE pv.is_active = TRUE
+                  AND p.is_active  = TRUE
+                  AND pv.company_id = @cid::uuid
+                ORDER BY pv.product_id, pv.id
+                LIMIT 6
+                """, conn);
+            cmd.Parameters.AddWithValue("cid", companyId.ToString());
+            await using var reader = await cmd.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+                vars.Add(new SampleVariation(
+                    reader.GetInt32(0), reader.GetString(1), reader.GetString(2),
+                    reader.GetString(3), reader.GetString(4), reader.GetString(5), reader.GetString(6),
+                    reader.GetDecimal(7), reader.GetDecimal(8)));
+        }
+        catch { /* fallback: trả về mảng rỗng */ }
+
+        if (vars.Count == 0) return [];
+
+        // 6 trạng thái — daysAgo tính từ hôm nay (0 = hôm nay, 1 = hôm qua, ...)
+        // Sắp xếp theo logic thời gian thực tế: đơn mới nhất (hôm nay) → đơn cũ nhất
+        var statuses = new[]
+        {
+            ("UNPAID",             "PENDING",            "GHN",  "Giao Hàng Nhanh",     0m, 0),  // hôm nay
+            ("AWAITING_SHIPMENT",  "AWAITING",           "JT",   "J&T Express",          0m, 1),  // hôm qua
+            ("IN_TRANSIT",         "TRANSIT",            "GHTK", "GHTK",             25000m, 2),  // 2 ngày trước
+            ("COMPLETED",          "DELIVERED",          "GHN",  "Giao Hàng Nhanh",  30000m, 4),  // 4 ngày trước
+            ("CANCELLED",          "CANCELLED",          "GHN",  "Giao Hàng Nhanh",      0m, 3),  // 3 ngày trước
+            ("RETURNED",           "RETURNED",           "GHN",  "Giao Hàng Nhanh",  30000m, 5),  // 5 ngày trước
+        };
+        var buyers = new[] { "Nguyễn Văn An,0901234567,123 Nguyễn Trãi,Phường 1,Quận 5,Hồ Chí Minh",
+                             "Trần Thị Bình,0912345678,456 Lê Lợi,Phường 2,Quận 1,Hồ Chí Minh",
+                             "Lê Văn Cường,0923456789,789 Đinh Tiên Hoàng,Phường 3,Bình Thạnh,Hồ Chí Minh",
+                             "Phạm Thị Dung,0934567890,321 Trần Hưng Đạo,Phường 4,Quận 10,Hồ Chí Minh",
+                             "Hoàng Văn Em,0945678901,654 Võ Văn Tần,Phường 5,Quận 3,Hồ Chí Minh",
+                             "Vũ Thị Phương,0956789012,987 Nguyễn Văn Cừ,Phường 6,Quận 6,Hồ Chí Minh" };
+
+        var rows = new List<string>();
+        for (int i = 0; i < vars.Count && i < 6; i++)
+        {
+            var v  = vars[i];
+            var st = statuses[i];
+            var b  = buyers[i].Split(',');
+            // b: name, phone, addr, ward, district, province
+            var (orderStatus, pkgStatus, carrier, carrierName, shipFee, daysAgo) = st;
+            var seq       = $"{i + 1:D2}";
+            var orderCode = $"{(platform == "tiktok" ? "TKT" : platform == "shopee" ? "SPE" : "LZD")}{c}{seq}";
+            var trackNum  = pkgStatus is "CANCELLED" or "PENDING" ? "" : $"{carrier}{c}{seq}";
+            var origShip  = shipFee > 0 ? shipFee + 5000 : 0;
+            var shipDisc  = origShip > shipFee ? origShip - shipFee : 0;
+            var total     = orderStatus == "CANCELLED" ? 0 : v.SalePrice + shipFee;
+
+            rows.Add(platform switch
+            {
+                "shopee" => string.Join(",",
+                    orderCode,
+                    orderStatus == "COMPLETED" ? "Hoàn thành" :
+                    orderStatus == "IN_TRANSIT" ? "Đang vận chuyển" :
+                    orderStatus == "AWAITING_SHIPMENT" ? "Đã xử lý" :
+                    orderStatus == "UNPAID" ? "Chưa thanh toán" :
+                    orderStatus == "CANCELLED" ? "Đã hủy" : "Hoàn hàng",
+                    orderStatus == "CANCELLED" ? "Người mua hủy" : orderStatus == "RETURNED" ? "Hàng bị lỗi" : "",
+                    D(daysAgo), D(1),
+                    orderStatus is "UNPAID" or "CANCELLED" ? "" : D(daysAgo),
+                    $"buyer_shopee{i + 1}", b[0], b[1], b[2],
+                    b[3], b[4], b[5], "Miền Nam", "70000",
+                    v.ProductName, v.VarName, v.VarSku, v.ProductId.ToString(),
+                    v.OriginalPrice, v.SalePrice, "1",
+                    v.SalePrice, shipFee, origShip, shipDisc, total,
+                    i % 2 == 0 ? "COD" : "Ví ShopeePay",
+                    carrierName, trackNum,
+                    pkgStatus == "DELIVERED" ? "Đã giao hàng" : pkgStatus == "TRANSIT" ? "Đang giao hàng" :
+                    pkgStatus == "AWAITING" ? "Chờ lấy hàng" : pkgStatus == "CANCELLED" ? "Đã hủy" :
+                    pkgStatus == "RETURNED" ? "Đã hoàn hàng" : "",
+                    "Tự giao", ""),
+
+                "tiktok" => string.Join(",",
+                    orderCode, orderStatus,
+                    I(daysAgo), I(1),
+                    orderStatus == "UNPAID" ? "" : I(daysAgo),
+                    "",                                        // RTS SLA
+                    $"tiktok_user{i + 1}", "",                // Buyer User ID, Message
+                    i % 2 == 0 ? "COD" : "BANK_TRANSFER",
+                    i % 2 == 0 ? "TRUE" : "FALSE",
+                    b[0], b[1],
+                    $"{b[2]} {b[3]} {b[4]} {b[5]}",          // Full Address
+                    b[2], b[5], b[4], b[3],                   // Detail, Province, District, Ward
+                    "70000", "VN", "STANDARD",
+                    carrier, trackNum, "CROSS_BORDER", "VND",
+                    v.SalePrice, shipFee, origShip, shipDisc, "0", "0",
+                    total, v.SalePrice,
+                    $"LI{c}{seq}", $"VAR{seq}", v.ProductId,
+                    v.ProductName, v.VarSku, v.VarName,
+                    v.OriginalPrice, v.SalePrice, "0", "0",
+                    $"PKG{c}{seq}", pkgStatus, trackNum, carrierName, orderStatus),
+
+                "lazada" => string.Join(",",
+                    $"100{i + 1}", $"LZD{c}{seq}",
+                    I(daysAgo), I(1),
+                    orderStatus == "COMPLETED" ? "DELIVERED" :
+                    orderStatus == "IN_TRANSIT" ? "SHIPPED" :
+                    orderStatus == "AWAITING_SHIPMENT" ? "READY_TO_SHIP" :
+                    orderStatus == "UNPAID" ? "PENDING" :
+                    orderStatus == "CANCELLED" ? "CANCELLED" : "RETURNED",
+                    i % 2 == 0 ? "COD" : "LAZADA_WALLET",
+                    v.SalePrice, shipFee, origShip, shipDisc, "0", "0", "0",
+                    b[0].Split(' ')[0],                        // First Name
+                    string.Join(" ", b[0].Split(' ').Skip(1)), // Last Name
+                    b[2], b[5], b[4], b[3], "Vietnam",
+                    "1", "WH001", $"ITEM{c}{seq}",
+                    v.ProductName, v.VarSku, v.VarSku, v.VarName,
+                    v.SalePrice, orderStatus == "CANCELLED" ? "0" : v.SalePrice.ToString(),
+                    shipFee,
+                    orderStatus == "COMPLETED" ? "DELIVERED" :
+                    orderStatus == "IN_TRANSIT" ? "SHIPPED" :
+                    orderStatus == "AWAITING_SHIPMENT" ? "READY_TO_SHIP" :
+                    orderStatus == "UNPAID" ? "PENDING" :
+                    orderStatus == "CANCELLED" ? "CANCELLED" : "RETURNED",
+                    carrier, trackNum, "VND", v.ProductId, ""),
+
+                _ => ""
+            });
+        }
+        return [.. rows];
     }
 
     // ── POST /api/import/platform-orders ─────────────────────────────────────
@@ -258,7 +413,10 @@ public class ImportController(IConfiguration cfg, ITenantContext tenant, IAuditL
             }
         }
 
-        // Ghi audit log để trace ai đã import gì
+        // Ghi audit log + trigger ETL sync lên DW sau khi import thành công
+        int dwInserted = 0;
+        string dwMessage = "";
+
         if (success > 0)
         {
             var userId   = int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var uid) ? (int?)uid : null;
@@ -271,6 +429,28 @@ public class ImportController(IConfiguration cfg, ITenantContext tenant, IAuditL
                 entityId:   platform,
                 newValue:   $"imported={success} skipped={skipped} file={file.FileName}",
                 status:     "SUCCESS");
+
+            // Tự động sync OLTP → Data Warehouse sau khi import
+            try
+            {
+                var dwResult = await aiProxy.TriggerOltpToDwAsync(
+                    channel:   platform,
+                    companyId: tenant.CompanyId?.ToString());
+
+                if (dwResult is not null)
+                {
+                    dwInserted = int.TryParse(dwResult.GetValueOrDefault("inserted")?.ToString(), out var di) ? di : 0;
+                    dwMessage  = $"Đã đồng bộ {dwInserted} bản ghi lên Data Warehouse.";
+                }
+                else
+                {
+                    dwMessage = "AI Service chưa sẵn sàng — DW sẽ được đồng bộ tự động trong lần sync tiếp theo.";
+                }
+            }
+            catch
+            {
+                dwMessage = "Không thể kết nối AI Service — DW sẽ được đồng bộ tự động trong lần sync tiếp theo.";
+            }
         }
 
         return Ok(new
@@ -279,7 +459,11 @@ public class ImportController(IConfiguration cfg, ITenantContext tenant, IAuditL
             skipped,
             errors,
             platform,
-            message = $"Đã import {success} đơn hàng từ {platform}. Đang đồng bộ lên Data Warehouse..."
+            dwInserted,
+            dwMessage,
+            message = success > 0
+                ? $"Đã import {success} đơn hàng từ {platform}. {dwMessage}"
+                : $"Không có đơn hàng mới — {skipped} bỏ qua (đã tồn tại hoặc thiếu dữ liệu).",
         });
     }
 
@@ -619,55 +803,6 @@ public class ImportController(IConfiguration cfg, ITenantContext tenant, IAuditL
                 _ => "PENDING",
             },
             _ => "PENDING",
-        };
-    }
-
-    // ── Dữ liệu mẫu cho template CSV ─────────────────────────────────────────
-    // 6 rows / platform, cover đủ 6 trạng thái: DELIVERED/SHIPPING/CONFIRMED/PENDING/CANCELLED/RETURNED
-    private static string[] BuildSampleRows(string platform, DateTime now)
-    {
-        // D() → "dd/MM/yyyy 09:00"  (Shopee dùng định dạng Việt)
-        // I() → "yyyy-MM-dd 09:00:00" (TikTok / Lazada dùng ISO)
-        string D(int d) => now.AddDays(-d).ToString("dd/MM/yyyy 09:00");
-        string I(int d) => now.AddDays(-d).ToString("yyyy-MM-dd 09:00:00");
-        var c = now.ToString("yyMM"); // 2 chữ số năm + 2 chữ số tháng, VD: 2605
-
-        return platform switch
-        {
-            "shopee" => new[]
-            {
-                // 33 cột — Shopee Vietnam Open Platform
-                // col: Mã đơn hàng | Trạng thái | Lý do hủy/hoàn | Ngày đặt | Ngày cập nhật | Ngày TT | Username | Tên nhận | SĐT | Địa chỉ | Phường | Quận | Tỉnh | Vùng | ZIP | Tên SP | Phân loại | SKU | Mã SP | Giá gốc | Giá bán | SL | Tổng | Phí ship | Ship gốc | Giảm ship | Tổng TT | PTTT | ĐVVC | Mã VĐ | Trạng thái VC | Loại | Ghi chú
-                $"SPE{c}001,Hoàn thành,,{D(5)},{D(1)},{D(5)},buyer_shopee1,Nguyễn Văn An,0901234567,123 Nguyễn Trãi,Phường 1,Quận 5,Hồ Chí Minh,Miền Nam,70000,Áo thun basic,M - Trắng,SKU-SHIRT-M-W,SP001,200000,150000,1,150000,30000,35000,5000,175000,COD,Giao Hàng Nhanh,GHN001,Đã giao hàng,Tự giao,",
-                $"SPE{c}002,Đang vận chuyển,,{D(3)},{D(1)},,buyer_shopee2,Trần Thị Bình,0912345678,456 Lê Lợi,Phường 2,Quận 1,Hồ Chí Minh,Miền Nam,70000,Quần jean slim,28 - Xanh,SKU-JEAN-28-B,SP002,350000,280000,1,280000,25000,30000,5000,300000,COD,GHTK,GHTK002,Đang giao hàng,Tự giao,",
-                $"SPE{c}003,Đã xử lý,,{D(2)},{D(2)},,buyer_shopee3,Lê Văn Cường,0923456789,789 Đinh Tiên Hoàng,Phường 3,Bình Thạnh,Hồ Chí Minh,Miền Nam,70000,Giày sneaker nam,42 - Đen,SKU-SHOE-42-B,SP003,450000,380000,2,760000,0,30000,30000,760000,Ví ShopeePay,J&T Express,JT003,Chờ lấy hàng,Tự giao,",
-                $"SPE{c}004,Chưa thanh toán,,{D(1)},{D(1)},,buyer_shopee4,Phạm Thị Dung,0934567890,321 Trần Hưng Đạo,Phường 4,Quận 10,Hồ Chí Minh,Miền Nam,70000,Túi xách nữ,Màu đen,SKU-BAG-BL,SP004,500000,420000,1,420000,0,25000,25000,420000,Ví ShopeePay,Giao Hàng Nhanh,,Chờ lấy hàng,Tự giao,",
-                $"SPE{c}005,Đã hủy,Người mua hủy,{D(4)},{D(4)},,buyer_shopee5,Hoàng Văn Em,0945678901,654 Võ Văn Tần,Phường 5,Quận 3,Hồ Chí Minh,Miền Nam,70000,Mũ bucket unisex,Một cỡ - Kem,SKU-HAT-BE,SP005,120000,95000,1,95000,0,0,0,0,COD,,,Đã hủy,Tự giao,",
-                $"SPE{c}006,Hoàn hàng,Hàng bị lỗi,{D(6)},{D(1)},,buyer_shopee6,Vũ Thị Phương,0956789012,987 Nguyễn Văn Cừ,Phường 6,Quận 6,Hồ Chí Minh,Miền Nam,70000,Áo polo tay ngắn,L - Đỏ,SKU-POLO-L-R,SP006,180000,150000,1,150000,30000,30000,0,180000,Ví ShopeePay,Giao Hàng Nhanh,GHN006,Đã hoàn hàng,Tự giao,",
-            },
-            "tiktok" => new[]
-            {
-                // 47 cột — TikTok Shop Open Platform
-                // col: Order ID|Order Status|Create Time|Update Time|Paid Time|RTS SLA Time|Buyer User ID|Buyer Message|Payment Method|Is COD|Recipient Name|Recipient Phone|Full Address|Address Detail|Province|District|Ward|Postal Code|Region Code|Shipping Type|Shipping Provider|Tracking Number|Fulfillment Type|Currency|Sub Total|Shipping Fee|Orig Shipping Fee|Ship Discount|Seller Discount|Platform Discount|Total Amount|Orig Total Price|Line Item ID|SKU ID|Product ID|Product Name|Seller SKU|SKU Name|Orig Price|Sale Price|Platform Discount Item|Seller Discount Item|Package ID|Package Status|Item Tracking|Shipping Provider Name|Display Status
-                $"TKT{c}001,COMPLETED,{I(5)},{I(1)},{I(5)},,tiktok_user1,,COD,TRUE,Nguyễn Văn An,0901234567,123 Nguyễn Trãi Phường 1 Quận 5 Hồ Chí Minh,123 Nguyễn Trãi,Hồ Chí Minh,Quận 5,Phường 1,70000,VN,STANDARD,GHN,GHN001,CROSS_BORDER,VND,150000,30000,35000,5000,0,0,175000,150000,LI001,SKU001,PROD001,Áo thun basic,SKU-SHIRT-M-W,M - Trắng,200000,150000,0,0,PKG001,DELIVERED,GHN001,Giao Hàng Nhanh,DELIVERED",
-                $"TKT{c}002,IN_TRANSIT,{I(3)},{I(1)},{I(3)},,tiktok_user2,,BANK_TRANSFER,FALSE,Trần Thị Bình,0912345678,456 Lê Lợi Phường 2 Quận 1 Hồ Chí Minh,456 Lê Lợi,Hồ Chí Minh,Quận 1,Phường 2,70000,VN,STANDARD,GHTK,GHTK002,CROSS_BORDER,VND,280000,25000,30000,5000,0,0,300000,280000,LI002,SKU002,PROD002,Quần jean slim,SKU-JEAN-28-B,28 - Xanh,350000,280000,0,0,PKG002,TRANSIT,GHTK002,GHTK,IN_TRANSIT",
-                $"TKT{c}003,AWAITING_SHIPMENT,{I(2)},{I(2)},{I(2)},,tiktok_user3,,TIKTOK_PAY,FALSE,Lê Văn Cường,0923456789,789 Đinh Tiên Hoàng Bình Thạnh Hồ Chí Minh,789 Đinh Tiên Hoàng,Hồ Chí Minh,Bình Thạnh,Phường 3,70000,VN,STANDARD,JT,JT003,CROSS_BORDER,VND,760000,0,30000,30000,0,0,760000,760000,LI003,SKU003,PROD003,Giày sneaker nam,SKU-SHOE-42-B,42 - Đen,450000,380000,0,0,PKG003,AWAITING,JT003,J&T Express,AWAITING_SHIPMENT",
-                $"TKT{c}004,UNPAID,{I(1)},{I(1)},,,tiktok_user4,,COD,TRUE,Phạm Thị Dung,0934567890,321 Trần Hưng Đạo Quận 10 Hồ Chí Minh,321 Trần Hưng Đạo,Hồ Chí Minh,Quận 10,Phường 4,70000,VN,STANDARD,GHN,,CROSS_BORDER,VND,420000,0,25000,25000,0,0,420000,420000,LI004,SKU004,PROD004,Túi xách nữ,SKU-BAG-BL,Màu đen,500000,420000,0,0,PKG004,PENDING,,Giao Hàng Nhanh,UNPAID",
-                $"TKT{c}005,CANCELLED,{I(4)},{I(4)},{I(4)},,tiktok_user5,,COD,TRUE,Hoàng Văn Em,0945678901,654 Võ Văn Tần Quận 3 Hồ Chí Minh,654 Võ Văn Tần,Hồ Chí Minh,Quận 3,Phường 5,70000,VN,STANDARD,GHN,,CROSS_BORDER,VND,95000,0,0,0,0,0,0,95000,LI005,SKU005,PROD005,Mũ bucket unisex,SKU-HAT-BE,Một cỡ - Kem,120000,95000,0,0,PKG005,CANCELLED,,Giao Hàng Nhanh,CANCELLED",
-                $"TKT{c}006,RETURNED,{I(6)},{I(1)},{I(6)},,tiktok_user6,,TIKTOK_PAY,FALSE,Vũ Thị Phương,0956789012,987 Nguyễn Văn Cừ Quận 6 Hồ Chí Minh,987 Nguyễn Văn Cừ,Hồ Chí Minh,Quận 6,Phường 6,70000,VN,STANDARD,GHN,GHN006,CROSS_BORDER,VND,150000,30000,30000,0,0,0,180000,150000,LI006,SKU006,PROD006,Áo polo tay ngắn,SKU-POLO-L-R,L - Đỏ,180000,150000,0,0,PKG006,RETURNED,GHN006,Giao Hàng Nhanh,RETURNED",
-            },
-            "lazada" => new[]
-            {
-                // 36 cột — Lazada Open Platform
-                // col: Order ID|Order Number|Created At|Updated At|Status|Payment Method|Price|Shipping Fee|Ship Fee Orig|Ship Discount|Voucher|Voucher Platform|Voucher Seller|First Name|Last Name|Address Line 1|City|District(Address3)|Ward(Address4)|Country|Items Count|Warehouse Code|Order Item ID|Item Name|SKU|Shop SKU|Variation|Item Price|Paid Price|Shipping Amount|Status Item|Shipment Provider|Tracking Code|Currency|Product ID|Product Main Image
-                $"1001,LZD{c}001,{I(5)},{I(1)},DELIVERED,COD,150000,30000,35000,5000,0,0,0,Nguyễn,Văn An,123 Nguyễn Trãi,Hồ Chí Minh,Quận 5,Phường 1,Vietnam,1,WH001,ITEM001,Áo thun basic,SKU-SHIRT-M-W,SPX-SKU-001,M - Trắng,150000,150000,30000,DELIVERED,GHN,GHN001,VND,PROD001,",
-                $"1002,LZD{c}002,{I(3)},{I(1)},SHIPPED,BANK_TRANSFER,280000,25000,30000,5000,0,0,0,Trần,Thị Bình,456 Lê Lợi,Hồ Chí Minh,Quận 1,Phường 2,Vietnam,1,WH001,ITEM002,Quần jean slim,SKU-JEAN-28-B,SPX-SKU-002,28 - Xanh,280000,280000,25000,SHIPPED,GHTK,GHTK002,VND,PROD002,",
-                $"1003,LZD{c}003,{I(2)},{I(2)},READY_TO_SHIP,LAZADA_WALLET,760000,0,30000,30000,0,0,0,Lê,Văn Cường,789 Đinh Tiên Hoàng,Hồ Chí Minh,Bình Thạnh,Phường 3,Vietnam,2,WH001,ITEM003,Giày sneaker nam,SKU-SHOE-42-B,SPX-SKU-003,42 - Đen,380000,380000,0,READY_TO_SHIP,JT,JT003,VND,PROD003,",
-                $"1004,LZD{c}004,{I(1)},{I(1)},PENDING,COD,420000,0,25000,25000,0,0,0,Phạm,Thị Dung,321 Trần Hưng Đạo,Hồ Chí Minh,Quận 10,Phường 4,Vietnam,1,WH001,ITEM004,Túi xách nữ,SKU-BAG-BL,SPX-SKU-004,Màu đen,420000,420000,0,PENDING,,,VND,PROD004,",
-                $"1005,LZD{c}005,{I(4)},{I(4)},CANCELLED,COD,95000,0,0,0,0,0,0,Hoàng,Văn Em,654 Võ Văn Tần,Hồ Chí Minh,Quận 3,Phường 5,Vietnam,1,WH001,ITEM005,Mũ bucket unisex,SKU-HAT-BE,SPX-SKU-005,Một cỡ - Kem,95000,0,0,CANCELLED,,,VND,PROD005,",
-                $"1006,LZD{c}006,{I(6)},{I(1)},RETURNED,LAZADA_WALLET,150000,30000,30000,0,0,0,0,Vũ,Thị Phương,987 Nguyễn Văn Cừ,Hồ Chí Minh,Quận 6,Phường 6,Vietnam,1,WH001,ITEM006,Áo polo tay ngắn,SKU-POLO-L-R,SPX-SKU-006,L - Đỏ,150000,150000,30000,RETURNED,GHN,GHN006,VND,PROD006,",
-            },
-            _ => [],
         };
     }
 
@@ -1419,10 +1554,10 @@ public class ImportController(IConfiguration cfg, ITenantContext tenant, IAuditL
 
     // ── GET /api/templates/download ─────────────────────────────────────────────
     // Tạo file CSV template chuẩn Open Platform với dữ liệu mẫu thực tế.
-    // platform=shopee|tiktok|lazada|ghn  type=orders|products  includeSample=true|false
+    // platform=shopee|tiktok|lazada|ghn  type=orders|products
     [HttpGet("/api/templates/download")]
-    [AllowAnonymous]  // cho phép tải template không cần login (chỉ tải mẫu)
-    public IActionResult DownloadTemplate(
+    [AllowAnonymous]
+    public async Task<IActionResult> DownloadTemplate(
         [FromQuery] string platform = "shopee",
         [FromQuery] string type     = "orders")
     {
@@ -1494,9 +1629,13 @@ public class ImportController(IConfiguration cfg, ITenantContext tenant, IAuditL
         };
 
         sb.AppendLine(header);
-        if (typ == "orders" && plt is "shopee" or "tiktok" or "lazada")
-            foreach (var row in BuildSampleRows(plt, now))
+        // Nếu user đã đăng nhập và có company → lấy sample từ DB thực tế
+        if (typ == "orders" && plt is "shopee" or "tiktok" or "lazada" && tenant.CompanyId.HasValue)
+        {
+            var sampleRows = await BuildSampleRowsFromDb(plt, tenant.CompanyId.Value);
+            foreach (var row in sampleRows)
                 sb.AppendLine(row);
+        }
 
         var fileName = $"template_{plt}_{typ}_{now:yyyyMMdd_HHmmss}.csv";
         var bytes    = Encoding.UTF8.GetBytes(sb.ToString());

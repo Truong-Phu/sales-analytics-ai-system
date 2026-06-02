@@ -81,8 +81,6 @@ export default function SupplierPage() {
   return (
     <div className="space-y-5">
       <MockToast show={isMock} />
-      {!data && !loading && <AiEmptyState title="Chưa đủ dữ liệu phân tích hiệu suất nhà cung cấp" />}
-
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
@@ -101,6 +99,8 @@ export default function SupplierPage() {
           <button onClick={load} className="lbtn lbtn-primary text-sm">Làm mới</button>
         </div>
       </div>
+
+      {!data && !loading && <AiEmptyState title="Chưa đủ dữ liệu phân tích hiệu suất nhà cung cấp" />}
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

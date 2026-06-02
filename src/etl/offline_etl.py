@@ -377,37 +377,47 @@ _FACT_SQL = """
         %(missing_cost)s, %(is_fee_estimated)s
     )
     ON CONFLICT (external_order_id) DO UPDATE SET
-        gross_revenue             = EXCLUDED.gross_revenue,
-        discount_amount           = EXCLUDED.discount_amount,
-        net_revenue               = EXCLUDED.net_revenue,
-        cost_amount               = EXCLUDED.cost_amount,
-        gross_profit              = EXCLUDED.gross_profit,
-        profit_margin             = EXCLUDED.profit_margin,
-        shipping_fee              = EXCLUDED.shipping_fee,
-        return_count              = EXCLUDED.return_count,
-        return_amount             = EXCLUDED.return_amount,
-        cogs_amount               = EXCLUDED.cogs_amount,
-        estimated_platform_fee    = EXCLUDED.estimated_platform_fee,
-        estimated_payment_fee     = EXCLUDED.estimated_payment_fee,
-        estimated_packaging_cost  = EXCLUDED.estimated_packaging_cost,
-        estimated_shipping_cost   = EXCLUDED.estimated_shipping_cost,
-        estimated_total_fee       = EXCLUDED.estimated_total_fee,
-        estimated_net_profit      = EXCLUDED.estimated_net_profit,
-        gross_profit_margin       = EXCLUDED.gross_profit_margin,
+        gross_revenue               = EXCLUDED.gross_revenue,
+        discount_amount             = EXCLUDED.discount_amount,
+        net_revenue                 = EXCLUDED.net_revenue,
+        cost_amount                 = EXCLUDED.cost_amount,
+        gross_profit                = EXCLUDED.gross_profit,
+        profit_margin               = EXCLUDED.profit_margin,
+        shipping_fee                = EXCLUDED.shipping_fee,
+        return_count                = EXCLUDED.return_count,
+        return_amount               = EXCLUDED.return_amount,
+        cogs_amount                 = EXCLUDED.cogs_amount,
+        estimated_platform_fee      = EXCLUDED.estimated_platform_fee,
+        estimated_payment_fee       = EXCLUDED.estimated_payment_fee,
+        estimated_packaging_cost    = EXCLUDED.estimated_packaging_cost,
+        estimated_shipping_cost     = EXCLUDED.estimated_shipping_cost,
+        estimated_total_fee         = EXCLUDED.estimated_total_fee,
+        estimated_net_profit        = EXCLUDED.estimated_net_profit,
+        gross_profit_margin         = EXCLUDED.gross_profit_margin,
         estimated_net_profit_margin = EXCLUDED.estimated_net_profit_margin,
-        missing_cost              = EXCLUDED.missing_cost,
-        is_fee_estimated          = EXCLUDED.is_fee_estimated
+        missing_cost                = EXCLUDED.missing_cost,
+        is_fee_estimated            = EXCLUDED.is_fee_estimated
+    WHERE
+        fact_sales.gross_revenue               IS DISTINCT FROM EXCLUDED.gross_revenue
+     OR fact_sales.net_revenue                 IS DISTINCT FROM EXCLUDED.net_revenue
+     OR fact_sales.cogs_amount                 IS DISTINCT FROM EXCLUDED.cogs_amount
+     OR fact_sales.return_count                IS DISTINCT FROM EXCLUDED.return_count
+     OR fact_sales.estimated_net_profit        IS DISTINCT FROM EXCLUDED.estimated_net_profit
+    RETURNING (xmax::text::bigint = 0) AS is_new
 """
 
 
-def _load_offline_records(conn, fact_records: List[Dict]) -> Tuple[int, int]:
+def _load_offline_records(conn, fact_records: List[Dict]) -> Tuple[int, int, int]:
     """
-    Resolve dim keys và INSERT vào dw.fact_sales theo schema thực tế.
+    Resolve dim keys và INSERT/UPDATE vào dw.fact_sales.
 
     Returns:
-        (inserted, skipped) – số bản ghi insert thành công và bị bỏ qua (duplicate)
+        (inserted, updated, skipped)
+        - inserted: bản ghi MỚI chưa có trong DW
+        - updated:  bản ghi đã có nhưng data thay đổi (revenue, cost, return...)
+        - skipped:  bản ghi đã có và không thay đổi gì
     """
-    inserted = skipped = 0
+    inserted = updated = skipped = 0
 
     for rec in fact_records:
         try:
@@ -458,10 +468,16 @@ def _load_offline_records(conn, fact_records: List[Dict]) -> Tuple[int, int]:
 
             with conn.cursor() as cur:
                 cur.execute(_FACT_SQL, params)
-                if cur.rowcount > 0:
+                row = cur.fetchone()
+                if row is None:
+                    # conflict + WHERE false → data không đổi → skip
+                    skipped += 1
+                elif row[0]:
+                    # xmax = 0 → INSERT mới
                     inserted += 1
                 else:
-                    skipped += 1
+                    # xmax != 0 → UPDATE (data đã thay đổi)
+                    updated += 1
 
         except Exception as exc:
             logger.error(
@@ -474,8 +490,11 @@ def _load_offline_records(conn, fact_records: List[Dict]) -> Tuple[int, int]:
             except Exception:
                 pass
 
-    logger.info("_load_offline_records: %d inserted, %d skipped", inserted, skipped)
-    return inserted, skipped
+    logger.info(
+        "_load_offline_records: %d inserted, %d updated, %d skipped",
+        inserted, updated, skipped
+    )
+    return inserted, updated, skipped
 
 
 # ── CSV row → fact record ─────────────────────────────────────────────────────────
@@ -634,14 +653,15 @@ class ExcelImporter:
             _customer_cache.clear()
 
             conn = self._get_conn()
-            inserted, skipped = _load_offline_records(conn, fact_records)
+            inserted, updated, skipped = _load_offline_records(conn, fact_records)
             conn.commit()
             conn.close()
             stats["imported"] = inserted
+            stats["updated"]  = updated
             stats["skipped"] += skipped
             logger.info(
-                "[%s] extracted=%d, imported=%d, skipped=%d, errors=%d",
-                path.name, stats["extracted"], inserted, skipped, stats["errors"]
+                "[%s] extracted=%d, imported=%d, updated=%d, skipped=%d, errors=%d",
+                path.name, stats["extracted"], inserted, updated, skipped, stats["errors"]
             )
         except Exception as exc:
             logger.error("import_orders lỗi: %s", exc, exc_info=True)
@@ -819,62 +839,61 @@ def _deduct_stock_for_new_orders(conn, company_id: str) -> int:
 
     Chỉ trừ đơn hợp lệ (không trừ CANCELLED / RETURNED).
     Dùng GREATEST(0, ...) để phòng âm kho khi reconcile dữ liệu lịch sử.
+    Ghi sequential before/after per order_item (không dùng aggregate chung).
     """
     with conn.cursor() as cur:
-        # Lấy tổng qty cần trừ theo sản phẩm + stock hiện tại (trước khi trừ)
+        # Lấy tất cả order_items cần trừ kho + stock tại thời điểm đọc.
+        # ORDER BY order_id để sequential before/after nhất quán theo thứ tự đơn hàng.
         cur.execute("""
-            SELECT oi.product_id,
-                   SUM(oi.quantity)    AS total_qty,
-                   p.stock_quantity    AS before_stock
+            SELECT o.order_id, oi.product_id, oi.quantity,
+                   p.stock_quantity AS current_stock
             FROM public.order_items oi
-            JOIN public.orders o  ON oi.order_id  = o.order_id
+            JOIN public.orders   o ON oi.order_id   = o.order_id
             JOIN public.products p ON oi.product_id = p.product_id
             WHERE o.company_id        = %s::uuid
               AND o.is_stock_deducted = FALSE
               AND o.status NOT IN ('CANCELLED', 'RETURNED')
-            GROUP BY oi.product_id, p.stock_quantity
+            ORDER BY o.order_id ASC, oi.product_id ASC
         """, (company_id,))
-        product_rows = cur.fetchall()  # (product_id, total_qty, before_stock)
+        item_rows = cur.fetchall()  # (order_id, product_id, quantity, current_stock)
 
-        if not product_rows:
+        if not item_rows:
             return 0
 
-        # Cập nhật tồn kho và ghi nhớ before/after theo sản phẩm
-        product_stock_map: dict = {}  # product_id → (before_stock, after_stock)
-        for product_id, total_qty, before_stock in product_rows:
-            deduct = int(total_qty)
-            after_stock = max(0, before_stock - deduct)
+        # Tính aggregate deduction per product và ghi nhớ before_stock tại thời điểm đọc.
+        # before_stock = stock_quantity hiện tại trước khi bất kỳ item nào trong batch này được trừ.
+        product_deduct: dict = {}  # product_id → (total_deduct, before_stock)
+        for _, product_id, quantity, current_stock in item_rows:
+            if product_id not in product_deduct:
+                product_deduct[product_id] = (0, int(current_stock))
+            total, before = product_deduct[product_id]
+            product_deduct[product_id] = (total + int(quantity), before)
+
+        # Cập nhật products.stock_quantity (1 UPDATE per product, aggregate)
+        for product_id, (total_deduct, _) in product_deduct.items():
             cur.execute("""
                 UPDATE public.products
                 SET stock_quantity = GREATEST(0, stock_quantity - %s),
                     updated_at = NOW()
                 WHERE product_id = %s
-            """, (deduct, product_id))
-            product_stock_map[product_id] = (before_stock, after_stock)
+            """, (total_deduct, product_id))
 
-        # Lấy từng order_item cần log (per-order, idempotent vì chỉ lấy is_stock_deducted=FALSE)
-        cur.execute("""
-            SELECT o.order_id, oi.product_id, oi.quantity
-            FROM public.order_items oi
-            JOIN public.orders o ON oi.order_id = o.order_id
-            WHERE o.company_id        = %s::uuid
-              AND o.is_stock_deducted = FALSE
-              AND o.status NOT IN ('CANCELLED', 'RETURNED')
-        """, (company_id,))
-        order_item_rows = cur.fetchall()  # (order_id, product_id, quantity)
+        # Tính running_stock per product để ghi sequential before/after per item.
+        # Mỗi item lấy stock trước lần trừ của chính nó, không dùng aggregate chung.
+        running_stock: dict = {pid: before for pid, (_, before) in product_deduct.items()}
 
-        # Bulk insert inventory_transactions (một dòng per order_item)
         log_rows = []
-        for order_id, product_id, quantity in order_item_rows:
-            if product_id in product_stock_map:
-                before_s, after_s = product_stock_map[product_id]
-                log_rows.append((
-                    company_id, product_id,
-                    'MARKETPLACE_IMPORT_SALE', -quantity,
-                    before_s, after_s,
-                    'marketplace_order', order_id,
-                    'ETL sync tu san thuong mai dien tu',
-                ))
+        for order_id, product_id, quantity, _ in item_rows:
+            before_s = running_stock[product_id]
+            after_s  = max(0, before_s - int(quantity))
+            running_stock[product_id] = after_s
+            log_rows.append((
+                company_id, product_id,
+                'MARKETPLACE_IMPORT_SALE', -int(quantity),
+                before_s, after_s,
+                'marketplace_order', order_id,
+                'ETL sync tu san thuong mai dien tu',
+            ))
 
         if log_rows:
             psycopg2.extras.execute_values(cur, """
@@ -895,7 +914,7 @@ def _deduct_stock_for_new_orders(conn, company_id: str) -> int:
         n_orders = cur.rowcount
 
     conn.commit()
-    n_products = len(product_stock_map)
+    n_products = len(product_deduct)
     if n_products > 0:
         logger.info(
             "deduct_stock: %d products deducted across %d orders (%d tx logs)",
@@ -959,7 +978,8 @@ def run_oltp_to_dw(company_id: Optional[str] = None, channel: Optional[str] = No
                 (actual_company_id,)
             )
             for row in _fc.fetchall():
-                _fee_config_cache[row["channel_name"]] = dict(row)
+                # Key bằng UPPER để khớp với channel_type từ sales_channels (luôn uppercase)
+                _fee_config_cache[row["channel_name"].upper()] = dict(row)
 
     # -- Advance trạng thái đơn hàng + trừ kho trước khi đọc DW -----------------
     if actual_company_id:
@@ -1147,15 +1167,20 @@ def run_oltp_to_dw(company_id: Optional[str] = None, channel: Optional[str] = No
     _product_cache.clear()
     _customer_cache.clear()
 
-    inserted, skipped = _load_offline_records(conn, fact_records)
+    inserted, updated, skipped = _load_offline_records(conn, fact_records)
     conn.commit()
     conn.close()
 
     logger.info(
-        "run_oltp_to_dw: total_orders=%d, inserted=%d, skipped=%d",
-        len(orders), inserted, skipped,
+        "run_oltp_to_dw: total_orders=%d, inserted=%d, updated=%d, skipped=%d",
+        len(orders), inserted, updated, skipped,
     )
-    return {"total_orders": len(orders), "inserted": inserted, "skipped": skipped}
+    return {
+        "total_orders": len(orders),
+        "inserted":     inserted,
+        "updated":      updated,
+        "skipped":      skipped,
+    }
 
 
 # ── Chạy trực tiếp ────────────────────────────────────────────────────────────────

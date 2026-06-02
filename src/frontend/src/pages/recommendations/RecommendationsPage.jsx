@@ -411,8 +411,6 @@ export default function RecommendationsPage() {
 
   return (
     <div className="space-y-5 pb-24">
-      {!autoData && !autoLoading && <AiEmptyState title="Chưa có dữ liệu gợi ý AI" />}
-
       {/* ── Header ── */}
       <div>
         <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
@@ -422,6 +420,8 @@ export default function RecommendationsPage() {
           {t('recommendations.subtitle')}
         </p>
       </div>
+
+      {!autoData && !autoLoading && <AiEmptyState title="Chưa có dữ liệu gợi ý AI" />}
 
       {/* ── 3 Tab Chat ── */}
       <div className="lcard overflow-hidden">
