@@ -31,6 +31,7 @@ public class AiController(AiProxyService ai, ITenantContext tenant) : Controller
         [FromQuery] int days = 90,
         [FromQuery] string? channel = null)
     {
+        days = Math.Clamp(days, 14, 365);
         var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
         var result = await ai.GetAnomalyAsync(days, channel, companyId);
         if (result is null) return StatusCode(503, new { message = "AI Service không khả dụng." });
@@ -43,6 +44,7 @@ public class AiController(AiProxyService ai, ITenantContext tenant) : Controller
         [FromQuery] int days = 30,
         [FromQuery] string? channel = null)
     {
+        days = Math.Clamp(days, 7, 365);
         var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
         var result = await ai.GetTrendAsync(days, channel, companyId);
         if (result is null) return StatusCode(503, new { message = "AI Service không khả dụng." });
@@ -73,6 +75,26 @@ public class AiController(AiProxyService ai, ITenantContext tenant) : Controller
     public async Task<IActionResult> ForecastModelComparison()
     {
         var result = await ai.GetModelComparisonAsync();
+        if (result is null) return StatusCode(503, new { message = "AI Service không khả dụng." });
+        return Ok(result);
+    }
+
+    /// <summary>Kích hoạt retrain model Prophet thủ công (chạy nền, Owner/DataIT)</summary>
+    [HttpPost("forecast/retrain")]
+    [Authorize(Roles = "Owner,DataIT,SuperAdmin")]
+    public async Task<IActionResult> RetrainForecast()
+    {
+        var result = await ai.TriggerRetrainAsync();
+        if (result is null) return StatusCode(503, new { message = "AI Service không khả dụng. Không thể retrain." });
+        return Ok(new { message = "Đã kích hoạt retrain model Prophet. Kiểm tra trạng thái tại /api/ai/forecast/retrain-status.", status = result });
+    }
+
+    /// <summary>Trạng thái retrain model Prophet</summary>
+    [HttpGet("forecast/retrain-status")]
+    [Authorize(Roles = "Owner,DataIT,SuperAdmin")]
+    public async Task<IActionResult> RetrainStatus()
+    {
+        var result = await ai.ProxyGetAsync("retrain/status");
         if (result is null) return StatusCode(503, new { message = "AI Service không khả dụng." });
         return Ok(result);
     }
@@ -166,6 +188,7 @@ public class AiController(AiProxyService ai, ITenantContext tenant) : Controller
         [FromQuery] int topN = 50,
         [FromQuery] bool retrain = false)
     {
+        topN = Math.Clamp(topN, 1, 500);
         var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
         var result = await ai.ProxyGetAsync($"churn?top_n={topN}&retrain={retrain.ToString().ToLower()}"
             + (companyId.HasValue ? $"&company_id={companyId}" : ""));
@@ -182,6 +205,8 @@ public class AiController(AiProxyService ai, ITenantContext tenant) : Controller
         [FromQuery] double minLift = 1.0,
         [FromQuery] int topN = 20)
     {
+        days = Math.Clamp(days, 30, 365);
+        topN = Math.Clamp(topN, 1, 100);
         var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
         static string F(double v) => v.ToString("G", CultureInfo.InvariantCulture);
         var qs = $"basket?days={days}&min_support={F(minSupport)}&min_confidence={F(minConfidence)}&min_lift={F(minLift)}&top_n={topN}"
@@ -197,6 +222,7 @@ public class AiController(AiProxyService ai, ITenantContext tenant) : Controller
         [FromQuery] int days = 30,
         [FromQuery] string? status = null)
     {
+        days = Math.Clamp(days, 7, 90);
         var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
         var qs = $"inventory?days={days}"
             + (status is not null ? $"&status={status}" : "")
@@ -221,6 +247,7 @@ public class AiController(AiProxyService ai, ITenantContext tenant) : Controller
         [FromQuery] int days = 30,
         [FromQuery] string model = "last_touch")
     {
+        days = Math.Clamp(days, 7, 365);
         var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
         var qs = $"attribution?days={days}&model={model}"
             + (companyId.HasValue ? $"&company_id={companyId}" : "");
@@ -233,6 +260,7 @@ public class AiController(AiProxyService ai, ITenantContext tenant) : Controller
     [HttpGet("campaign")]
     public async Task<IActionResult> CampaignPlanner([FromQuery] int daysAhead = 60)
     {
+        daysAhead = Math.Clamp(daysAhead, 7, 180);
         var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
         var qs = $"campaign?days_ahead={daysAhead}"
             + (companyId.HasValue ? $"&company_id={companyId}" : "");
@@ -247,6 +275,7 @@ public class AiController(AiProxyService ai, ITenantContext tenant) : Controller
         [FromQuery] int days = 30,
         [FromQuery] string metric = "customers")
     {
+        days = Math.Clamp(days, 7, 365);
         var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
         var qs = $"geo?days={days}&metric={metric}"
             + (companyId.HasValue ? $"&company_id={companyId}" : "");
@@ -264,6 +293,8 @@ public class AiController(AiProxyService ai, ITenantContext tenant) : Controller
         [FromQuery(Name = "start_date")] string? startDate = null,
         [FromQuery(Name = "end_date")]   string? endDate = null)
     {
+        days = Math.Clamp(days, 1, 3650);
+        topN = Math.Clamp(topN, 3, 50);
         var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
         var qs = $"leaderboard?category={category}&days={days}&top_n={topN}"
             + (companyId.HasValue ? $"&company_id={companyId}" : "")
@@ -280,6 +311,7 @@ public class AiController(AiProxyService ai, ITenantContext tenant) : Controller
         [FromQuery] int days = 30,
         [FromQuery] string language = "vi")
     {
+        days = Math.Clamp(days, 7, 365);
         var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
         var qs = $"narrative?days={days}&language={language}"
             + (companyId.HasValue ? $"&company_id={companyId}" : "");
@@ -292,6 +324,7 @@ public class AiController(AiProxyService ai, ITenantContext tenant) : Controller
     [HttpGet("supplier")]
     public async Task<IActionResult> SupplierPerformance([FromQuery] int days = 90)
     {
+        days = Math.Clamp(days, 7, 365);
         var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
         var qs = $"supplier?days={days}"
             + (companyId.HasValue ? $"&company_id={companyId}" : "");
@@ -306,6 +339,7 @@ public class AiController(AiProxyService ai, ITenantContext tenant) : Controller
         [FromQuery] string? category = null,
         [FromQuery] int days = 30)
     {
+        days = Math.Clamp(days, 7, 365);
         var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
         var qs = $"price?days={days}"
             + (category is not null ? $"&category={category}" : "")

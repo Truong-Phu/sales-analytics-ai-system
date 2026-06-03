@@ -5,6 +5,8 @@ import {
   ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid,
 } from 'recharts'
 import AiEmptyState from '../../components/ui/AiEmptyState'
+import InfoTooltip from '../../components/ui/InfoTooltip'
+import { MT } from '../../constants/metricTooltips'
 import { getForecast, getTrend, getForecastMetrics, getModelComparison } from '../../api/aiApi'
 
 const HORIZONS   = [7, 14, 30, 60, 90]
@@ -46,6 +48,21 @@ export default function ForecastPage() {
   const [loading,       setLoading]       = useState(false)
   const [metricsIsMock,   setMetricsIsMock]   = useState(false)
   const [comparison,      setComparison]      = useState(null)
+  const [retraining,      setRetraining]      = useState(false)
+  const [retrainMsg,      setRetrainMsg]      = useState(null)
+
+  const handleRetrain = async () => {
+    setRetraining(true)
+    setRetrainMsg(null)
+    try {
+      await api.post('/api/ai/forecast/retrain')
+      setRetrainMsg({ type: 'success', text: 'Đang retrain model Prophet. Quá trình mất 1-3 phút. Sau khi xong, nhấn "Chạy dự báo" để thấy kết quả mới.' })
+    } catch {
+      setRetrainMsg({ type: 'error', text: 'Không thể kích hoạt retrain. AI Service không khả dụng.' })
+    } finally {
+      setRetraining(false)
+    }
+  }
 
   const handleRun = async () => {
     setLoading(true)
@@ -240,6 +257,38 @@ export default function ForecastPage() {
                 </>
               )}
             </button>
+
+            {/* Retrain button - Owner/DataIT only */}
+            <button
+              onClick={handleRetrain}
+              disabled={retraining}
+              className="lbtn w-full justify-center mt-2"
+              style={{ height: 36, fontSize: 12, opacity: retraining ? 0.6 : 1,
+                       border: '1px dashed var(--border)', color: 'var(--text-secondary)' }}
+              title="Huấn luyện lại model Prophet với dữ liệu mới nhất"
+            >
+              {retraining ? (
+                <>
+                  <span className="w-3 h-3 border-2 rounded-full border-current border-t-transparent"
+                        style={{ animation: 'spin 0.7s linear infinite' }} />
+                  Đang retrain...
+                </>
+              ) : (
+                <>
+                  <span className="icon" style={{ fontSize: 14 }}>model_training</span>
+                  Retrain model Prophet
+                </>
+              )}
+            </button>
+            {retrainMsg && (
+              <div className="mt-2 p-2 rounded-lg text-xs"
+                   style={{
+                     background: retrainMsg.type === 'success' ? 'var(--color-success-bg, #f0fdf4)' : 'var(--color-error-bg, #fef2f2)',
+                     color: retrainMsg.type === 'success' ? 'var(--color-success, #16a34a)' : 'var(--color-error)',
+                   }}>
+                {retrainMsg.text}
+              </div>
+            )}
           </div>
 
           {/* Insight cards */}
@@ -260,7 +309,10 @@ export default function ForecastPage() {
 
               {/* Growth rate */}
               <div className="lcard p-4">
-                <p className="text-sm mb-1" style={{ color: 'var(--text-secondary)' }}>Tăng trưởng dự kiến</p>
+                <div className="flex items-center gap-0.5 mb-1">
+                  <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>Tăng trưởng dự kiến</p>
+                  <InfoTooltip {...MT.revenueGrowth} placement="top" />
+                </div>
                 <div
                   className="font-mono text-2xl font-bold"
                   style={{ color: isUp ? 'var(--accent-500)' : 'var(--color-error)' }}
@@ -304,13 +356,16 @@ export default function ForecastPage() {
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
             {[
-              { label: 'MAE',  value: metrics.mae  != null ? `${(metrics.mae/1000).toFixed(1)}K ₫` : '–', sub: 'Mean Absolute Error',      color: 'var(--accent-500)' },
-              { label: 'RMSE', value: metrics.rmse != null ? `${(metrics.rmse/1000).toFixed(1)}K ₫` : '–', sub: 'Root Mean Squared Error', color: 'var(--color-warning)' },
-              { label: 'MAPE', value: metrics.mape_pct != null ? `${metrics.mape_pct}%` : '–',             sub: 'Mean Abs. % Error',        color: 'var(--color-error)' },
-              { label: 'Tập test', value: `${metrics.n_test ?? '–'} ngày`, sub: `${metrics.test_from ?? ''} → ${metrics.test_to ?? ''}`, color: 'var(--text-tertiary)' },
-            ].map(({ label, value, sub, color }) => (
+              { label: 'MAE',  tooltip: MT.mae,  value: metrics.mae  != null ? `${(metrics.mae/1000).toFixed(1)}K ₫` : '–', sub: 'Mean Absolute Error',      color: 'var(--accent-500)' },
+              { label: 'RMSE', tooltip: MT.rmse, value: metrics.rmse != null ? `${(metrics.rmse/1000).toFixed(1)}K ₫` : '–', sub: 'Root Mean Squared Error', color: 'var(--color-warning)' },
+              { label: 'MAPE', tooltip: MT.mape, value: metrics.mape_pct != null ? `${metrics.mape_pct}%` : '–',             sub: 'Mean Abs. % Error',        color: 'var(--color-error)' },
+              { label: 'Tập test', tooltip: null, value: `${metrics.n_test ?? '–'} ngày`, sub: `${metrics.test_from ?? ''} → ${metrics.test_to ?? ''}`, color: 'var(--text-tertiary)' },
+            ].map(({ label, tooltip, value, sub, color }) => (
               <div key={label} className="p-3 rounded-xl" style={{ background: 'var(--bg-elevated)' }}>
-                <p className="text-sm mb-1" style={{ color: 'var(--text-secondary)' }}>{label}</p>
+                <div className="flex items-center gap-0.5 mb-1">
+                  <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{label}</p>
+                  {tooltip && <InfoTooltip {...tooltip} placement="top" />}
+                </div>
                 <p className="font-mono text-lg font-bold" style={{ color }}>{value}</p>
                 <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>{sub}</p>
               </div>
@@ -353,9 +408,20 @@ export default function ForecastPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                  {['Mô hình', 'Loại', 'MAE (VNĐ)', 'RMSE (VNĐ)', 'MAPE', 'SMAPE'].map(h => (
+                  {[
+                    { h: 'Mô hình',    tip: null        },
+                    { h: 'Loại',       tip: null        },
+                    { h: 'MAE (VNĐ)',  tip: MT.mae      },
+                    { h: 'RMSE (VNĐ)', tip: MT.rmse     },
+                    { h: 'MAPE',       tip: MT.mape     },
+                    { h: 'SMAPE',      tip: MT.smape    },
+                  ].map(({ h, tip }) => (
                     <th key={h} className="pb-2 text-left font-semibold text-xs"
-                        style={{ color: 'var(--text-secondary)' }}>{h}</th>
+                        style={{ color: 'var(--text-secondary)' }}>
+                      <span className="inline-flex items-center gap-0.5">
+                        {h}{tip && <InfoTooltip {...tip} placement="bottom" />}
+                      </span>
+                    </th>
                   ))}
                 </tr>
               </thead>

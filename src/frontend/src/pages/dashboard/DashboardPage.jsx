@@ -21,6 +21,7 @@ import { getInsights, getLeaderboard, getGeoDistribution, getChannelAttribution,
          getRfmSegments } from '../../api/aiApi'
 import { getProfitOverview } from '../../api/financeApi'
 import { KPI_DEFINITIONS } from '../../utils/kpiDefinitions'
+import InfoTooltip from '../../components/ui/InfoTooltip'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function relDate(offsetDays) {
@@ -118,69 +119,8 @@ function Sparkline({ data, color = '#6366F1' }) {
   )
 }
 
-// ── KPI Help Tooltip — ⓘ icon mở popup giải thích công thức/ý nghĩa ───────────
-function KpiTooltip({ def }) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef(null)
-
-  useEffect(() => {
-    if (!open) return
-    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [open])
-
-  if (!def) return null
-  return (
-    <div ref={ref} className="relative inline-flex shrink-0">
-      <button
-        onClick={(e) => { e.stopPropagation(); setOpen(o => !o) }}
-        className="w-4 h-4 rounded-full flex items-center justify-center ml-0.5"
-        style={{
-          background: 'var(--bg-elevated)',
-          color: open ? 'var(--primary-500)' : 'var(--text-tertiary)',
-          fontSize: 9,
-          fontWeight: 700,
-          lineHeight: 1,
-          border: `1px solid ${open ? 'var(--primary-400)' : 'var(--border)'}`,
-        }}
-        title="Xem định nghĩa KPI"
-      >
-        ⓘ
-      </button>
-      {open && (
-        <div
-          className="lcard scale-in absolute z-[300] p-3"
-          style={{
-            bottom: 'calc(100% + 6px)',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            width: 270,
-            boxShadow: 'var(--shadow-lg)',
-            fontSize: 12,
-          }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <p className="font-bold mb-2" style={{ color: 'var(--text-primary)', fontSize: 13 }}>{def.name}</p>
-          <div className="space-y-1.5">
-            <div>
-              <span className="font-semibold" style={{ color: 'var(--text-tertiary)' }}>Công thức: </span>
-              <span className="font-mono" style={{ color: 'var(--primary-600)', fontSize: 11 }}>{def.formula}</span>
-            </div>
-            <div>
-              <span className="font-semibold" style={{ color: 'var(--text-tertiary)' }}>Ý nghĩa: </span>
-              <span style={{ color: 'var(--text-secondary)' }}>{def.description}</span>
-            </div>
-            <div className="pt-1.5 mt-1" style={{ borderTop: '1px solid var(--border)' }}>
-              <span className="font-semibold" style={{ color: 'var(--text-tertiary)' }}>Ví dụ: </span>
-              <span style={{ color: 'var(--text-secondary)', fontStyle: 'italic' }}>{def.example}</span>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
+// KpiTooltip — alias cho InfoTooltip, giữ backward-compat với prop `def`
+const KpiTooltip = ({ def }) => <InfoTooltip def={def} />
 
 function KpiCard({ label, value, trend, trendLabel, icon, color = 'var(--primary-500)', valueColor, sparkData, sparkColor, helpDef, unavailable = false, placeholderText }) {
   const up = trend > 0
@@ -564,19 +504,12 @@ function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd 
           />
           <KpiCard
             label="Tỷ lệ giữ chân"
+            value={kpi.retentionRate != null ? `${kpi.retentionRate}%` : '—'}
             icon="replay"
             color="#14B8A6"
-            unavailable
+            unavailable={kpi.retentionRate == null}
+            placeholderText={kpi.retentionRate == null ? 'Chưa đủ lịch sử đơn hàng' : undefined}
             helpDef={KPI_DEFINITIONS.retentionRate}
-            placeholderText="Cần dữ liệu mua lại từ hệ thống"
-          />
-          <KpiCard
-            label="Tỷ lệ chuyển đổi"
-            icon="conversion_path"
-            color="#F59E0B"
-            unavailable
-            helpDef={KPI_DEFINITIONS.conversionRate}
-            placeholderText="Cần dữ liệu traffic từ sàn TMĐT"
           />
         </div>
 

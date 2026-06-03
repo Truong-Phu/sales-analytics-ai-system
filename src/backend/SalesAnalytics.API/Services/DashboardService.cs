@@ -114,6 +114,51 @@ public class DashboardService
         var profitMarginPct = totalRevenue > 0
             ? Math.Round(totalProfit / totalRevenue * 100, 2) : 0m;
 
+        // Tỷ lệ giữ chân = khách hàng mua trong kỳ này VÀ đã từng mua trước kỳ này
+        // Tính từ OLTP orders (không phụ thuộc DW)
+        decimal? retentionRate = null;
+        if (companyId.HasValue && totalCustomers > 0)
+        {
+            var sqlRetention = """
+                WITH customers_this_period AS (
+                    SELECT DISTINCT customer_id
+                    FROM public.orders
+                    WHERE order_date::date BETWEEN @from AND @to
+                      AND status NOT IN ('CANCELLED')
+                      AND company_id = @companyId::uuid
+                ),
+                returning_customers AS (
+                    SELECT ctp.customer_id
+                    FROM customers_this_period ctp
+                    WHERE EXISTS (
+                        SELECT 1 FROM public.orders o2
+                        WHERE o2.customer_id = ctp.customer_id
+                          AND o2.order_date::date < @from
+                          AND o2.status NOT IN ('CANCELLED')
+                          AND o2.company_id = @companyId::uuid
+                    )
+                )
+                SELECT
+                    COUNT(*) FILTER (WHERE rc.customer_id IS NOT NULL) AS returning_count,
+                    COUNT(ctp.customer_id) AS total_count
+                FROM customers_this_period ctp
+                LEFT JOIN returning_customers rc ON rc.customer_id = ctp.customer_id
+                """;
+            await using var retCmd = new NpgsqlCommand(sqlRetention, conn);
+            retCmd.Parameters.AddWithValue("from",      from.ToDateTime(TimeOnly.MinValue));
+            retCmd.Parameters.AddWithValue("to",        to.ToDateTime(TimeOnly.MinValue));
+            retCmd.Parameters.AddWithValue("companyId", companyId.Value.ToString());
+            await using var retReader = await retCmd.ExecuteReaderAsync();
+            if (await retReader.ReadAsync())
+            {
+                var returningCount = retReader.GetInt64(0);
+                var totalCount     = retReader.GetInt64(1);
+                if (totalCount > 0)
+                    retentionRate = Math.Round((decimal)returningCount / totalCount * 100, 1);
+            }
+            await retReader.CloseAsync();
+        }
+
         return new KpiSummary(
             TotalRevenue:     totalRevenue,
             TotalProfit:      totalProfit,
@@ -123,7 +168,8 @@ public class DashboardService
             RevenueGrowthPct: Trend(totalRevenue, prevRevenue),
             OrdersGrowthPct:  Trend(totalOrders, prevOrders),
             CustomersGrowthPct: Trend(totalCustomers, prevCustomers),
-            ProfitMarginPct:  profitMarginPct
+            ProfitMarginPct:  profitMarginPct,
+            RetentionRate:    retentionRate
         );
     }
 

@@ -2,15 +2,16 @@ namespace SalesAnalytics.Core.DTOs;
 
 /// <summary>KPI tổng hợp cho Dashboard – khớp với DashboardPage.jsx</summary>
 public record KpiSummary(
-    decimal TotalRevenue,
-    decimal TotalProfit,
-    int     TotalOrders,
-    decimal AvgOrderValue,
-    int     NewCustomers,
-    decimal RevenueGrowthPct,    // % tăng trưởng doanh thu so với kỳ trước
-    decimal OrdersGrowthPct,     // % tăng trưởng đơn hàng so với kỳ trước
-    decimal CustomersGrowthPct,  // % tăng trưởng khách hàng so với kỳ trước
-    decimal ProfitMarginPct
+    decimal  TotalRevenue,
+    decimal  TotalProfit,
+    int      TotalOrders,
+    decimal  AvgOrderValue,
+    int      NewCustomers,
+    decimal  RevenueGrowthPct,    // % tăng trưởng doanh thu so với kỳ trước
+    decimal  OrdersGrowthPct,     // % tăng trưởng đơn hàng so với kỳ trước
+    decimal  CustomersGrowthPct,  // % tăng trưởng khách hàng so với kỳ trước
+    decimal  ProfitMarginPct,
+    decimal? RetentionRate = null // % khách quay lại = khách đã mua trước kỳ / tổng KH kỳ này
 );
 
 public record RevenueByDay(
