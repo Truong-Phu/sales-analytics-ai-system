@@ -1,17 +1,10 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { getExpenses, getExpensesSummary, createExpense, updateExpense, deleteExpense } from '../../api/financeApi'
 import { useAuth } from '../../hooks/useAuth'
 import DateRangeFilter from '../../components/ui/DateRangeFilter'
 
 const EXPENSE_TYPES = ['Salary', 'Warehouse', 'Utilities', 'Internet', 'Office', 'Other']
-const TYPE_LABELS = {
-  Salary:    'Lương nhân viên',
-  Warehouse: 'Kho bãi',
-  Utilities: 'Điện, nước, gas',
-  Internet:  'Internet & Viễn thông',
-  Office:    'Văn phòng phẩm',
-  Other:     'Khác',
-}
 const TYPE_ICONS = {
   Salary:    'people',
   Warehouse: 'warehouse',
@@ -46,6 +39,15 @@ const firstOfMonth = () => {
 
 // Form thêm / sửa chi phí
 function ExpenseForm({ initial, onSave, onCancel }) {
+  const { t } = useTranslation()
+  const TYPE_LABELS = {
+    Salary:    t('opex.typeLabels.payroll'),
+    Warehouse: t('opex.typeLabels.warehouse'),
+    Utilities: t('opex.typeLabels.utility'),
+    Internet:  t('opex.typeLabels.internet'),
+    Office:    t('opex.typeLabels.office'),
+    Other:     t('opex.typeLabels.other'),
+  }
   const [form, setForm] = useState(initial ?? {
     expenseType: 'Salary',
     amount:      '',
@@ -60,13 +62,13 @@ function ExpenseForm({ initial, onSave, onCancel }) {
   async function submit(e) {
     e.preventDefault()
     const amount = parseFloat(String(form.amount).replace(/[^0-9.]/g, ''))
-    if (!amount || amount <= 0) { setErr('Vui lòng nhập số tiền hợp lệ'); return }
-    if (!form.expenseDate)      { setErr('Vui lòng chọn ngày'); return }
+    if (!amount || amount <= 0) { setErr(t('opex.validAmount')); return }
+    if (!form.expenseDate)      { setErr(t('opex.validDate')); return }
     setSaving(true); setErr('')
     try {
       await onSave({ ...form, amount })
     } catch (ex) {
-      setErr(ex?.response?.data?.error ?? 'Lưu thất bại')
+      setErr(ex?.response?.data?.error ?? t('common.saveError'))
     } finally {
       setSaving(false)
     }
@@ -78,19 +80,19 @@ function ExpenseForm({ initial, onSave, onCancel }) {
         {/* Loại chi phí */}
         <div>
           <label className="text-xs font-semibold mb-1 block" style={{ color: 'var(--text-secondary)' }}>
-            Loại chi phí *
+            {t('opex.formTypeLabel')} *
           </label>
           <select value={form.expenseType} onChange={e => f('expenseType', e.target.value)}
                   className="linput text-sm w-full">
-            {EXPENSE_TYPES.map(t => (
-              <option key={t} value={t}>{TYPE_LABELS[t]}</option>
+            {EXPENSE_TYPES.map(tp => (
+              <option key={tp} value={tp}>{TYPE_LABELS[tp]}</option>
             ))}
           </select>
         </div>
         {/* Ngày */}
         <div>
           <label className="text-xs font-semibold mb-1 block" style={{ color: 'var(--text-secondary)' }}>
-            Ngày *
+            {t('opex.formDateLabel')} *
           </label>
           <input type="date" value={form.expenseDate} max={today()}
                  onChange={e => f('expenseDate', e.target.value)}
@@ -99,7 +101,7 @@ function ExpenseForm({ initial, onSave, onCancel }) {
         {/* Số tiền */}
         <div>
           <label className="text-xs font-semibold mb-1 block" style={{ color: 'var(--text-secondary)' }}>
-            Số tiền (₫) *
+            {t('opex.formAmountLabel')} *
           </label>
           <input type="number" min="0" step="100000" value={form.amount}
                  onChange={e => f('amount', e.target.value)}
@@ -109,7 +111,7 @@ function ExpenseForm({ initial, onSave, onCancel }) {
         {/* Mô tả */}
         <div>
           <label className="text-xs font-semibold mb-1 block" style={{ color: 'var(--text-secondary)' }}>
-            Mô tả
+            {t('opex.formNoteLabel')}
           </label>
           <input type="text" value={form.description}
                  onChange={e => f('description', e.target.value)}
@@ -126,10 +128,10 @@ function ExpenseForm({ initial, onSave, onCancel }) {
 
       <div className="flex gap-2 pt-1">
         <button type="submit" disabled={saving} className="lbtn lbtn-primary text-sm">
-          {saving ? 'Đang lưu...' : initial ? 'Cập nhật' : 'Thêm chi phí'}
+          {saving ? t('opex.saving') : initial ? t('opex.updateBtn') : t('opex.addBtn')}
         </button>
         <button type="button" onClick={onCancel} className="lbtn lbtn-secondary text-sm">
-          Huỷ
+          {t('common.cancel')}
         </button>
       </div>
     </form>
@@ -137,8 +139,17 @@ function ExpenseForm({ initial, onSave, onCancel }) {
 }
 
 export default function OperatingExpensesPage() {
+  const { t } = useTranslation()
   const { user } = useAuth()
   const isOwner  = user?.role === 'Owner'
+  const TYPE_LABELS = {
+    Salary:    t('opex.typeLabels.payroll'),
+    Warehouse: t('opex.typeLabels.warehouse'),
+    Utilities: t('opex.typeLabels.utility'),
+    Internet:  t('opex.typeLabels.internet'),
+    Office:    t('opex.typeLabels.office'),
+    Other:     t('opex.typeLabels.other'),
+  }
 
   const [from, setFrom]       = useState(firstOfMonth())
   const [to,   setTo]         = useState(today())
@@ -195,7 +206,7 @@ export default function OperatingExpensesPage() {
       setDeleting(null)
       await load()
     } catch {
-      setErr('Xoá thất bại')
+      setErr(t('opex.deleteError'))
     }
   }
 
@@ -205,17 +216,16 @@ export default function OperatingExpensesPage() {
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
-            Chi phí vận hành
+            {t('opex.title')}
           </h1>
           <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
-            Lương · Kho bãi · Điện nước · Internet · Văn phòng · Khác
-            <span className="ml-2 opacity-60">— Không gồm chi phí quảng cáo QC</span>
+            {t('opex.subtitle')}
           </p>
         </div>
         <button onClick={() => { setShowForm(true); setEditing(null) }}
                 className="lbtn lbtn-primary text-sm">
           <span className="icon icon-sm">add</span>
-          Thêm chi phí
+          {t('opex.addBtn')}
         </button>
       </div>
 
@@ -223,7 +233,7 @@ export default function OperatingExpensesPage() {
       {(showForm || editing) && (
         <div className="lcard p-5">
           <h2 className="text-sm font-semibold mb-4" style={{ color: 'var(--text-primary)' }}>
-            {editing ? 'Sửa chi phí' : 'Thêm chi phí mới'}
+            {editing ? t('opex.editTitle') : t('opex.createTitle')}
           </h2>
           <ExpenseForm
             initial={editing ? {
@@ -242,8 +252,8 @@ export default function OperatingExpensesPage() {
       <div className="flex items-center gap-3 flex-wrap">
         <DateRangeFilter from={from} to={to} onChange={(f, t) => { setFrom(f); setTo(t) }} />
         <select value={filter} onChange={e => setFilter(e.target.value)} className="linput text-sm" style={{ width: 160 }}>
-          <option value="all">Tất cả loại</option>
-          {EXPENSE_TYPES.map(t => <option key={t} value={t}>{TYPE_LABELS[t]}</option>)}
+          <option value="all">{t('opex.filterAll')}</option>
+          {EXPENSE_TYPES.map(tp => <option key={tp} value={tp}>{TYPE_LABELS[tp]}</option>)}
         </select>
         <button onClick={load} className="lbtn lbtn-secondary text-sm !h-9">
           <span className="icon icon-sm">refresh</span>
@@ -290,7 +300,7 @@ export default function OperatingExpensesPage() {
           <div className="flex items-center gap-2">
             <span className="icon text-base" style={{ color: '#8B5CF6' }}>account_balance</span>
             <span className="text-sm font-semibold" style={{ color: 'var(--text-secondary)' }}>
-              Tổng chi phí vận hành kỳ này
+              {t('opex.totalLabel')}
             </span>
           </div>
           <span className="text-xl font-bold font-mono" style={{ color: '#8B5CF6' }}>
@@ -303,14 +313,14 @@ export default function OperatingExpensesPage() {
       <div className="lcard overflow-hidden">
         <div className="px-4 py-2.5 flex items-center justify-between border-b" style={{ borderColor: 'var(--border)' }}>
           <span className="text-sm font-semibold" style={{ color: 'var(--text-secondary)' }}>
-            {loading ? 'Đang tải...' : `${total} chi phí`}
+            {loading ? t('common.loading') : `${total} chi phí`}
           </span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead style={{ background: 'var(--bg-elevated)', borderBottom: '2px solid var(--border)' }}>
               <tr>
-                {['Ngày','Loại','Mô tả','Số tiền',''].map(h => (
+                {[t('opex.colDate'), t('opex.colType'), t('opex.colNote'), t('opex.colAmount'), ''].map(h => (
                   <th key={h} className="text-left px-4 py-2.5 text-xs font-semibold"
                       style={{ color: 'var(--text-tertiary)' }}>{h}</th>
                 ))}
@@ -319,14 +329,14 @@ export default function OperatingExpensesPage() {
             <tbody>
               {loading ? (
                 <tr><td colSpan={5} className="px-4 py-10 text-center" style={{ color: 'var(--text-tertiary)' }}>
-                  Đang tải...
+                  {t('common.loading')}
                 </td></tr>
               ) : items.length === 0 ? (
                 <tr><td colSpan={5} className="px-4 py-12 text-center">
                   <div style={{ color: 'var(--text-tertiary)' }}>
                     <span className="icon text-4xl block mb-2">receipt_long</span>
-                    <p className="text-sm">Chưa có chi phí vận hành trong kỳ này</p>
-                    <p className="text-xs mt-1">Nhấn "Thêm chi phí" để bắt đầu ghi nhận</p>
+                    <p className="text-sm">{t('opex.emptyState')}</p>
+                    <p className="text-xs mt-1">{t('opex.emptyHint')}</p>
                   </div>
                 </td></tr>
               ) : items.map(item => (
@@ -359,10 +369,10 @@ export default function OperatingExpensesPage() {
                       <div className="flex items-center gap-1.5 justify-end">
                         <span className="text-xs px-1.5 py-0.5 rounded font-semibold"
                               style={{ background: 'rgba(99,102,241,0.08)', color: 'var(--primary-500)' }}>
-                          Payroll
+                          {t('opex.payrollBadge')}
                         </span>
                         <a href="/admin" className="lbtn lbtn-ghost !h-7 !px-2 text-xs"
-                           title="Xem tại Quản trị hệ thống">
+                           title={t('opex.viewAdminLink')}>
                           <span className="icon icon-sm">open_in_new</span>
                         </a>
                       </div>
@@ -378,11 +388,11 @@ export default function OperatingExpensesPage() {
                             <button onClick={() => handleDelete(item.expenseId)}
                                     className="lbtn !h-7 !px-2 text-xs"
                                     style={{ background: '#EF4444', color: '#fff' }}>
-                              Xoá
+                              {t('common.delete')}
                             </button>
                             <button onClick={() => setDeleting(null)}
                                     className="lbtn lbtn-ghost !h-7 !px-2 text-xs">
-                              Huỷ
+                              {t('common.cancel')}
                             </button>
                           </div>
                         ) : (
