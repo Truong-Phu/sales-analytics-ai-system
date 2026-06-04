@@ -124,50 +124,53 @@ function Sparkline({ data, color = '#6366F1' }) {
 // KpiTooltip — alias cho InfoTooltip, giữ backward-compat với prop `def`
 const KpiTooltip = ({ def }) => <InfoTooltip def={def} />
 
-function KpiCard({ label, value, trend, trendLabel, icon, color = 'var(--primary-500)', valueColor, sparkData, sparkColor, helpDef, unavailable = false, placeholderText }) {
+// compact=true khi dùng trong grid 8 cột — giảm padding, font-size, ẩn sparkline
+function KpiCard({ label, value, trend, trendLabel, icon, color = 'var(--primary-500)', valueColor, sparkData, sparkColor, helpDef, unavailable = false, placeholderText, compact = false }) {
   const up = trend > 0
   return (
-    <div className="lcard lcard-hover px-4 py-3 cursor-default w-full">
-      <div className="flex items-center gap-1 mb-2">
-        <span className="icon shrink-0" style={{ color, fontSize: 18 }}>{icon}</span>
-        <span className="text-xs font-semibold uppercase tracking-wide truncate" style={{ color: 'var(--text-secondary)', letterSpacing: '0.05em' }}>{label}</span>
+    <div className={`lcard lcard-hover cursor-default w-full ${compact ? 'px-3 py-2' : 'px-4 py-3'}`}>
+      <div className="flex items-center gap-1 mb-1.5">
+        <span className="icon shrink-0" style={{ color, fontSize: compact ? 15 : 18 }}>{icon}</span>
+        <span className={`font-semibold uppercase tracking-wide truncate ${compact ? 'text-[10px]' : 'text-xs'}`} style={{ color: 'var(--text-secondary)', letterSpacing: '0.05em' }}>{label}</span>
         {helpDef && <KpiTooltip def={helpDef} />}
       </div>
 
       {unavailable ? (
-        <div className="space-y-1 py-1">
-          <div className="text-2xl font-bold font-mono" style={{ color: 'var(--text-tertiary)' }}>—</div>
-          <div className="text-[10px] leading-tight" style={{ color: 'var(--text-tertiary)' }}>
-            {placeholderText ?? 'Chưa có dữ liệu thật'}
-          </div>
+        <div className="space-y-1 py-0.5">
+          <div className={`font-bold font-mono ${compact ? 'text-lg' : 'text-2xl'}`} style={{ color: 'var(--text-tertiary)' }}>—</div>
+          {!compact && (
+            <div className="text-[10px] leading-tight" style={{ color: 'var(--text-tertiary)' }}>
+              {placeholderText ?? 'Chưa có dữ liệu thật'}
+            </div>
+          )}
         </div>
       ) : (
         <>
-          <div className="text-3xl font-bold font-mono mb-1 leading-none" style={{ color: valueColor || 'var(--foreground)' }}>
+          <div className={`font-bold font-mono leading-none ${compact ? 'text-xl mb-0.5' : 'text-3xl mb-1'}`} style={{ color: valueColor || 'var(--foreground)' }}>
             {(() => {
               const { sym, num, unit } = splitFmt(value)
               return unit
-                ? <>{sym}{num}<span style={{ fontSize: '0.55em', fontWeight: 500, opacity: 0.7, marginLeft: 2 }}>{unit}</span></>
+                ? <>{sym}{num}<span style={{ fontSize: compact ? '0.6em' : '0.55em', fontWeight: 500, opacity: 0.7, marginLeft: 2 }}>{unit}</span></>
                 : value
             })()}
           </div>
           {trend !== undefined && (
-            <div className="flex items-center gap-1 mb-1">
-              <span className="icon" style={{ fontSize: 12, color: up ? 'var(--accent-500)' : 'var(--color-error)' }}>
+            <div className="flex items-center gap-1">
+              <span className="icon" style={{ fontSize: compact ? 10 : 12, color: up ? 'var(--accent-500)' : 'var(--color-error)' }}>
                 {up ? 'arrow_upward' : 'arrow_downward'}
               </span>
-              <span className={`text-sm font-medium ${up ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
+              <span className={`font-medium ${compact ? 'text-[10px]' : 'text-sm'} ${up ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
                 {Math.abs(trend)}%
               </span>
-              <span className="text-xs text-muted-foreground">{trendLabel}</span>
+              {!compact && <span className="text-xs text-muted-foreground">{trendLabel}</span>}
             </div>
           )}
-          {placeholderText && (
+          {placeholderText && !compact && (
             <div className="text-[10px] mt-1" style={{ color: 'var(--text-tertiary)', fontStyle: 'italic' }}>
               {placeholderText}
             </div>
           )}
-          {sparkData && (
+          {sparkData && !compact && (
             <div className="mt-1" style={{ opacity: 0.75 }}>
               <Sparkline data={sparkData} color={sparkColor || color} />
             </div>
@@ -347,9 +350,9 @@ function DrillDownModal({ title, subtitle, columns, data, onClose, onExport }) {
 }
 
 // ── DrillTable — component tái sử dụng cho bảng drill-down bên trong DetailDrawer ──
-// Props: columns, result={items,total,page,totalPages}, loading, onLoadMore, loadingMore
+// Props: columns, result={items,total,page,totalPages,error?}, loading, onLoadMore, loadingMore
 function DrillTable({ columns, result = {}, loading = false, onLoadMore, loadingMore = false }) {
-  const { items = [], total = 0, page = 1, totalPages = 1 } = result
+  const { items = [], total = 0, page = 1, totalPages = 1, error = false } = result
   const hasMock    = items.some(r => r.is_mock)
   const hasMore    = page < totalPages
   const displayEnd = Math.min(items.length, page * 20)
@@ -358,6 +361,15 @@ function DrillTable({ columns, result = {}, loading = false, onLoadMore, loading
     <div className="flex items-center justify-center p-10">
       <span className="w-6 h-6 border-2 rounded-full"
         style={{ borderColor: 'var(--border)', borderTopColor: 'var(--primary-500)', animation: 'spin 0.8s linear infinite' }} />
+    </div>
+  )
+
+  if (error) return (
+    <div className="flex flex-col items-center gap-3 py-12">
+      <span className="icon text-4xl" style={{ color: 'var(--color-error)', opacity: 0.6 }}>error_outline</span>
+      <p className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>
+        Không tải được dữ liệu chi tiết. Vui lòng thử lại.
+      </p>
     </div>
   )
 
@@ -614,101 +626,85 @@ function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd 
         </div>
       )}
 
-      {/* ── KPI 2 hàng cân bằng 4+4 ─────────────────────────────────────── */}
-      <div className="space-y-3">
-        {/* Hàng 1: Doanh thu & Đơn hàng */}
-        <GroupLabel>Doanh thu &amp; Đơn hàng</GroupLabel>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <KpiCard
-            label={t('dashboard.kpi.revenue')}
-            value={fmtM(kpi.totalRevenue)}
-            trend={kpi.revenueGrowthPct}
-            trendLabel={t('dashboard.compare')}
-            icon="payments"
-            sparkData={sp.revenue}
-            sparkColor="#6366F1"
-            helpDef={KPI_DEFINITIONS.revenue}
-          />
-          <KpiCard
-            label={t('dashboard.kpi.orders')}
-            value={kpi.totalOrders.toLocaleString('vi-VN')}
-            trend={kpi.ordersGrowthPct}
-            trendLabel={t('dashboard.compare')}
-            icon="shopping_cart"
-            sparkData={sp.orders}
-            sparkColor="#10B981"
-            helpDef={KPI_DEFINITIONS.orders}
-          />
-          <KpiCard
-            label={t('dashboard.kpi.aov')}
-            value={fmtM(kpi.avgOrderValue)}
-            icon="receipt_long"
-            color="var(--accent-500)"
-            helpDef={KPI_DEFINITIONS.aov}
-          />
-          <KpiCard
-            label="Khách hàng mới"
-            value={kpi.newCustomers.toLocaleString('vi-VN')}
-            trend={kpi.customersGrowthPct}
-            trendLabel={t('dashboard.compare')}
-            icon="person_add"
-            color="#3B82F6"
-            sparkData={sp.newCustomers}
-            sparkColor="#3B82F6"
-            helpDef={KPI_DEFINITIONS.newCustomers}
-          />
-        </div>
-
-        {/* Hàng 2: Hiệu quả kinh doanh */}
-        <GroupLabel>Hiệu quả kinh doanh</GroupLabel>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <KpiCard
-            label={t('dashboard.kpi.profit')}
-            value={fmtM(kpi.totalProfit)}
-            trend={parseFloat(grossMarginPct)}
-            trendLabel="biên LN gộp"
-            icon="percent"
-            color="#8B5CF6"
-            valueColor={kpi.totalProfit >= 0 ? 'var(--profit-positive)' : 'var(--profit-negative)'}
-            sparkData={sp.profit}
-            sparkColor="#8B5CF6"
-            helpDef={KPI_DEFINITIONS.grossProfit}
-          />
-          <KpiCard
-            label="Lợi nhuận vận hành"
-            value={opProfit != null ? fmtM(opProfit) : (financeLoading ? '...' : '—')}
-            icon="account_balance_wallet"
-            color="#6366F1"
-            valueColor={opProfit != null ? (opProfit >= 0 ? 'var(--profit-positive)' : 'var(--profit-negative)') : undefined}
-            helpDef={KPI_DEFINITIONS.operatingProfit}
-            unavailable={opProfit == null && !financeLoading}
-            placeholderText={opProfit == null && !financeLoading ? 'Xem chi tiết tại trang Tài chính' : undefined}
-          />
-          <KpiCard
-            label="ROAS"
-            value={avgRoasVal != null ? `${avgRoasVal}×` : '—'}
-            icon="ads_click"
-            color="#10B981"
-            valueColor={avgRoasVal != null
-              ? (parseFloat(avgRoasVal) >= 4 ? 'var(--profit-positive)' : parseFloat(avgRoasVal) >= 2 ? '#F59E0B' : 'var(--color-error)')
-              : undefined}
-            helpDef={KPI_DEFINITIONS.roas}
-            unavailable={avgRoasVal == null}
-            placeholderText={avgRoasVal == null ? 'Nhập chi phí QC để tính ROAS' : undefined}
-          />
-          <KpiCard
-            label="ACOS"
-            value={acosVal != null ? `${acosVal}%` : '—'}
-            icon="savings"
-            color="#EC4899"
-            valueColor={acosVal != null
-              ? (parseFloat(acosVal) <= 15 ? 'var(--profit-positive)' : parseFloat(acosVal) <= 25 ? '#F59E0B' : 'var(--color-error)')
-              : undefined}
-            helpDef={KPI_DEFINITIONS.acos}
-            unavailable={acosVal == null}
-            placeholderText={acosVal == null ? 'Nhập chi phí QC để tính ACOS' : undefined}
-          />
-        </div>
+      {/* ── KPI 8 card — 1 hàng trên desktop rộng (xl:), 4 cột trên laptop, 2 cột mobile ── */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-8 gap-2">
+        <KpiCard compact
+          label={t('dashboard.kpi.revenue')}
+          value={fmtM(kpi.totalRevenue)}
+          trend={kpi.revenueGrowthPct}
+          trendLabel={t('dashboard.compare')}
+          icon="payments"
+          helpDef={KPI_DEFINITIONS.revenue}
+        />
+        <KpiCard compact
+          label={t('dashboard.kpi.orders')}
+          value={kpi.totalOrders.toLocaleString('vi-VN')}
+          trend={kpi.ordersGrowthPct}
+          trendLabel={t('dashboard.compare')}
+          icon="shopping_cart"
+          color="#10B981"
+          helpDef={KPI_DEFINITIONS.orders}
+        />
+        <KpiCard compact
+          label={t('dashboard.kpi.aov')}
+          value={fmtM(kpi.avgOrderValue)}
+          icon="receipt_long"
+          color="var(--accent-500)"
+          helpDef={KPI_DEFINITIONS.aov}
+        />
+        <KpiCard compact
+          label="Khách mới"
+          value={kpi.newCustomers.toLocaleString('vi-VN')}
+          trend={kpi.customersGrowthPct}
+          trendLabel={t('dashboard.compare')}
+          icon="person_add"
+          color="#3B82F6"
+          helpDef={KPI_DEFINITIONS.newCustomers}
+        />
+        <KpiCard compact
+          label={t('dashboard.kpi.profit')}
+          value={fmtM(kpi.totalProfit)}
+          trend={parseFloat(grossMarginPct)}
+          trendLabel="biên LN"
+          icon="percent"
+          color="#8B5CF6"
+          valueColor={kpi.totalProfit >= 0 ? 'var(--profit-positive)' : 'var(--profit-negative)'}
+          helpDef={KPI_DEFINITIONS.grossProfit}
+        />
+        <KpiCard compact
+          label="LN vận hành"
+          value={opProfit != null ? fmtM(opProfit) : (financeLoading ? '...' : '—')}
+          icon="account_balance_wallet"
+          color="#6366F1"
+          valueColor={opProfit != null ? (opProfit >= 0 ? 'var(--profit-positive)' : 'var(--profit-negative)') : undefined}
+          helpDef={KPI_DEFINITIONS.operatingProfit}
+          unavailable={opProfit == null && !financeLoading}
+          placeholderText={opProfit == null && !financeLoading ? 'Trang Tài chính' : undefined}
+        />
+        <KpiCard compact
+          label="ROAS"
+          value={avgRoasVal != null ? `${avgRoasVal}×` : '—'}
+          icon="ads_click"
+          color="#10B981"
+          valueColor={avgRoasVal != null
+            ? (parseFloat(avgRoasVal) >= 4 ? 'var(--profit-positive)' : parseFloat(avgRoasVal) >= 2 ? '#F59E0B' : 'var(--color-error)')
+            : undefined}
+          helpDef={KPI_DEFINITIONS.roas}
+          unavailable={avgRoasVal == null}
+          placeholderText={avgRoasVal == null ? 'Nhập chi phí QC' : undefined}
+        />
+        <KpiCard compact
+          label="ACOS"
+          value={acosVal != null ? `${acosVal}%` : '—'}
+          icon="savings"
+          color="#EC4899"
+          valueColor={acosVal != null
+            ? (parseFloat(acosVal) <= 15 ? 'var(--profit-positive)' : parseFloat(acosVal) <= 25 ? '#F59E0B' : 'var(--color-error)')
+            : undefined}
+          helpDef={KPI_DEFINITIONS.acos}
+          unavailable={acosVal == null}
+          placeholderText={acosVal == null ? 'Nhập chi phí QC' : undefined}
+        />
       </div>
 
       {/* AI Insights — chỉ hiện cho Owner/Manager/DataIT/SuperAdmin */}
@@ -971,10 +967,10 @@ function TabSales({ data, compareMode, prevData, from, to }) {
       const res = await getDrillDownOrders(productKey, from, to)
       setDrillOrders(res)
     } catch {
-      // Fallback khi API fail — chỉ dùng khi lỗi thực sự, không dùng để che giấu bug
+      // API lỗi → empty state với error flag (không dùng row trống gây hiểu lầm)
       setDrillOrders({
-        items: [{ orderId: '—', date: '—', channel: '—', productName: '—', qty: 0, revenue: 0, is_mock: true }],
-        total: 0, page: 1, totalPages: 1,
+        items: [], total: 0, page: 1, totalPages: 1,
+        error: true,
       })
     } finally {
       setDrillLoading(false)

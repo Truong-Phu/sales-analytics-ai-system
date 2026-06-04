@@ -301,8 +301,9 @@ public class ImportController(
         for (var d = startDate; d <= today; d = d.AddDays(1))
             if (!datesWithOrders.Contains(d.Date)) missingDates.Add(d.Date);
         if (missingDates.Count > 90) missingDates = missingDates.TakeLast(90).ToList();
-        // Không thêm hôm nay nếu đã có đơn — trả về rỗng để báo "đủ dữ liệu"
-        if (missingDates.Count == 0) return [];
+        // Nếu không có ngày nào thiếu → vẫn tạo 10 đơn mẫu cho hôm nay
+        // (cho phép user luôn download template để import thêm dữ liệu demo)
+        if (missingDates.Count == 0) missingDates.Add(today);
 
         // ── 3. Config phân bổ đơn hàng ───────────────────────────────────────
         var statusDist = new[]
@@ -318,8 +319,10 @@ public class ImportController(
             ("CANCELLED",          "CANCELLED", "GHN",  "Giao Hàng Nhanh",     0m),
             ("UNPAID",             "PENDING",   "GHN",  "Giao Hàng Nhanh", 30000m),
         };
-        // Mỗi đơn đúng 1 sản phẩm → 10 dòng CSV = 10 đơn, không bị bỏ qua khi import
-        int[] itemsPerSlot = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 };
+        // 8 đơn 1 sản phẩm + 2 đơn 2 sản phẩm = 12 dòng CSV, 10 mã đơn.
+        // Các đơn 2 sản phẩm cung cấp dữ liệu Market Basket Analysis.
+        // UpsertOrder đã được sửa để ghép item vào order đã tồn tại (idempotent).
+        int[] itemsPerSlot = { 1, 2, 1, 1, 1, 1, 2, 1, 1, 1 };
         // Số lượng: 1 phổ biến, đôi khi 2, hiếm khi 3
         int[] qtyTable = { 1, 1, 2, 1, 1, 1, 1, 2, 1, 1, 3, 1, 1, 1, 1, 2 };
 
@@ -1030,12 +1033,14 @@ public class ImportController(
 
         if (productId == 0)
         {
-            // Bước 2: Tìm hoặc tạo product theo SKU (behavior gốc)
+            // Bước 2: Tìm hoặc tạo product theo SKU
+            // cost_price = 65% giá bán (hợp lý cho ngành thời trang, biên ~35%)
+            var costPrice = Math.Round(o.UnitPrice * 0.65m, 0);
             var productSql = """
                 INSERT INTO public.products
                     (sku, product_name, base_price, cost_price, category_id, is_active, company_id, created_at, updated_at)
                 VALUES
-                    (@sku, @name, @price, 0, @catId, TRUE, @cid::uuid, NOW(), NOW())
+                    (@sku, @name, @price, @costP, @catId, TRUE, @cid::uuid, NOW(), NOW())
                 ON CONFLICT (sku, company_id) DO NOTHING
                 RETURNING product_id
                 """;
@@ -1043,6 +1048,7 @@ public class ImportController(
             prCmd.Parameters.AddWithValue("sku",   importSku.Length > 0 ? importSku : $"IMPORT-{Guid.NewGuid():N}"[..20]);
             prCmd.Parameters.AddWithValue("name",  o.ProductName.Length > 0 ? o.ProductName : importSku);
             prCmd.Parameters.AddWithValue("price", o.UnitPrice);
+            prCmd.Parameters.AddWithValue("costP", costPrice);
             prCmd.Parameters.AddWithValue("catId", defaultCatId);
             prCmd.Parameters.AddWithValue("cid",   tenant.CompanyId!.Value.ToString());
             var prodIdObj = await prCmd.ExecuteScalarAsync();
@@ -1128,16 +1134,35 @@ public class ImportController(
         orCmd.Parameters.AddWithValue("cid",        tenant.CompanyId!.Value.ToString());
         var orderAff = await orCmd.ExecuteNonQueryAsync();
 
-        if (orderAff > 0)
-        {
-            // Lấy order_id vừa insert để thêm order_item
-            await using var getOrdCmd = new NpgsqlCommand(
-                "SELECT order_id FROM public.orders WHERE order_code=@code LIMIT 1", conn);
-            getOrdCmd.Parameters.AddWithValue("code", o.OrderCode);
-            var orderId = Convert.ToInt32(await getOrdCmd.ExecuteScalarAsync() ?? 0);
+        // Lấy order_id — cho cả đơn mới (orderAff>0) lẫn đơn đã tồn tại (orderAff=0)
+        // Cần để hỗ trợ đơn hàng có nhiều sản phẩm (multi-item order):
+        // CSV row 1 → tạo order + item A; CSV row 2 (cùng order_code) → thêm item B vào order đó
+        await using var getOrdCmd = new NpgsqlCommand(
+            "SELECT order_id FROM public.orders WHERE order_code=@code AND company_id=@cid::uuid LIMIT 1", conn);
+        getOrdCmd.Parameters.AddWithValue("code", o.OrderCode);
+        getOrdCmd.Parameters.AddWithValue("cid",  tenant.CompanyId!.Value.ToString());
+        var orderId = Convert.ToInt32(await getOrdCmd.ExecuteScalarAsync() ?? 0);
 
-            if (orderId > 0)
+        if (orderId > 0)
+        {
+            var effectiveSale = o.SalePrice > 0 ? o.SalePrice : o.UnitPrice;
+
+            // Kiểm tra item đã tồn tại chưa (idempotent — tránh duplicate khi re-import)
+            await using var chkItemCmd = new NpgsqlCommand("""
+                SELECT 1 FROM public.order_items
+                WHERE order_id = @oid AND product_id = @pid
+                  AND (sku IS NOT DISTINCT FROM @sku)
+                LIMIT 1
+                """, conn);
+            chkItemCmd.Parameters.AddWithValue("oid", orderId);
+            chkItemCmd.Parameters.AddWithValue("pid", productId);
+            chkItemCmd.Parameters.AddWithValue("sku",
+                (object?)(!string.IsNullOrEmpty(o.Sku) ? o.Sku : null) ?? DBNull.Value);
+            var itemExists = await chkItemCmd.ExecuteScalarAsync();
+
+            if (itemExists is null)
             {
+                // Item chưa có → insert
                 var itemSql = """
                     INSERT INTO public.order_items
                         (order_id, product_id, variation_id, quantity, unit_price, sale_price,
@@ -1151,9 +1176,7 @@ public class ImportController(
                          @pname, @sku, @vname,
                          @sellDisc, @platDisc,
                          NOW())
-                    ON CONFLICT DO NOTHING
                     """;
-                var effectiveSale = o.SalePrice > 0 ? o.SalePrice : o.UnitPrice;
                 await using var itmCmd = new NpgsqlCommand(itemSql, conn);
                 itmCmd.Parameters.AddWithValue("oid",      orderId);
                 itmCmd.Parameters.AddWithValue("pid",      productId);
@@ -1170,10 +1193,12 @@ public class ImportController(
                 itmCmd.Parameters.AddWithValue("sellDisc", o.SellerDiscount);
                 itmCmd.Parameters.AddWithValue("platDisc", o.PlatformDiscount);
                 await itmCmd.ExecuteNonQueryAsync();
+                return 1; // item mới được thêm (kể cả vào order đã tồn tại)
             }
+            // Item đã tồn tại → bỏ qua (idempotent re-import)
         }
 
-        return orderAff;
+        return orderAff; // 1 nếu order mới, 0 nếu order+item đều đã tồn tại
     }
 
     // ── Helper: Detect category từ tên sản phẩm (keyword matching) ──────────

@@ -76,8 +76,8 @@ def _mock_basket_data() -> list:
 def run_basket_analysis(
     company_id: str = None,
     days: int = 180,
-    min_support: float = 0.02,
-    min_confidence: float = 0.3,
+    min_support: float = 0.01,   # giảm từ 0.02 → 0.01 (1%) cho dataset nhỏ
+    min_confidence: float = 0.2, # giảm từ 0.3 → 0.2 (20%) cho dataset nhỏ
     min_lift: float = 1.0,
     top_n: int = 20,
 ) -> dict:
@@ -94,12 +94,14 @@ def run_basket_analysis(
         dict với keys: total_transactions, total_rules, rules (list)
     """
     df = _load_order_items(company_id, days)
+    n_orders = len(df["order_id"].unique()) if not df.empty else 0
 
-    if df.empty or len(df["order_id"].unique()) < 20:
-        logger.warning("Không đủ dữ liệu cho basket analysis – dùng mock data")
+    # Ngưỡng tối thiểu: 5 đơn hàng có dữ liệu (giảm từ 20 để hoạt động với dataset nhỏ)
+    if df.empty or n_orders < 5:
+        logger.warning("Không đủ dữ liệu cho basket analysis – dùng mock data (%d đơn)", n_orders)
         rules_list = _mock_basket_data()
         return {
-            "total_transactions": 0,
+            "total_transactions": n_orders,
             "total_rules":        len(rules_list),
             "rules":              rules_list,
             "parameters": {
@@ -108,7 +110,7 @@ def run_basket_analysis(
                 "min_confidence": min_confidence,
                 "min_lift":       min_lift,
             },
-            "note": "Đang dùng dữ liệu mẫu (chưa đủ đơn hàng thực tế – cần ≥ 20 đơn)",
+            "note": f"Đang dùng dữ liệu mẫu (chỉ có {n_orders} đơn trong {days} ngày – cần ít nhất 5 đơn có nhiều sản phẩm)",
             "is_mock": True,
         }
 
@@ -119,6 +121,25 @@ def run_basket_analysis(
         # Tạo danh sách transaction
         transactions = df.groupby("order_id")["product_name"].apply(list).tolist()
         total_txn = len(transactions)
+
+        # Phát hiện: tất cả đơn chỉ có 1 sản phẩm → không thể tìm co-occurrence
+        multi_item_count = sum(1 for t in transactions if len(t) > 1)
+        if multi_item_count == 0:
+            return {
+                "total_transactions": total_txn,
+                "total_rules": 0,
+                "rules": [],
+                "parameters": {
+                    "days": days, "min_support": min_support,
+                    "min_confidence": min_confidence, "min_lift": min_lift,
+                },
+                "note": (
+                    f"Không tìm được rules: {total_txn} đơn hàng được phân tích nhưng "
+                    "tất cả đều chỉ có 1 sản phẩm. "
+                    "Market Basket Analysis cần đơn hàng có từ 2 sản phẩm trở lên để phát hiện pattern mua chung."
+                ),
+                "is_mock": False,
+            }
 
         # Encode thành ma trận one-hot
         te = TransactionEncoder()
@@ -138,7 +159,11 @@ def run_basket_analysis(
                 "total_transactions": total_txn,
                 "total_rules":        0,
                 "rules":              [],
-                "note": f"Không tìm thấy patterns với min_support={min_support}. Thử giảm ngưỡng.",
+                "parameters": {
+                    "days": days, "min_support": min_support,
+                    "min_confidence": min_confidence, "min_lift": min_lift,
+                },
+                "note": f"Không tìm thấy itemsets thường xuất hiện với min_support={min_support:.1%}. Thử giảm ngưỡng Min Confidence.",
                 "is_mock": False,
             }
 
