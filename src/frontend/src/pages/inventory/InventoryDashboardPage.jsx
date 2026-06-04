@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { Chart, registerables } from 'chart.js'
 import {
@@ -106,6 +107,7 @@ function StockMovementChart({ data }) {
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function InventoryDashboardPage() {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const location = useLocation()
   const [overview,    setOverview]    = useState(null)
@@ -153,19 +155,19 @@ export default function InventoryDashboardPage() {
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Dashboard Tồn kho</h1>
+          <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>{t('invDashboard.title')}</h1>
           <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
-            Tổng quan vận hành tồn kho, nhà cung cấp và gợi ý nhập hàng
+            {t('invDashboard.subtitle')}
           </p>
         </div>
         <Link to="/inventory"
           className="text-xs px-3 py-1.5 rounded-lg border transition-colors"
           style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>
-          ← Thông minh Tồn kho (AI)
+          {t('invDashboard.inventoryLink')}
         </Link>
       </div>
 
-      {!overview && !loadingMain && <AiEmptyState title="Không kết nối được dữ liệu tồn kho" />}
+      {!overview && !loadingMain && <AiEmptyState title={t('invDashboard.errorConnect')} />}
 
       {/* ── KPI Overview ── */}
       {loadingMain ? (
@@ -178,16 +180,16 @@ export default function InventoryDashboardPage() {
         <ErrorState label="KPI tổng quan" />
       ) : overview && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <KpiCard label="Tổng sản phẩm"      value={fmt(overview.totalProducts)}        />
-          <KpiCard label="Tổng tồn kho"        value={fmt(overview.totalStockQuantity)}   />
-          <KpiCard label="Tồn kho thấp"        value={fmt(overview.lowStockCount)}        color="#F59E0B" />
-          <KpiCard label="Hết hàng"            value={fmt(overview.outOfStockCount)}      color="#EF4444" />
-          <KpiCard label="Nhập kho hôm nay"    value={`+${fmt(overview.stockInToday)}`}   color="#22C55E" />
-          <KpiCard label="Xuất kho hôm nay"    value={`-${fmt(overview.stockOutToday)}`}  color="#EF4444" />
-          <KpiCard label="Giá trị tồn kho"     value={fmtCur(overview.inventoryValue)}    />
-          <KpiCard label="PO đang chờ"
+          <KpiCard label={t('invDashboard.kpiTotalProducts')} value={fmt(overview.totalProducts)}        />
+          <KpiCard label={t('invDashboard.kpiTotalStock')}    value={fmt(overview.totalStockQuantity)}   />
+          <KpiCard label={t('invDashboard.kpiLowStock')}      value={fmt(overview.lowStockCount)}        color="#F59E0B" />
+          <KpiCard label={t('invDashboard.kpiOutOfStock')}    value={fmt(overview.outOfStockCount)}      color="#EF4444" />
+          <KpiCard label={t('invDashboard.kpiInToday')}       value={`+${fmt(overview.stockInToday)}`}   color="#22C55E" />
+          <KpiCard label={t('invDashboard.kpiOutToday')}      value={`-${fmt(overview.stockOutToday)}`}  color="#EF4444" />
+          <KpiCard label={t('invDashboard.kpiValue')}         value={fmtCur(overview.inventoryValue)}    />
+          <KpiCard label={t('invDashboard.kpiPendingPo')}
             value={fmt(overview.pendingPurchaseOrders + overview.approvedPurchaseOrders)}
-            sub={`${fmt(overview.partiallyReceivedPurchaseOrders)} đang nhận hàng`}
+            sub={`${fmt(overview.partiallyReceivedPurchaseOrders)} ${t('invDashboard.kpiReceiving')}`}
             color={overview.pendingPurchaseOrders > 0 ? '#F97316' : undefined}
           />
         </div>
@@ -200,17 +202,17 @@ export default function InventoryDashboardPage() {
             Biến động tồn kho
           </h2>
           <select value={movDays} onChange={e => setMovDays(+e.target.value)} className="linput text-xs" style={{ width: 110 }}>
-            <option value={7}>7 ngày</option>
-            <option value={14}>14 ngày</option>
-            <option value={30}>30 ngày</option>
-            <option value={60}>60 ngày</option>
+            <option value={7}>{t('invDashboard.period7d')}</option>
+            <option value={14}>{t('invDashboard.period14d')}</option>
+            <option value={30}>{t('invDashboard.period30d')}</option>
+            <option value={60}>{t('invDashboard.period60d')}</option>
           </select>
         </div>
         {errors.movement ? <ErrorState label="biểu đồ biến động" /> : <StockMovementChart data={movement} />}
       </div>
 
       {/* ── Low Stock + Gợi ý nhập hàng (gộp) ── */}
-      <SectionTitle>Sản phẩm sắp hết hàng</SectionTitle>
+      <SectionTitle>{t('invDashboard.sectionLowStock')}</SectionTitle>
       {errors.lowStock ? <ErrorState label="danh sách tồn kho thấp" /> : !lowStock || lowStock.length === 0 ? (
         <EmptyState message="Không có sản phẩm dưới ngưỡng tồn kho" />
       ) : (
@@ -218,7 +220,7 @@ export default function InventoryDashboardPage() {
           <table className="w-full text-sm">
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                {['Sản phẩm', 'SKU', 'Tồn kho', 'Bán/ngày', 'Còn lại', 'Cần nhập', ''].map(h => (
+                {[t('invDashboard.colProduct'), t('invDashboard.colSku'), t('invDashboard.colStock'), t('invDashboard.colSoldPerDay'), t('invDashboard.colDaysLeft'), t('invDashboard.colNeedOrder'), ''].map(h => (
                   <th key={h} className="text-left px-4 py-2 text-xs font-medium"
                     style={{ color: 'var(--text-tertiary)' }}>{h}</th>
                 ))}
