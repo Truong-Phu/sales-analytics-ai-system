@@ -8,6 +8,8 @@ import {
 } from 'recharts'
 import { SkeletonCard } from '../../components/ui/Skeleton'
 import AiEmptyState from '../../components/ui/AiEmptyState'
+import InfoTooltip from '../../components/ui/InfoTooltip'
+import { MT } from '../../constants/metricTooltips'
 import { getRfmSegments } from '../../api/aiApi'
 
 const SEGMENT_CONFIG = {
@@ -29,6 +31,7 @@ function fmtVND(v) {
 }
 
 function SegmentCard({ name, data, onCreateCampaign }) {
+  const { t } = useTranslation()
   const cfg = SEGMENT_CONFIG[name] ?? SEGMENT_CONFIG.Other
   return (
     <div className="lcard p-4 flex flex-col gap-2" style={{ borderLeft: `3px solid ${cfg.color}` }}>
@@ -42,19 +45,19 @@ function SegmentCard({ name, data, onCreateCampaign }) {
       </div>
       <div className="grid grid-cols-3 gap-2 text-xs" style={{ color: 'var(--text-secondary)' }}>
         <div>
-          <div style={{ color: 'var(--text-tertiary)' }}>Doanh thu TB</div>
+          <div style={{ color: 'var(--text-tertiary)' }}>{t('rfm.avgRevenue')}</div>
           <div className="font-semibold" style={{ color: 'var(--text-primary)' }}>
             {fmtVND(data.avg_monetary ?? 0)}
           </div>
         </div>
         <div>
-          <div style={{ color: 'var(--text-tertiary)' }}>Tần suất mua</div>
+          <div className="inline-flex items-center gap-0.5" style={{ color: 'var(--text-tertiary)' }}>{t('rfm.frequency')}<InfoTooltip {...MT.frequency} placement="top" /></div>
           <div className="font-semibold" style={{ color: 'var(--text-primary)' }}>
             {(data.avg_frequency ?? 0).toFixed(1)}x
           </div>
         </div>
         <div>
-          <div style={{ color: 'var(--text-tertiary)' }}>Recency (ngày)</div>
+          <div className="inline-flex items-center gap-0.5" style={{ color: 'var(--text-tertiary)' }}>{t('rfm.recency')}<InfoTooltip {...MT.recency} placement="top" /></div>
           <div className="font-semibold" style={{ color: 'var(--text-primary)' }}>
             {Math.round(data.avg_recency ?? 0)}
           </div>
@@ -73,10 +76,10 @@ function SegmentCard({ name, data, onCreateCampaign }) {
             style={{ borderColor: `${cfg.color}60`, color: cfg.color, background: `${cfg.color}08` }}
             onMouseEnter={e => { e.currentTarget.style.background = cfg.color; e.currentTarget.style.color = 'white' }}
             onMouseLeave={e => { e.currentTarget.style.background = `${cfg.color}08`; e.currentTarget.style.color = cfg.color }}
-            title={`Tạo chiến dịch cho ${data.count} khách hàng phân khúc ${name}`}
+            title={`${t('rfm.createCampaign')} — ${name}`}
           >
             <span className="icon" style={{ fontSize: 13 }}>campaign</span>
-            Tạo campaign
+            {t('rfm.createCampaign')}
           </button>
         )}
       </div>
@@ -109,7 +112,7 @@ export default function RfmPage() {
 
   if (!data) return (
     <div className="space-y-4">
-      <AiEmptyState title="Chưa đủ dữ liệu phân tích RFM" />
+      <AiEmptyState title={t('rfm.emptyState')} />
     </div>
   )
 
@@ -158,11 +161,11 @@ export default function RfmPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
-            Phân khúc khách hàng RFM
+            <span className="inline-flex items-center gap-1">{t('rfm.title')}<InfoTooltip {...MT.rfm} placement="bottom" /></span>
           </h1>
           <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
-            Recency · Frequency · Monetary — {data?.total_customers ?? 0} khách hàng
-            {data?.computed_at && ` · Cập nhật: ${new Date(data.computed_at).toLocaleDateString('vi-VN')}`}
+            {t('rfm.subtitle', { count: data?.total_customers ?? 0 })}
+            {data?.computed_at && ` · ${new Date(data.computed_at).toLocaleDateString('vi-VN')}`}
           </p>
         </div>
       </div>
@@ -170,10 +173,10 @@ export default function RfmPage() {
       {/* KPI tổng quan */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
-          { label: 'Tổng khách hàng',  value: data?.total_customers ?? 0, icon: 'people',          color: '#6366F1' },
-          { label: 'Tổng doanh thu',   value: fmtVND(totalRevenue),        icon: 'payments',        color: '#10B981' },
-          { label: 'Nhóm VIP',         value: summary.VIP?.count ?? 0,     icon: 'workspace_premium', color: '#F59E0B' },
-          { label: 'Cần thu hồi',      value: (summary['At Risk']?.count ?? 0) + (summary.Lost?.count ?? 0), icon: 'warning', color: '#EF4444' },
+          { label: t('rfm.kpiTotal'),   value: data?.total_customers ?? 0, icon: 'people',          color: '#6366F1' },
+          { label: t('rfm.kpiRevenue'),value: fmtVND(totalRevenue),        icon: 'payments',        color: '#10B981' },
+          { label: t('rfm.kpiVip'),    value: summary.VIP?.count ?? 0,     icon: 'workspace_premium', color: '#F59E0B' },
+          { label: t('rfm.kpiAtRisk'), value: (summary['At Risk']?.count ?? 0) + (summary.Lost?.count ?? 0), icon: 'warning', color: '#EF4444' },
         ].map(kpi => (
           <div key={kpi.label} className="lcard p-4">
             <div className="flex items-center gap-2 mb-1">
@@ -188,9 +191,9 @@ export default function RfmPage() {
       {/* Tabs */}
       <div className="flex items-center gap-1 border-b" style={{ borderColor: 'var(--border)' }}>
         {[
-          { key: 'overview', label: 'Tổng quan', icon: 'dashboard' },
-          { key: 'chart',    label: 'Biểu đồ',   icon: 'scatter_plot' },
-          { key: 'table',    label: 'Danh sách KH', icon: 'table_chart' },
+          { key: 'overview', label: t('rfm.tabOverview'), icon: 'dashboard' },
+          { key: 'chart',    label: t('rfm.tabChart'),    icon: 'scatter_plot' },
+          { key: 'table',    label: t('rfm.tabList'),     icon: 'table_chart' },
         ].map(tab => (
           <button key={tab.key} onClick={() => setActiveTab(tab.key)}
             className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-all"
@@ -218,7 +221,7 @@ export default function RfmPage() {
             {/* Pie Chart */}
             <div className="lcard p-5 flex flex-col gap-3">
               <div className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>
-                Tỷ lệ phân khúc
+                {t('rfm.pieTitle')}
               </div>
               <ResponsiveContainer width="100%" height={300}>
                 <PieChart>
@@ -243,12 +246,10 @@ export default function RfmPage() {
         <div className="lcard p-5 space-y-3">
           <div>
             <div className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>
-              Biểu đồ phân tán RFM — Recency vs Frequency
+              {t('rfm.scatterTitle')}
             </div>
             <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
-              Trục X: Recency (ngày kể từ lần mua gần nhất — càng nhỏ càng tốt) ·
-              Trục Y: Frequency (số đơn hàng) ·
-              Kích thước bong bóng: Monetary (doanh thu)
+              {t('rfm.scatterAxisX')} · {t('rfm.scatterAxisY')} · {t('rfm.scatterBubble')}
             </p>
           </div>
           <ResponsiveContainer width="100%" height={380}>
@@ -292,7 +293,7 @@ export default function RfmPage() {
         <div className="lcard p-5 space-y-3">
           <div className="flex items-center gap-3 flex-wrap">
             <input
-              placeholder="Tìm tên khách hàng..."
+              placeholder={t('rfm.searchPlaceholder')}
               value={searchKH}
               onChange={e => setSearchKH(e.target.value)}
               className="linput !h-9 !px-3 text-sm flex-1"
@@ -300,27 +301,39 @@ export default function RfmPage() {
             />
             <select value={filterSeg} onChange={e => setFilterSeg(e.target.value)}
                     className="linput !h-9 !px-3 text-sm" style={{ width: 160 }}>
-              <option value="all">Tất cả phân khúc</option>
+              <option value="all">{t('rfm.filterAll')}</option>
               {Object.keys(summary).map(s => <option key={s} value={s}>{s}</option>)}
             </select>
             <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-              {filtered.length} / {customers.length} khách hàng
+              {t('rfm.showing', { shown: filtered.length, total: customers.length })}
             </span>
           </div>
           {customers.length === 0 ? (
             <div className="py-12 text-center" style={{ color: 'var(--text-tertiary)' }}>
               <span className="icon" style={{ fontSize: 40, opacity: 0.3 }}>people</span>
-              <p className="text-sm mt-2">Danh sách chi tiết chưa có.</p>
-              <p className="text-xs mt-1">Chạy notebook 04_RFM_Analysis.ipynb để xuất danh sách khách hàng.</p>
+              <p className="text-sm mt-2">{t('rfm.emptyList')}</p>
+              <p className="text-xs mt-1">{t('rfm.emptyListHint')}</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm border-collapse">
                 <thead>
                   <tr style={{ borderBottom: '2px solid var(--border)' }}>
-                    {['Tên KH','Phân khúc','Recency','Tần suất','Doanh thu','Điểm RFM','Đơn gần nhất'].map(h => (
+                    {[
+                      { h: t('rfm.colCustomer'),  tip: null               },
+                      { h: t('rfm.colSegment'),   tip: MT.customerSegment },
+                      { h: t('rfm.colRecency'),   tip: MT.recency         },
+                      { h: t('rfm.colFrequency'), tip: MT.frequency       },
+                      { h: t('rfm.colRevenue'),   tip: MT.monetary        },
+                      { h: t('rfm.colRfmScore'),  tip: MT.rfm             },
+                      { h: t('rfm.colLastOrder'), tip: null               },
+                    ].map(({ h, tip }) => (
                       <th key={h} className="text-left py-2 px-3 font-semibold text-xs"
-                          style={{ color: 'var(--text-tertiary)' }}>{h}</th>
+                          style={{ color: 'var(--text-tertiary)' }}>
+                        <span className="inline-flex items-center gap-0.5">
+                          {h}{tip && <InfoTooltip {...tip} placement="bottom" />}
+                        </span>
+                      </th>
                     ))}
                   </tr>
                 </thead>
@@ -336,8 +349,8 @@ export default function RfmPage() {
                             {c.segment}
                           </span>
                         </td>
-                        <td className="py-2 px-3 text-xs" style={{ color: 'var(--text-secondary)' }}>{c.recency_days} ngày</td>
-                        <td className="py-2 px-3 text-xs" style={{ color: 'var(--text-secondary)' }}>{c.frequency} đơn</td>
+                        <td className="py-2 px-3 text-xs" style={{ color: 'var(--text-secondary)' }}>{c.recency_days}{t('rfm.daySuffix')}</td>
+                        <td className="py-2 px-3 text-xs" style={{ color: 'var(--text-secondary)' }}>{c.frequency}{t('rfm.orderSuffix')}</td>
                         <td className="py-2 px-3 text-xs font-mono" style={{ color: 'var(--text-primary)' }}>{fmtVND(c.monetary)}</td>
                         <td className="py-2 px-3">
                           <span className="font-mono text-xs px-1.5 py-0.5 rounded"
@@ -353,7 +366,7 @@ export default function RfmPage() {
               </table>
               {filtered.length > 100 && (
                 <p className="text-xs text-center mt-3" style={{ color: 'var(--text-tertiary)' }}>
-                  Hiển thị 100 / {filtered.length} khách hàng
+                  {t('rfm.showing', { shown: 100, total: filtered.length })}
                 </p>
               )}
             </div>
