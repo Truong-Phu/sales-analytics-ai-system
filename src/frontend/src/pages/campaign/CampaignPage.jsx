@@ -1,18 +1,13 @@
 import { useState, useEffect, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import MockToast from '../../components/ui/MockToast'
 import AiEmptyState from '../../components/ui/AiEmptyState'
 import { getCampaignPlan } from '../../api/aiApi'
 
-const REC_CONFIG = {
-  RUN_CAMPAIGN: { textColor: '#22C55E', bg: 'rgba(34,197,94,0.08)',   border: 'rgba(34,197,94,0.25)',   icon: '🚀', label: 'Nên chạy'   },
-  PREPARE:      { textColor: 'var(--primary-500)', bg: 'var(--primary-50)', border: 'rgba(99,102,241,0.25)', icon: '📋', label: 'Chuẩn bị' },
-  NORMAL:       { textColor: 'var(--text-tertiary)', bg: 'var(--bg-elevated)', border: 'var(--border)',       icon: '📅', label: 'Bình thường'},
-  LOW_SEASON:   { textColor: '#F59E0B', bg: 'rgba(245,158,11,0.08)',  border: 'rgba(245,158,11,0.25)',  icon: '⬇️', label: 'Thấp điểm' },
-}
-
 // ── Hiển thị card gợi ý từ URL params (basket / rfm / churn) ─────────────────
 function ActionSuggestionBanner({ params, onDismiss }) {
+  const { t } = useTranslation()
   const action = params.get('action')
   if (!action) return null
 
@@ -26,10 +21,10 @@ function ActionSuggestionBanner({ params, onDismiss }) {
         <span className="icon text-2xl shrink-0 mt-0.5" style={{ color: 'var(--primary-500)' }}>local_offer</span>
         <div className="flex-1">
           <div className="font-semibold text-sm" style={{ color: 'var(--primary-700)' }}>
-            Gợi ý Bundle từ Market Basket Analysis
+            {t('campaign.bundleBannerTitle')}
           </div>
           <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
-            Khách hay mua chung: {products.map((p, i) => (
+            {t('campaign.bundleBoughtWith')}: {products.map((p, i) => (
               <span key={i}>
                 {i > 0 && <span className="mx-1" style={{ color: 'var(--text-tertiary)' }}>+</span>}
                 <strong style={{ color: 'var(--primary-600)' }}>{p}</strong>
@@ -37,7 +32,7 @@ function ActionSuggestionBanner({ params, onDismiss }) {
             ))}{lift && <span className="ml-2 text-green-600 font-medium">Lift {lift}x</span>}{conf && <span className="ml-1" style={{ color: 'var(--text-tertiary)' }}>(conf {conf}%)</span>}
           </p>
           <p className="text-xs mt-1.5 font-medium" style={{ color: 'var(--text-primary)' }}>
-            Đề xuất: Tạo combo giảm giá 10–15% khi mua kèm {products.join(' + ')} — chạy vào thời điểm cao điểm bên dưới.
+            {t('campaign.bundleProposal')}
           </p>
         </div>
         <button onClick={onDismiss} className="icon shrink-0 text-sm transition-colors"
@@ -60,7 +55,7 @@ function ActionSuggestionBanner({ params, onDismiss }) {
         <span className="icon text-2xl shrink-0 mt-0.5" style={{ color: segColor }}>person_search</span>
         <div className="flex-1">
           <div className="font-semibold text-sm" style={{ color: segColor }}>
-            Gợi ý Campaign Win-back — phân khúc {segment}
+            {t('campaign.winbackBannerTitle', { segment })}
           </div>
           <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
             <strong>{count}</strong> khách hàng phân khúc <strong>{segment}</strong> cần chiến dịch kích hoạt lại.
@@ -91,7 +86,7 @@ function ActionSuggestionBanner({ params, onDismiss }) {
         <span className="icon text-2xl shrink-0 mt-0.5" style={{ color: riskColor }}>favorite</span>
         <div className="flex-1">
           <div className="font-semibold text-sm" style={{ color: riskColor }}>
-            Giữ chân khách hàng — Nguy cơ churn {risk}
+            {t('campaign.retainBannerTitle', { risk })}
           </div>
           <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
             <strong style={{ color: 'var(--text-primary)' }}>{customer}</strong> có xác suất rời bỏ <strong style={{ color: riskColor }}>{prob}%</strong>
@@ -115,6 +110,7 @@ function ActionSuggestionBanner({ params, onDismiss }) {
 }
 
 export default function CampaignPage() {
+  const { t } = useTranslation()
   const [searchParams, setSearchParams] = useSearchParams()
   const [showBanner, setShowBanner] = useState(true)
   const [data,   setData]   = useState(null)
@@ -137,13 +133,19 @@ export default function CampaignPage() {
 
   const maxDow = Math.max(...(data?.seasonal_insight?.weekly_pattern?.map(d => d.avg) ?? [1]))
 
+  const REC_CONFIG = {
+    RUN_CAMPAIGN: { textColor: '#22C55E', bg: 'rgba(34,197,94,0.08)',   border: 'rgba(34,197,94,0.25)',   icon: '🚀', label: t('campaign.recShouldRun') },
+    PREPARE:      { textColor: 'var(--primary-500)', bg: 'var(--primary-50)', border: 'rgba(99,102,241,0.25)', icon: '📋', label: t('campaign.recPrepare') },
+    NORMAL:       { textColor: 'var(--text-tertiary)', bg: 'var(--bg-elevated)', border: 'var(--border)',       icon: '📅', label: t('campaign.recNormal') },
+    LOW_SEASON:   { textColor: '#F59E0B', bg: 'rgba(245,158,11,0.08)',  border: 'rgba(245,158,11,0.25)',  icon: '⬇️', label: t('campaign.recLow') },
+  }
+
   return (
     <div className="space-y-5">
       <MockToast show={isMock} />
-      {/* Header */}
       <div>
-        <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Lịch Chiến dịch Thông minh</h1>
-        <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>Gợi ý thời điểm tốt nhất để chạy marketing dựa trên seasonal analysis</p>
+        <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>{t('campaign.title')}</h1>
+        <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>{t('campaign.subtitle')}</p>
       </div>
 
       {/* Banner gợi ý từ Basket / RFM / Churn */}
@@ -154,7 +156,7 @@ export default function CampaignPage() {
         />
       )}
 
-      {!data && !loading && <AiEmptyState title="Chưa đủ dữ liệu lịch chiến dịch" />}
+      {!data && !loading && <AiEmptyState title={t('campaign.emptyState')} />}
 
       {loading ? (
         <div className="lcard p-10 flex items-center justify-center">
@@ -167,9 +169,9 @@ export default function CampaignPage() {
           {data?.seasonal_insight && (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {[
-                { label: 'Tháng cao điểm nhất',           value: `🏆 ${data.seasonal_insight.best_month_name}`,  color: '#22C55E' },
-                { label: 'Tháng thấp điểm nhất',          value: `⬇️ ${data.seasonal_insight.worst_month_name}`, color: '#F59E0B' },
-                { label: 'Ngày bán tốt nhất trong tuần',  value: `📅 ${data.seasonal_insight.best_weekday}`,    color: 'var(--primary-500)' },
+                { label: t('campaign.kpiPeakMonth'), value: `🏆 ${data.seasonal_insight.best_month_name}`,  color: '#22C55E' },
+                { label: t('campaign.kpiLowMonth'),  value: `⬇️ ${data.seasonal_insight.worst_month_name}`, color: '#F59E0B' },
+                { label: t('campaign.kpiBestDay'),   value: `📅 ${data.seasonal_insight.best_weekday}`,    color: 'var(--primary-500)' },
               ].map(k => (
                 <div key={k.label} className="lcard p-4">
                   <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{k.label}</div>
@@ -182,7 +184,7 @@ export default function CampaignPage() {
           {/* Weekly bar chart */}
           {data?.seasonal_insight?.weekly_pattern && (
             <div className="lcard p-4">
-              <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--text-secondary)' }}>Doanh thu trung bình theo ngày trong tuần</h3>
+              <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--text-secondary)' }}>{t('campaign.chartWeekday')}</h3>
               <div className="flex items-end gap-2 h-28">
                 {data.seasonal_insight.weekly_pattern.map(d => (
                   <div key={d.day} className="flex-1 flex flex-col items-center gap-1">
@@ -201,7 +203,7 @@ export default function CampaignPage() {
 
           {/* Monthly windows */}
           <div className="space-y-2">
-            <h3 className="text-sm font-semibold" style={{ color: 'var(--text-secondary)' }}>Kế hoạch 6 tháng tới</h3>
+            <h3 className="text-sm font-semibold" style={{ color: 'var(--text-secondary)' }}>{t('campaign.planTitle')}</h3>
             {(data?.windows ?? []).map(w => {
               const cfg = REC_CONFIG[w.recommendation] ?? REC_CONFIG.NORMAL
               return (
@@ -212,15 +214,15 @@ export default function CampaignPage() {
                     <div className="font-semibold" style={{ color: cfg.textColor }}>{w.label}</div>
                     {w.events.length > 0 && (
                       <div className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
-                        Sự kiện: {w.events.join(', ')}
+                        {t('campaign.eventLabel')}: {w.events.join(', ')}
                       </div>
                     )}
                   </div>
                   <div className="text-right shrink-0">
                     <div className="text-sm font-bold" style={{ color: cfg.textColor }}>
-                      {w.vs_overall_pct > 0 ? '+' : ''}{w.vs_overall_pct}% vs trung bình
+                      {w.vs_overall_pct > 0 ? '+' : ''}{w.vs_overall_pct}% {t('campaign.vsAvg')}
                     </div>
-                    <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{(w.avg_revenue/1e6).toFixed(1)}M VNĐ/tháng</div>
+                    <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{(w.avg_revenue/1e6).toFixed(1)}M VNĐ/{t('campaign.perMonth')}</div>
                   </div>
                   <span className="text-xs font-medium px-2 py-1 rounded-full shrink-0"
                     style={{ color: cfg.textColor, border: `1px solid ${cfg.border}`, background: cfg.bg }}>
@@ -235,14 +237,14 @@ export default function CampaignPage() {
           {data?.upcoming_events?.length > 0 && (
             <div>
               <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-secondary)' }}>
-                🔔 Sự kiện sắp tới ({data.upcoming_events.length})
+                {t('campaign.upcomingTitle', { count: data.upcoming_events.length })}
               </h3>
               <div className="space-y-2">
                 {data.upcoming_events.map(ev => (
                   <div key={ev.name} className="lcard p-4 flex items-center gap-4">
                     <div className="text-center shrink-0" style={{ minWidth: 56 }}>
                       <div className="text-2xl font-bold" style={{ color: 'var(--primary-500)' }}>{ev.days_until}</div>
-                      <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>ngày nữa</div>
+                      <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{t('campaign.daysLeft')}</div>
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="font-medium" style={{ color: 'var(--text-primary)' }}>{ev.name} – {ev.date}</div>
@@ -250,7 +252,7 @@ export default function CampaignPage() {
                     </div>
                     <div className="text-right shrink-0">
                       <div className="font-bold" style={{ color: '#22C55E' }}>+{Math.round((ev.boost_expected-1)*100)}%</div>
-                      <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>dự kiến</div>
+                      <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{t('campaign.expectedLabel')}</div>
                     </div>
                   </div>
                 ))}
