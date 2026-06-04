@@ -563,9 +563,9 @@ public class DashboardService
                            .Select(r => new { product = r.Name, stock = r.Stock, forecast = (int)r.Forecast, stockDiffPct = r.DiffPct.ToString("F1"), daysOfStock = r.DaysOfStock })
                            .ToList<object>();
 
+        // Trả về toàn bộ SP sắp hết (< 14 ngày bán) để frontend quyết định hiển thị top 5 hay tất cả
         var top5Low   = rows.Where(r => r.DaysOfStock < 14 && r.DailySales > 0)
                            .OrderBy(r => r.DaysOfStock)
-                           .Take(5)
                            .Select(r => new { product = r.Name, stock = r.Stock, dailySales = r.DailySales, daysOfStock = r.DaysOfStock })
                            .ToList<object>();
 

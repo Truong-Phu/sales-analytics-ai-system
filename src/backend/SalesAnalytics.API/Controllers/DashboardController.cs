@@ -76,74 +76,22 @@ public class DashboardController(DashboardService service, ITenantContext tenant
         }
     }
 
-    /// <summary>Facebook Ads performance — mock khi chưa cấu hình Ad Account</summary>
+    /// <summary>Facebook Ads performance — yêu cầu kết nối Facebook Ads Account qua /api/integrations</summary>
     [HttpGet("fb-ads")]
     [Authorize(Roles = "Owner,Manager,DataIT,SuperAdmin")]
     public IActionResult GetFbAds(
         [FromQuery] DateOnly? from = null,
         [FromQuery] DateOnly? to   = null)
     {
-        var dateFrom = from ?? DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-30));
-        var dateTo   = to   ?? DateOnly.FromDateTime(DateTime.UtcNow);
-        int days     = Math.Max(1, dateTo.DayNumber - dateFrom.DayNumber + 1);
-        var rng      = new Random(dateFrom.DayNumber + 77);
-
-        double totSpend = 0, totRev = 0;
-        int    totClicks = 0, totImpr = 0, totConv = 0;
-        var    daily = new List<object>(days);
-        for (int i = 0; i < days; i++)
-        {
-            var    d       = dateFrom.AddDays(i);
-            double spend   = Math.Round(650_000 + rng.NextDouble() * 550_000);
-            int    clicks  = (int)(spend / 1_600 + rng.Next(-20, 50));
-            int    impr    = clicks * (15 + rng.Next(0, 10));
-            int    conv    = Math.Max(0, (int)(clicks * 0.028 + rng.NextDouble() * 3));
-            double revenue = conv * (380_000 + rng.Next(-30_000, 120_000));
-            daily.Add(new
-            {
-                date        = d.ToString("yyyy-MM-dd"),
-                spend, clicks,
-                impressions = impr,
-                conversions = conv,
-                revenue,
-                ctr  = impr   > 0 ? Math.Round((double)clicks / impr  * 100, 2) : 0,
-                cpc  = clicks > 0 ? Math.Round(spend / clicks)                  : 0,
-                roas = spend  > 0 ? Math.Round(revenue / spend, 2)              : 0,
-            });
-            totSpend  += spend;  totClicks += clicks;
-            totImpr   += impr;   totConv   += conv;  totRev += revenue;
-        }
-
         return Ok(new
         {
-            isMock  = true,
-            summary = new
-            {
-                totalSpend       = Math.Round(totSpend),
-                totalClicks      = totClicks,
-                totalImpressions = totImpr,
-                totalConversions = totConv,
-                totalRevenue     = Math.Round(totRev),
-                roas  = totSpend  > 0 ? Math.Round(totRev    / totSpend, 2)              : 0,
-                ctr   = totImpr   > 0 ? Math.Round((double)totClicks / totImpr * 100, 2) : 0,
-                cpc   = totClicks > 0 ? Math.Round(totSpend  / totClicks)                : 0,
-                cpa   = totConv   > 0 ? Math.Round(totSpend  / totConv)                  : 0,
-            },
-            daily,
-            byCampaign = new object[]
-            {
-                new { campaign = "Retargeting Shoppers", spend = Math.Round(totSpend * 0.35), roas = 4.8, conversions = (int)(totConv * 0.42) },
-                new { campaign = "Flash Sale Traffic",    spend = Math.Round(totSpend * 0.28), roas = 3.9, conversions = (int)(totConv * 0.31) },
-                new { campaign = "Brand Awareness",       spend = Math.Round(totSpend * 0.22), roas = 2.1, conversions = (int)(totConv * 0.17) },
-                new { campaign = "Lookalike Audience",    spend = Math.Round(totSpend * 0.15), roas = 3.2, conversions = (int)(totConv * 0.10) },
-            },
-            byAdType = new object[]
-            {
-                new { adType = "Video / Reels", spend = Math.Round(totSpend * 0.40) },
-                new { adType = "Image Static",  spend = Math.Round(totSpend * 0.28) },
-                new { adType = "Carousel",      spend = Math.Round(totSpend * 0.20) },
-                new { adType = "Stories",       spend = Math.Round(totSpend * 0.12) },
-            },
+            notConfigured = true,
+            message       = "Chưa cấu hình Facebook Ads Account. Vui lòng kết nối tại Tích hợp dữ liệu.",
+            daily         = Array.Empty<object>(),
+            summary       = new { totalSpend = 0, totalClicks = 0, totalImpressions = 0,
+                                  totalConversions = 0, totalRevenue = 0, roas = 0, ctr = 0, cpc = 0, cpa = 0 },
+            byCampaign    = Array.Empty<object>(),
+            byAdType      = Array.Empty<object>(),
         });
     }
 
@@ -273,9 +221,12 @@ public class DashboardController(DashboardService service, ITenantContext tenant
         decimal ordPct = y.Kpi.TotalOrders > 0
             ? Math.Round((t.Kpi.TotalOrders - y.Kpi.TotalOrders) / (decimal)y.Kpi.TotalOrders * 100, 1)
             : 0;
-
         decimal custPct = y.Kpi.NewCustomers > 0
             ? Math.Round((t.Kpi.NewCustomers - y.Kpi.NewCustomers) / (decimal)y.Kpi.NewCustomers * 100, 1)
+            : 0;
+        // % thay đổi lợi nhuận gộp so hôm qua (dùng Abs để tránh chia số âm gây nghịch chiều)
+        decimal profPct = y.Kpi.TotalProfit != 0
+            ? Math.Round((t.Kpi.TotalProfit - y.Kpi.TotalProfit) / Math.Abs(y.Kpi.TotalProfit) * 100, 1)
             : 0;
 
         return Ok(new
@@ -285,6 +236,7 @@ public class DashboardController(DashboardService service, ITenantContext tenant
             revenuePct   = revPct,
             ordersPct    = ordPct,
             customersPct = custPct,
+            profitPct    = profPct,
         });
     }
 

@@ -800,6 +800,7 @@ export default function ProductsPage() {
   const [checkedIds,        setCheckedIds]        = useState(new Set())
   const [confirmDlg, setConfirmDlg] = useState(null)
   const [catalogOnly,       setCatalogOnly]       = useState(true) // mặc định: chỉ catalog chuẩn
+  const [activeStatus,      setActiveStatus]      = useState('all') // 'all' | 'active' | 'inactive'
 
   const debouncedSearch = useDebounce(search, 350)
 
@@ -847,13 +848,14 @@ export default function ProductsPage() {
         page,
         limit:         PAGE_SIZE,
         hasVariations: catalogOnly ? true : null,
+        isActive:      activeStatus === 'active' ? true : activeStatus === 'inactive' ? false : null,
       }))
     } catch {
       setData(null)
     } finally {
       setLoading(false)
     }
-  }, [debouncedSearch, categoryId, page, catalogOnly])
+  }, [debouncedSearch, categoryId, page, catalogOnly, activeStatus])
 
   const openCreate = () => setFormMode('create')
 
@@ -1028,7 +1030,24 @@ export default function ProductsPage() {
             </option>
           ))}
         </select>
-        <button onClick={() => { setSearch(''); setCategoryId(''); setPage(1) }}
+        {/* Filter trạng thái */}
+        <div className="flex rounded-lg overflow-hidden border" style={{ borderColor: 'var(--border)' }}>
+          {[
+            { value: 'all',      label: 'Tất cả' },
+            { value: 'active',   label: 'Đang bán' },
+            { value: 'inactive', label: 'Ngừng bán' },
+          ].map(s => (
+            <button key={s.value} onClick={() => { setActiveStatus(s.value); setPage(1) }}
+              className="px-3 py-1.5 text-xs font-medium transition-all"
+              style={activeStatus === s.value
+                ? { background: 'var(--primary-500)', color: '#fff' }
+                : { background: 'transparent', color: 'var(--text-secondary)' }}>
+              {s.label}
+            </button>
+          ))}
+        </div>
+
+        <button onClick={() => { setSearch(''); setCategoryId(''); setActiveStatus('all'); setPage(1) }}
                 className="lbtn lbtn-secondary !h-9">
           <span className="icon text-base">refresh</span>
         </button>
@@ -1191,7 +1210,15 @@ export default function ProductsPage() {
                     <td className="px-4 py-3 font-mono text-sm" style={{ color: 'var(--text-secondary)' }}>{p.sku}</td>
                     <td className="px-4 py-3 text-sm" style={{ color: 'var(--text-secondary)' }}>{p.category}</td>
                     <td className="px-4 py-3 font-mono text-sm text-right" style={{ color: 'var(--text-primary)' }}>
-                      {(p.unit_price ?? p.price ?? 0).toLocaleString('vi-VN')}₫
+                      <div className="flex items-center justify-end gap-1">
+                        {(p.unit_price ?? p.price ?? 0).toLocaleString('vi-VN')}₫
+                        {!(p.cost_price ?? p.costPrice) && (
+                          <span title="Thiếu giá vốn — lợi nhuận chưa chính xác"
+                            className="icon" style={{ fontSize: 13, color: '#F59E0B' }}>
+                            warning
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-4 py-3 text-right tabular-nums" style={{ color: 'var(--text-secondary)' }}>
                       {(p.stock ?? 0).toLocaleString()}

@@ -11,12 +11,13 @@ import {
   ScatterChart, Scatter, ZAxis, ComposedChart, LabelList,
 } from 'recharts'
 import { SkeletonCard } from '../../components/ui/Skeleton'
+import DetailDrawer from '../../components/ui/DetailDrawer'
 import AiEmptyState from '../../components/ui/AiEmptyState'
 import DevEmptyState from '../../components/ui/DevEmptyState'
 import { getDashboard, getTodayVsYesterday, getDrillDownOrders, getDrillDownCustomers,
          getOrderHeatmap, getOrderFunnel, getMonthlyByChannel,
          getOpsKpi, getInventoryReal, getTopProductsByChannel } from '../../api/dashboardApi'
-import { getInsights, getLeaderboard, getGeoDistribution, getChannelAttribution,
+import { getInsights, getRecommendations, getLeaderboard, getGeoDistribution, getChannelAttribution,
          getCampaignPlan, getFeedbackSummary,
          getRfmSegments } from '../../api/aiApi'
 import { getProfitOverview } from '../../api/financeApi'
@@ -344,25 +345,32 @@ function DrillDownModal({ title, subtitle, columns, data, onClose, onExport }) {
   )
 }
 
-// ── AI Insights Card — tổng hợp insights từ forecast + anomaly + RFM ─────────
-function AiInsightsCard({ insights = null, loading = false }) {
+// ── AI Insights Card — hiện preview gợi ý tự động (cùng nguồn với Gợi ý AI tab) ───
+const PRIORITY_DOT_DASH = { high: '#EF4444', medium: '#F59E0B', low: '#6366F1' }
 
-  const ICONS = ['trending_up', 'warning', 'group', 'analytics', 'lightbulb']
-  const COLORS = ['#6366F1', '#F59E0B', '#10B981', '#3B82F6', '#8B5CF6']
+function AiInsightsCard({ insights = null, loading = false, autoRecs = null }) {
+  const navigate = useNavigate()
+  const MAX_PREVIEW = 3
+
+  // Dùng autoRecs (đồng nhất với Gợi ý AI tab) nếu có; fallback về insights string[]
+  const useRecs     = autoRecs?.recommendations?.length > 0
+  const allRecs     = autoRecs?.recommendations ?? []
+  const allInsights = insights?.insights ?? []
+  const preview     = useRecs ? allRecs.slice(0, MAX_PREVIEW) : allInsights.slice(0, MAX_PREVIEW)
+  const totalCount  = useRecs ? allRecs.length : allInsights.length
+  const hasMore     = totalCount > MAX_PREVIEW
+  const hasData     = totalCount > 0
+  const updatedAt   = autoRecs?.generatedAt ?? insights?.generated_at
 
   return (
     <div className="lcard p-5" style={{ borderLeft: '3px solid var(--primary-500)' }}>
       <div className="flex items-center gap-2 mb-3">
         <span className="icon" style={{ color: 'var(--primary-500)', fontSize: 20 }}>auto_awesome</span>
-        <span className="text-[22px] font-bold text-foreground">
-          AI Insights
-        </span>
-        <span className="lbadge lbadge-primary ml-1">
-          Tự động
-        </span>
-        {insights?.generated_at && (
+        <span className="text-[22px] font-bold text-foreground">AI Insights</span>
+        <span className="lbadge lbadge-primary ml-1">Tự động</span>
+        {updatedAt && (
           <span className="text-xs text-muted-foreground ml-auto">
-            Cập nhật: {new Date(insights.generated_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+            Cập nhật: {new Date(updatedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
           </span>
         )}
       </div>
@@ -372,21 +380,45 @@ function AiInsightsCard({ insights = null, loading = false }) {
           <span className="icon animate-spin" style={{ fontSize: 16 }}>refresh</span>
           Đang tải insights từ AI...
         </div>
-      ) : !insights ? (
+      ) : !hasData ? (
         <div className="text-xs text-muted-foreground">
           AI Service chưa khởi động — chạy start_all.bat để bật đầy đủ tính năng AI.
         </div>
       ) : (
-        <ul className="space-y-2">
-          {(insights.insights || []).map((text, i) => (
-            <li key={i} className="flex items-start gap-2.5 text-sm">
-              <span className="icon shrink-0 mt-0.5" style={{ fontSize: 16, color: COLORS[i % COLORS.length] }}>
-                {ICONS[i % ICONS.length]}
-              </span>
-              <span className="text-foreground">{text}</span>
-            </li>
-          ))}
-        </ul>
+        <>
+          <ul className="space-y-2">
+            {useRecs ? preview.map((rec, i) => (
+              <li key={i} className="flex items-start gap-2.5 text-sm">
+                <span className="w-1.5 h-1.5 rounded-full shrink-0 mt-2"
+                      style={{ background: PRIORITY_DOT_DASH[rec.priority] ?? '#6366F1' }} />
+                <span className="text-foreground">{rec.message}</span>
+              </li>
+            )) : preview.map((text, i) => (
+              <li key={i} className="flex items-start gap-2.5 text-sm">
+                <span className="icon shrink-0 mt-0.5"
+                      style={{ fontSize: 16, color: ['#6366F1','#F59E0B','#10B981'][i % 3] }}>
+                  lightbulb
+                </span>
+                <span className="text-foreground">{text}</span>
+              </li>
+            ))}
+          </ul>
+          {hasMore && (
+            <p className="text-xs mt-2" style={{ color: 'var(--text-tertiary)' }}>
+              + {totalCount - MAX_PREVIEW} gợi ý khác
+            </p>
+          )}
+          <button
+            onClick={() => navigate('/recommendations?tab=auto')}
+            className="mt-3 flex items-center gap-1 text-xs font-medium transition-colors"
+            style={{ color: 'var(--primary-500)' }}
+            onMouseEnter={e => e.currentTarget.style.opacity = '0.7'}
+            onMouseLeave={e => e.currentTarget.style.opacity = '1'}
+          >
+            <span className="icon" style={{ fontSize: 13 }}>open_in_new</span>
+            Xem tất cả gợi ý AI
+          </button>
+        </>
       )}
     </div>
   )
@@ -401,6 +433,8 @@ function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd 
   const lbLoading    = wl.leaderboard ?? false
   const insData      = wd.insights   ?? null
   const insLoading   = wl.insights   ?? false
+  const autoRecs     = wd.autoRecs   ?? null
+  const autoRecsLoading = wl.autoRecs ?? false
   // Finance KPI (Operating Profit, ACOS) từ FinanceController
   const financeKpi   = wd.financeKpi  ?? null
   const financeLoading = wl.financeKpi ?? false
@@ -454,11 +488,11 @@ function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd 
         </div>
       )}
 
-      {/* ── KPI 3 nhóm ─────────────────────────────────────────────────── */}
+      {/* ── KPI 2 hàng cân bằng 4+4 ─────────────────────────────────────── */}
       <div className="space-y-3">
-        {/* Nhóm 1: Doanh thu */}
-        <GroupLabel>Nhóm Doanh thu</GroupLabel>
-        <div className="grid grid-cols-3 gap-3">
+        {/* Hàng 1: Doanh thu & Đơn hàng */}
+        <GroupLabel>Doanh thu &amp; Đơn hàng</GroupLabel>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <KpiCard
             label={t('dashboard.kpi.revenue')}
             value={fmtM(kpi.totalRevenue)}
@@ -486,11 +520,6 @@ function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd 
             color="var(--accent-500)"
             helpDef={KPI_DEFINITIONS.aov}
           />
-        </div>
-
-        {/* Nhóm 2: Khách hàng */}
-        <GroupLabel>Nhóm Khách hàng</GroupLabel>
-        <div className="grid grid-cols-3 gap-3">
           <KpiCard
             label="Khách hàng mới"
             value={kpi.newCustomers.toLocaleString('vi-VN')}
@@ -502,18 +531,9 @@ function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd 
             sparkColor="#3B82F6"
             helpDef={KPI_DEFINITIONS.newCustomers}
           />
-          <KpiCard
-            label="Tỷ lệ giữ chân"
-            value={kpi.retentionRate != null ? `${kpi.retentionRate}%` : '—'}
-            icon="replay"
-            color="#14B8A6"
-            unavailable={kpi.retentionRate == null}
-            placeholderText={kpi.retentionRate == null ? 'Chưa đủ lịch sử đơn hàng' : undefined}
-            helpDef={KPI_DEFINITIONS.retentionRate}
-          />
         </div>
 
-        {/* Nhóm 3: Hiệu quả kinh doanh */}
+        {/* Hàng 2: Hiệu quả kinh doanh */}
         <GroupLabel>Hiệu quả kinh doanh</GroupLabel>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <KpiCard
@@ -566,7 +586,7 @@ function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd 
       </div>
 
       {/* AI Insights — chỉ hiện cho Owner/Manager/DataIT/SuperAdmin */}
-      {canViewAnalytics && <AiInsightsCard insights={insData} loading={insLoading} />}
+      {canViewAnalytics && <AiInsightsCard insights={insData} loading={insLoading || autoRecsLoading} autoRecs={autoRecs} />}
 
       {/* Hero 2/3 + Donut 1/3 */}
       <div className="grid grid-cols-12 gap-4">
@@ -724,14 +744,15 @@ function TabSales({ data, compareMode, prevData, from, to }) {
       const orders = await getDrillDownOrders(entry.productKey ?? entry.ProductId, from, to)
       setDrillOrders(orders)
     } catch {
-      // Fallback mock nếu API fail
+      // Fallback khi API fail — đánh dấu is_mock để UI hiện cảnh báo
       setDrillOrders(Array.from({ length: 8 }, (_, i) => ({
         orderId: `ORD-${10000 + i}`,
         date:    `2025-${String(Math.ceil((i+1)/3)).padStart(2,'0')}-${String(10 + i * 3).padStart(2,'0')}`,
         channel: ['Shopee','Lazada','TikTok Shop','Offline'][i % 4],
-        qty:     Math.round(1 + Math.random() * 4),
-        revenue: Math.round(200_000 + Math.random() * 800_000),
+        qty:     1 + (i % 3),
+        revenue: 200_000 + i * 100_000,
         status:  'Hoàn thành',
+        is_mock: true,
       })))
     } finally {
       setDrillLoading(false)
@@ -910,16 +931,72 @@ function TabSales({ data, compareMode, prevData, from, to }) {
         </div>
       </div>
 
-      {/* DrillDownModal khi click bar Pareto */}
-      {drillProduct && (
-        <DrillDownModal
-          title={drillLoading ? 'Đang tải...' : `Chi tiết đơn hàng — ${drillProduct.productName || drillProduct.shortName}`}
-          columns={drillColumns}
-          data={drillOrders}
-          onClose={() => { setDrillProduct(null); setDrillOrders([]) }}
-          onExport={() => exportCsv(`orders_${drillProduct.shortName ?? 'product'}.csv`, drillOrders)}
-        />
-      )}
+      {/* DetailDrawer khi click bar Pareto */}
+      <DetailDrawer
+        open={!!drillProduct}
+        onClose={() => { setDrillProduct(null); setDrillOrders([]) }}
+        title={drillLoading ? 'Đang tải...' : `Chi tiết đơn hàng — ${drillProduct?.productName || drillProduct?.shortName || ''}`}
+        subtitle={!drillLoading && drillOrders.length > 0 ? `${drillOrders.length} đơn hàng` : undefined}
+        width={780}
+        footer={
+          drillOrders.length > 0 && (
+            <button
+              className="lbtn lbtn-secondary text-xs"
+              style={{ height: 32 }}
+              onClick={() => drillProduct && exportCsv(`orders_${drillProduct.shortName ?? 'product'}.csv`, drillOrders.map(({ is_mock, ...r }) => r))}
+            >
+              <span className="icon icon-sm">download</span>
+              Xuất CSV
+            </button>
+          )
+        }
+      >
+        {drillLoading ? (
+          <div className="flex items-center justify-center p-10">
+            <span className="w-6 h-6 border-2 rounded-full"
+              style={{ borderColor: 'var(--border)', borderTopColor: 'var(--primary-500)', animation: 'spin 0.8s linear infinite' }} />
+          </div>
+        ) : (
+          <div className="p-0">
+            {drillOrders.some(r => r.is_mock) && (
+              <div className="flex items-center gap-2 px-4 py-2 text-xs"
+                style={{ background: 'rgba(245,158,11,0.1)', color: '#92400e', borderBottom: '1px solid rgba(245,158,11,0.3)' }}>
+                <span className="icon" style={{ fontSize: 14, color: '#f59e0b' }}>warning</span>
+                Đang dùng dữ liệu mẫu — API chi tiết chưa phản hồi
+              </div>
+            )}
+            <table className="w-full text-sm border-collapse">
+              <thead className="sticky top-0" style={{ background: 'var(--bg-elevated)' }}>
+                <tr>
+                  {drillColumns.map(col => (
+                    <th key={col.key} className="px-4 py-3 text-left font-semibold text-xs uppercase tracking-wide"
+                      style={{ color: 'var(--text-secondary)', borderBottom: '2px solid var(--border)' }}>
+                      {col.label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {drillOrders.length > 0 ? drillOrders.map((row, i) => (
+                  <tr key={i} style={{ background: i % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.02)' }}>
+                    {drillColumns.map(col => (
+                      <td key={col.key} className="px-4 py-2.5"
+                        style={{ borderBottom: '1px solid var(--border)', textAlign: col.align ?? 'left', color: 'var(--text-primary)' }}>
+                        {col.render ? col.render(row[col.key], row) : row[col.key]}
+                      </td>
+                    ))}
+                  </tr>
+                )) : (
+                  <tr>
+                    <td colSpan={drillColumns.length} className="py-10 text-center"
+                      style={{ color: 'var(--text-tertiary)' }}>Không có dữ liệu</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </DetailDrawer>
     </div>
   )
 }
@@ -1770,6 +1847,7 @@ function TabMarketing({ data, wd = {}, wl = {} }) {
 function TabInventory({ data, wd = {}, wl = {} }) {
   const { t }      = useTranslation()
   const navigate   = useNavigate()
+  const [showAllLowStock, setShowAllLowStock] = useState(false)
   const invKpi = data.inventoryKpi || { avgDIO: 0, overstockRate: '0.0', stockoutRate: '0.0' }
   const fmtPct = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? `${n.toFixed(1)}%` : '—' }
   const invKpis = [
@@ -1900,7 +1978,20 @@ function TabInventory({ data, wd = {}, wl = {} }) {
         </div>
 
         <div className="lcard p-5 col-span-12 lg:col-span-6">
-          <SectionTitle>Top 5 sắp hết hàng (tồn &lt; 14 ngày bán)</SectionTitle>
+          <div className="flex items-center justify-between mb-3">
+            <SectionTitle>Top 5 sắp hết hàng (tồn &lt; 14 ngày bán)</SectionTitle>
+            {(data.top5LowStock?.length ?? 0) > 5 && (
+              <button
+                onClick={() => setShowAllLowStock(v => !v)}
+                className="text-xs font-medium px-2.5 py-1 rounded-lg transition-colors"
+                style={{ color: 'var(--primary-600)', background: 'rgba(99,102,241,0.08)' }}
+                onMouseEnter={e => e.currentTarget.style.background = 'rgba(99,102,241,0.16)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'rgba(99,102,241,0.08)'}
+              >
+                {showAllLowStock ? 'Thu gọn' : `Hiện tất cả (${data.top5LowStock.length})`}
+              </button>
+            )}
+          </div>
           {data.top5LowStock && data.top5LowStock.length > 0 ? (
             <div className="overflow-x-auto">
               <table className="w-full text-caption border-collapse">
@@ -1912,7 +2003,7 @@ function TabInventory({ data, wd = {}, wl = {} }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.top5LowStock.map((item, i) => {
+                  {(showAllLowStock ? data.top5LowStock : data.top5LowStock.slice(0, 5)).map((item, i) => {
                     const daysLeft = item.dailySales > 0 ? Math.round(item.stock / item.dailySales) : 999
                     return (
                       <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
@@ -2173,7 +2264,7 @@ export default function DashboardPage() {
     const prev = getPrevRange(from, to)
     const ch = channel === 'all' ? null : channel
     getDashboard(prev.from, prev.to, ch)
-      .catch(() => generateMockData(prev.from, prev.to))
+      .catch(() => null)
       .then(setPrevData)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [compareMode, presetKey, customFrom, customTo, channel])
@@ -2205,8 +2296,9 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (activeTab === 'overview') {
-      loadWidget('leaderboard', () => getLeaderboard({ limit: 5 }))
-      loadWidget('insights',    () => getInsights())
+      loadWidget('leaderboard',  () => getLeaderboard({ limit: 5 }))
+      loadWidget('insights',     () => getInsights())
+      loadWidget('autoRecs',     () => getRecommendations())
       // Fetch Operating Profit & ACOS từ FinanceController (Phase 1 đã xong)
       const { from, to } = getRange()
       loadWidget('financeKpi',  () => getProfitOverview({ from, to }))
@@ -2292,35 +2384,42 @@ export default function DashboardPage() {
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
           {[
             {
-              label: t('dashboard.today.revenue'),
-              type:  'revenue',
-              value: fmtM(tvy.today.revenue),
-              prev:  fmtM(tvy.yesterday.revenue),
-              pct:   tvy.revenuePct,
-              icon:  'payments',
+              label:    t('dashboard.today.revenue'),
+              type:     'revenue',
+              value:    fmtM(tvy.today.revenue),
+              prev:     fmtM(tvy.yesterday.revenue),
+              pct:      tvy.revenuePct,
+              pctLabel: t('dashboard.today.vsYesterday'),
+              icon:     'payments',
+              helpDef:  KPI_DEFINITIONS.revenue,
             },
             {
-              label: t('dashboard.today.orders'),
-              type:  'orders',
-              value: tvy.today.orders.toLocaleString(),
-              prev:  tvy.yesterday.orders.toLocaleString(),
-              pct:   tvy.ordersPct,
-              icon:  'shopping_bag',
+              label:    t('dashboard.today.orders'),
+              type:     'orders',
+              value:    tvy.today.orders.toLocaleString(),
+              prev:     tvy.yesterday.orders.toLocaleString(),
+              pct:      tvy.ordersPct,
+              pctLabel: t('dashboard.today.vsYesterday'),
+              icon:     'shopping_bag',
+              helpDef:  KPI_DEFINITIONS.orders,
             },
             {
-              label: t('dashboard.today.profit'),
-              type:  'profit',
-              value: fmtM(tvy.today.profit),
-              prev:  fmtM(tvy.yesterday.profit),
-              pct:   tvy.today.revenue > 0 ? +((tvy.today.profit / tvy.today.revenue) * 100).toFixed(1) : 0,
-              icon:  'trending_up',
-              pctLabel: t('dashboard.today.margin'),
+              label:    t('dashboard.today.profit'),
+              type:     'profit',
+              value:    fmtM(tvy.today.profit),
+              prev:     fmtM(tvy.yesterday.profit),
+              // profitPct vs hôm qua (từ backend); fallback sang gross margin % nếu API cũ
+              pct:      tvy.profitPct != null
+                          ? tvy.profitPct
+                          : (tvy.today.revenue > 0 ? +((tvy.today.profit / tvy.today.revenue) * 100).toFixed(1) : 0),
+              pctLabel: tvy.profitPct != null ? t('dashboard.today.vsYesterday') : t('dashboard.today.margin'),
+              icon:     'trending_up',
               rawValue: tvy.today.profit,
+              helpDef:  KPI_DEFINITIONS.grossProfit,
             },
           ].map(card => {
             const isUp = card.pct >= 0
-            // Màu semantic cho giá trị chính — revenue=brand, profit=lãi/lỗ, orders=neutral
-            // Quy tắc: CHỈ lợi nhuận mới có màu (dương=xanh, âm=đỏ). Tổng tiền & đếm dùng neutral.
+            // Chỉ lợi nhuận có màu semantic; doanh thu & đơn dùng neutral
             const valueColor =
               card.type === 'profit' && card.rawValue >= 0 ? 'var(--profit-positive)' :
               card.type === 'profit' && card.rawValue <  0 ? 'var(--profit-negative)' :
@@ -2328,7 +2427,10 @@ export default function DashboardPage() {
             return (
               <div key={card.label} className="lcard p-4">
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>{card.label}</span>
+                  <div className="flex items-center gap-1">
+                    <span className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>{card.label}</span>
+                    {card.helpDef && <InfoTooltip def={card.helpDef} placement="bottom" />}
+                  </div>
                   <span className="icon text-base" style={{ color: card.type === 'revenue' ? 'var(--primary-400)' : isUp ? 'var(--accent-500)' : '#EF4444', fontSize: 18 }}>
                     {card.icon}
                   </span>
@@ -2345,7 +2447,7 @@ export default function DashboardPage() {
                     {isUp ? '+' : ''}{card.pct}%
                   </span>
                   <span className="text-xs truncate" style={{ color: 'var(--text-tertiary)' }}>
-                    {card.pctLabel ?? t('dashboard.today.vsYesterday')} ({card.prev})
+                    {card.pctLabel} ({card.prev})
                   </span>
                 </div>
               </div>

@@ -196,7 +196,7 @@ public class ImportController(
     private record SampleVariation(
         int ProductId, string ProductName, string ParentSku,
         string VarSku, string VarName, string Color, string Size,
-        decimal SalePrice, decimal OriginalPrice);
+        decimal SalePrice, decimal OriginalPrice, int Stock);
 
     /// <summary>
     /// Logic mới (2026-06-03):
@@ -210,13 +210,11 @@ public class ImportController(
     private async Task<string[]> BuildSampleRowsFromDb(string platform, Guid companyId)
     {
         var today = DateTime.Today;
-        string Dt(DateTime d, string fmt) => d.ToString(fmt);
         string DFmt(DateTime d) => d.ToString("dd/MM/yyyy 09:00");
         string IFmt(DateTime d) => d.ToString("yyyy-MM-dd 09:00:00");
-        var c = today.ToString("yyMMdd");
 
-        // ── 1. Lấy biến thể sản phẩm từ DB ────────────────────────────────────
-        var vars = new List<SampleVariation>();
+        // ── 1. Load dữ liệu từ DB ─────────────────────────────────────────────
+        var vars   = new List<SampleVariation>();
         var buyers = new List<(string Name, string Phone, string Ward, string District, string Province)>();
         DateTime? lastOrderDate = null;
         var datesWithOrders = new HashSet<DateTime>();
@@ -226,13 +224,9 @@ public class ImportController(
             await using var conn = new NpgsqlConnection(_connStr);
             await conn.OpenAsync();
 
-            // Lấy ngày đơn mới nhất + tập hợp ngày đã có đơn
             await using var dateCmd = new NpgsqlCommand("""
-                SELECT
-                    MAX(order_date::date)   AS last_date,
-                    ARRAY_AGG(DISTINCT order_date::date) AS dates_with_orders
-                FROM public.orders
-                WHERE company_id = @cid::uuid
+                SELECT MAX(order_date::date), ARRAY_AGG(DISTINCT order_date::date)
+                FROM public.orders WHERE company_id = @cid::uuid
                 """, conn);
             dateCmd.Parameters.AddWithValue("cid", companyId.ToString());
             await using (var dr = await dateCmd.ExecuteReaderAsync())
@@ -244,25 +238,25 @@ public class ImportController(
                     {
                         var arr = (DateTime[]?)dr.GetValue(1);
                         if (arr is not null)
-                            foreach (var d in arr)
-                                datesWithOrders.Add(d.Date);
+                            foreach (var d in arr) datesWithOrders.Add(d.Date);
                     }
                 }
             }
 
-            // Lấy biến thể sản phẩm (tối đa 10 để rotate)
+            // Lấy sản phẩm còn hàng (tối đa 15, ưu tiên nhiều tồn kho)
             await using var varCmd = new NpgsqlCommand("""
                 SELECT DISTINCT ON (pv.product_id)
-                    p.product_id, p.product_name, p.sku AS parent_sku,
-                    pv.sku AS var_sku, pv.variation_name,
-                    COALESCE(pv.attribute_color, '') AS color,
-                    COALESCE(pv.attribute_size,  '') AS size,
-                    pv.sale_price, COALESCE(pv.original_price, pv.sale_price) AS original_price
+                    p.product_id, p.product_name, p.sku,
+                    pv.sku, pv.variation_name,
+                    COALESCE(pv.attribute_color,'') , COALESCE(pv.attribute_size,''),
+                    pv.sale_price, COALESCE(pv.original_price, pv.sale_price),
+                    COALESCE(pv.stock_quantity, 99)
                 FROM product_variations pv
                 JOIN products p ON pv.product_id = p.product_id
                 WHERE pv.is_active = TRUE AND p.is_active = TRUE
                   AND pv.company_id = @cid::uuid
-                ORDER BY pv.product_id, pv.id LIMIT 10
+                  AND COALESCE(pv.stock_quantity, 99) > 0
+                ORDER BY pv.product_id, pv.stock_quantity DESC NULLS LAST LIMIT 15
                 """, conn);
             varCmd.Parameters.AddWithValue("cid", companyId.ToString());
             await using (var vr = await varCmd.ExecuteReaderAsync())
@@ -271,12 +265,12 @@ public class ImportController(
                     vars.Add(new SampleVariation(
                         vr.GetInt32(0), vr.GetString(1), vr.GetString(2),
                         vr.GetString(3), vr.GetString(4), vr.GetString(5), vr.GetString(6),
-                        vr.GetDecimal(7), vr.GetDecimal(8)));
+                        vr.GetDecimal(7), vr.GetDecimal(8), vr.GetInt32(9)));
             }
 
-            // Lấy khách hàng thực tế từ DB (tối đa 30)
             await using var custCmd = new NpgsqlCommand("""
                 SELECT full_name, COALESCE(phone,'0900000000'),
+                       COALESCE(ward,'Phường 1'),
                        COALESCE(district,'Quận 1'), COALESCE(province,'Hồ Chí Minh')
                 FROM public.customers
                 WHERE company_id = @cid::uuid AND is_active = TRUE
@@ -286,54 +280,54 @@ public class ImportController(
             await using (var cr = await custCmd.ExecuteReaderAsync())
             {
                 while (await cr.ReadAsync())
-                    buyers.Add((cr.GetString(0), cr.GetString(1),
-                                "Phường 1", cr.GetString(2), cr.GetString(3)));
+                {
+                    var raw = cr.GetString(0);
+                    var name = System.Text.RegularExpressions.Regex.IsMatch(raw, @"^\d+\s")
+                        ? raw.Substring(raw.IndexOf(' ') + 1).Trim() : raw;
+                    if (name.Length >= 3 && !name.StartsWith("Khách hàng") && !name.StartsWith("Unknown"))
+                        buyers.Add((name, cr.GetString(1), cr.GetString(2), cr.GetString(3), cr.GetString(4)));
+                }
             }
         }
-        catch { /* fallback rỗng */ }
+        catch { /* fallback */ }
 
         if (vars.Count == 0) return [];
         if (buyers.Count == 0)
-            buyers.Add(("Khách hàng mẫu", "0901234567", "Phường 1", "Quận 1", "Hồ Chí Minh"));
+            buyers.Add(("Nguyễn Văn An", "0901234567", "Phường 1", "Quận 1", "Hồ Chí Minh"));
 
         // ── 2. Xác định ngày cần tạo ─────────────────────────────────────────
-        // Nếu chưa có đơn nào → tạo cho 7 ngày gần nhất
-        var startDate = lastOrderDate.HasValue
-            ? lastOrderDate.Value.AddDays(1).Date
-            : today.AddDays(-6);
-
+        var startDate = lastOrderDate.HasValue ? lastOrderDate.Value.AddDays(1).Date : today.AddDays(-6);
         var missingDates = new List<DateTime>();
         for (var d = startDate; d <= today; d = d.AddDays(1))
-        {
-            if (!datesWithOrders.Contains(d.Date))
-                missingDates.Add(d.Date);
-        }
-        // Giới hạn tối đa 90 ngày để tránh file quá lớn
+            if (!datesWithOrders.Contains(d.Date)) missingDates.Add(d.Date);
         if (missingDates.Count > 90) missingDates = missingDates.TakeLast(90).ToList();
+        // Không thêm hôm nay nếu đã có đơn — trả về rỗng để báo "đủ dữ liệu"
+        if (missingDates.Count == 0) return [];
 
-        // Nếu không có ngày thiếu → tạo 10 dòng cho hôm nay để user test import
-        if (missingDates.Count == 0) missingDates.Add(today);
-
-        // ── 3. Phân bổ 10 trạng thái mỗi ngày ───────────────────────────────
-        // Phân bổ: 6 DELIVERED/COMPLETED, 1 IN_TRANSIT, 1 AWAITING, 1 CANCELLED, 1 PENDING
+        // ── 3. Config phân bổ đơn hàng ───────────────────────────────────────
         var statusDist = new[]
         {
-            ("COMPLETED", "DELIVERED", "GHN", "Giao Hàng Nhanh", 30000m),
-            ("COMPLETED", "DELIVERED", "GHN", "Giao Hàng Nhanh", 30000m),
-            ("COMPLETED", "DELIVERED", "JT",  "J&T Express",     25000m),
-            ("COMPLETED", "DELIVERED", "GHN", "Giao Hàng Nhanh", 30000m),
-            ("COMPLETED", "DELIVERED", "GHN", "Giao Hàng Nhanh",     0m),
-            ("COMPLETED", "DELIVERED", "GHN", "Giao Hàng Nhanh", 30000m),
-            ("IN_TRANSIT","TRANSIT",   "GHTK","GHTK",            25000m),
-            ("AWAITING_SHIPMENT","AWAITING","JT","J&T Express",      0m),
-            ("CANCELLED", "CANCELLED", "GHN", "Giao Hàng Nhanh",    0m),
-            ("UNPAID",    "PENDING",   "GHN", "Giao Hàng Nhanh",    0m),
+            ("COMPLETED",          "DELIVERED", "GHN",  "Giao Hàng Nhanh", 30000m),
+            ("COMPLETED",          "DELIVERED", "GHN",  "Giao Hàng Nhanh", 30000m),
+            ("COMPLETED",          "DELIVERED", "JT",   "J&T Express",     25000m),
+            ("COMPLETED",          "DELIVERED", "GHN",  "Giao Hàng Nhanh", 30000m),
+            ("COMPLETED",          "DELIVERED", "GHTK", "GHTK",            25000m),
+            ("COMPLETED",          "DELIVERED", "GHN",  "Giao Hàng Nhanh",     0m),
+            ("IN_TRANSIT",         "TRANSIT",   "GHN",  "Giao Hàng Nhanh", 30000m),
+            ("AWAITING_SHIPMENT",  "AWAITING",  "JT",   "J&T Express",     25000m),
+            ("CANCELLED",          "CANCELLED", "GHN",  "Giao Hàng Nhanh",     0m),
+            ("UNPAID",             "PENDING",   "GHN",  "Giao Hàng Nhanh", 30000m),
         };
+        // Mỗi đơn đúng 1 sản phẩm → 10 dòng CSV = 10 đơn, không bị bỏ qua khi import
+        int[] itemsPerSlot = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 };
+        // Số lượng: 1 phổ biến, đôi khi 2, hiếm khi 3
+        int[] qtyTable = { 1, 1, 2, 1, 1, 1, 1, 2, 1, 1, 3, 1, 1, 1, 1, 2 };
+
         var plt = platform.ToLower();
         var pfx = plt == "tiktok" ? "TKT" : plt == "shopee" ? "SPE" : "LZD";
-
-        var rows = new List<string>();
-        int rowIdx = 0;
+        var rows     = new List<string>();
+        int varPool  = 0;
+        int orderSeq = 0;
 
         foreach (var day in missingDates)
         {
@@ -341,93 +335,132 @@ public class ImportController(
             for (int slot = 0; slot < 10; slot++)
             {
                 var (orderStatus, pkgStatus, carrier, carrierName, shipFee) = statusDist[slot];
-                var v   = vars[rowIdx % vars.Count];
-                var b   = buyers[rowIdx % buyers.Count];
-                var seq = $"{rowIdx:D4}";
+                var b          = buyers[orderSeq % buyers.Count];
+                var seq        = $"{orderSeq:D4}";
                 var orderCode  = $"{pfx}{dayStr}{seq}";
-                var trackNum   = pkgStatus is "CANCELLED" or "PENDING" ? ""
-                                 : $"{carrier}{dayStr}{seq}";
+                var trackNum   = pkgStatus is "CANCELLED" or "PENDING" ? "" : $"{carrier}{dayStr}{seq}";
                 var origShip   = shipFee > 0 ? shipFee + 5000 : 0m;
                 var shipDisc   = origShip > shipFee ? origShip - shipFee : 0m;
-                var total      = orderStatus == "CANCELLED" ? 0m : v.SalePrice + shipFee;
-                var payMethod  = slot % 2 == 0 ? "COD" : "BANK_TRANSFER";
-                var buyerLogin = $"buyer_{plt}_{seq}";
-                var itemId     = $"LI{dayStr}{seq}";
-                var pkgId      = $"PKG{dayStr}{seq}";
+                var buyerLogin = $"user_{b.Name.Replace(" ", "").ToLower()[..Math.Min(8, b.Name.Replace(" ", "").Length)]}";
 
-                rows.Add(plt switch
+                // ── Chọn sản phẩm cho đơn (không trùng trong cùng đơn) ───────
+                int numItems = itemsPerSlot[slot];
+                var orderItems = new List<(SampleVariation v, int qty, long subTotal)>();
+                var usedIds    = new HashSet<int>();
+                for (int i = 0; i < numItems; i++)
                 {
-                    "shopee" => string.Join(",",
-                        orderCode,
-                        orderStatus == "COMPLETED"        ? "Hoàn thành" :
-                        orderStatus == "IN_TRANSIT"       ? "Đang vận chuyển" :
-                        orderStatus == "AWAITING_SHIPMENT"? "Đã xử lý" :
-                        orderStatus == "UNPAID"           ? "Chưa thanh toán" :
-                        orderStatus == "CANCELLED"        ? "Đã hủy" : "Hoàn hàng",
-                        orderStatus == "CANCELLED" ? "Người mua hủy" :
-                        orderStatus == "RETURNED"  ? "Hàng bị lỗi" : "",
-                        DFmt(day), DFmt(day.AddDays(1)),
-                        orderStatus is "UNPAID" or "CANCELLED" ? "" : DFmt(day),
-                        buyerLogin, b.Name, b.Phone, $"Số {rowIdx + 1} đường {b.District}",
-                        b.Ward, b.District, b.Province, "Miền Nam", "70000",
-                        v.ProductName, v.VarName, v.VarSku, v.ProductId.ToString(),
-                        v.OriginalPrice, v.SalePrice, "1",
-                        v.SalePrice, shipFee, origShip, shipDisc, total,
-                        slot % 2 == 0 ? "COD" : "Ví ShopeePay",
-                        carrierName, trackNum,
-                        pkgStatus == "DELIVERED" ? "Đã giao hàng" :
-                        pkgStatus == "TRANSIT"   ? "Đang giao hàng" :
-                        pkgStatus == "AWAITING"  ? "Chờ lấy hàng" :
-                        pkgStatus == "CANCELLED" ? "Đã hủy" : "",
-                        "Tự giao", ""),
+                    SampleVariation? v = null;
+                    for (int attempt = 0; attempt < vars.Count; attempt++)
+                    {
+                        var cand = vars[(varPool + attempt) % vars.Count];
+                        if (!usedIds.Contains(cand.ProductId)) { v = cand; varPool += attempt + 1; break; }
+                    }
+                    if (v is null) { v = vars[varPool % vars.Count]; varPool++; }
+                    usedIds.Add(v.ProductId);
 
-                    "tiktok" => string.Join(",",
-                        orderCode, orderStatus,
-                        IFmt(day), IFmt(day.AddDays(1)),
-                        orderStatus == "UNPAID" ? "" : IFmt(day),
-                        "", buyerLogin, "", payMethod, slot % 2 == 0 ? "TRUE" : "FALSE",
-                        b.Name, b.Phone,
-                        $"Số {rowIdx + 1} {b.District} {b.Province}",
-                        $"Số {rowIdx + 1} {b.District}",
-                        b.Province, b.District, b.Ward,
-                        "70000", "VN", "STANDARD",
-                        carrier, trackNum, "CROSS_BORDER", "VND",
-                        v.SalePrice, shipFee, origShip, shipDisc, "0", "0",
-                        total, v.SalePrice,
-                        itemId, $"VAR{seq}", v.ProductId,
-                        v.ProductName, v.VarSku, v.VarName,
-                        v.OriginalPrice, v.SalePrice, "0", "0",
-                        pkgId, pkgStatus, trackNum, carrierName, orderStatus),
+                    int qty = qtyTable[(varPool + i) % qtyTable.Length];
+                    // Không đặt quá tồn kho
+                    qty = Math.Clamp(qty, 1, Math.Max(1, v.Stock));
+                    orderItems.Add((v, qty, (long)v.SalePrice * qty));
+                }
 
-                    "lazada" => string.Join(",",
-                        $"{10000 + rowIdx}", $"LZD{dayStr}{seq}",
-                        IFmt(day), IFmt(day.AddDays(1)),
-                        orderStatus == "COMPLETED"        ? "DELIVERED" :
-                        orderStatus == "IN_TRANSIT"       ? "SHIPPED" :
-                        orderStatus == "AWAITING_SHIPMENT"? "READY_TO_SHIP" :
-                        orderStatus == "UNPAID"           ? "PENDING" :
-                        orderStatus == "CANCELLED"        ? "CANCELLED" : "RETURNED",
-                        slot % 2 == 0 ? "COD" : "LAZADA_WALLET",
-                        v.SalePrice, shipFee, origShip, shipDisc, "0", "0", "0",
-                        b.Name.Split(' ').First(),
-                        string.Join(" ", b.Name.Split(' ').Skip(1)),
-                        $"Số {rowIdx + 1} {b.District}", b.Province,
-                        b.District, b.Ward, "Vietnam",
-                        "1", "WH001", $"ITEM{dayStr}{seq}",
-                        v.ProductName, v.VarSku, v.VarSku, v.VarName,
-                        v.SalePrice,
-                        orderStatus == "CANCELLED" ? "0" : v.SalePrice.ToString(),
-                        shipFee,
-                        orderStatus == "COMPLETED"        ? "DELIVERED" :
-                        orderStatus == "IN_TRANSIT"       ? "SHIPPED" :
-                        orderStatus == "AWAITING_SHIPMENT"? "READY_TO_SHIP" :
-                        orderStatus == "UNPAID"           ? "PENDING" :
-                        orderStatus == "CANCELLED"        ? "CANCELLED" : "RETURNED",
-                        carrier, trackNum, "VND", v.ProductId, ""),
+                long grandItemTotal = orderItems.Sum(x => x.subTotal);
+                long orderTotal     = orderStatus == "CANCELLED" ? 0L : grandItemTotal + (long)shipFee;
 
-                    _ => ""
-                });
-                rowIdx++;
+                // ── Status labels ─────────────────────────────────────────────
+                string shopeeStatus = orderStatus switch
+                {
+                    "COMPLETED"         => "Hoàn thành",
+                    "IN_TRANSIT"        => "Đang vận chuyển",
+                    "AWAITING_SHIPMENT" => "Đã xử lý",
+                    "UNPAID"            => "Chưa thanh toán",
+                    "CANCELLED"         => "Đã hủy",
+                    _                   => "Hoàn hàng",
+                };
+                string shopeeCancel = orderStatus == "CANCELLED" ? "Người mua hủy" :
+                                      orderStatus == "RETURNED"  ? "Hàng bị lỗi" : "";
+                string shopeePaid   = orderStatus is "UNPAID" or "CANCELLED" ? "" : DFmt(day);
+                string tiktokPaid   = orderStatus == "UNPAID" ? "" : IFmt(day);
+                string lzStatus     = orderStatus switch
+                {
+                    "COMPLETED"         => "DELIVERED",
+                    "IN_TRANSIT"        => "SHIPPED",
+                    "AWAITING_SHIPMENT" => "READY_TO_SHIP",
+                    "UNPAID"            => "PENDING",
+                    "CANCELLED"         => "CANCELLED",
+                    _                   => "RETURNED",
+                };
+                string shopeePkg = pkgStatus switch
+                {
+                    "DELIVERED" => "Đã giao hàng",
+                    "TRANSIT"   => "Đang giao hàng",
+                    "AWAITING"  => "Chờ lấy hàng",
+                    "CANCELLED" => "Đã hủy",
+                    _           => "",
+                };
+
+                // ── Emit 1 CSV row mỗi sản phẩm ──────────────────────────────
+                for (int i = 0; i < orderItems.Count; i++)
+                {
+                    var (v, qty, sub) = orderItems[i];
+                    var lineId   = $"LI{dayStr}{seq}{i}";
+                    var pkgId    = $"PKG{dayStr}{seq}";
+                    var itemCode = $"ITEM{dayStr}{seq}{i}";
+
+                    rows.Add(plt switch
+                    {
+                        "shopee" => string.Join(",",
+                            orderCode, shopeeStatus, shopeeCancel,
+                            DFmt(day), DFmt(day.AddDays(1)), shopeePaid,
+                            buyerLogin, b.Name, b.Phone,
+                            $"Số {orderSeq + 1} đường {b.District}",
+                            b.Ward, b.District, b.Province, "Miền Nam", "70000",
+                            v.ProductName, v.VarName, v.VarSku, v.ProductId,
+                            (long)v.OriginalPrice, (long)v.SalePrice, qty,
+                            sub, (long)shipFee, (long)origShip, (long)shipDisc, orderTotal,
+                            slot % 2 == 0 ? "COD" : "Ví ShopeePay",
+                            carrierName, trackNum, shopeePkg, "Tự giao", ""),
+
+                        "tiktok" => string.Join(",",
+                            orderCode, orderStatus,
+                            IFmt(day), IFmt(day.AddDays(1)), tiktokPaid,
+                            "", buyerLogin, "", slot % 2 == 0 ? "COD" : "BANK_TRANSFER",
+                            slot % 2 == 0 ? "TRUE" : "FALSE",
+                            b.Name, b.Phone,
+                            $"Số {orderSeq + 1} {b.District} {b.Province}",
+                            $"Số {orderSeq + 1} {b.District}",
+                            b.Province, b.District, b.Ward,
+                            "70000", "VN", "STANDARD",
+                            carrier, trackNum, "CROSS_BORDER", "VND",
+                            grandItemTotal, (long)shipFee, (long)origShip, (long)shipDisc, "0", "0",
+                            orderTotal, grandItemTotal,
+                            lineId, $"SKU{seq}{i}", v.ProductId,
+                            v.ProductName, v.VarSku, v.VarName,
+                            (long)v.OriginalPrice, (long)v.SalePrice, "0", "0",
+                            pkgId, pkgStatus, trackNum, carrierName, orderStatus),
+
+                        "lazada" => string.Join(",",
+                            $"{10000 + orderSeq}", orderCode,
+                            IFmt(day), IFmt(day.AddDays(1)), lzStatus,
+                            slot % 2 == 0 ? "COD" : "LAZADA_WALLET",
+                            orderTotal, (long)shipFee, (long)origShip, (long)shipDisc,
+                            "0", "0", "0",
+                            b.Name.Split(' ').First(),
+                            string.Join(" ", b.Name.Split(' ').Skip(1)),
+                            $"Số {orderSeq + 1} {b.District}", b.Province,
+                            b.District, b.Ward, "Vietnam",
+                            orderItems.Count, "WH001", itemCode,
+                            v.ProductName, v.VarSku, v.VarSku, v.VarName,
+                            (long)v.SalePrice,
+                            orderStatus == "CANCELLED" ? "0" : sub.ToString(),
+                            (long)shipFee, lzStatus,
+                            carrier, trackNum, "VND", v.ProductId, ""),
+
+                        _ => ""
+                    });
+                }
+
+                orderSeq++;
             }
         }
         return [.. rows];
@@ -471,7 +504,8 @@ public class ImportController(
         await using var _ = conn;
 
         int success = 0, skipped = 0;
-        var errors = new List<object>();
+        var errors         = new List<object>();
+        var skippedDetails = new List<object>();
 
         for (int r = 1; r < rows.Count; r++)
         {
@@ -485,18 +519,29 @@ public class ImportController(
                     _        => null,
                 };
 
-                if (mapped is null || string.IsNullOrEmpty(mapped.OrderCode)) { skipped++; continue; }
+                if (mapped is null || string.IsNullOrEmpty(mapped.OrderCode))
+                {
+                    skipped++;
+                    skippedDetails.Add(new { row = r + 1, orderCode = (string?)null, reason = "Thiếu mã đơn hàng hoặc không đọc được dòng dữ liệu" });
+                    continue;
+                }
 
                 // Chuẩn hóa status → MSAS internal (record dùng with-expression)
                 mapped = mapped with { Status = NormalizeStatus(mapped.Status, platform) };
 
                 var affected = await UpsertOrder(conn, mapped);
-                if (affected > 0) success++; else skipped++;
+                if (affected > 0) success++;
+                else
+                {
+                    skipped++;
+                    skippedDetails.Add(new { row = r + 1, orderCode = mapped.OrderCode, reason = "Đơn hàng đã tồn tại (mã trùng)" });
+                }
             }
             catch (Exception ex)
             {
                 errors.Add(new { row = r + 1, message = ex.Message });
                 skipped++;
+                skippedDetails.Add(new { row = r + 1, orderCode = (string?)null, reason = $"Lỗi xử lý: {ex.Message}" });
             }
         }
 
@@ -545,6 +590,7 @@ public class ImportController(
             success,
             skipped,
             errors,
+            skippedDetails,
             platform,
             dwInserted,
             dwMessage,
