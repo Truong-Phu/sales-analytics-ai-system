@@ -1,21 +1,25 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import MockToast from '../../components/ui/MockToast'
+import InfoTooltip from '../../components/ui/InfoTooltip'
+import { MT } from '../../constants/metricTooltips'
 import { getInventoryIntelligence } from '../../api/aiApi'
 import api from '../../api/axios'
 
-const STATUS_CONFIG = {
-  CRITICAL:    { textColor: '#EF4444', bg: 'rgba(239,68,68,0.08)',  border: 'rgba(239,68,68,0.25)',  icon: '🔴', label: 'Khẩn cấp' },
-  WARNING:     { textColor: '#F59E0B', bg: 'rgba(245,158,11,0.08)', border: 'rgba(245,158,11,0.25)', icon: '🟡', label: 'Sắp hết' },
-  OUT_OF_STOCK:{ textColor: '#EF4444', bg: 'rgba(239,68,68,0.12)',  border: 'rgba(239,68,68,0.30)',  icon: '⛔', label: 'Hết hàng' },
-  OK:          { textColor: '#22C55E', bg: 'rgba(34,197,94,0.08)',  border: 'rgba(34,197,94,0.25)',  icon: '🟢', label: 'Bình thường' },
-  OVERSTOCK:   { textColor: '#3B82F6', bg: 'rgba(59,130,246,0.08)', border: 'rgba(59,130,246,0.25)', icon: '🔵', label: 'Dư hàng' },
-  NO_SALES:    { textColor: 'var(--text-tertiary)', bg: 'var(--bg-elevated)', border: 'var(--border)', icon: '⚪', label: 'Không có đơn' },
-}
-
 export default function InventoryPage() {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const location = useLocation()
+
+  const STATUS_CONFIG = {
+    CRITICAL:    { textColor: '#EF4444', bg: 'rgba(239,68,68,0.08)',  border: 'rgba(239,68,68,0.25)',  icon: '🔴', label: t('inventory.statusUrgent') },
+    WARNING:     { textColor: '#F59E0B', bg: 'rgba(245,158,11,0.08)', border: 'rgba(245,158,11,0.25)', icon: '🟡', label: t('inventory.statusLow') },
+    OUT_OF_STOCK:{ textColor: '#EF4444', bg: 'rgba(239,68,68,0.12)',  border: 'rgba(239,68,68,0.30)',  icon: '⛔', label: t('inventory.statusOutOfStock') },
+    OK:          { textColor: '#22C55E', bg: 'rgba(34,197,94,0.08)',  border: 'rgba(34,197,94,0.25)',  icon: '🟢', label: t('inventory.statusNormal') },
+    OVERSTOCK:   { textColor: '#3B82F6', bg: 'rgba(59,130,246,0.08)', border: 'rgba(59,130,246,0.25)', icon: '🔵', label: t('inventory.statusOverstock') },
+    NO_SALES:    { textColor: 'var(--text-tertiary)', bg: 'var(--bg-elevated)', border: 'var(--border)', icon: '⚪', label: t('inventory.statusNoOrders') },
+  }
   const [data,        setData]       = useState(null)
   const [loading,     setLoading]    = useState(true)
   const [isMock,      setIsMock]     = useState(false)
@@ -66,18 +70,18 @@ export default function InventoryPage() {
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Thông minh Tồn kho</h1>
-          <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>Dự báo ngày hết hàng và gợi ý đặt thêm</p>
+          <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>{t('inventory.title')}</h1>
+          <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>{t('inventory.subtitle')}</p>
         </div>
         <div className="flex items-center gap-2">
           <span className="text-xs px-2 py-1 rounded-md"
             style={{ background: 'var(--bg-elevated)', color: 'var(--text-tertiary)', border: '1px solid var(--border)' }}>
-            Tốc độ bán 30 ngày
+            {t('inventory.soldRate')}
           </span>
           <Link to="/inventory/dashboard"
             className="text-xs px-3 py-1.5 rounded-lg border transition-colors"
             style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>
-            Dashboard vận hành →
+            {t('inventory.dashboardLink')}
           </Link>
         </div>
       </div>
@@ -86,13 +90,15 @@ export default function InventoryPage() {
       {data && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {[
-            { label: '🔴 Khẩn cấp',  value: data.critical_count,  color: '#EF4444' },
-            { label: '🟡 Sắp hết',   value: data.warning_count,   color: '#F59E0B' },
-            { label: '🟢 Bình thường', value: data.ok_count,       color: '#22C55E' },
-            { label: '🔵 Dư hàng',   value: data.overstock_count, color: '#3B82F6' },
+            { label: t('inventory.kpiUrgent'),    value: data.critical_count,  color: '#EF4444', tip: MT.stockCritical  },
+            { label: t('inventory.kpiLow'),       value: data.warning_count,   color: '#F59E0B', tip: MT.stockWarning   },
+            { label: t('inventory.kpiNormal'),    value: data.ok_count,        color: '#22C55E', tip: MT.stockOk        },
+            { label: t('inventory.kpiOverstock'), value: data.overstock_count, color: '#3B82F6', tip: MT.stockOverstock },
           ].map(k => (
             <div key={k.label} className="lcard p-4">
-              <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{k.label}</div>
+              <div className="inline-flex items-center gap-0.5 text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                {k.label}<InfoTooltip {...k.tip} placement="top" />
+              </div>
               <div className="text-2xl font-bold mt-1" style={{ color: k.color }}>{k.value}</div>
             </div>
           ))}
@@ -107,7 +113,7 @@ export default function InventoryPage() {
             style={filter === f
               ? { background: 'var(--primary-500)', borderColor: 'var(--primary-500)', color: '#fff' }
               : { borderColor: 'var(--border)', color: 'var(--text-tertiary)', background: 'transparent' }}>
-            {f === 'ALL' ? 'Tất cả' : STATUS_CONFIG[f]?.label ?? f}
+            {f === 'ALL' ? t('inventory.filterAll') : STATUS_CONFIG[f]?.label ?? f}
           </button>
         ))}
       </div>
@@ -140,13 +146,15 @@ export default function InventoryPage() {
                     </div>
                     <div className="flex items-center gap-4 text-right text-sm shrink-0">
                       {[
-                        { label: 'Tồn kho', value: item.current_stock, colored: true },
-                        { label: 'Bán/ngày', value: item.avg_daily_sales > 0 ? Number(item.avg_daily_sales).toFixed(1) : '—' },
-                        { label: 'Còn lại', value: item.current_stock === 0 ? 'Hết hàng' : item.days_until_stockout >= 999 ? '∞' : `${Math.round(item.days_until_stockout)}d`, colored: true },
-                        ...(item.reorder_qty > 0 ? [{ label: 'Cần đặt', value: item.reorder_qty, special: '#F97316' }] : []),
+                        { label: t('inventory.itemStock'),      tip: MT.currentStock,   value: item.current_stock, colored: true },
+                        { label: t('inventory.itemSoldPerDay'), tip: MT.avgDailySales, value: item.avg_daily_sales > 0 ? Number(item.avg_daily_sales).toFixed(1) : '—' },
+                        { label: t('inventory.itemDaysLeft'),   tip: MT.daysOfStock,   value: item.current_stock === 0 ? t('inventory.outOfStock') : item.days_until_stockout >= 999 ? t('inventory.infinite') : `${Math.round(item.days_until_stockout)}d`, colored: true },
+                        ...(item.reorder_qty > 0 ? [{ label: t('inventory.itemNeedOrder'), tip: MT.reorderPoint, value: item.reorder_qty, special: '#F97316' }] : []),
                       ].map((col, ci) => (
                         <div key={ci}>
-                          <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{col.label}</div>
+                          <div className="inline-flex items-center gap-0.5 text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                            {col.label}<InfoTooltip {...col.tip} placement="top" />
+                          </div>
                           <div className="font-bold" style={{ color: col.special ?? (col.colored ? cfg.textColor : 'var(--text-primary)') }}>
                             {col.value}
                           </div>
@@ -157,7 +165,7 @@ export default function InventoryPage() {
                           onClick={() => navigate(`/goods-receipts?action=create&productId=${item.product_id}&productName=${encodeURIComponent(item.product_name)}&returnUrl=${encodeURIComponent(location.pathname)}`)}
                           className="text-xs px-3 py-1.5 rounded-lg font-semibold whitespace-nowrap flex items-center gap-1"
                           style={{ background: 'rgba(34,197,94,0.12)', color: '#16A34A', border: '1px solid rgba(34,197,94,0.3)' }}>
-                          <span style={{ fontSize: 12 }}>↑</span> Nhập kho
+                          <span style={{ fontSize: 12 }}>↑</span> {t('inventory.reorderBtn')}
                         </button>
                       )}
                       {!isMock && (
@@ -178,14 +186,14 @@ export default function InventoryPage() {
                 {isExpanded && (
                   <div style={{ background: 'var(--bg-elevated)', borderTop: `1px solid ${cfg.border}` }}>
                     {isVarLoading ? (
-                      <div className="px-6 py-3 text-xs" style={{ color: 'var(--text-tertiary)' }}>Đang tải biến thể...</div>
+                      <div className="px-6 py-3 text-xs" style={{ color: 'var(--text-tertiary)' }}>{t('inventory.varLoading')}</div>
                     ) : !vars || vars.length === 0 ? (
-                      <div className="px-6 py-3 text-xs" style={{ color: 'var(--text-tertiary)' }}>Sản phẩm không có biến thể</div>
+                      <div className="px-6 py-3 text-xs" style={{ color: 'var(--text-tertiary)' }}>{t('inventory.varEmpty')}</div>
                     ) : (
                       <table className="w-full text-xs">
                         <thead>
                           <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                            {['SKU', 'Màu', 'Size', 'Tồn kho'].map(h => (
+                            {[t('inventory.varColSku'), t('inventory.varColColor'), t('inventory.varColSize'), t('inventory.varColStock')].map(h => (
                               <th key={h} className="px-6 py-2 text-left font-medium"
                                   style={{ color: 'var(--text-tertiary)' }}>{h}</th>
                             ))}
