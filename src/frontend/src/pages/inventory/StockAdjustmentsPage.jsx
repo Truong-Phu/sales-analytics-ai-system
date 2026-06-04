@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useSearchParams } from 'react-router-dom'
 import api from '../../api/axios'
 import DetailDrawer from '../../components/ui/DetailDrawer'
@@ -14,8 +15,8 @@ function ErrorState({ message }) {
   )
 }
 
-// ── Nội dung form chỉnh kho — dùng trong Drawer ───────────────────────────────
 function AdjustmentFormContent({ onCreated, onClose, initialProductId = null }) {
+  const { t } = useTranslation()
   const [products,    setProducts]    = useState([])
   const [productId,   setProductId]   = useState(initialProductId ? String(initialProductId) : '')
   const [variationId, setVariationId] = useState('')
@@ -33,7 +34,6 @@ function AdjustmentFormContent({ onCreated, onClose, initialProductId = null }) 
       .catch(() => setProducts([]))
   }, [])
 
-  // Khi có initialProductId (từ URL) → tự load variations
   useEffect(() => {
     if (!initialProductId) return
     api.get(`/api/products/${initialProductId}/variations`)
@@ -90,7 +90,7 @@ function AdjustmentFormContent({ onCreated, onClose, initialProductId = null }) 
       onCreated(r.data)
       onClose()
     } catch (err) {
-      setError(err.response?.data?.message ?? 'Tạo phiếu chỉnh kho thất bại.')
+      setError(err.response?.data?.message ?? t('stockAdj.saveError'))
     } finally {
       setSubmitting(false)
     }
@@ -104,12 +104,10 @@ function AdjustmentFormContent({ onCreated, onClose, initialProductId = null }) 
 
   return (
     <div style={{ padding: '20px 20px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {/* Sản phẩm */}
       <div>
-        <label style={labelStyle}>Sản phẩm <span style={{ color: '#EF4444' }}>*</span></label>
-        <select value={productId} onChange={e => handleProductChange(e.target.value)}
-          required style={inputStyle}>
-          <option value="">-- Chọn sản phẩm --</option>
+        <label style={labelStyle}>{t('stockAdj.formProduct')} <span style={{ color: '#EF4444' }}>*</span></label>
+        <select value={productId} onChange={e => handleProductChange(e.target.value)} required style={inputStyle}>
+          <option value="">{t('stockAdj.selectProduct')}</option>
           {products.map(p => (
             <option key={p.productId ?? p.product_id} value={p.productId ?? p.product_id}>
               {p.productName ?? p.product_name}
@@ -120,12 +118,11 @@ function AdjustmentFormContent({ onCreated, onClose, initialProductId = null }) 
         </select>
       </div>
 
-      {/* Biến thể (nếu có) */}
       {variations.length > 0 && (
         <div>
-          <label style={labelStyle}>Biến thể</label>
+          <label style={labelStyle}>{t('stockAdj.formVariation')}</label>
           <select value={variationId} onChange={e => handleVariationChange(e.target.value)} style={inputStyle}>
-            <option value="">-- Tất cả biến thể --</option>
+            <option value="">{t('stockAdj.selectVariation')}</option>
             {variations.map(v => (
               <option key={v.variationId} value={v.variationId}>
                 {v.variationName}
@@ -138,18 +135,16 @@ function AdjustmentFormContent({ onCreated, onClose, initialProductId = null }) 
         </div>
       )}
 
-      {/* Số lượng thực tế mới */}
       <div>
-        <label style={labelStyle}>Số lượng thực tế mới <span style={{ color: '#EF4444' }}>*</span></label>
+        <label style={labelStyle}>{t('stockAdj.formNewQty')} <span style={{ color: '#EF4444' }}>*</span></label>
         <input
           type="number" min="0" value={newQuantity}
           onChange={e => handleQtyChange(e.target.value)}
           required style={inputStyle}
-          placeholder="Nhập số lượng thực tế sau kiểm kê"
+          placeholder={t('stockAdj.qtyPlaceholder')}
         />
       </div>
 
-      {/* Preview thay đổi */}
       {preview && (
         <div style={{ borderRadius: 10, padding: '12px 14px', background: '#f8fafc',
                       border: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -162,29 +157,27 @@ function AdjustmentFormContent({ onCreated, onClose, initialProductId = null }) 
             {preview.diff > 0 ? `+${preview.diff}` : preview.diff}
           </span>
           {preview.diff === 0 && (
-            <span style={{ fontSize: 11, color: '#94a3b8' }}>(không thay đổi)</span>
+            <span style={{ fontSize: 11, color: '#94a3b8' }}>{t('stockAdj.noChange')}</span>
           )}
         </div>
       )}
 
-      {/* Lý do */}
       <div>
-        <label style={labelStyle}>Lý do <span style={{ color: '#EF4444' }}>*</span></label>
+        <label style={labelStyle}>{t('stockAdj.formReason')} <span style={{ color: '#EF4444' }}>*</span></label>
         <input
           type="text" value={reason}
           onChange={e => setReason(e.target.value)}
           required maxLength={255} style={inputStyle}
-          placeholder="VD: Kiểm kê thực tế, hàng hỏng/mất..."
+          placeholder={t('stockAdj.reasonPlaceholder')}
         />
       </div>
 
-      {/* Ghi chú */}
       <div>
-        <label style={labelStyle}>Ghi chú</label>
+        <label style={labelStyle}>{t('stockAdj.formNote')}</label>
         <textarea
           value={note} onChange={e => setNote(e.target.value)}
           rows={2} style={{ ...inputStyle, resize: 'none' }}
-          placeholder="Mô tả chi tiết (tùy chọn)"
+          placeholder={t('stockAdj.notePlaceholder')}
         />
       </div>
 
@@ -195,12 +188,11 @@ function AdjustmentFormContent({ onCreated, onClose, initialProductId = null }) 
         </div>
       )}
 
-      {/* Nút submit ở cuối body (form không dùng <form> tag để tránh conflict với drawer footer) */}
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', paddingTop: 4 }}>
         <button onClick={onClose}
           style={{ padding: '8px 16px', borderRadius: 8, fontSize: 13, border: '1px solid #e5e7eb',
                    background: 'transparent', color: '#64748b', cursor: 'pointer' }}>
-          Hủy
+          {t('common.cancel')}
         </button>
         <button
           onClick={handleSubmit}
@@ -209,15 +201,15 @@ function AdjustmentFormContent({ onCreated, onClose, initialProductId = null }) 
                    color: '#fff', background: '#6366f1', border: 'none',
                    cursor: (submitting || !productId || newQuantity === '' || !reason.trim()) ? 'default' : 'pointer',
                    opacity: (submitting || !productId || newQuantity === '' || !reason.trim()) ? 0.5 : 1 }}>
-          {submitting ? 'Đang lưu...' : 'Lưu phiếu chỉnh kho'}
+          {submitting ? t('stockAdj.saving') : t('stockAdj.saveBtn')}
         </button>
       </div>
     </div>
   )
 }
 
-// ── Main Page ─────────────────────────────────────────────────────────────────
 export default function StockAdjustmentsPage() {
+  const { t } = useTranslation()
   const [searchParams, setSearchParams] = useSearchParams()
   const urlProductId = searchParams.get('productId') || null
 
@@ -226,7 +218,6 @@ export default function StockAdjustmentsPage() {
   const [error,       setError]       = useState(false)
   const [page,        setPage]        = useState(1)
   const [refresh,     setRefresh]     = useState(0)
-  // Auto-open drawer nếu URL có ?productId=...
   const [showDrawer,  setShowDrawer]  = useState(!!urlProductId)
 
   const load = useCallback(async () => {
@@ -247,7 +238,6 @@ export default function StockAdjustmentsPage() {
   const handleCreated = () => {
     setPage(1)
     setRefresh(r => r + 1)
-    // Xóa productId khỏi URL sau khi tạo xong để không auto-open lại
     setSearchParams({})
   }
 
@@ -259,13 +249,18 @@ export default function StockAdjustmentsPage() {
   const totalPages = data ? Math.ceil(data.total / 20) : 1
   const fmt = (n) => n?.toLocaleString('vi-VN') ?? '—'
 
+  const COLS = [
+    t('stockAdj.colTime'), t('stockAdj.colProduct'), t('stockAdj.colVariation'),
+    t('stockAdj.colSku'), t('stockAdj.colBefore'), t('stockAdj.colAfter'),
+    t('stockAdj.colDelta'), t('stockAdj.colReason'), t('stockAdj.colUser'),
+  ]
+
   return (
     <div className="space-y-5">
       <DetailDrawer
         open={showDrawer}
         onClose={handleCloseDrawer}
-        title="Tạo phiếu chỉnh kho"
-        subtitle={urlProductId ? 'Điều chỉnh tồn kho — sản phẩm được chọn từ gợi ý hệ thống' : 'Điều chỉnh tồn kho sau kiểm kê thực tế'}
+        title={t('stockAdj.drawerTitle')}
         width={520}
       >
         <AdjustmentFormContent
@@ -275,26 +270,22 @@ export default function StockAdjustmentsPage() {
         />
       </DetailDrawer>
 
-      {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
-          <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Chỉnh kho thủ công</h1>
-          <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
-            Điều chỉnh tồn kho sau kiểm kê thực tế — mọi thay đổi đều được ghi nhật ký
-          </p>
+          <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>{t('stockAdj.title')}</h1>
+          <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>{t('stockAdj.subtitle')}</p>
         </div>
         <button
           onClick={() => setShowDrawer(true)}
           className="px-4 py-2 rounded-lg text-sm text-white font-medium"
           style={{ background: 'var(--primary-500)' }}>
-          + Tạo phiếu chỉnh kho
+          {t('stockAdj.createBtn')}
         </button>
       </div>
 
-      {/* Danh sách phiếu */}
       <div>
         <h2 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>
-          Lịch sử chỉnh kho {data ? `(${fmt(data.total)})` : ''}
+          {t('stockAdj.historyTitle', { count: data ? fmt(data.total) : '' })}
         </h2>
 
         {loading ? (
@@ -303,10 +294,10 @@ export default function StockAdjustmentsPage() {
               style={{ borderColor: 'var(--border)', borderTopColor: 'var(--primary-500)' }} />
           </div>
         ) : error ? (
-          <ErrorState message="Không tải được lịch sử chỉnh kho — vui lòng kiểm tra kết nối." />
+          <ErrorState message={t('stockAdj.errorLoad')} />
         ) : !data?.items?.length ? (
           <div className="lcard p-8 text-center text-sm" style={{ color: 'var(--text-tertiary)' }}>
-            Chưa có phiếu chỉnh kho nào.
+            {t('stockAdj.emptyState')}
           </div>
         ) : (
           <>
@@ -314,7 +305,7 @@ export default function StockAdjustmentsPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                    {['Thời gian', 'Sản phẩm', 'Biến thể', 'SKU', 'Trước', 'Sau', 'Chênh lệch', 'Lý do', 'Người thực hiện'].map(h => (
+                    {COLS.map(h => (
                       <th key={h} className="text-left px-3 py-2 text-xs font-medium whitespace-nowrap"
                         style={{ color: 'var(--text-tertiary)' }}>{h}</th>
                     ))}
@@ -363,18 +354,18 @@ export default function StockAdjustmentsPage() {
             {totalPages > 1 && (
               <div className="flex items-center justify-between mt-3">
                 <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                  Trang {page}/{totalPages}
+                  {t('stockAdj.pageLabel', { page, total: totalPages })}
                 </span>
                 <div className="flex gap-2">
                   <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
                     className="px-3 py-1 text-xs rounded border disabled:opacity-40"
                     style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>
-                    ‹ Trước
+                    {t('stockAdj.pagePrev')}
                   </button>
                   <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
                     className="px-3 py-1 text-xs rounded border disabled:opacity-40"
                     style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>
-                    Sau ›
+                    {t('stockAdj.pageNext')}
                   </button>
                 </div>
               </div>

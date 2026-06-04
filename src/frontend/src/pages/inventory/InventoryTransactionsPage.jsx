@@ -1,23 +1,24 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import api from '../../api/axios'
 
-const TYPE_CFG = {
-  POS_SALE:               { label: 'Bán POS',        bg: 'rgba(239,68,68,0.10)',   text: '#EF4444' },
-  SALE_OUT:               { label: 'Xuất bán',       bg: 'rgba(239,68,68,0.10)',   text: '#EF4444' },
-  ORDER_CANCEL_REFUND:    { label: 'Hoàn kho',        bg: 'rgba(16,185,129,0.10)',  text: '#10B981' },
-  RETURN_REFUND:          { label: 'Hoàn trả',        bg: 'rgba(139,92,246,0.10)', text: '#7C3AED' },
-  MARKETPLACE_IMPORT_SALE:{ label: 'Sàn thương mại', bg: 'rgba(245,158,11,0.10)',  text: '#F59E0B' },
-  IMPORT_STOCK:           { label: 'Nhập kho',        bg: 'rgba(59,130,246,0.10)',  text: '#3B82F6' },
-  MANUAL_ADJUST_UP:       { label: 'Điều chỉnh +',   bg: 'rgba(99,102,241,0.10)',  text: '#6366F1' },
-  MANUAL_ADJUST_DOWN:     { label: 'Điều chỉnh -',   bg: 'rgba(249,115,22,0.10)',  text: '#F97316' },
+const TYPE_STYLE = {
+  POS_SALE:               { bg: 'rgba(239,68,68,0.10)',   text: '#EF4444' },
+  SALE_OUT:               { bg: 'rgba(239,68,68,0.10)',   text: '#EF4444' },
+  ORDER_CANCEL_REFUND:    { bg: 'rgba(16,185,129,0.10)',  text: '#10B981' },
+  RETURN_REFUND:          { bg: 'rgba(139,92,246,0.10)',  text: '#7C3AED' },
+  MARKETPLACE_IMPORT_SALE:{ bg: 'rgba(245,158,11,0.10)',  text: '#F59E0B' },
+  IMPORT_STOCK:           { bg: 'rgba(59,130,246,0.10)',  text: '#3B82F6' },
+  MANUAL_ADJUST_UP:       { bg: 'rgba(99,102,241,0.10)',  text: '#6366F1' },
+  MANUAL_ADJUST_DOWN:     { bg: 'rgba(249,115,22,0.10)',  text: '#F97316' },
 }
 
-function TypeBadge({ type }) {
-  const cfg = TYPE_CFG[type] ?? { label: type, bg: 'rgba(100,116,139,0.1)', text: '#64748B' }
+function TypeBadge({ type, label }) {
+  const style = TYPE_STYLE[type] ?? { bg: 'rgba(100,116,139,0.1)', text: '#64748B' }
   return (
     <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap"
-          style={{ background: cfg.bg, color: cfg.text }}>
-      {cfg.label}
+          style={{ background: style.bg, color: style.text }}>
+      {label || type}
     </span>
   )
 }
@@ -33,6 +34,7 @@ function QtyChange({ change }) {
 }
 
 export default function InventoryTransactionsPage() {
+  const { t } = useTranslation()
   const [rows,      setRows]      = useState([])
   const [total,     setTotal]     = useState(0)
   const [page,      setPage]      = useState(1)
@@ -42,6 +44,23 @@ export default function InventoryTransactionsPage() {
   const [filterType, setFilterType] = useState('')
   const [filterFrom, setFilterFrom] = useState('')
   const [filterTo,   setFilterTo]   = useState('')
+
+  const TYPE_LABELS = {
+    POS_SALE:               t('invTx.typePosSale'),
+    SALE_OUT:               t('invTx.typeOutSale'),
+    ORDER_CANCEL_REFUND:    t('invTx.typeReturnStock'),
+    RETURN_REFUND:          t('invTx.typeReturn'),
+    MARKETPLACE_IMPORT_SALE:t('invTx.typePlatform'),
+    IMPORT_STOCK:           t('invTx.typeStockIn'),
+    MANUAL_ADJUST_UP:       t('invTx.typeAdjPlus'),
+    MANUAL_ADJUST_DOWN:     t('invTx.typeAdjMinus'),
+  }
+
+  const COLS = [
+    t('invTx.colTime'), t('invTx.colProduct'), t('invTx.colType'),
+    t('invTx.colDelta'), t('invTx.colBeforeAfter'),
+    t('invTx.colSource'), t('invTx.colUser'),
+  ]
 
   const PAGE_SIZE = 20
 
@@ -78,24 +97,21 @@ export default function InventoryTransactionsPage() {
 
   return (
     <div className="p-4 md:p-6 space-y-4">
-
-      {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h1 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>
-            Lịch sử tồn kho
+            {t('invTx.title')}
           </h1>
           <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
-            Audit trail mọi thay đổi tồn kho ({total.toLocaleString()} bản ghi)
+            {t('invTx.subtitle', { count: total.toLocaleString() })}
           </p>
         </div>
       </div>
 
-      {/* Filters */}
       <div className="flex flex-wrap gap-3 items-end">
         <div>
           <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-tertiary)' }}>
-            Loại giao dịch
+            {t('invTx.filterType')}
           </label>
           <select
             value={filterType}
@@ -103,15 +119,15 @@ export default function InventoryTransactionsPage() {
             className="text-sm rounded-lg border px-3 py-1.5"
             style={{ background: 'var(--bg-elevated)', borderColor: 'var(--border)', color: 'var(--text-primary)' }}
           >
-            <option value="">Tất cả</option>
-            {Object.entries(TYPE_CFG).map(([k, v]) => (
-              <option key={k} value={k}>{v.label}</option>
+            <option value="">{t('invTx.filterAll')}</option>
+            {Object.entries(TYPE_LABELS).map(([k, label]) => (
+              <option key={k} value={k}>{label}</option>
             ))}
           </select>
         </div>
 
         <div>
-          <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-tertiary)' }}>Từ ngày</label>
+          <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-tertiary)' }}>{t('invTx.filterFrom')}</label>
           <input type="date" value={filterFrom} onChange={e => setFilterFrom(e.target.value)}
             className="text-sm rounded-lg border px-3 py-1.5"
             style={{ background: 'var(--bg-elevated)', borderColor: 'var(--border)', color: 'var(--text-primary)' }}
@@ -119,19 +135,16 @@ export default function InventoryTransactionsPage() {
         </div>
 
         <div>
-          <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-tertiary)' }}>Đến ngày</label>
+          <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-tertiary)' }}>{t('invTx.filterTo')}</label>
           <input type="date" value={filterTo} onChange={e => setFilterTo(e.target.value)}
             className="text-sm rounded-lg border px-3 py-1.5"
             style={{ background: 'var(--bg-elevated)', borderColor: 'var(--border)', color: 'var(--text-primary)' }}
           />
         </div>
 
-        <button
-          onClick={() => load(1)}
-          className="px-4 py-1.5 rounded-lg text-sm font-medium text-white"
-          style={{ background: 'var(--primary-500)' }}
-        >
-          Lọc
+        <button onClick={() => load(1)} className="px-4 py-1.5 rounded-lg text-sm font-medium text-white"
+          style={{ background: 'var(--primary-500)' }}>
+          {t('invTx.filterBtn')}
         </button>
 
         <button
@@ -139,11 +152,10 @@ export default function InventoryTransactionsPage() {
           className="px-4 py-1.5 rounded-lg text-sm border"
           style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
         >
-          Xóa bộ lọc
+          {t('invTx.clearFilter')}
         </button>
       </div>
 
-      {/* Table */}
       <div className="rounded-xl border overflow-x-auto" style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
         {loading ? (
           <div className="flex items-center justify-center py-16">
@@ -152,13 +164,13 @@ export default function InventoryTransactionsPage() {
           </div>
         ) : rows.length === 0 ? (
           <div className="text-center py-12 text-sm" style={{ color: 'var(--text-tertiary)' }}>
-            Không có dữ liệu
+            {t('invTx.emptyState')}
           </div>
         ) : (
           <table className="w-full text-sm">
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-elevated)' }}>
-                {['Thời gian', 'Sản phẩm', 'Loại', '+/- Số lượng', 'Trước → Sau', 'Nguồn', 'Người thực hiện'].map(h => (
+                {COLS.map(h => (
                   <th key={h} className="px-4 py-3 text-left text-xs font-medium"
                       style={{ color: 'var(--text-tertiary)' }}>{h}</th>
                 ))}
@@ -166,11 +178,8 @@ export default function InventoryTransactionsPage() {
             </thead>
             <tbody>
               {rows.map((r, i) => (
-                <tr key={r.transactionId}
-                    className="transition-colors"
-                    style={{
-                      borderBottom: i < rows.length - 1 ? '1px solid var(--border)' : 'none',
-                    }}>
+                <tr key={r.transactionId} className="transition-colors"
+                    style={{ borderBottom: i < rows.length - 1 ? '1px solid var(--border)' : 'none' }}>
                   <td className="px-4 py-3 whitespace-nowrap text-xs" style={{ color: 'var(--text-tertiary)' }}>
                     {fmtDate(r.createdAt)}
                   </td>
@@ -178,7 +187,7 @@ export default function InventoryTransactionsPage() {
                     <span className="font-medium" style={{ color: 'var(--text-primary)' }}>{r.productName ?? `#${r.productId}`}</span>
                   </td>
                   <td className="px-4 py-3">
-                    <TypeBadge type={r.transactionType} />
+                    <TypeBadge type={r.transactionType} label={TYPE_LABELS[r.transactionType]} />
                   </td>
                   <td className="px-4 py-3">
                     <QtyChange change={r.quantityChange} />
@@ -203,28 +212,21 @@ export default function InventoryTransactionsPage() {
         )}
       </div>
 
-      {/* Pagination */}
       {totalPages > 1 && (
         <div className="flex items-center justify-between text-sm">
           <span style={{ color: 'var(--text-tertiary)' }}>
-            Trang {page} / {totalPages}
+            {t('invTx.pageLabel', { page, total: totalPages })}
           </span>
           <div className="flex gap-2">
-            <button
-              disabled={page <= 1}
-              onClick={() => load(page - 1)}
+            <button disabled={page <= 1} onClick={() => load(page - 1)}
               className="px-3 py-1 rounded-lg border disabled:opacity-40"
-              style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
-            >
-              ← Trước
+              style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>
+              {t('invTx.pagePrev')}
             </button>
-            <button
-              disabled={page >= totalPages}
-              onClick={() => load(page + 1)}
+            <button disabled={page >= totalPages} onClick={() => load(page + 1)}
               className="px-3 py-1 rounded-lg border disabled:opacity-40"
-              style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
-            >
-              Tiếp →
+              style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>
+              {t('invTx.pageNext')}
             </button>
           </div>
         </div>

@@ -1,31 +1,35 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { getAdSpend, getAdSpendChannels, upsertAdSpend } from '../../api/dashboardApi'
-
-const MONTHS = ['Tháng 1','Tháng 2','Tháng 3','Tháng 4','Tháng 5','Tháng 6',
-                 'Tháng 7','Tháng 8','Tháng 9','Tháng 10','Tháng 11','Tháng 12']
 
 const fmtVND = v => new Intl.NumberFormat('vi-VN').format(v)
 
+function getMonthName(month, locale) {
+  return new Date(2000, month - 1, 1).toLocaleDateString(
+    locale === 'vi' ? 'vi-VN' : 'en-US',
+    { month: 'long' }
+  )
+}
+
 export default function AdSpendPage() {
+  const { t, i18n } = useTranslation()
   const now  = new Date()
   const [year,     setYear]     = useState(now.getFullYear())
   const [month,    setMonth]    = useState(now.getMonth() + 1)
   const [channels, setChannels] = useState([])
-  const [spend,    setSpend]    = useState({})   // { channelId: amount }
+  const [spend,    setSpend]    = useState({})
   const [notes,    setNotes]    = useState({})
   const [saving,   setSaving]   = useState({})
   const [saved,    setSaved]    = useState({})
   const [loading,  setLoading]  = useState(true)
   const [err,      setErr]      = useState('')
 
-  // Load danh sách kênh
   useEffect(() => {
     getAdSpendChannels()
       .then(list => setChannels(list))
-      .catch(() => setErr('Không tải được danh sách kênh.'))
-  }, [])
+      .catch(() => setErr(t('adSpend.errorLoadChannels')))
+  }, [t])
 
-  // Load chi phí tháng đã chọn
   const loadSpend = useCallback(async () => {
     setLoading(true)
     try {
@@ -39,9 +43,9 @@ export default function AdSpendPage() {
       setNotes(noteMap)
       setSaved({})
     } catch {
-      setErr('Không tải được chi phí.')
+      setErr(t('adSpend.errorLoadCost'))
     } finally { setLoading(false) }
-  }, [year, month])
+  }, [year, month, t])
 
   useEffect(() => { loadSpend() }, [loadSpend])
 
@@ -54,7 +58,7 @@ export default function AdSpendPage() {
       setSaved(s => ({ ...s, [channelId]: true }))
       setTimeout(() => setSaved(s => ({ ...s, [channelId]: false })), 2000)
     } catch {
-      setErr('Lưu thất bại, thử lại.')
+      setErr(t('adSpend.errorSave'))
     } finally {
       setSaving(s => ({ ...s, [channelId]: false }))
     }
@@ -68,34 +72,32 @@ export default function AdSpendPage() {
     await Promise.all(pending.map(ch => handleSave(ch.channelId)))
   }
 
+  const locale = i18n.language ?? 'vi'
+
   return (
     <div className="space-y-5">
-      {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
-            Nhập chi phí quảng cáo
+            {t('adSpend.title')}
           </h1>
           <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
-            Nhập chi phí QC mỗi tháng theo từng kênh để tính ROAS chính xác trong Dashboard
+            {t('adSpend.subtitle')}
           </p>
         </div>
 
-        {/* Bộ chọn tháng / năm + Lưu tất cả */}
         <div className="flex gap-2 items-center">
-          <select value={month} onChange={e => setMonth(+e.target.value)} className="linput text-sm" style={{ width: 120 }}>
-            {MONTHS.map((m, i) => <option key={i+1} value={i+1}>{m}</option>)}
+          <select value={month} onChange={e => setMonth(+e.target.value)} className="linput text-sm" style={{ width: 130 }}>
+            {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
+              <option key={m} value={m}>{getMonthName(m, locale)}</option>
+            ))}
           </select>
           <select value={year} onChange={e => setYear(+e.target.value)} className="linput text-sm" style={{ width: 90 }}>
             {Array.from({ length: 4 }, (_, i) => now.getFullYear() - 3 + i).map(y => <option key={y} value={y}>{y}</option>)}
           </select>
           {channels.length > 0 && (
-            <button
-              onClick={handleSaveAll}
-              disabled={loading}
-              className="lbtn lbtn-primary text-sm !h-9 !px-4"
-            >
-              Lưu tất cả
+            <button onClick={handleSaveAll} disabled={loading} className="lbtn lbtn-primary text-sm !h-9 !px-4">
+              {t('adSpend.saveAllBtn')}
             </button>
           )}
         </div>
@@ -107,44 +109,39 @@ export default function AdSpendPage() {
         </div>
       )}
 
-      {/* Tổng chi phí */}
       <div className="lcard p-4 flex items-center justify-between">
         <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-          Tổng chi phí QC — {MONTHS[month-1]} {year}
+          {t('adSpend.totalLabel', { month: getMonthName(month, locale), year })}
         </span>
         <span className="text-lg font-bold" style={{ color: 'var(--primary-500)' }}>
           ₫{fmtVND(totalSpend)}
         </span>
       </div>
 
-      {/* Bảng nhập chi phí */}
       <div className="lcard overflow-hidden">
         <table className="w-full text-sm">
           <thead>
             <tr style={{ borderBottom: '2px solid var(--border)', background: 'var(--bg-elevated)' }}>
-              <th className="text-left px-5 py-3 font-semibold" style={{ color: 'var(--text-tertiary)' }}>Kênh bán hàng</th>
-              <th className="text-right px-5 py-3 font-semibold" style={{ color: 'var(--text-tertiary)', width: 200 }}>Chi phí QC (₫)</th>
-              <th className="text-left px-5 py-3 font-semibold" style={{ color: 'var(--text-tertiary)', width: 180 }}>Ghi chú</th>
+              <th className="text-left px-5 py-3 font-semibold" style={{ color: 'var(--text-tertiary)' }}>{t('adSpend.colChannel')}</th>
+              <th className="text-right px-5 py-3 font-semibold" style={{ color: 'var(--text-tertiary)', width: 200 }}>{t('adSpend.colCost')}</th>
+              <th className="text-left px-5 py-3 font-semibold" style={{ color: 'var(--text-tertiary)', width: 180 }}>{t('adSpend.colNote')}</th>
               <th className="px-5 py-3" style={{ width: 100 }}></th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
               <tr><td colSpan={4} className="px-5 py-10 text-center" style={{ color: 'var(--text-tertiary)' }}>
-                Đang tải...
+                {t('common.loading')}
               </td></tr>
             ) : channels.length === 0 ? (
               <tr><td colSpan={4} className="px-5 py-10 text-center" style={{ color: 'var(--text-tertiary)' }}>
-                Chưa có kênh bán hàng nào.
+                {t('adSpend.noChannels')}
               </td></tr>
             ) : channels.map(ch => (
               <tr key={ch.channelId} style={{ borderBottom: '1px solid var(--border)' }}>
-                {/* Tên kênh */}
                 <td className="px-5 py-3 font-medium" style={{ color: 'var(--text-primary)' }}>
                   {ch.channelName}
                 </td>
-
-                {/* Input chi phí */}
                 <td className="px-5 py-3">
                   <input
                     type="number" min="0" step="100000"
@@ -155,29 +152,27 @@ export default function AdSpendPage() {
                     style={{ fontFamily: 'monospace' }}
                   />
                 </td>
-
-                {/* Ghi chú */}
                 <td className="px-5 py-3">
                   <input
                     type="text"
                     value={notes[ch.channelId] ?? ''}
                     onChange={e => setNotes(n => ({ ...n, [ch.channelId]: e.target.value }))}
-                    placeholder="Ghi chú..."
+                    placeholder={t('adSpend.notePlaceholder')}
                     className="linput text-sm w-full"
                   />
                 </td>
-
-                {/* Nút lưu */}
                 <td className="px-5 py-3 text-center">
                   {saved[ch.channelId] ? (
-                    <span className="text-xs font-semibold" style={{ color: 'var(--accent-500)' }}>✓ Đã lưu</span>
+                    <span className="text-xs font-semibold" style={{ color: 'var(--accent-500)' }}>
+                      {t('adSpend.savedBadge')}
+                    </span>
                   ) : (
                     <button
                       onClick={() => handleSave(ch.channelId)}
                       disabled={saving[ch.channelId]}
                       className="lbtn lbtn-primary text-xs !h-8 !px-3"
                     >
-                      {saving[ch.channelId] ? '...' : 'Lưu'}
+                      {saving[ch.channelId] ? '...' : t('common.save')}
                     </button>
                   )}
                 </td>
@@ -187,15 +182,12 @@ export default function AdSpendPage() {
         </table>
       </div>
 
-      {/* Hướng dẫn */}
       <div className="rounded-xl p-4 text-sm" style={{ background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.2)' }}>
-        <p className="font-semibold mb-2" style={{ color: 'var(--primary-500)' }}>💡 Hướng dẫn</p>
+        <p className="font-semibold mb-2" style={{ color: 'var(--primary-500)' }}>{t('adSpend.guideTitle')}</p>
         <ul className="space-y-1" style={{ color: 'var(--text-secondary)' }}>
-          <li>• Nhập tổng chi phí quảng cáo của từng kênh trong tháng đã chọn</li>
-          <li>• Dữ liệu sẽ tự động tính ROAS = Doanh thu / Chi phí QC trong <strong>Dashboard → Tab Marketing &amp; ROI</strong></li>
-          <li>• Đảm bảo nhập đúng tháng/năm khớp với khoảng thời gian đang xem trên Dashboard</li>
-          <li>• Nguồn dữ liệu: xuất báo cáo từ Shopee Ads, TikTok Ads Center, Lazada Sponsored</li>
-          <li>• Nếu kênh không chạy QC tháng đó, nhập 0 hoặc bỏ trống</li>
+          {[1,2,3,4,5].map(i => (
+            <li key={i}>• {t(`adSpend.guide${i}`)}</li>
+          ))}
         </ul>
       </div>
     </div>

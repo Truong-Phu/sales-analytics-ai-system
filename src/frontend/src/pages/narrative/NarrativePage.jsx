@@ -1,10 +1,13 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
+import { Link } from 'react-router-dom'
 import MockToast from '../../components/ui/MockToast'
 import AiEmptyState from '../../components/ui/AiEmptyState'
 import { getNarrative } from '../../api/aiApi'
 import DateRangeFilter from '../../components/ui/DateRangeFilter'
 
 export default function NarrativePage() {
+  const { t } = useTranslation()
   const daysAgo30 = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10)
   const tomorrow  = new Date(Date.now() + 86400000).toISOString().slice(0, 10)
   const [data,   setData]   = useState(null)
@@ -40,23 +43,21 @@ export default function NarrativePage() {
   return (
     <div className="space-y-5">
       <MockToast show={isMock} />
-      {/* Header */}
       <div className="space-y-3">
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div>
-            <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Nhận xét Thông minh</h1>
-            <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>Tự động sinh nhận xét doanh thu bằng ngôn ngữ tự nhiên</p>
+            <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>{t('narrative.title')}</h1>
+            <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>{t('narrative.subtitle')}</p>
           </div>
           <button onClick={() => setLang(l => l === 'vi' ? 'en' : 'vi')} className="lbtn lbtn-secondary text-sm">
-            {lang === 'vi' ? '🇻🇳 VI' : '🇬🇧 EN'}
+            {lang === 'vi' ? t('narrative.langVi') : t('narrative.langEn')}
           </button>
         </div>
-        {/* Filter ngày — dòng riêng để không wrap */}
-        <DateRangeFilter from={from} to={to} onChange={(f, t) => { setFrom(f); setTo(t) }}
+        <DateRangeFilter from={from} to={to} onChange={(f, tVal) => { setFrom(f); setTo(tVal) }}
           presets={['all','today','days_7','days_30','days_90','custom']} />
       </div>
 
-      {!data && !loading && <AiEmptyState title="Chưa đủ dữ liệu sinh nhận xét tự động" />}
+      {!data && !loading && <AiEmptyState title={t('narrative.emptyState')} />}
 
       {loading ? (
         <div className="lcard p-12 flex items-center justify-center">
@@ -65,7 +66,6 @@ export default function NarrativePage() {
         </div>
       ) : data && (
         <>
-          {/* Headline */}
           <div className="rounded-xl p-5"
             style={{ background: 'linear-gradient(135deg, var(--primary-500) 0%, var(--accent-500) 100%)' }}>
             <div className="flex items-start gap-3">
@@ -73,19 +73,20 @@ export default function NarrativePage() {
               <div>
                 <div className="text-lg font-bold text-white leading-snug">{data.headline}</div>
                 <div className="text-xs text-white/80 mt-1">
-                  Kỳ: {data.period} · Sinh bởi: {data.generated_by === 'rule_based' ? 'Rule-based AI' : 'AI Model'}
+                  {t('narrative.periodLabel')}: {data.period} · {t('narrative.generatedBy')}:{' '}
+                  {data.generated_by === 'rule_based' ? t('narrative.generatorRule') : t('narrative.generatorAI')}
                 </div>
               </div>
             </div>
           </div>
 
-          {/* KPI grid */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {[
-              { label: 'Doanh thu kỳ này', value: `${((data.key_metrics?.current_revenue??0)/1e6).toFixed(1)}M VNĐ`, color: 'var(--primary-500)' },
-              { label: 'Tăng trưởng',      value: `${revChg>=0?'+':''}${revChg}%`,  color: revColor },
-              { label: 'Đơn hàng',         value: (data.key_metrics?.current_orders??0).toLocaleString(), color: '#22C55E' },
-              { label: 'ĐH tăng/giảm',    value: `${(data.key_metrics?.orders_change??0)>=0?'+':''}${data.key_metrics?.orders_change??0}%`, color: (data.key_metrics?.orders_change??0)>=0 ? '#22C55E' : '#EF4444' },
+              { label: t('narrative.kpiRevenue'),    value: `${((data.key_metrics?.current_revenue??0)/1e6).toFixed(1)}M VNĐ`, color: 'var(--primary-500)' },
+              { label: t('narrative.kpiGrowth'),     value: `${revChg>=0?'+':''}${revChg}%`, color: revColor },
+              { label: t('narrative.kpiOrders'),     value: (data.key_metrics?.current_orders??0).toLocaleString(), color: '#22C55E' },
+              { label: t('narrative.kpiOrderDelta'), value: `${(data.key_metrics?.orders_change??0)>=0?'+':''}${data.key_metrics?.orders_change??0}%`,
+                color: (data.key_metrics?.orders_change??0)>=0 ? '#22C55E' : '#EF4444' },
             ].map(k => (
               <div key={k.label} className="lcard p-4">
                 <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{k.label}</div>
@@ -94,13 +95,11 @@ export default function NarrativePage() {
             ))}
           </div>
 
-          {/* Full narrative */}
           <div className="lcard p-5">
-            <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-secondary)' }}>📄 Nhận xét chi tiết</h3>
+            <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-secondary)' }}>{t('narrative.detailSection')}</h3>
             <p className="leading-relaxed text-sm" style={{ color: 'var(--text-secondary)' }}>{renderBold(data.full_narrative)}</p>
           </div>
 
-          {/* Anomaly note */}
           {data.anomaly_note && (
             <div className="rounded-xl p-4 text-sm"
               style={{ background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.30)', color: '#92400E' }}>
@@ -108,10 +107,9 @@ export default function NarrativePage() {
             </div>
           )}
 
-          {/* Recommendations */}
           {data.recommendations?.length > 0 && (
             <div className="lcard p-5">
-              <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-secondary)' }}>💡 Gợi ý hành động</h3>
+              <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-secondary)' }}>{t('narrative.actionSection')}</h3>
               <ul className="space-y-2">
                 {data.recommendations.map((r, i) => (
                   <li key={i} className="flex items-start gap-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
@@ -123,9 +121,9 @@ export default function NarrativePage() {
             </div>
           )}
 
-          {/* Export hint */}
           <div className="lcard p-3 text-xs" style={{ color: 'var(--text-tertiary)' }}>
-            💡 Nhận xét này tự động được chèn vào báo cáo PDF khi xuất tại trang <strong style={{ color: 'var(--text-secondary)' }}>Báo cáo</strong>.
+            {t('narrative.reportHint')}{' '}
+            <Link to="/report" style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>{t('narrative.reportLink')}</Link>.
           </div>
         </>
       )}

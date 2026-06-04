@@ -26,13 +26,14 @@ const RISK_COLOR = {
 }
 
 function RiskBadge({ risk }) {
+  const { t } = useTranslation()
   const c = RISK_COLOR[risk] ?? RISK_COLOR.LOW
-  const labels = { HIGH: 'Cao', MEDIUM: 'Trung bình', LOW: 'Thấp' }
+  const label = t(`churn.risk.${risk.toLowerCase()}`, risk)
   return (
     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
       style={{ background: c.bg, border: `1px solid ${c.border}`, color: c.text }}>
       <span className="w-1.5 h-1.5 rounded-full" style={{ background: c.dot }} />
-      {labels[risk] ?? risk}
+      {label}
     </span>
   )
 }
@@ -71,7 +72,6 @@ export default function ChurnPage() {
 
   const filtered = (data?.customers ?? []).filter(c => filter === 'ALL' || c.risk === filter)
 
-  // Flatten mỗi khách thành N row (N = số kênh), dùng rowSpan cho các cột customer-level
   const flatRows = filtered.flatMap(c => {
     const chList = c.channels?.length > 0
       ? c.channels
@@ -79,29 +79,44 @@ export default function ChurnPage() {
     return chList.map((ch, ci) => ({ c, ch, ci, span: chList.length }))
   })
 
+  const FILTERS = [
+    { key: 'ALL',    label: t('churn.filterAll') },
+    { key: 'HIGH',   label: t('churn.risk.high') },
+    { key: 'MEDIUM', label: t('churn.risk.medium') },
+    { key: 'LOW',    label: t('churn.risk.low') },
+  ]
+
+  const COLS = [
+    { label: t('churn.colCustomer'),   cls: 'p-3 text-left' },
+    { label: t('churn.colChannel'),    cls: 'p-3 text-left' },
+    { label: t('churn.colRecency'),    cls: 'p-3 text-right' },
+    { label: t('churn.colOrders'),     cls: 'p-3 text-right' },
+    { label: t('churn.colRevenue'),    cls: 'p-3 text-right' },
+    { label: t('churn.colChurnProb'),  cls: 'p-3 text-left' },
+    { label: t('churn.colRisk'),       cls: 'p-3 text-center' },
+    { label: t('churn.colAction'),     cls: 'p-3 text-left' },
+    { label: '',                       cls: 'p-3' },
+  ]
+
   return (
     <div className="space-y-5">
-      {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Dự báo Churn Khách hàng</h1>
-          <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
-            RandomForest + RFM – Phát hiện khách hàng có nguy cơ rời bỏ
-          </p>
+          <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>{t('churn.title')}</h1>
+          <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>{t('churn.subtitle')}</p>
         </div>
-        <button onClick={load} className="lbtn lbtn-primary text-sm">Làm mới</button>
+        <button onClick={load} className="lbtn lbtn-primary text-sm">{t('common.refresh')}</button>
       </div>
 
-      {!data && !loading && <AiEmptyState title="Chưa đủ dữ liệu dự báo churn" />}
+      {!data && !loading && <AiEmptyState title={t('churn.emptyState')} />}
 
-      {/* KPI Cards */}
       {data && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {[
-            { label: 'Tổng khách hàng', value: data.total_customers,      color: 'var(--primary-500)' },
-            { label: 'Nguy cơ cao',     value: data.high_risk_count,      color: '#EF4444' },
-            { label: 'Nguy cơ TB',      value: data.medium_risk_count,    color: '#F59E0B' },
-            { label: 'Tỷ lệ churn',     value: `${data.churn_rate_pct}%`, color: '#EF4444' },
+            { label: t('churn.totalCustomers'), value: data.total_customers,      color: 'var(--primary-500)' },
+            { label: t('churn.highRisk'),        value: data.high_risk_count,      color: '#EF4444' },
+            { label: t('churn.mediumRisk'),      value: data.medium_risk_count,    color: '#F59E0B' },
+            { label: t('churn.churnRate'),       value: `${data.churn_rate_pct}%`, color: '#EF4444' },
           ].map(k => (
             <div key={k.label} className="lcard p-4">
               <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{k.label}</div>
@@ -111,27 +126,24 @@ export default function ChurnPage() {
         </div>
       )}
 
-      {/* Model info */}
       {data && (
         <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-          Model: {data.model} · Threshold: không mua trong {data.churn_threshold_days} ngày = churned
+          {t('churn.thresholdBefore')} <strong>{data.churn_threshold_days} {t('churn.daysSuffix')}</strong> {t('churn.thresholdAfter')}
         </div>
       )}
 
-      {/* Filter */}
       <div className="flex gap-2 flex-wrap">
-        {['ALL','HIGH','MEDIUM','LOW'].map(f => (
-          <button key={f} onClick={() => setFilter(f)}
+        {FILTERS.map(f => (
+          <button key={f.key} onClick={() => setFilter(f.key)}
             className="px-3 py-1 rounded-full text-xs font-medium border transition-colors"
-            style={filter === f
+            style={filter === f.key
               ? { background: 'var(--primary-500)', borderColor: 'var(--primary-500)', color: '#fff' }
               : { borderColor: 'var(--border)', color: 'var(--text-tertiary)', background: 'transparent' }}>
-            {f === 'ALL' ? 'Tất cả' : f === 'HIGH' ? 'Cao' : f === 'MEDIUM' ? 'Trung bình' : 'Thấp'}
+            {f.label}
           </button>
         ))}
       </div>
 
-      {/* Table */}
       <div className="lcard overflow-x-auto">
         {loading ? (
           <div className="p-10 flex items-center justify-center">
@@ -142,17 +154,7 @@ export default function ChurnPage() {
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr style={{ background: 'var(--bg-elevated)' }}>
-                {[
-                  { label: 'Khách hàng',     cls: 'p-3 text-left' },
-                  { label: 'Kênh',           cls: 'p-3 text-left' },
-                  { label: 'Chưa mua',       cls: 'p-3 text-right' },
-                  { label: 'Đơn',            cls: 'p-3 text-right' },
-                  { label: 'Doanh thu',      cls: 'p-3 text-right' },
-                  { label: 'Xác suất churn', cls: 'p-3 text-left' },
-                  { label: 'Rủi ro',         cls: 'p-3 text-center' },
-                  { label: 'Gợi ý hành động', cls: 'p-3 text-left' },
-                  { label: '',               cls: 'p-3' },
-                ].map(h => (
+                {COLS.map(h => (
                   <th key={h.label} className={`${h.cls} text-xs font-semibold tracking-wide`}
                     style={{ color: 'var(--text-tertiary)', borderBottom: '2px solid var(--border)' }}>
                     {h.label}
@@ -170,7 +172,6 @@ export default function ChurnPage() {
                   : ch.recency_days > 60 ? '#EF4444'
                   : ch.recency_days > 30 ? '#F59E0B'
                   : '#22C55E'
-                // Border: dày hơn khi bắt đầu khách mới, nét đứt nhạt khi là kênh phụ
                 const rowBorderTop = ci === 0
                   ? '2px solid var(--border)'
                   : '1px dashed color-mix(in srgb, var(--border) 50%, transparent)'
@@ -178,7 +179,6 @@ export default function ChurnPage() {
                 return (
                   <tr key={`${c.customer_id}-${ci}`} style={{ borderTop: rowBorderTop }}>
 
-                    {/* Khách hàng — rowspan */}
                     {ci === 0 && (
                       <td rowSpan={span} className="p-3"
                         style={{ verticalAlign: 'middle', borderRight: '1px solid var(--border)' }}>
@@ -192,7 +192,6 @@ export default function ChurnPage() {
                       </td>
                     )}
 
-                    {/* Kênh */}
                     <td className="px-3 py-2" style={{ verticalAlign: 'middle' }}>
                       {cfg ? (
                         <div className="flex items-center gap-1.5 text-xs whitespace-nowrap">
@@ -202,7 +201,9 @@ export default function ChurnPage() {
                           </span>
                           {isTop && (
                             <span className="text-[9px] px-1 rounded"
-                              style={{ background: `${cfg.color}20`, color: cfg.color }}>chính</span>
+                              style={{ background: `${cfg.color}20`, color: cfg.color }}>
+                              {t('churn.primaryBadge')}
+                            </span>
                           )}
                         </div>
                       ) : (
@@ -210,42 +211,35 @@ export default function ChurnPage() {
                       )}
                     </td>
 
-                    {/* Chưa mua */}
                     <td className="px-3 py-2 text-right font-mono text-xs whitespace-nowrap"
                       style={{ verticalAlign: 'middle', color: recencyColor }}>
-                      {ch.recency_days != null ? `${ch.recency_days} ngày` : '—'}
+                      {ch.recency_days != null ? `${ch.recency_days} ${t('churn.daysSuffix')}` : '—'}
                     </td>
 
-                    {/* Đơn */}
                     <td className="px-3 py-2 text-right text-sm"
                       style={{ verticalAlign: 'middle', color: 'var(--text-secondary)' }}>
                       {ch.orders}
                     </td>
 
-                    {/* Doanh thu */}
                     <td className="px-3 py-2 text-right text-sm font-medium whitespace-nowrap"
                       style={{ verticalAlign: 'middle', color: cfg && isTop ? cfg.color : 'var(--text-secondary)' }}>
                       {fmt(ch.revenue)}₫
                     </td>
 
-                    {/* Xác suất churn */}
                     <td className="px-3 py-2 w-36"
                       style={{ verticalAlign: 'middle', borderLeft: '1px solid var(--border)' }}>
                       <ProbBar pct={c.churn_prob} />
                     </td>
 
-                    {/* Rủi ro */}
                     <td className="px-3 py-2 text-center" style={{ verticalAlign: 'middle' }}>
                       <RiskBadge risk={c.risk} />
                     </td>
 
-                    {/* Gợi ý hành động — riêng theo kênh */}
                     <td className="px-3 py-2 text-xs"
                       style={{ verticalAlign: 'middle', color: 'var(--text-tertiary)', maxWidth: 220 }}>
                       {ch.action ?? c.action}
                     </td>
 
-                    {/* Nút tạo chiến dịch giữ chân — chỉ hiện ở dòng đầu của mỗi khách */}
                     {ci === 0 && (
                       <td rowSpan={span} className="px-3 py-2"
                         style={{ verticalAlign: 'middle', borderLeft: '1px solid var(--border)' }}>
@@ -265,10 +259,10 @@ export default function ChurnPage() {
                             style={{ borderColor: 'rgba(239,68,68,0.35)', color: '#EF4444', background: 'rgba(239,68,68,0.06)' }}
                             onMouseEnter={e => { e.currentTarget.style.background='#EF4444'; e.currentTarget.style.color='white' }}
                             onMouseLeave={e => { e.currentTarget.style.background='rgba(239,68,68,0.06)'; e.currentTarget.style.color='#EF4444' }}
-                            title={`Tạo chiến dịch giữ chân ${c.full_name} (churn ${c.churn_prob}%)`}
+                            title={`${t('churn.retainBtn')} ${c.full_name} (churn ${c.churn_prob}%)`}
                           >
                             <span className="icon" style={{ fontSize: 13 }}>campaign</span>
-                            Giữ chân
+                            {t('churn.retainBtn')}
                           </button>
                         )}
                       </td>

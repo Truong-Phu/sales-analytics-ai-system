@@ -1,10 +1,14 @@
 import { useState, useEffect, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import MockToast from '../../components/ui/MockToast'
 import AiEmptyState from '../../components/ui/AiEmptyState'
+import InfoTooltip from '../../components/ui/InfoTooltip'
+import { MT } from '../../constants/metricTooltips'
 import { getBasketAnalysis } from '../../api/aiApi'
 
 export default function BasketPage() {
+  const { t } = useTranslation()
   const navigate   = useNavigate()
   const [data,    setData]    = useState(null)
   const [loading, setLoading] = useState(true)
@@ -42,50 +46,50 @@ export default function BasketPage() {
   return (
     <div className="space-y-5">
       <MockToast show={isMock} />
-      {/* Header */}
       <div>
-        <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Phân tích sản phẩm hay mua chung</h1>
-        <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>Market Basket Analysis – Thuật toán Apriori</p>
+        <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>{t('basket.title')}</h1>
+        <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>{t('basket.subtitle')}</p>
       </div>
 
-      {!data && !loading && <AiEmptyState title="Chưa đủ dữ liệu phân tích sản phẩm hay mua chung" />}
+      {!data && !loading && <AiEmptyState title={t('basket.emptyState')} />}
 
-      {/* Params */}
       <div className="lcard p-4 flex gap-6 flex-wrap items-end">
         <div>
           <label className="text-xs font-medium block mb-1" style={{ color: 'var(--text-secondary)' }}>
-            Min Confidence: <strong style={{ color: 'var(--text-primary)' }}>{Math.round(minConf*100)}%</strong>
+            {t('basket.minConfidence')}: <strong style={{ color: 'var(--text-primary)' }}>{Math.round(minConf*100)}%</strong>
           </label>
           <input type="range" min={0.1} max={0.9} step={0.05} value={minConf}
             onChange={e => setMinConf(+e.target.value)} className="w-32 accent-indigo-500" />
         </div>
         <div>
           <label className="text-xs font-medium block mb-1" style={{ color: 'var(--text-secondary)' }}>
-            Min Lift: <strong style={{ color: 'var(--text-primary)' }}>{minLift}x</strong>
+            {t('basket.minLift')}: <strong style={{ color: 'var(--text-primary)' }}>{minLift}x</strong>
           </label>
           <input type="range" min={1} max={5} step={0.5} value={minLift}
             onChange={e => setMinLift(+e.target.value)} className="w-32 accent-indigo-500" />
         </div>
-        <button onClick={load} className="lbtn lbtn-primary text-sm">Phân tích</button>
+        <button onClick={load} className="lbtn lbtn-primary text-sm">{t('basket.analyzeBtn')}</button>
       </div>
 
-      {/* Stats */}
       {data && (
         <div className="grid grid-cols-3 gap-4">
           {[
-            { label: 'Tổng đơn hàng', value: data.total_transactions || '(mẫu)', color: 'var(--primary-500)' },
-            { label: 'Rules tìm được', value: data.total_rules, color: '#22C55E' },
-            { label: 'Nguồn dữ liệu', value: data.is_mock ? 'Mẫu' : 'Thực', color: data.is_mock ? '#F59E0B' : '#22C55E' },
+            { label: t('basket.kpiOrders'),  tip: MT.orderCount, value: data.total_transactions || '(mẫu)', color: 'var(--primary-500)' },
+            { label: t('basket.kpiRules'),   tip: MT.support,    value: data.total_rules, color: '#22C55E' },
+            { label: t('basket.kpiSource'),  tip: null,
+              value: data.is_mock ? t('basket.sourceSample') : t('basket.sourceReal'),
+              color: data.is_mock ? '#F59E0B' : '#22C55E' },
           ].map(k => (
             <div key={k.label} className="lcard p-4">
-              <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{k.label}</div>
+              <div className="inline-flex items-center gap-0.5 text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                {k.label}{k.tip && <InfoTooltip {...k.tip} placement="top" />}
+              </div>
               <div className="text-2xl font-bold mt-1" style={{ color: k.color }}>{k.value}</div>
             </div>
           ))}
         </div>
       )}
 
-      {/* Rules */}
       <div className="space-y-3">
         {loading ? (
           <div className="lcard p-10 flex items-center justify-center">
@@ -105,20 +109,20 @@ export default function BasketPage() {
                   style={{ background: 'rgba(16,185,129,0.12)', color: '#059669' }}>{p}</span>
               ))}
               <div className="ml-auto flex items-center gap-3 text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                <span>Support: <strong style={{ color: 'var(--text-primary)' }}>{(rule.support*100).toFixed(1)}%</strong></span>
-                <span>Confidence: <strong style={{ color: 'var(--text-primary)' }}>{(rule.confidence*100).toFixed(1)}%</strong></span>
-                <span>Lift: <strong style={{ color: liftColor(rule.lift) }}>{rule.lift}x</strong></span>
-                <span>Đơn: <strong style={{ color: 'var(--text-primary)' }}>{rule.transactions}</strong></span>
+                <span className="inline-flex items-center gap-0.5">Support<InfoTooltip {...MT.support} placement="top" />: <strong style={{ color: 'var(--text-primary)' }}>{(rule.support*100).toFixed(1)}%</strong></span>
+                <span className="inline-flex items-center gap-0.5">Confidence<InfoTooltip {...MT.confidence} placement="top" />: <strong style={{ color: 'var(--text-primary)' }}>{(rule.confidence*100).toFixed(1)}%</strong></span>
+                <span className="inline-flex items-center gap-0.5">Lift<InfoTooltip {...MT.lift} placement="top" />: <strong style={{ color: liftColor(rule.lift) }}>{rule.lift}x</strong></span>
+                <span>{t('basket.orderCount', { count: rule.transactions })}</span>
                 <button
                   onClick={() => handleCreateBundle(rule)}
                   className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium border transition-all"
                   style={{ borderColor: 'rgba(99,102,241,0.4)', color: 'var(--primary-600)', background: 'rgba(99,102,241,0.06)' }}
                   onMouseEnter={e => { e.currentTarget.style.background='var(--primary-500)'; e.currentTarget.style.color='white'; e.currentTarget.style.borderColor='var(--primary-500)' }}
                   onMouseLeave={e => { e.currentTarget.style.background='rgba(99,102,241,0.06)'; e.currentTarget.style.color='var(--primary-600)'; e.currentTarget.style.borderColor='rgba(99,102,241,0.4)' }}
-                  title="Tạo chương trình bundle giảm giá cho cặp sản phẩm này"
+                  title={t('basket.createBundleTitle')}
                 >
                   <span className="icon" style={{ fontSize: 13 }}>campaign</span>
-                  Tạo bundle
+                  {t('basket.createBundle')}
                 </button>
               </div>
             </div>

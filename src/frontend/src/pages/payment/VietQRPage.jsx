@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import api from '../../api/axios'
 import { useAuth } from '../../hooks/useAuth'
@@ -10,6 +11,7 @@ function fmtVND(v) {
 }
 
 function Countdown({ expiredAt }) {
+  const { t } = useTranslation()
   const [remaining, setRemaining] = useState('')
 
   useEffect(() => {
@@ -17,7 +19,7 @@ function Countdown({ expiredAt }) {
 
     const tick = () => {
       const diff = new Date(expiredAt) - Date.now()
-      if (diff <= 0) { setRemaining('Hết hạn'); return }
+      if (diff <= 0) { setRemaining(t('vietqr.expired')); return }
       const m = Math.floor(diff / 60000)
       const s = Math.floor((diff % 60000) / 1000)
       setRemaining(`${m}:${String(s).padStart(2, '0')}`)
@@ -25,18 +27,19 @@ function Countdown({ expiredAt }) {
     tick()
     const id = setInterval(tick, 1000)
     return () => clearInterval(id)
-  }, [expiredAt])
+  }, [expiredAt, t])
 
   return remaining ? (
     <span className="text-xs font-mono" style={{
-      color: remaining === 'Hết hạn' ? '#EF4444' : '#F59E0B'
+      color: remaining === t('vietqr.expired') ? '#EF4444' : '#F59E0B'
     }}>
-      {remaining === 'Hết hạn' ? '⏰ Hết hạn' : `⏱ ${remaining}`}
+      {remaining === t('vietqr.expired') ? `⏰ ${remaining}` : `⏱ ${remaining}`}
     </span>
   ) : null
 }
 
 export default function VietQRPage() {
+  const { t } = useTranslation()
   const [params]     = useSearchParams()
   const navigate     = useNavigate()
   const { user }     = useAuth()
@@ -48,24 +51,22 @@ export default function VietQRPage() {
   const [toast,    setToast]    = useState('')
   const [checking, setChecking] = useState(false)
 
-  // Tất cả role nội bộ đều có thể giả lập – production sẽ thay bằng SePay webhook tự động
   const canMock = ['Owner', 'Manager', 'Staff'].includes(user?.role) || user?.isSuperAdmin
 
   const load = useCallback(async () => {
-    if (!txId) { setError('Không có mã giao dịch'); setLoading(false); return }
+    if (!txId) { setError(t('vietqr.noTxId')); setLoading(false); return }
     try {
       const res = await api.get(`/api/payment/vietqr/${txId}`)
       setData(res.data)
     } catch {
-      setError('Không thể tải thông tin QR')
+      setError(t('vietqr.loadError'))
     } finally {
       setLoading(false)
     }
-  }, [txId])
+  }, [txId, t])
 
   useEffect(() => { load() }, [load])
 
-  // Auto-poll status mỗi 10 giây khi đang Pending
   useEffect(() => {
     if (data?.transaction?.status !== 'Pending') return
     const id = setInterval(async () => {
@@ -73,13 +74,13 @@ export default function VietQRPage() {
         const res = await api.get(`/api/payment/vietqr/${txId}`)
         setData(res.data)
         if (res.data?.transaction?.status === 'Paid') {
-          setToast('Đã xác nhận thanh toán thành công!')
+          setToast(t('vietqr.confirmedToast'))
           clearInterval(id)
         }
-      } catch { /* im lặng */ }
+      } catch { /* silent */ }
     }, 10000)
     return () => clearInterval(id)
-  }, [data?.transaction?.status, txId])
+  }, [data?.transaction?.status, txId, t])
 
   const handleMockSePay = async () => {
     setChecking(true)
@@ -89,10 +90,10 @@ export default function VietQRPage() {
         amount         : data.transaction.amount,
         transactionCode: `MOCK_${Date.now()}`,
       })
-      setToast('Giả lập SePay thành công!')
+      setToast(t('vietqr.simulatedToast'))
       load()
     } catch (e) {
-      setToast(e.response?.data?.message ?? 'Lỗi giả lập')
+      setToast(e.response?.data?.message ?? t('common.error'))
     } finally {
       setChecking(false)
     }
@@ -112,6 +113,14 @@ export default function VietQRPage() {
   const qr  = data?.data
   const isPaid = tx?.status === 'Paid'
 
+  const BANK_ROWS = qr ? [
+    { label: t('vietqr.labelBank'),    value: qr.bankName },
+    { label: t('vietqr.labelAccount'), value: qr.accountNumber },
+    { label: t('vietqr.labelName'),    value: qr.accountHolder },
+    { label: t('vietqr.labelContent'), value: qr.transferContent },
+    { label: t('vietqr.labelAmount'),  value: fmtVND(qr.amount) },
+  ] : []
+
   return (
     <div className="max-w-md mx-auto p-4 space-y-4">
       {toast && (
@@ -121,7 +130,6 @@ export default function VietQRPage() {
         </div>
       )}
 
-      {/* Header */}
       <div className="flex items-center gap-3">
         <button onClick={() => navigate(-1)}
           style={{ color: 'var(--text-tertiary)', background: 'none', border: 'none', cursor: 'pointer' }}>
@@ -129,7 +137,7 @@ export default function VietQRPage() {
         </button>
         <div>
           <h1 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>
-            Thanh toán VietQR
+            {t('vietqr.title')}
           </h1>
           <div className="flex items-center gap-2 mt-0.5">
             <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{tx?.paymentCode}</span>
@@ -139,18 +147,14 @@ export default function VietQRPage() {
       </div>
 
       {isPaid ? (
-        /* Đã thanh toán */
         <div className="p-6 rounded-2xl text-center"
           style={{ background: 'rgba(16,185,129,0.08)', border: '2px solid rgba(16,185,129,0.3)' }}>
           <span className="icon text-5xl block mb-3" style={{ color: '#10B981' }}>check_circle</span>
-          <p className="font-bold text-lg" style={{ color: '#10B981' }}>Đã thanh toán thành công</p>
-          <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>
-            {fmtVND(tx?.amount)}
-          </p>
+          <p className="font-bold text-lg" style={{ color: '#10B981' }}>{t('vietqr.successMsg')}</p>
+          <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>{fmtVND(tx?.amount)}</p>
         </div>
       ) : (
         <>
-          {/* QR Image */}
           {qr?.qrDataUrl ? (
             <div className="p-4 rounded-2xl text-center"
               style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
@@ -158,7 +162,7 @@ export default function VietQRPage() {
                 style={{ width: 220, height: 220, objectFit: 'contain' }}
                 onError={e => { e.target.style.display = 'none' }} />
               <p className="text-xs mt-2" style={{ color: 'var(--text-tertiary)' }}>
-                Quét bằng app ngân hàng
+                {t('vietqr.scanHint')}
               </p>
               <div className="mt-1.5">
                 <Countdown expiredAt={tx?.expiredAt} />
@@ -169,25 +173,18 @@ export default function VietQRPage() {
               style={{ background: 'var(--bg-elevated)', border: '1px dashed var(--border)' }}>
               <span className="icon text-4xl" style={{ color: 'var(--text-tertiary)' }}>qr_code</span>
               <p className="text-xs mt-2" style={{ color: 'var(--text-tertiary)' }}>
-                Cấu hình VietQR chưa được thiết lập
+                {t('vietqr.noConfig')}
               </p>
             </div>
           )}
 
-          {/* Thông tin chuyển khoản dự phòng */}
           {qr && (
             <div className="p-4 rounded-2xl space-y-2"
               style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
               <p className="text-xs font-semibold mb-2" style={{ color: 'var(--text-secondary)' }}>
-                Thông tin chuyển khoản dự phòng
+                {t('vietqr.backupTitle')}
               </p>
-              {[
-                { label: 'Ngân hàng',    value: qr.bankName },
-                { label: 'Số tài khoản', value: qr.accountNumber },
-                { label: 'Chủ tài khoản',value: qr.accountHolder },
-                { label: 'Nội dung',     value: qr.transferContent },
-                { label: 'Số tiền',      value: fmtVND(qr.amount) },
-              ].map(row => (
+              {BANK_ROWS.map(row => (
                 <div key={row.label} className="flex justify-between items-center text-sm">
                   <span style={{ color: 'var(--text-secondary)' }}>{row.label}</span>
                   <span className="font-medium font-mono text-right" style={{ color: 'var(--text-primary)' }}>
@@ -198,26 +195,22 @@ export default function VietQRPage() {
             </div>
           )}
 
-          {/* Mock SePay button – tất cả nhân viên nội bộ */}
           {canMock && (
             <button onClick={handleMockSePay} disabled={checking}
               className="w-full py-3 rounded-xl text-sm font-medium disabled:opacity-50 flex items-center justify-center gap-2"
               style={{ background: '#FEF3C7', color: '#92400E', border: '1px solid #FDE68A' }}>
               <span className="icon text-base">science</span>
-              {checking ? 'Đang giả lập...' : '🔬 Giả lập khách đã chuyển khoản (Demo)'}
+              {checking ? t('vietqr.simulating') : t('vietqr.mockBtn')}
             </button>
           )}
 
-          {/* Hướng phát triển */}
           <div className="px-3 py-2.5 rounded-xl text-xs space-y-1"
             style={{ background: 'var(--bg-elevated)', border: '1px dashed var(--border)' }}>
             <div className="flex items-center gap-1.5 font-semibold" style={{ color: 'var(--text-secondary)' }}>
               <span className="icon text-sm">rocket_launch</span>
-              Hướng phát triển
+              {t('vietqr.devTitle')}
             </div>
-            <p style={{ color: 'var(--text-tertiary)' }}>
-              Tích hợp <strong>SePay</strong> (hoặc tương đương) để tự động đối soát giao dịch ngân hàng qua SMS/webhook — xác nhận đơn hàng không cần thao tác thủ công.
-            </p>
+            <p style={{ color: 'var(--text-tertiary)' }}>{t('vietqr.devNote')}</p>
           </div>
         </>
       )}
