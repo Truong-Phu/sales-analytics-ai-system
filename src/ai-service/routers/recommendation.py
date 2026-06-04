@@ -18,6 +18,7 @@ from pydantic import BaseModel
 
 from services.db_service import load_revenue_series, query_df
 from services.anomaly_service import detect_anomalies
+from services.basket_service import run_basket_analysis
 
 logger = logging.getLogger(__name__)
 
@@ -278,34 +279,391 @@ def _analyze_anomalies() -> List[Recommendation]:
 
 
 def _analyze_top_products() -> List[Recommendation]:
-    """Phân tích sản phẩm bán chạy và tồn kho."""
+    """Top sản phẩm bán chạy 7 ngày – cảnh báo tồn kho."""
     recs = []
     sql = """
         SELECT
-            dp.product_name,
-            SUM(fs.item_quantity) AS qty_sold,
-            SUM(fs.net_revenue)   AS revenue
-        FROM dw.fact_sales fs
-        JOIN dw.dim_date    dd ON fs.date_key    = dd.date_key
-        JOIN dw.dim_product dp ON fs.product_key = dp.product_key
-        WHERE dd.full_date >= CURRENT_DATE - INTERVAL '7 days'
-        GROUP BY dp.product_name
+            p.product_name,
+            SUM(oi.quantity)   AS qty_sold,
+            SUM(oi.subtotal)   AS revenue,
+            COALESCE(MIN(pv.stock_quantity), 0) AS stock
+        FROM public.order_items oi
+        JOIN public.orders   o  ON oi.order_id   = o.order_id
+        JOIN public.products p  ON oi.product_id = p.product_id
+        LEFT JOIN public.product_variations pv ON pv.product_id = p.product_id AND pv.is_active
+        WHERE o.status NOT IN ('CANCELLED','RETURNED')
+          AND o.order_date >= CURRENT_DATE - INTERVAL '7 days'
+        GROUP BY p.product_id, p.product_name
         ORDER BY qty_sold DESC
         LIMIT 5
     """
     try:
         df = query_df(sql)
-        if not df.empty:
-            top = df.iloc[0]
+        if df.empty:
+            return recs
+        for i, (_, row) in enumerate(df.iterrows()):
+            stock = int(row.get("stock", 0))
+            qty   = int(row["qty_sold"])
+            if i == 0:
+                recs.append(Recommendation(
+                    priority="MEDIUM",
+                    category="Sản phẩm",
+                    title=f"Top sản phẩm: {row['product_name']}",
+                    detail=f"Bán {qty} sản phẩm trong 7 ngày qua – doanh thu {row['revenue']:,.0f} VNĐ.",
+                    action="Đảm bảo tồn kho đủ để đáp ứng nhu cầu. Xem xét nhập thêm hàng.",
+                ))
+            # Cảnh báo tồn kho thấp cho top sản phẩm
+            if stock < 10 and qty > 3:
+                recs.append(Recommendation(
+                    priority="HIGH",
+                    category="Tồn kho",
+                    title=f"Sắp hết hàng: {row['product_name']}",
+                    detail=f"Đang bán nhanh ({qty} đơn/tuần) nhưng tồn kho chỉ còn {stock} sản phẩm.",
+                    action="Đặt hàng ngay để tránh mất đơn hàng trong 1–2 ngày tới.",
+                ))
+    except Exception:
+        pass
+    return recs
+
+
+def _analyze_revenue_trend() -> List[Recommendation]:
+    """So sánh doanh thu 7 ngày qua vs 7 ngày trước đó."""
+    recs = []
+    sql = """
+        SELECT
+            SUM(CASE WHEN order_date >= CURRENT_DATE - 7  THEN total_amount ELSE 0 END) AS curr,
+            SUM(CASE WHEN order_date >= CURRENT_DATE - 14
+                      AND order_date <  CURRENT_DATE - 7  THEN total_amount ELSE 0 END) AS prev,
+            COUNT(CASE WHEN order_date >= CURRENT_DATE - 7  THEN 1 END) AS curr_orders,
+            COUNT(CASE WHEN order_date >= CURRENT_DATE - 14
+                        AND order_date <  CURRENT_DATE - 7  THEN 1 END) AS prev_orders
+        FROM public.orders
+        WHERE status NOT IN ('CANCELLED','RETURNED')
+          AND order_date >= CURRENT_DATE - 14
+    """
+    try:
+        df = query_df(sql)
+        if df.empty:
+            return recs
+        row  = df.iloc[0]
+        curr = float(row["curr"] or 0)
+        prev = float(row["prev"] or 0)
+        curr_ord = int(row["curr_orders"] or 0)
+        prev_ord = int(row["prev_orders"] or 0)
+        if prev > 0:
+            chg = (curr - prev) / prev * 100
+            if chg <= -15:
+                recs.append(Recommendation(
+                    priority="HIGH",
+                    category="Doanh thu",
+                    title=f"Doanh thu giảm {abs(chg):.0f}% so với tuần trước",
+                    detail=f"Tuần này: {curr:,.0f} VNĐ ({curr_ord} đơn) – tuần trước: {prev:,.0f} VNĐ ({prev_ord} đơn).",
+                    action="Kiểm tra lý do hủy đơn, tình trạng tồn kho, và hiệu quả quảng cáo.",
+                ))
+            elif chg >= 20:
+                recs.append(Recommendation(
+                    priority="LOW",
+                    category="Doanh thu",
+                    title=f"Doanh thu tăng trưởng tốt +{chg:.0f}% so với tuần trước",
+                    detail=f"Tuần này: {curr:,.0f} VNĐ ({curr_ord} đơn) – tuần trước: {prev:,.0f} VNĐ ({prev_ord} đơn).",
+                    action="Duy trì chiến lược hiện tại. Xem xét mở rộng ngân sách quảng cáo.",
+                ))
+        if curr_ord == 0:
             recs.append(Recommendation(
-                priority="MEDIUM",
-                category="INVENTORY",
-                title=f"Top sản phẩm: {top['product_name']}",
-                detail=f"Bán {int(top['qty_sold'])} sản phẩm trong 7 ngày qua – doanh thu {top['revenue']:,.0f} VNĐ.",
-                action="Đảm bảo tồn kho đủ để đáp ứng nhu cầu. Xem xét nhập thêm hàng.",
+                priority="HIGH",
+                category="Doanh thu",
+                title="Không có đơn hàng trong 7 ngày qua",
+                detail="Hệ thống chưa ghi nhận đơn hàng mới trong 7 ngày gần nhất.",
+                action="Kiểm tra kết nối API các kênh bán hàng và trạng thái import dữ liệu.",
             ))
     except Exception:
         pass
+    return recs
+
+
+def _analyze_cancellation_rate() -> List[Recommendation]:
+    """Cảnh báo tỷ lệ hủy đơn cao."""
+    recs = []
+    sql = """
+        SELECT
+            COUNT(*) FILTER (WHERE status = 'CANCELLED') AS cancelled,
+            COUNT(*) AS total
+        FROM public.orders
+        WHERE order_date >= CURRENT_DATE - 14
+    """
+    try:
+        df = query_df(sql)
+        if df.empty:
+            return recs
+        row   = df.iloc[0]
+        total = int(row["total"] or 0)
+        canc  = int(row["cancelled"] or 0)
+        if total >= 10:
+            rate = canc / total * 100
+            if rate >= 20:
+                recs.append(Recommendation(
+                    priority="HIGH",
+                    category="Bất thường",
+                    title=f"Tỷ lệ hủy đơn cao: {rate:.0f}%",
+                    detail=f"{canc}/{total} đơn hàng bị hủy trong 14 ngày qua.",
+                    action="Rà soát nguyên nhân hủy (hết hàng, giá sai, lỗi vận chuyển) và liên hệ khách hàng.",
+                ))
+            elif rate >= 10:
+                recs.append(Recommendation(
+                    priority="MEDIUM",
+                    category="Bất thường",
+                    title=f"Tỷ lệ hủy đơn cần chú ý: {rate:.0f}%",
+                    detail=f"{canc}/{total} đơn hàng bị hủy trong 14 ngày qua.",
+                    action="Theo dõi xu hướng – nếu tiếp tục tăng cần xem xét chính sách đổi trả.",
+                ))
+    except Exception:
+        pass
+    return recs
+
+
+def _analyze_unpaid_orders() -> List[Recommendation]:
+    """Cảnh báo đơn hàng chưa thanh toán tích lũy."""
+    recs = []
+    sql = """
+        SELECT COUNT(*) AS cnt, COALESCE(SUM(total_amount), 0) AS total_value
+        FROM public.orders
+        WHERE payment_status = 'UNPAID'
+          AND status NOT IN ('CANCELLED','RETURNED')
+          AND order_date >= CURRENT_DATE - 30
+    """
+    try:
+        df = query_df(sql)
+        if df.empty:
+            return recs
+        row = df.iloc[0]
+        cnt = int(row["cnt"] or 0)
+        val = float(row["total_value"] or 0)
+        if cnt >= 5:
+            recs.append(Recommendation(
+                priority="MEDIUM",
+                category="Doanh thu",
+                title=f"{cnt} đơn hàng chưa thanh toán ({val:,.0f} VNĐ)",
+                detail=f"Có {cnt} đơn hàng COD/chuyển khoản chưa xác nhận thanh toán trong 30 ngày qua.",
+                action="Liên hệ khách hàng xác nhận hoặc chuyển sang trạng thái đã thanh toán.",
+            ))
+    except Exception:
+        pass
+    return recs
+
+
+def _analyze_channel_mix() -> List[Recommendation]:
+    """Phân tích đa dạng kênh bán – cảnh báo phụ thuộc 1 kênh."""
+    recs = []
+    sql = """
+        SELECT sc.channel_name, SUM(o.total_amount) AS revenue
+        FROM public.orders o
+        JOIN public.sales_channels sc ON o.channel_id = sc.channel_id
+        WHERE o.status NOT IN ('CANCELLED','RETURNED')
+          AND o.order_date >= CURRENT_DATE - 30
+        GROUP BY sc.channel_name
+        ORDER BY revenue DESC
+    """
+    try:
+        df = query_df(sql)
+        if df.empty or len(df) < 2:
+            return recs
+        total = df["revenue"].sum()
+        top   = df.iloc[0]
+        pct   = top["revenue"] / total * 100 if total else 0
+        if pct >= 70:
+            recs.append(Recommendation(
+                priority="MEDIUM",
+                category="Kênh bán hàng",
+                title=f"Phụ thuộc cao vào kênh {top['channel_name']} ({pct:.0f}%)",
+                detail=f"Kênh {top['channel_name']} chiếm {pct:.0f}% doanh thu 30 ngày – các kênh khác chiếm phần nhỏ.",
+                action="Đầu tư phát triển thêm kênh thứ 2 để giảm rủi ro phụ thuộc.",
+            ))
+        # Kênh đang tăng trưởng nhanh
+        for _, row in df.iterrows():
+            if row["revenue"] / total * 100 < 5 and row["revenue"] > 0:
+                recs.append(Recommendation(
+                    priority="LOW",
+                    category="Kênh bán hàng",
+                    title=f"Kênh {row['channel_name']} chưa được khai thác",
+                    detail=f"Chỉ chiếm {row['revenue']/total*100:.1f}% doanh thu – tiềm năng còn lớn.",
+                    action=f"Thử chạy flash sale hoặc tăng quảng cáo trên kênh {row['channel_name']}.",
+                ))
+                break  # chỉ cảnh báo 1 kênh yếu nhất
+    except Exception:
+        pass
+    return recs
+
+
+def _analyze_forecast() -> List[Recommendation]:
+    """
+    Dự báo Prophet 7 ngày tới và so sánh với 7 ngày hiện tại.
+    Gợi ý hành động phòng ngừa (proactive) thay vì chỉ phản ứng sau khi đã xảy ra.
+    """
+    recs = []
+    try:
+        from services.prophet_service import forecast_revenue, get_actual_revenue
+
+        forecast = forecast_revenue(horizon_days=7)
+        history  = get_actual_revenue(days=7)
+
+        if not forecast or not history:
+            return recs
+
+        forecast_total = sum(p["forecast"] for p in forecast)
+        actual_total   = sum(p["actual"]   for p in history)
+
+        if actual_total <= 0:
+            return recs
+
+        change_pct = (forecast_total - actual_total) / actual_total * 100
+
+        if change_pct <= -20:
+            recs.append(Recommendation(
+                priority="HIGH",
+                category="FORECAST",
+                title=f"Dự báo: Doanh thu 7 ngày tới giảm {abs(change_pct):.0f}%",
+                detail=(
+                    f"Mô hình Prophet dự báo doanh thu 7 ngày tới ≈ {forecast_total:,.0f} VNĐ, "
+                    f"thấp hơn {abs(change_pct):.0f}% so với 7 ngày qua ({actual_total:,.0f} VNĐ). "
+                    "Đây là cảnh báo sớm trước khi doanh thu thực sự sụt giảm."
+                ),
+                action="Chủ động chạy khuyến mãi hoặc tăng ngân sách quảng cáo ngay trong tuần này.",
+            ))
+        elif change_pct <= -10:
+            recs.append(Recommendation(
+                priority="MEDIUM",
+                category="FORECAST",
+                title=f"Dự báo: Doanh thu 7 ngày tới giảm nhẹ {abs(change_pct):.0f}%",
+                detail=(
+                    f"Prophet dự báo ≈ {forecast_total:,.0f} VNĐ – giảm {abs(change_pct):.0f}% "
+                    f"so với tuần hiện tại ({actual_total:,.0f} VNĐ)."
+                ),
+                action="Theo dõi chặt chỉ số tỷ lệ chuyển đổi và tồn kho các sản phẩm chủ lực.",
+            ))
+        elif change_pct >= 15:
+            recs.append(Recommendation(
+                priority="LOW",
+                category="FORECAST",
+                title=f"Dự báo: Doanh thu 7 ngày tới tăng {change_pct:.0f}%",
+                detail=(
+                    f"Prophet dự báo ≈ {forecast_total:,.0f} VNĐ – tăng {change_pct:.0f}% "
+                    f"so với tuần hiện tại ({actual_total:,.0f} VNĐ)."
+                ),
+                action="Đảm bảo tồn kho đủ hàng và nguồn lực xử lý đơn tăng cao.",
+            ))
+    except Exception as e:
+        logger.warning("Prophet forecast analyzer lỗi: %s", e)
+    return recs
+
+
+def _analyze_rfm_segments() -> List[Recommendation]:
+    """
+    Đọc kết quả phân khúc RFM từ file JSON (sinh bởi notebook 04).
+    Gợi ý hành động tái tương tác khách hàng At Risk / Lost và khai thác Champions.
+    """
+    recs = []
+    try:
+        if not os.path.exists(_RFM_PATH):
+            return recs
+        with open(_RFM_PATH, encoding="utf-8") as f:
+            rfm_data = json.load(f)
+
+        segments = rfm_data.get("segment_summary", {})
+        total    = rfm_data.get("total_customers", 0)
+        if not segments or total <= 0:
+            return recs
+
+        # Khách hàng At Risk — có nguy cơ rời bỏ
+        at_risk = segments.get("At Risk", {})
+        at_risk_cnt = int(at_risk.get("count", 0))
+        if at_risk_cnt >= 5:
+            pct = round(at_risk_cnt / total * 100, 1)
+            avg_rev = at_risk.get("avg_monetary", 0)
+            recs.append(Recommendation(
+                priority="HIGH",
+                category="CUSTOMER",
+                title=f"Cảnh báo: {at_risk_cnt} khách hàng At Risk ({pct}% tổng khách)",
+                detail=(
+                    f"{at_risk_cnt} khách từng mua thường xuyên nhưng gần đây không mua nữa. "
+                    f"CLV trung bình: {avg_rev:,.0f} VNĐ/người. "
+                    f"Nếu mất hết nhóm này, doanh thu tiềm năng giảm "
+                    f"~{at_risk_cnt * avg_rev:,.0f} VNĐ."
+                ),
+                action="Gửi voucher giảm giá 10-15% cho nhóm At Risk ngay trong tuần này.",
+            ))
+
+        # Khách hàng Lost — đã mất
+        lost = segments.get("Lost", {})
+        lost_cnt = int(lost.get("count", 0))
+        if lost_cnt >= 10:
+            pct = round(lost_cnt / total * 100, 1)
+            recs.append(Recommendation(
+                priority="MEDIUM",
+                category="CUSTOMER",
+                title=f"{lost_cnt} khách hàng đã ngừng mua ({pct}% tổng khách)",
+                detail=(
+                    f"Nhóm Lost là khách từng mua nhưng đã ngừng liên hệ quá lâu. "
+                    f"Tỷ lệ win-back trung bình ngành ~15-20%."
+                ),
+                action="Chạy chiến dịch re-engagement với ưu đãi đặc biệt 'Nhớ bạn – Giảm 20%'.",
+            ))
+
+        # Khai thác Champions
+        champs = segments.get("Champions", {})
+        champs_cnt = int(champs.get("count", 0))
+        if champs_cnt >= 3:
+            avg_rev = champs.get("avg_monetary", 0)
+            recs.append(Recommendation(
+                priority="LOW",
+                category="CUSTOMER",
+                title=f"Cơ hội: {champs_cnt} khách Champions sẵn sàng upsell",
+                detail=(
+                    f"Nhóm Champions là khách mua thường xuyên và chi tiêu cao nhất. "
+                    f"CLV TB: {avg_rev:,.0f} VNĐ/người."
+                ),
+                action="Mời vào chương trình VIP / loyalty. Ưu đãi preview sản phẩm mới.",
+            ))
+    except Exception as e:
+        logger.warning("RFM analyzer lỗi: %s", e)
+    return recs
+
+
+def _analyze_basket_opportunities(company_id: str = None) -> List[Recommendation]:
+    """
+    Dùng kết quả Market Basket Analysis (Apriori) để gợi ý bundle/cross-sell.
+    Chỉ gợi ý khi có rules thật (is_mock=False).
+    """
+    recs = []
+    try:
+        result = run_basket_analysis(company_id=company_id, days=180, top_n=3)
+        if result.get("is_mock") or not result.get("rules"):
+            return recs
+
+        top_rules = result["rules"][:2]  # Chỉ lấy 2 rule có lift cao nhất
+        for rule in top_rules:
+            ante = " + ".join(rule["antecedents"])
+            cons = " + ".join(rule["consequents"])
+            lift = rule["lift"]
+            conf = round(rule["confidence"] * 100, 0)
+            txns = rule["transactions"]
+            recs.append(Recommendation(
+                priority="MEDIUM",
+                category="MARKETING",
+                title=f"Cơ hội bundle: {ante} → {cons}",
+                detail=(
+                    f"{conf:.0f}% khách mua '{ante}' cũng mua '{cons}' (lift={lift}x, "
+                    f"{txns} đơn thực tế). "
+                    f"Lift > 1 chứng tỏ 2 sản phẩm này có mối quan hệ mua chung thực sự."
+                ),
+                action=(
+                    f"Tạo combo '{ante} + {cons}' với giá ưu đãi 5-10%. "
+                    "Hiển thị gợi ý 'Thường mua cùng' trên trang sản phẩm."
+                    if lift >= 2 else
+                    f"Thêm '{cons}' vào mục 'Khách hàng cũng thích' trên trang '{ante}'."
+                ),
+            ))
+    except Exception as e:
+        logger.warning("Basket opportunity analyzer lỗi: %s", e)
     return recs
 
 
@@ -314,26 +672,40 @@ def _analyze_top_products() -> List[Recommendation]:
     response_model=RecommendationResponse,
     summary="Gợi ý hành động từ AI",
     description=(
-        "Phân tích tổng hợp dữ liệu (trend, anomaly, channel, product) "
-        "và đưa ra các gợi ý hành động ưu tiên cho người quản lý."
+        "Phân tích tổng hợp 10 tín hiệu: trend, forecast (Prophet), anomaly, "
+        "channel, product, cancel rate, unpaid, RFM segments, market basket. "
+        "Đưa ra gợi ý hành động ưu tiên cho người quản lý."
     ),
 )
-def get_recommendations():
+def get_recommendations(company_id: Optional[str] = Query(default=None)):
     try:
         recs: List[Recommendation] = []
 
-        recs += _analyze_channel_performance()
-        recs += _analyze_anomalies()
+        recs += _analyze_revenue_trend()
+        recs += _analyze_forecast()            # Prophet ML — dự báo 7 ngày tới
         recs += _analyze_top_products()
+        recs += _analyze_channel_performance()
+        recs += _analyze_channel_mix()
+        recs += _analyze_cancellation_rate()
+        recs += _analyze_unpaid_orders()
+        recs += _analyze_anomalies()           # Z-score ML — phát hiện bất thường
+        recs += _analyze_rfm_segments()        # RFM clustering — phân khúc KH
+        recs += _analyze_basket_opportunities(company_id)  # Apriori MBA — cơ hội bundle
 
-        # Sắp xếp theo priority
+        # Sắp xếp theo priority rồi loại trùng title
         priority_order = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
         recs.sort(key=lambda r: priority_order.get(r.priority, 9))
+        seen = set()
+        unique: List[Recommendation] = []
+        for r in recs:
+            if r.title not in seen:
+                seen.add(r.title)
+                unique.append(r)
 
         return RecommendationResponse(
             generated_at=datetime.now(timezone.utc).isoformat(),
-            total=len(recs),
-            recommendations=recs,
+            total=len(unique),
+            recommendations=unique,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Lỗi sinh gợi ý: {e}")
