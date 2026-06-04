@@ -505,7 +505,10 @@
       "medium": "Medium",
       "low": "Low"
     },
-    "noAnomaly": "No anomalies detected in this period"
+    "noAnomaly": "No anomalies detected in this period",
+    "highSeverityBadge": "{{count}} high",
+    "noHighSeverity": "None high",
+    "analyzingMsg": "Analyzing..."
   },
   "recommendations": {
     "title": "AI Recommendations",

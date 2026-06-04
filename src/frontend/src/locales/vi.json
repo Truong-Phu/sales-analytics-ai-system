@@ -505,7 +505,10 @@
       "medium": "Trung bình",
       "low": "Thấp"
     },
-    "noAnomaly": "Không phát hiện bất thường trong khoảng thời gian này"
+    "noAnomaly": "Không phát hiện bất thường trong khoảng thời gian này",
+    "highSeverityBadge": "{{count}} nghiêm trọng",
+    "noHighSeverity": "Không có mức cao",
+    "analyzingMsg": "Đang phân tích..."
   },
   "recommendations": {
     "title": "Đề xuất từ AI",

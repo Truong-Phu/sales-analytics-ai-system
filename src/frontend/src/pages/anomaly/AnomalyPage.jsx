@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import AiEmptyState from '../../components/ui/AiEmptyState'
+import InfoTooltip from '../../components/ui/InfoTooltip'
+import { MT } from '../../constants/metricTooltips'
 import { getAnomaly } from '../../api/aiApi'
 
 const SEVERITY_COLOR = {
@@ -11,15 +13,16 @@ const SEVERITY_COLOR = {
 const CHANNEL_KEYS = ['all', 'shopee', 'lazada', 'tiktok']
 
 function SeverityBadge({ level }) {
+  const { t } = useTranslation()
   const c = SEVERITY_COLOR[level] ?? SEVERITY_COLOR.low
-  const labels = { high: 'Cao', medium: 'Trung bình', low: 'Thấp' }
+  const label = t(`anomaly.severity.${level}`, level)
   return (
     <span
       className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
       style={{ background: c.bg, border: `1px solid ${c.border}`, color: c.text }}
     >
       <span className="w-1.5 h-1.5 rounded-full" style={{ background: c.dot }} />
-      {labels[level] ?? level}
+      {label}
     </span>
   )
 }
@@ -133,7 +136,7 @@ export default function AnomalyPage() {
                 animation: 'spin 0.8s linear infinite',
               }}
             />
-            <span className="text-sm">Đang phân tích...</span>
+            <span className="text-sm">{t('common.loading')}</span>
           </div>
         </div>
       ) : !data ? (
@@ -143,13 +146,16 @@ export default function AnomalyPage() {
           {/* Summary KPI row */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             {[
-              { label: t('anomaly.total'),       value: anomalies.length, color: 'var(--text-primary)', icon: 'warning_amber' },
-              { label: t('anomaly.highSeverity'), value: highCount,        color: '#EF4444',             icon: 'error_outline'  },
-              { label: t('anomaly.maxZScore'),    value: maxZ > 0 ? `${maxZ.toFixed(2)}σ` : '–', color: 'var(--primary-500)', icon: 'show_chart' },
+              { label: t('anomaly.total'),       tooltip: MT.anomaly,  value: anomalies.length, color: 'var(--text-primary)', icon: 'warning_amber' },
+              { label: t('anomaly.highSeverity'), tooltip: null,         value: highCount,        color: '#EF4444',             icon: 'error_outline'  },
+              { label: t('anomaly.maxZScore'),    tooltip: MT.zScore,   value: maxZ > 0 ? `${maxZ.toFixed(2)}σ` : '–', color: 'var(--primary-500)', icon: 'show_chart' },
             ].map(card => (
               <div key={card.label} className="lcard p-5">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-medium" style={{ color: 'var(--text-tertiary)' }}>{card.label}</span>
+                  <span className="inline-flex items-center gap-0.5 text-xs font-medium" style={{ color: 'var(--text-tertiary)' }}>
+                    {card.label}
+                    {card.tooltip && <InfoTooltip {...card.tooltip} placement="top" />}
+                  </span>
                   <span
                     className="icon w-8 h-8 flex items-center justify-center rounded-lg"
                     style={{ fontSize: 18, background: `${card.color}18`, color: card.color }}
@@ -181,7 +187,7 @@ export default function AnomalyPage() {
                     {t('anomaly.list')}
                   </h3>
                   <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
-                    {anomalies.length} điểm bất thường được phát hiện
+                    {t('anomaly.detected')}: {anomalies.length}
                   </p>
                 </div>
                 <span
@@ -192,17 +198,25 @@ export default function AnomalyPage() {
                     border: `1px solid ${highCount > 0 ? 'rgba(239,68,68,0.30)' : 'rgba(16,185,129,0.30)'}`,
                   }}
                 >
-                  {highCount > 0 ? `${highCount} nghiêm trọng` : 'Không có mức cao'}
+                  {highCount > 0 ? t('anomaly.highSeverityBadge', { count: highCount }) : t('anomaly.noHighSeverity')}
                 </span>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-elevated)' }}>
-                      {[t('anomaly.date'), t('common.channel'), t('anomaly.value'), 'Z-Score', t('common.severity')].map(h => (
+                      {[
+                        { h: t('anomaly.date'),     tip: null         },
+                        { h: t('common.channel'),   tip: MT.salesChannel },
+                        { h: t('anomaly.value'),    tip: MT.netRevenue },
+                        { h: t('anomaly.zscore'),   tip: MT.zScore    },
+                        { h: t('common.severity'),  tip: MT.anomaly   },
+                      ].map(({ h, tip }) => (
                         <th key={h} className="text-left px-5 py-3 text-xs font-semibold tracking-wide"
                             style={{ color: 'var(--text-tertiary)' }}>
-                          {h}
+                          <span className="inline-flex items-center gap-0.5">
+                            {h}{tip && <InfoTooltip {...tip} placement="bottom" />}
+                          </span>
                         </th>
                       ))}
                     </tr>
