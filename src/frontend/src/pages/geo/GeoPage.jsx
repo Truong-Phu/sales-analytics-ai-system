@@ -1,4 +1,5 @@
 ﻿import { useState, useEffect, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import MockToast from '../../components/ui/MockToast'
 import AiEmptyState from '../../components/ui/AiEmptyState'
 import { getGeoDistribution } from '../../api/aiApi'
@@ -29,6 +30,7 @@ function getColor(intensity) {
 }
 
 export default function GeoPage() {
+  const { t } = useTranslation()
   const [data,     setData]     = useState(null)
   const [loading,  setLoading]  = useState(true)
   const [isMock,   setIsMock]   = useState(false)
@@ -82,9 +84,9 @@ export default function GeoPage() {
         circle.bindPopup(`
           <div style="min-width:160px;font-family:sans-serif">
             <strong style="font-size:14px;color:#111827">${point.province}</strong><br>
-            <span style="color:#6B7280;font-size:12px">Khách hàng: <strong style="color:#111827">${point.customer_count.toLocaleString()}</strong></span><br>
-            <span style="color:#6B7280;font-size:12px">Doanh thu: <strong style="color:#111827">${(point.revenue/1e6).toFixed(1)}M VNĐ</strong></span><br>
-            <span style="color:#6B7280;font-size:12px">Đơn hàng: <strong style="color:#111827">${point.orders.toLocaleString()}</strong></span>
+            <span style="color:#6B7280;font-size:12px">${t('geo.popupCustomers')}: <strong style="color:#111827">${point.customer_count.toLocaleString()}</strong></span><br>
+            <span style="color:#6B7280;font-size:12px">${t('geo.popupRevenue')}: <strong style="color:#111827">${(point.revenue/1e6).toFixed(1)}M VNĐ</strong></span><br>
+            <span style="color:#6B7280;font-size:12px">${t('geo.popupOrders')}: <strong style="color:#111827">${point.orders.toLocaleString()}</strong></span>
           </div>
         `)
         circle.on('click', () => setSelected(point))
@@ -112,7 +114,11 @@ export default function GeoPage() {
     initMap()
   }, [data, loading, metric])
 
-  const metricLabel = { customers: 'Khách hàng', revenue: 'Doanh thu', orders: 'Đơn hàng' }
+  const metricLabel = {
+    customers: t('geo.metricCustomers'),
+    revenue:   t('geo.metricRevenue'),
+    orders:    t('geo.metricOrders'),
+  }
   const fmt = v => v >= 1e9 ? `${(v/1e9).toFixed(1)}B` : v >= 1e6 ? `${(v/1e6).toFixed(1)}M` : v.toLocaleString()
 
   return (
@@ -121,30 +127,30 @@ export default function GeoPage() {
       {/* Header */}
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Bản đồ Nhiệt Khách hàng</h1>
-          <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>Phân bổ khách hàng và doanh thu theo 63 tỉnh/thành Việt Nam</p>
+          <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>{t('geo.title')}</h1>
+          <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>{t('geo.subtitle')}</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap justify-end">
           <select value={metric} onChange={e => setMetric(e.target.value)} className="linput text-sm" style={{ width: 130 }}>
-            <option value="customers">Khách hàng</option>
-            <option value="revenue">Doanh thu</option>
-            <option value="orders">Đơn hàng</option>
+            <option value="customers">{t('geo.metricCustomers')}</option>
+            <option value="revenue">{t('geo.metricRevenue')}</option>
+            <option value="orders">{t('geo.metricOrders')}</option>
           </select>
           <DateRangeFilter from={from} to={to} onChange={(f, t) => { setFrom(f); setTo(t) }}
             presets={['all','today','days_7','days_30','days_90','custom']} />
         </div>
       </div>
 
-      {!data && !loading && <AiEmptyState title="Chưa đủ dữ liệu phân tích phân bổ địa lý" />}
+      {!data && !loading && <AiEmptyState title={t('geo.emptyState')} />}
 
       {/* Summary cards */}
       {data && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {[
-            { label: 'Tổng khách hàng', value: data.total_customers.toLocaleString(), color: '#3B82F6' },
-            { label: 'Số tỉnh/thành',   value: data.total_provinces,                 color: '#22C55E' },
-            { label: 'Tỉnh dẫn đầu',    value: data.top_province,                    color: '#F59E0B' },
-            { label: 'Kỳ phân tích',     value: `${data.analysis_days} ngày`,         color: 'var(--text-secondary)' },
+            { label: t('geo.kpiTotal'),     value: data.total_customers.toLocaleString(), color: '#3B82F6' },
+            { label: t('geo.kpiProvinces'), value: data.total_provinces,                 color: '#22C55E' },
+            { label: t('geo.kpiLeading'),   value: data.top_province,                    color: '#F59E0B' },
+            { label: t('geo.kpiPeriod'),    value: `${data.analysis_days} ${t('geo.daysSuffix')}`, color: 'var(--text-secondary)' },
           ].map(k => (
             <div key={k.label} className="lcard p-4">
               <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{k.label}</div>
@@ -159,7 +165,7 @@ export default function GeoPage() {
         <div className="lcard overflow-hidden lg:col-span-2">
           <div className="px-4 py-3 text-sm font-medium"
             style={{ borderBottom: '1px solid var(--border)', color: 'var(--text-secondary)' }}>
-            🗺️ Bản đồ phân bổ – {metricLabel[metric]}
+            {t('geo.mapTitle', { metric: metricLabel[metric] })}
           </div>
           {loading ? (
             <div className="h-80 flex items-center justify-center" style={{ color: 'var(--text-tertiary)' }}>
@@ -172,11 +178,11 @@ export default function GeoPage() {
           {/* Legend */}
           <div className="px-4 py-3 flex items-center gap-3 text-xs"
             style={{ borderTop: '1px solid var(--border)', color: 'var(--text-tertiary)' }}>
-            <span>Thấp</span>
+            <span>{t('geo.legendLow')}</span>
             {['#3B82F6','#22C55E','#F59E0B','#F97316','#EF4444'].map(c => (
               <div key={c} className="w-4 h-3 rounded-sm" style={{ background: c }} />
             ))}
-            <span>Cao</span>
+            <span>{t('geo.legendHigh')}</span>
           </div>
         </div>
 
@@ -184,7 +190,7 @@ export default function GeoPage() {
         <div className="lcard flex flex-col" style={{ minHeight: 300 }}>
           <div className="px-4 py-3 text-sm font-medium"
             style={{ borderBottom: '1px solid var(--border)', color: 'var(--text-secondary)' }}>
-            🏆 Top tỉnh/thành
+            {t('geo.rankingTitle')}
           </div>
           <div className="flex-1 overflow-y-auto">
             {(data?.points ?? [])
@@ -232,9 +238,9 @@ export default function GeoPage() {
           </div>
           <div className="grid grid-cols-3 gap-4">
             {[
-              { label: 'Khách hàng', value: selected.customer_count.toLocaleString(), color: '#3B82F6' },
-              { label: 'Doanh thu',  value: `${(selected.revenue/1e6).toFixed(1)}M VNĐ`, color: '#22C55E' },
-              { label: 'Đơn hàng',  value: selected.orders.toLocaleString(),             color: '#F59E0B' },
+              { label: t('geo.popupCustomers'), value: selected.customer_count.toLocaleString(), color: '#3B82F6' },
+              { label: t('geo.popupRevenue'),   value: `${(selected.revenue/1e6).toFixed(1)}M VNĐ`, color: '#22C55E' },
+              { label: t('geo.popupOrders'),    value: selected.orders.toLocaleString(),             color: '#F59E0B' },
             ].map(k => (
               <div key={k.label}>
                 <div className="text-sm mb-1" style={{ color: 'var(--text-secondary)' }}>{k.label}</div>

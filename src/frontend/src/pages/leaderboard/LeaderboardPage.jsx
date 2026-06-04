@@ -1,29 +1,7 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import AiEmptyState from '../../components/ui/AiEmptyState'
 import { getLeaderboard } from '../../api/aiApi'
-
-const CATEGORIES = [
-  { value: 'product',  label: 'Sản phẩm',  icon: '📦' },
-  { value: 'customer', label: 'Khách hàng', icon: '👑' },
-  { value: 'channel',  label: 'Kênh bán',   icon: '🏪' },
-  { value: 'staff',    label: 'Nhân viên',  icon: '🏆' },
-]
-
-// Sub-tabs chỉ hiện khi category = 'staff'
-const STAFF_SUBTABS = [
-  { value: 'staff',           label: 'Bán hàng', icon: 'storefront',   unit: 'đơn offline' },
-  { value: 'staff_warehouse', label: 'Kho',       icon: 'warehouse',    unit: 'phiếu nhập'  },
-  { value: 'staff_marketing', label: 'Marketing', icon: 'campaign',     unit: 'tháng chi phí' },
-]
-
-const TIME_FILTERS = [
-  { value: 'all',        label: 'Tất cả' },
-  { value: 'this_month', label: 'Tháng này' },
-  { value: 'last_month', label: 'Tháng trước' },
-  { value: 'days_30',    label: '30 ngày' },
-  { value: 'days_90',    label: '90 ngày' },
-  { value: 'custom',     label: 'Tùy chỉnh' },
-]
 
 const TREND_ICON  = { UP: '↑', DOWN: '↓', STABLE: '→' }
 const TREND_COLOR = { UP: '#22C55E', DOWN: '#EF4444', STABLE: 'var(--text-tertiary)' }
@@ -57,18 +35,39 @@ function buildApiParams(mode, customStart, customEnd, category) {
 }
 
 export default function LeaderboardPage() {
+  const { t } = useTranslation()
   const [data,        setData]        = useState(null)
   const [loading,     setLoading]     = useState(true)
   const [category,    setCategory]    = useState('product')
-  const [staffTab,    setStaffTab]    = useState('staff')   // sub-tab khi category=staff
+  const [staffTab,    setStaffTab]    = useState('staff')
   const [timeMode,    setTimeMode]    = useState('days_30')
   const [customStart, setCustomStart] = useState('')
   const [customEnd,   setCustomEnd]   = useState('')
 
-  // Category thực sự gửi lên API
-  const apiCategory = category === 'staff' ? staffTab : category
+  const CATEGORIES = [
+    { value: 'product',  label: t('leaderboard.catProducts'),  icon: '📦' },
+    { value: 'customer', label: t('leaderboard.catCustomers'), icon: '👑' },
+    { value: 'channel',  label: t('leaderboard.catChannels'),  icon: '🏪' },
+    { value: 'staff',    label: t('leaderboard.catStaff'),     icon: '🏆' },
+  ]
 
-  const activeSubtab = STAFF_SUBTABS.find(t => t.value === staffTab) ?? STAFF_SUBTABS[0]
+  const STAFF_SUBTABS = [
+    { value: 'staff',           label: t('leaderboard.staffSales'),     icon: 'storefront', unit: t('leaderboard.unitOfflineOrders') },
+    { value: 'staff_warehouse', label: t('leaderboard.staffWarehouse'), icon: 'warehouse',  unit: t('leaderboard.unitWarehouseEntries') },
+    { value: 'staff_marketing', label: t('leaderboard.staffMarketing'), icon: 'campaign',   unit: t('leaderboard.unitMonthlyBudget') },
+  ]
+
+  const TIME_FILTERS = [
+    { value: 'all',        label: t('leaderboard.timeAll') },
+    { value: 'this_month', label: t('leaderboard.timeThisMonth') },
+    { value: 'last_month', label: t('leaderboard.timeLastMonth') },
+    { value: 'days_30',    label: t('leaderboard.time30d') },
+    { value: 'days_90',    label: t('leaderboard.time90d') },
+    { value: 'custom',     label: t('leaderboard.timeCustom') },
+  ]
+
+  const apiCategory = category === 'staff' ? staffTab : category
+  const activeSubtab = STAFF_SUBTABS.find(s => s.value === staffTab) ?? STAFF_SUBTABS[0]
 
   const load = async () => {
     if (timeMode === 'custom' && (!customStart || !customEnd)) return
@@ -86,17 +85,15 @@ export default function LeaderboardPage() {
 
   const hasData = data && (data.entries ?? []).length > 0
 
-  // Label đơn vị đếm theo loại leaderboard
-  const orderUnit = category !== 'staff' ? 'đơn'
-    : activeSubtab.unit
+  const orderUnit = category !== 'staff' ? t('leaderboard.unitOrders') : activeSubtab.unit
 
   return (
     <div className="space-y-5">
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Bảng Xếp hạng Hiệu suất</h1>
-          <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>Top performers – so sánh với kỳ trước</p>
+          <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>{t('leaderboard.title')}</h1>
+          <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>{t('leaderboard.subtitle')}</p>
         </div>
         {/* Time filter pills */}
         <div className="flex items-center gap-1.5 flex-wrap">
@@ -115,10 +112,10 @@ export default function LeaderboardPage() {
       {/* Custom date range */}
       {timeMode === 'custom' && (
         <div className="lcard p-4 flex items-center gap-3 flex-wrap">
-          <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>Từ</span>
+          <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>{t('leaderboard.dateFrom')}</span>
           <input type="date" value={customStart} onChange={e => setCustomStart(e.target.value)}
             className="linput text-sm" style={{ width: 150 }} />
-          <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>đến</span>
+          <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>{t('leaderboard.dateTo')}</span>
           <input type="date" value={customEnd} onChange={e => setCustomEnd(e.target.value)}
             max={new Date().toISOString().split('T')[0]}
             className="linput text-sm" style={{ width: 150 }} />
@@ -171,7 +168,7 @@ export default function LeaderboardPage() {
             style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-elevated)' }}>
             <span className="text-sm" style={{ color: 'var(--text-tertiary)' }}>{data?.period_label}</span>
             <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-              Tổng: <strong style={{ color: 'var(--text-primary)' }}>{((data?.total_revenue ?? 0)/1e6).toFixed(1)}M VNĐ</strong>
+              {t('leaderboard.totalRevLabel', { value: ((data?.total_revenue ?? 0)/1e6).toFixed(1) })}
             </span>
           </div>
 
@@ -216,7 +213,7 @@ export default function LeaderboardPage() {
                   <div className="font-bold" style={{ color: 'var(--text-primary)' }}>{entry.value_label}</div>
                   <div className="text-xs" style={{ color: TREND_COLOR[entry.trend] }}>
                     {TREND_ICON[entry.trend]} {Math.abs(entry.change_pct).toFixed(1)}%
-                    {entry.trend === 'UP' ? ' tăng' : entry.trend === 'DOWN' ? ' giảm' : ' ổn định'}
+                    {' '}{entry.trend === 'UP' ? t('leaderboard.trendUp') : entry.trend === 'DOWN' ? t('leaderboard.trendDown') : t('leaderboard.trendStable')}
                   </div>
                 </div>
               </div>
@@ -224,18 +221,7 @@ export default function LeaderboardPage() {
           </div>
         </div>
       ) : (
-        <AiEmptyState
-          title="Chưa đủ dữ liệu bảng xếp hạng"
-          desc={
-            category === 'staff' && staffTab === 'staff'
-              ? 'Chưa có đơn bán tại quầy trong kỳ này. Thử chọn khoảng thời gian rộng hơn.'
-              : category === 'staff' && staffTab === 'staff_warehouse'
-              ? 'Chưa có phiếu nhập kho trong kỳ này. Thử chọn khoảng thời gian rộng hơn.'
-              : category === 'staff' && staffTab === 'staff_marketing'
-              ? 'Chưa có chi phí quảng cáo được ghi nhận trong kỳ này.'
-              : `Không có dữ liệu trong kỳ đã chọn. Thử chọn khoảng thời gian khác.`
-          }
-        />
+        <AiEmptyState title={t('leaderboard.emptyState')} />
       )}
     </div>
   )

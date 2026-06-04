@@ -1,12 +1,16 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import MockToast from '../../components/ui/MockToast'
 import AiEmptyState from '../../components/ui/AiEmptyState'
+import InfoTooltip from '../../components/ui/InfoTooltip'
+import { MT } from '../../constants/metricTooltips'
 import { getChannelAttribution } from '../../api/aiApi'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 
 const COLORS = ['#6366F1','#22C55E','#F59E0B','#EF4444','#8B5CF6','#06B6D4']
 
 export default function AttributionPage() {
+  const { t } = useTranslation()
   const [data,   setData]   = useState(null)
   const [loading,setLoading]= useState(true)
   const [isMock, setIsMock] = useState(false)
@@ -36,11 +40,11 @@ export default function AttributionPage() {
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Phân bổ Doanh thu theo Kênh</h1>
-          <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>Channel Attribution – ROI quảng cáo theo từng kênh bán</p>
+          <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>{t('attribution.title')}</h1>
+          <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>{t('attribution.subtitle')}</p>
         </div>
         <select value={days} onChange={e => setDays(+e.target.value)} className="linput text-sm" style={{ width: 120 }}>
-          {[7,14,30,90,365].map(d => <option key={d} value={d}>{d} ngày</option>)}
+          {[7,14,30,90,365].map(d => <option key={d} value={d}>{t('attribution.dayOption', { n: d })}</option>)}
         </select>
       </div>
 
@@ -50,7 +54,7 @@ export default function AttributionPage() {
             style={{ borderColor: 'var(--border)', borderTopColor: 'var(--primary-500)' }} />
         </div>
       ) : !data ? (
-        <AiEmptyState title="Chưa đủ dữ liệu phân bổ kênh" />
+        <AiEmptyState title={t('attribution.emptyState')} />
       ) : (
         <>
           {/* Insight */}
@@ -64,7 +68,7 @@ export default function AttributionPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             {/* Pie chart */}
             <div className="lcard p-4">
-              <h3 className="text-sm font-semibold mb-2" style={{ color: 'var(--text-secondary)' }}>Tỷ trọng doanh thu</h3>
+              <h3 className="text-sm font-semibold mb-2" style={{ color: 'var(--text-secondary)' }}>{t('attribution.pieTitle')}</h3>
               <ResponsiveContainer width="100%" height={220}>
                 <PieChart>
                   <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80}
@@ -81,16 +85,18 @@ export default function AttributionPage() {
 
             {/* Summary stats */}
             <div className="lcard p-4 space-y-2">
-              <h3 className="text-sm font-semibold mb-2" style={{ color: 'var(--text-secondary)' }}>Tổng quan</h3>
+              <h3 className="text-sm font-semibold mb-2" style={{ color: 'var(--text-secondary)' }}>{t('attribution.overviewTitle')}</h3>
               {[
-                { label: 'Tổng doanh thu', value: `${fmt(data?.total_revenue ?? 0)} VNĐ`, color: 'var(--primary-500)' },
-                { label: 'Tổng đơn hàng',  value: `${(data?.total_orders ?? 0).toLocaleString()} đơn`, color: '#22C55E' },
-                { label: 'Kênh tốt nhất',  value: data?.top_channel ?? '—', color: '#22C55E' },
-                { label: 'ROI thấp nhất',  value: data?.worst_roi_channel ?? '—', color: '#EF4444' },
+                { label: t('attribution.totalRevenue'), tip: MT.totalRevenue,  value: `${fmt(data?.total_revenue ?? 0)} VNĐ`, color: 'var(--primary-500)' },
+                { label: t('attribution.totalOrders'),  tip: MT.orderCount,   value: `${(data?.total_orders ?? 0).toLocaleString()} ${t('attribution.orderCount', { n: '' }).trim()}`, color: '#22C55E' },
+                { label: t('attribution.bestChannel'),  tip: MT.salesChannel, value: data?.top_channel ?? '—', color: '#22C55E' },
+                { label: t('attribution.lowestRoi'),    tip: MT.roi,          value: data?.worst_roi_channel ?? '—', color: '#EF4444' },
               ].map(k => (
                 <div key={k.label} className="flex justify-between items-center py-2"
                   style={{ borderBottom: '1px solid var(--border)' }}>
-                  <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>{k.label}</span>
+                  <span className="inline-flex items-center gap-0.5 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                    {k.label}<InfoTooltip {...k.tip} placement="top" />
+                  </span>
                   <span className="font-semibold text-sm" style={{ color: k.color }}>{k.value}</span>
                 </div>
               ))}
@@ -100,15 +106,27 @@ export default function AttributionPage() {
           {/* Channel table */}
           <div className="lcard overflow-hidden">
             <div className="px-5 py-3" style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-elevated)' }}>
-              <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Chi tiết theo kênh</h3>
+              <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{t('attribution.detailTitle')}</h3>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                    {['Kênh','Doanh thu','Đơn','AOV','Chi phí ads','ROI','Gợi ý'].map(h => (
+                    {[
+                      { h: t('attribution.colChannel'),    tip: MT.salesChannel     },
+                      { h: t('attribution.colRevenue'),    tip: MT.channelRevenue   },
+                      { h: t('attribution.colOrders'),     tip: MT.orderCount       },
+                      { h: t('attribution.colAov'),        tip: MT.aov              },
+                      { h: t('attribution.colAdCost'),     tip: MT.acos             },
+                      { h: t('attribution.colRoi'),        tip: MT.roi              },
+                      { h: t('attribution.colSuggestion'), tip: null                },
+                    ].map(({ h, tip }) => (
                       <th key={h} className="text-left p-3 text-xs font-semibold"
-                        style={{ color: 'var(--text-tertiary)' }}>{h}</th>
+                        style={{ color: 'var(--text-tertiary)' }}>
+                        <span className="inline-flex items-center gap-0.5">
+                          {h}{tip && <InfoTooltip {...tip} placement="bottom" />}
+                        </span>
+                      </th>
                     ))}
                   </tr>
                 </thead>
