@@ -47,8 +47,8 @@ class BasketResponse(BaseModel):
 )
 def get_basket_analysis(
     days:           int            = Query(default=180, ge=30,   le=365),
-    min_support:    float          = Query(default=0.01, ge=0.005, le=0.5),  # giảm default từ 0.02 → 0.01
-    min_confidence: float          = Query(default=0.2,  ge=0.05,  le=1.0),  # giảm default từ 0.3  → 0.2
+    min_support:    float          = Query(default=0.001, ge=0.0005, le=0.5),  # 0.1% cho dataset 2000+ đơn
+    min_confidence: float          = Query(default=0.1,  ge=0.05,   le=1.0),  # 10%
     min_lift:       float          = Query(default=1.0,  ge=1.0,  le=10.0),
     top_n:          int            = Query(default=20,   ge=1,    le=100),
     company_id:     Optional[str] = Query(default=None),

@@ -76,8 +76,8 @@ def _mock_basket_data() -> list:
 def run_basket_analysis(
     company_id: str = None,
     days: int = 180,
-    min_support: float = 0.01,   # giảm từ 0.02 → 0.01 (1%) cho dataset nhỏ
-    min_confidence: float = 0.2, # giảm từ 0.3 → 0.2 (20%) cho dataset nhỏ
+    min_support: float = 0.001,  # 0.1% — đủ thấp để tìm được rules với dataset 2000+ đơn
+    min_confidence: float = 0.1, # 10%
     min_lift: float = 1.0,
     top_n: int = 20,
 ) -> dict:
@@ -96,22 +96,24 @@ def run_basket_analysis(
     df = _load_order_items(company_id, days)
     n_orders = len(df["order_id"].unique()) if not df.empty else 0
 
-    # Ngưỡng tối thiểu: 5 đơn hàng có dữ liệu (giảm từ 20 để hoạt động với dataset nhỏ)
     if df.empty or n_orders < 5:
-        logger.warning("Không đủ dữ liệu cho basket analysis – dùng mock data (%d đơn)", n_orders)
-        rules_list = _mock_basket_data()
+        logger.info("Chua du don hang cho basket analysis: %d don (can >= 5 don co >= 2 san pham)", n_orders)
         return {
             "total_transactions": n_orders,
-            "total_rules":        len(rules_list),
-            "rules":              rules_list,
+            "total_rules":        0,
+            "rules":              [],
             "parameters": {
                 "days":           days,
                 "min_support":    min_support,
                 "min_confidence": min_confidence,
                 "min_lift":       min_lift,
             },
-            "note": f"Đang dùng dữ liệu mẫu (chỉ có {n_orders} đơn trong {days} ngày – cần ít nhất 5 đơn có nhiều sản phẩm)",
-            "is_mock": True,
+            "note": (
+                f"Chưa đủ dữ liệu để phân tích sản phẩm hay mua chung. "
+                f"Cần ít nhất 5 đơn hàng có từ 2 sản phẩm trở lên. "
+                f"Hiện tại có {n_orders} đơn đủ điều kiện."
+            ),
+            "is_mock": False,
         }
 
     try:

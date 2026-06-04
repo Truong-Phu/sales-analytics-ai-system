@@ -1544,20 +1544,27 @@ function TabCustomer({ data, wd = {}, wl = {} }) {
         })}
       </div>
 
-      <div className="lcard p-5">
+      {/* CLV + Heatmap — 2 cột trên desktop, 1 cột mobile */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="lcard p-5">
           <SectionTitle>{t('dashboard.chart.clv')}</SectionTitle>
           <p className="text-caption mb-2" style={{ color: 'var(--text-tertiary)' }}>
             X: tần suất mua · Y: CLV trung bình · Kích thước: số khách
             {rfmData && <span className="ml-2 font-semibold" style={{ color: 'var(--accent-500)' }}>● Dữ liệu thật</span>}
           </p>
-          <ResponsiveContainer width="100%" height={240}>
-            <ScatterChart margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+          <ResponsiveContainer width="100%" height={220}>
+            <ScatterChart margin={{ top: 8, right: 16, left: 0, bottom: 20 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-              <XAxis dataKey="freq" name="Tần suất" label={{ value: 'Số đơn TB', position: 'insideBottom', offset: -2, fontSize: 10, fill: 'var(--text-tertiary)' }}
-                tick={{ fontSize: 10, fill: 'var(--text-tertiary)' }} axisLine={false} tickLine={false} />
+              <XAxis dataKey="freq" name="Tần suất"
+                label={{ value: 'Số đơn TB', position: 'insideBottom', offset: -12, fontSize: 10, fill: 'var(--text-tertiary)' }}
+                tick={{ fontSize: 10, fill: 'var(--text-tertiary)' }} axisLine={false} tickLine={false}
+                domain={clvScatter.length > 0 ? ['auto', 'auto'] : [0, 5]}
+              />
               <YAxis dataKey="clv" name="CLV" tick={{ fontSize: 10, fill: 'var(--text-tertiary)' }} axisLine={false} tickLine={false} width={56}
-                tickFormatter={v => fmtM(v)} />
-              <ZAxis dataKey="value" range={[50, 350]} name="Số KH" />
+                tickFormatter={v => fmtM(v)}
+                domain={clvScatter.length > 0 ? ['auto', 'auto'] : [0, 1000000]}
+              />
+              <ZAxis dataKey="value" range={[40, 280]} name="Số KH" />
               <Tooltip
                 cursor={{ strokeDasharray: '3 3' }}
                 content={({ payload }) => {
@@ -1576,15 +1583,22 @@ function TabCustomer({ data, wd = {}, wl = {} }) {
               {clvScatter.map((seg, i) => (
                 <Scatter key={seg.name ?? i} name={seg.name} data={[seg]} fill={seg.color ?? CHART_COLORS[i % CHART_COLORS.length]} />
               ))}
-              <Legend wrapperStyle={{ fontSize: 11 }} />
+              <Legend wrapperStyle={{ fontSize: 10 }} />
             </ScatterChart>
           </ResponsiveContainer>
-      </div>
+          {clvScatter.length === 0 && (
+            <p className="text-caption text-center mt-2" style={{ color: 'var(--text-tertiary)' }}>Chưa có dữ liệu RFM</p>
+          )}
+        </div>
 
-      <div className="lcard p-5">
-        <SectionTitle>{t('dashboard.chart.heatmap')}</SectionTitle>
-        <div className="overflow-x-auto">
-          <HeatmapGrid data={data.heatmap ?? []} />
+        <div className="lcard p-5">
+          <SectionTitle>{t('dashboard.chart.heatmap')}</SectionTitle>
+          <p className="text-caption mb-2" style={{ color: 'var(--text-tertiary)' }}>
+            Mật độ đơn hàng theo giờ × ngày trong tuần
+          </p>
+          <div className="overflow-x-auto" style={{ minHeight: 200 }}>
+            <HeatmapGrid data={data.heatmap ?? []} />
+          </div>
         </div>
       </div>
 

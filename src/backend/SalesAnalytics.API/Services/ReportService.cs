@@ -172,57 +172,6 @@ public class ReportService
     private static string S(string lang, string key) =>
         _strings.TryGetValue(lang, out var d) && d.TryGetValue(key, out var v) ? v : key;
 
-    // ── Sample data fallback khi Data Warehouse chưa có dữ liệu thật ──────────
-    private static DashboardResponse GenerateSampleData(DateOnly from, DateOnly to)
-    {
-        var days         = Math.Max(1, to.DayNumber - from.DayNumber + 1);
-        var totalRevenue = 285_000_000m;
-        var totalProfit  =  71_250_000m;
-        var totalOrders  = 1_240;
-
-        var kpi = new KpiSummary(
-            TotalRevenue:       totalRevenue,
-            TotalProfit:        totalProfit,
-            TotalOrders:        totalOrders,
-            AvgOrderValue:      Math.Round(totalRevenue / totalOrders, 0),
-            NewCustomers:       372,
-            RevenueGrowthPct:   12.5m,
-            OrdersGrowthPct:    8.3m,
-            CustomersGrowthPct: 5.1m,
-            ProfitMarginPct:    25.0m
-        );
-
-        var channels = new List<RevenueByChannel>
-        {
-            new("Shopee",      totalRevenue * 0.35m, (int)(totalOrders * 0.35), 35.0m),
-            new("Lazada",      totalRevenue * 0.25m, (int)(totalOrders * 0.25), 25.0m),
-            new("TikTok Shop", totalRevenue * 0.20m, (int)(totalOrders * 0.20), 20.0m),
-            new("Facebook",    totalRevenue * 0.12m, (int)(totalOrders * 0.12), 12.0m),
-            new("Website",     totalRevenue * 0.08m, (int)(totalOrders * 0.08),  8.0m),
-        };
-
-        var products = new List<TopProduct>
-        {
-            new(1, "Áo thun Unisex Cotton",  "AT-001", "Shopee",      380, 380, totalRevenue * 0.12m),
-            new(2, "Quần jeans Slim Fit",     "QJ-002", "Lazada",      295, 295, totalRevenue * 0.09m),
-            new(3, "Giày thể thao Nam",       "GT-003", "TikTok Shop", 260, 260, totalRevenue * 0.08m),
-            new(4, "Túi xách Nữ HQ",          "TX-004", "Shopee",      225, 225, totalRevenue * 0.07m),
-            new(5, "Đầm maxi Boho",           "DM-005", "Facebook",    190, 190, totalRevenue * 0.06m),
-        };
-
-        var rand = new Random(42);
-        var revenueByDay = new List<RevenueByDay>();
-        for (int i = 0; i < days; i++)
-        {
-            var d   = from.AddDays(i);
-            var rev = 8_000_000m + (decimal)(Math.Sin(i / 10.0) * 3_000_000)
-                    + (decimal)(rand.NextDouble() * 2_000_000);
-            revenueByDay.Add(new RevenueByDay(d, Math.Round(rev, 0), Math.Round(rev * 0.25m, 0), rand.Next(15, 36)));
-        }
-
-        return new DashboardResponse(kpi, revenueByDay, channels, products);
-    }
-
     // ── SkiaSharp: Vẽ biểu đồ đường xu hướng → PNG bytes ─────────────────────
     /// <summary>
     /// Render line chart (Doanh thu + Lợi nhuận theo ngày) bằng SkiaSharp.
@@ -908,11 +857,6 @@ public class ReportService
     {
         var data = await _dashboard.GetDashboardAsync(from, to, channel, companyId);
 
-        // Không dùng dữ liệu mẫu cứng — hiển thị dữ liệu thực dù có thể trống
-        var usingSample = data.Kpi.TotalRevenue == 0
-                       && data.RevenueByChannel.Count == 0
-                       && data.TopProducts.Count == 0;
-
         QuestPDF.Settings.License = LicenseType.Community;
 
         var channelDisplay = channel is not null ? channel : S(language, "allChannels");
@@ -972,14 +916,31 @@ public class ReportService
                 cover.Margin(0);
                 cover.DefaultTextStyle(x => x.FontSize(11).FontFamily("Arial"));
 
+                // Footer ở cuối trang — dùng page.Footer() thay vì col.Item().Extend()
+                // để tránh overflow tạo trang 2 trắng
+                cover.Footer().Column(footerCol =>
+                {
+                    footerCol.Item().Background(Color.FromHex("#f4f6f9"))
+                        .PaddingHorizontal(50).PaddingVertical(10)
+                        .Row(r =>
+                        {
+                            r.RelativeItem().Text($"© {now.Year} MSAS — {S(language, "confidential")}")
+                                .FontSize(8).FontColor(Color.FromHex("#aab7b8"));
+                            r.AutoItem().AlignRight().Text(now.ToString("dd/MM/yyyy"))
+                                .FontSize(8).FontColor(Color.FromHex("#aab7b8"));
+                        });
+                    footerCol.Item().Height(10).Background(Color.FromHex("#1a5276"));
+                });
+
                 cover.Content().Column(col =>
                 {
-                    // Fix #6: Dải màu trên — nền nhận diện thương hiệu
+                    // Dải màu trên — nền nhận diện thương hiệu
                     col.Item().Height(10).Background(Color.FromHex("#1a5276"));
                     col.Item().Height(4).Background(Color.FromHex("#2980b9"));
 
-                    // Khối nội dung chính trang bìa với nền nhạt
-                    col.Item().Background(Color.FromHex("#f4f6f9")).PaddingHorizontal(50).PaddingTop(48).Column(body =>
+                    // Khối nội dung chính trang bìa — Extend() fill phần còn lại của Content
+                    col.Item().Extend().Background(Color.FromHex("#f4f6f9"))
+                        .PaddingHorizontal(50).PaddingTop(40).Column(body =>
                     {
                         // Logo text MSAS
                         body.Item().Text("MSAS")
@@ -989,28 +950,28 @@ public class ReportService
                             .FontSize(12).FontColor(Color.FromHex("#2980b9"));
 
                         // Đường kẻ phân cách
-                        body.Item().PaddingVertical(30)
+                        body.Item().PaddingVertical(24)
                             .LineHorizontal(2f).LineColor(Color.FromHex("#1a5276"));
 
                         // Tiêu đề báo cáo
                         body.Item().Text(S(language, "reportTitle"))
-                            .FontSize(24).Bold().FontColor(Color.FromHex("#1a5276"));
+                            .FontSize(22).Bold().FontColor(Color.FromHex("#1a5276"));
 
-                        body.Item().PaddingTop(10).Text(S(language, "coverSubtitle"))
-                            .FontSize(13).Italic().FontColor(Color.FromHex("#5d6d7e"));
+                        body.Item().PaddingTop(8).Text(S(language, "coverSubtitle"))
+                            .FontSize(12).Italic().FontColor(Color.FromHex("#5d6d7e"));
 
-                        // Khung thông tin báo cáo — box nổi bật
-                        body.Item().PaddingTop(40)
+                        // Khung thông tin báo cáo
+                        body.Item().PaddingTop(32)
                             .Border(1f).BorderColor(Color.FromHex("#DBEAFE"))
                             .Background(Colors.White)
-                            .Padding(18)
+                            .Padding(16)
                             .Column(info =>
                         {
                             void InfoRow(string label, string value)
                             {
-                                info.Item().PaddingBottom(10).Row(r =>
+                                info.Item().PaddingBottom(8).Row(r =>
                                 {
-                                    r.ConstantItem(180).Text(label)
+                                    r.ConstantItem(160).Text(label)
                                         .FontSize(10).FontColor(Color.FromHex("#7f8c8d"));
                                     r.RelativeItem().Text(value)
                                         .FontSize(10).Bold().FontColor(Color.FromHex("#2c3e50"));
@@ -1025,46 +986,15 @@ public class ReportService
                         });
 
                         // Nhãn bảo mật
-                        body.Item().PaddingTop(30).Row(r =>
+                        body.Item().PaddingTop(24).Row(r =>
                         {
                             r.AutoItem()
                                 .Border(1).BorderColor(Color.FromHex("#c0392b"))
-                                .Padding(6).PaddingHorizontal(12)
+                                .Padding(5).PaddingHorizontal(10)
                                 .Text(S(language, "confidential"))
                                 .FontSize(9).Bold().FontColor(Color.FromHex("#c0392b"));
                         });
-
-                        // Banner dữ liệu mẫu (nếu cần)
-                        if (usingSample)
-                        {
-                            body.Item().PaddingTop(12).Row(r =>
-                            {
-                                r.AutoItem()
-                                    .Background(Color.FromHex("#fef9e7"))
-                                    .Border(1).BorderColor(Color.FromHex("#f39c12"))
-                                    .Padding(6).PaddingHorizontal(12)
-                                    .Text(S(language, "sampleNotice"))
-                                    .FontSize(9).FontColor(Color.FromHex("#d68910"));
-                            });
-                        }
                     });
-
-                    // Spacer để đẩy footer xuống
-                    col.Item().Extend().Background(Color.FromHex("#f4f6f9"));
-
-                    // Footer trang bìa
-                    col.Item().Background(Color.FromHex("#f4f6f9"))
-                        .PaddingHorizontal(50).PaddingBottom(16)
-                        .Row(r =>
-                        {
-                            r.RelativeItem().Text($"© {now.Year} MSAS — {S(language, "confidential")}")
-                                .FontSize(8).FontColor(Color.FromHex("#aab7b8"));
-                            r.AutoItem().AlignRight().Text(now.ToString("dd/MM/yyyy"))
-                                .FontSize(8).FontColor(Color.FromHex("#aab7b8"));
-                        });
-
-                    // Fix #6: Dải màu dưới
-                    col.Item().Height(10).Background(Color.FromHex("#1a5276"));
                 });
             });
 
