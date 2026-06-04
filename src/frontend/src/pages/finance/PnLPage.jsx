@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { getProfitOverview, getExpensesSummary } from '../../api/financeApi'
 import DateRangeFilter from '../../components/ui/DateRangeFilter'
 
@@ -67,6 +68,7 @@ function PnLSection({ title, children }) {
 }
 
 export default function PnLPage() {
+  const { t } = useTranslation()
   const [from, setFrom] = useState(firstYear())
   const [to,   setTo]   = useState(today())
 
@@ -84,15 +86,15 @@ export default function PnLPage() {
       getExpensesSummary(params),
     ])
     if (pRes.status === 'fulfilled') { setProfit(pRes.value); setErrProfit('') }
-    else { setProfit(null); setErrProfit('Chưa kết nối được backend tài chính') }
+    else { setProfit(null); setErrProfit(t('pnl.errorBackend')) }
 
     if (eRes.status === 'fulfilled') { setExpenses(eRes.value); setErrExp('') }
     else {
       setExpenses(null)
       const msg = eRes.reason?.response?.data?.error ?? ''
       setErrExp(msg.includes('does not exist') || msg.includes('42P01')
-        ? 'Bảng expenses chưa được tạo — chạy migration CT-070'
-        : 'Chi phí vận hành chưa khả dụng')
+        ? t('pnl.errorTable')
+        : t('pnl.errorOpex'))
     }
     setLoading(false)
   }, [from, to])
@@ -120,13 +122,13 @@ export default function PnLPage() {
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
-            Báo cáo P&amp;L
+            {t('pnl.title')}
           </h1>
           <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
-            Profit &amp; Loss — Doanh thu → COGS → Lợi nhuận gộp → Operating Profit → Business Net Profit
+            {t('pnl.subtitle')}
           </p>
         </div>
-        <DateRangeFilter from={from} to={to} onChange={(f, t) => { setFrom(f); setTo(t) }} />
+        <DateRangeFilter from={from} to={to} onChange={(f, toVal) => { setFrom(f); setTo(toVal) }} />
       </div>
 
       {/* Banners */}
@@ -135,7 +137,7 @@ export default function PnLPage() {
              style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)' }}>
           <span className="icon text-base" style={{ color: '#D97706' }}>warning</span>
           <p className="text-sm" style={{ color: '#D97706' }}>
-            Phí sàn đang là <strong>ước tính</strong> dựa trên cấu hình tỷ lệ — chưa từ báo cáo quyết toán thực tế.
+            {t('pnl.feeEstimateWarning')}
           </p>
         </div>
       )}
@@ -145,9 +147,9 @@ export default function PnLPage() {
              style={{ background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.2)' }}>
           <span className="icon text-base" style={{ color: 'var(--primary-500)' }}>info</span>
           <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-            {errExp} — Business Net Profit chưa tính được. <a href="/finance/operating-expenses"
+            {errExp} — {t('pnl.netProfitMissing')} <a href="/finance/operating-expenses"
               className="underline font-semibold" style={{ color: 'var(--primary-500)' }}>
-              Nhập chi phí vận hành
+              {t('pnl.addOpexLink')}
             </a>
           </p>
         </div>
@@ -158,16 +160,16 @@ export default function PnLPage() {
         {/* Table header */}
         <div className="grid grid-cols-3 px-4 py-2 text-xs font-bold uppercase tracking-widest"
              style={{ background: 'var(--bg-elevated)', borderBottom: '2px solid var(--border)', color: 'var(--text-tertiary)' }}>
-          <div>Khoản mục</div>
-          <div className="text-right">Chi tiết</div>
-          <div className="text-right pr-2">Tổng</div>
+          <div>{t('pnl.colItem')}</div>
+          <div className="text-right">{t('pnl.colDetail')}</div>
+          <div className="text-right pr-2">{t('pnl.colTotal')}</div>
         </div>
 
         {loading ? (
           <div className="py-16 flex flex-col items-center gap-3" style={{ color: 'var(--text-tertiary)' }}>
             <span className="w-8 h-8 border-2 rounded-full animate-spin"
                   style={{ borderColor: 'var(--border)', borderTopColor: 'var(--primary-500)' }} />
-            <p className="text-sm">Đang tải dữ liệu...</p>
+            <p className="text-sm">{t('common.loading')}</p>
           </div>
         ) : errProfit ? (
           <div className="py-16 text-center" style={{ color: 'var(--text-tertiary)' }}>
@@ -178,25 +180,25 @@ export default function PnLPage() {
           <table className="w-full">
             <tbody>
               {/* ─── TẦNG A: Hiệu quả bán hàng ─── */}
-              <PnLSection title="A — Hiệu quả bán hàng">
-                <PnLRow label="Doanh thu thuần"          value={p?.revenue ?? 0}            bold />
-                <PnLRow label="Giá vốn hàng bán (COGS)"  value={p?.cogs ?? 0}               indent={1} negative />
-                <PnLRow label="Lợi nhuận gộp"            value={p?.grossProfit ?? 0}        bold highlight="green"
-                        helpText={fmtPct(p?.grossProfit, revenue) + ' biên gộp'} />
+              <PnLSection title={t('pnl.sectionSales')}>
+                <PnLRow label={t('pnl.rowRevenue')}      value={p?.revenue ?? 0}            bold />
+                <PnLRow label={t('pnl.rowCogs')}         value={p?.cogs ?? 0}               indent={1} negative />
+                <PnLRow label={t('pnl.rowGrossProfit')}  value={p?.grossProfit ?? 0}        bold highlight="green"
+                        helpText={fmtPct(p?.grossProfit, revenue) + ' ' + t('pnl.marginGross')} />
                 <PnLRow divider />
-                <PnLRow label="Phí sàn TMĐT (ước tính)"  value={p?.estimatedFees ?? 0}     indent={1} negative small />
-                <PnLRow label="LN sau phí sàn"            value={p?.estimatedNetProfit ?? 0} bold />
-                <PnLRow label="Chi phí quảng cáo (QC)"   value={p?.advertisingCost ?? 0}   indent={1} negative small />
+                <PnLRow label={t('pnl.rowPlatformFee')}  value={p?.estimatedFees ?? 0}     indent={1} negative small />
+                <PnLRow label={t('pnl.rowAfterPlatform')}value={p?.estimatedNetProfit ?? 0} bold />
+                <PnLRow label={t('pnl.rowAdCost')}       value={p?.advertisingCost ?? 0}   indent={1} negative small />
               </PnLSection>
 
               {/* Operating Profit row */}
               <tr style={{ background: 'rgba(99,102,241,0.06)', borderBottom: '2px solid rgba(99,102,241,0.2)' }}>
                 <td className="py-3 px-4 font-bold text-sm" style={{ color: '#6366F1' }}>
                   <span className="icon icon-sm mr-1.5">trending_up</span>
-                  Lợi nhuận vận hành (Operating Profit)
+                  {t('pnl.rowOperatingProfit')}
                 </td>
                 <td className="py-3 px-3 text-right text-xs font-mono" style={{ color: 'var(--text-tertiary)' }}>
-                  {fmtPct(opProfit, revenue)} biên VH
+                  {fmtPct(opProfit, revenue)} {t('pnl.marginOp')}
                 </td>
                 <td className="py-3 px-4 text-right font-bold text-lg font-mono"
                     style={{ color: opProfit >= 0 ? '#6366F1' : 'var(--color-error)' }}>
@@ -205,26 +207,26 @@ export default function PnLPage() {
               </tr>
 
               {/* ─── TẦNG B: Chi phí doanh nghiệp ─── */}
-              <PnLSection title="B — Chi phí doanh nghiệp">
+              <PnLSection title={t('pnl.sectionBiz')}>
                 {ex ? (
                   <>
-                    {ex.salary    > 0 && <PnLRow label="Lương nhân viên"     value={ex.salary}    indent={1} negative small />}
-                    {ex.warehouse > 0 && <PnLRow label="Kho bãi"             value={ex.warehouse} indent={1} negative small />}
-                    {ex.utilities > 0 && <PnLRow label="Điện, nước, gas"     value={ex.utilities} indent={1} negative small />}
-                    {ex.internet  > 0 && <PnLRow label="Internet & Viễn thông" value={ex.internet} indent={1} negative small />}
-                    {ex.office    > 0 && <PnLRow label="Văn phòng phẩm"      value={ex.office}    indent={1} negative small />}
-                    {ex.other     > 0 && <PnLRow label="Chi phí khác"        value={ex.other}     indent={1} negative small />}
+                    {ex.salary    > 0 && <PnLRow label={t('pnl.rowSalary')}    value={ex.salary}    indent={1} negative small />}
+                    {ex.warehouse > 0 && <PnLRow label={t('pnl.rowWarehouse')} value={ex.warehouse} indent={1} negative small />}
+                    {ex.utilities > 0 && <PnLRow label={t('pnl.rowUtility')}   value={ex.utilities} indent={1} negative small />}
+                    {ex.internet  > 0 && <PnLRow label={t('pnl.rowInternet')}  value={ex.internet}  indent={1} negative small />}
+                    {ex.office    > 0 && <PnLRow label={t('pnl.rowOffice')}    value={ex.office}    indent={1} negative small />}
+                    {ex.other     > 0 && <PnLRow label={t('pnl.rowOther')}     value={ex.other}     indent={1} negative small />}
                     {totalOpEx === 0 && (
                       <tr>
                         <td colSpan={3} className="px-4 py-3 text-sm text-center" style={{ color: 'var(--text-tertiary)' }}>
-                          Chưa có chi phí vận hành nào được ghi nhận.{' '}
+                          {t('pnl.noOpex')}{' '}
                           <a href="/finance/operating-expenses" className="underline" style={{ color: 'var(--primary-500)' }}>
-                            Thêm chi phí
+                            {t('pnl.addOpexBtn')}
                           </a>
                         </td>
                       </tr>
                     )}
-                    <PnLRow label="Tổng chi phí vận hành" value={totalOpEx} bold negative />
+                    <PnLRow label={t('pnl.rowTotalOpex')} value={totalOpEx} bold negative />
                   </>
                 ) : (
                   <tr>
@@ -239,14 +241,14 @@ export default function PnLPage() {
               <tr style={{ background: ex ? 'rgba(139,92,246,0.08)' : 'var(--bg-elevated)', borderTop: '2px solid var(--border)' }}>
                 <td className="py-4 px-4 font-bold text-base" style={{ color: '#8B5CF6' }}>
                   <span className="icon icon-sm mr-1.5">account_balance</span>
-                  Business Net Profit — Lợi nhuận doanh nghiệp ròng
+                  {t('pnl.rowNetProfit')}
                 </td>
                 <td className="py-4 px-3 text-right text-xs font-mono" style={{ color: 'var(--text-tertiary)' }}>
-                  {ex ? fmtPct(netProfit, revenue) + ' biên ròng' : '—'}
+                  {ex ? fmtPct(netProfit, revenue) + ' ' + t('pnl.marginNet') : '—'}
                 </td>
                 <td className="py-4 px-4 text-right font-bold text-xl font-mono"
                     style={{ color: ex ? (netProfit >= 0 ? '#8B5CF6' : 'var(--color-error)') : 'var(--text-tertiary)' }}>
-                  {ex ? fmtVND(netProfit) : <span className="text-sm font-normal">Cần dữ liệu chi phí vận hành</span>}
+                  {ex ? fmtVND(netProfit) : <span className="text-sm font-normal">{t('pnl.opexPlaceholder')}</span>}
                 </td>
               </tr>
             </tbody>
@@ -257,9 +259,9 @@ export default function PnLPage() {
       {/* Quick links */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         {[
-          { href: '/finance/profit',               icon: 'analytics',        label: 'Phân tích chi tiết', desc: 'Theo kênh, sản phẩm, thời gian' },
-          { href: '/finance/operating-expenses',   icon: 'business_center',  label: 'Chi phí vận hành', desc: 'Nhập lương, kho bãi, điện nước' },
-          { href: '/finance/ad-spend',             icon: 'ads_click',        label: 'Chi phí quảng cáo', desc: 'Nhập chi phí QC để tính ROAS/ACOS' },
+          { href: '/finance/profit',               icon: 'analytics',        label: t('pnl.linkProfitAnalysis'), desc: 'Theo kênh, sản phẩm, thời gian' },
+          { href: '/finance/operating-expenses',   icon: 'business_center',  label: t('pnl.linkOpex'),           desc: 'Nhập lương, kho bãi, điện nước' },
+          { href: '/finance/ad-spend',             icon: 'ads_click',        label: t('pnl.linkAdSpend'),         desc: 'Nhập chi phí QC để tính ROAS/ACOS' },
         ].map(l => (
           <a key={l.href} href={l.href}
              className="lcard lcard-hover p-4 flex items-center gap-3 no-underline">
