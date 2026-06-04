@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { KPI_DEFINITIONS, KPI_GROUPS } from '../../utils/kpiDefinitions'
 
 const GROUP_COLORS = {
@@ -10,6 +11,7 @@ const GROUP_COLORS = {
 }
 
 function KpiCard({ kpiKey, def }) {
+  const { t } = useTranslation()
   const [expanded, setExpanded] = useState(false)
   const group  = def.group ?? 'revenue'
   const colors = GROUP_COLORS[group] ?? GROUP_COLORS.revenue
@@ -57,7 +59,7 @@ function KpiCard({ kpiKey, def }) {
           {def.businessMeaning && (
             <div>
               <p className="text-xs font-semibold mb-1" style={{ color: 'var(--text-tertiary)' }}>
-                Ý nghĩa kinh doanh
+                {t('kpiFormulas.businessMeaning')}
               </p>
               <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{def.businessMeaning}</p>
             </div>
@@ -66,7 +68,7 @@ function KpiCard({ kpiKey, def }) {
             <div className="rounded-lg px-3 py-2"
                  style={{ background: colors.accent + '0F', border: `1px dashed ${colors.border}` }}>
               <p className="text-xs font-semibold mb-1" style={{ color: colors.accent }}>
-                Ví dụ thực tế
+                {t('kpiFormulas.example')}
               </p>
               <p className="text-xs font-mono" style={{ color: 'var(--text-primary)' }}>{def.example}</p>
             </div>
@@ -74,7 +76,7 @@ function KpiCard({ kpiKey, def }) {
           {def.sourceFields?.length > 0 && (
             <div>
               <p className="text-xs font-semibold mb-1" style={{ color: 'var(--text-tertiary)' }}>
-                Nguồn dữ liệu
+                {t('kpiFormulas.dataSource')}
               </p>
               <div className="flex flex-wrap gap-1.5">
                 {def.sourceFields.map(f => (
@@ -93,6 +95,7 @@ function KpiCard({ kpiKey, def }) {
 }
 
 export default function KpiFormulasPage() {
+  const { t } = useTranslation()
   const [searchQ, setSearchQ] = useState('')
   const [activeGroup, setActiveGroup] = useState('all')
 
@@ -119,10 +122,10 @@ export default function KpiFormulasPage() {
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
-            Công thức KPI
+            {t('kpiFormulas.title')}
           </h1>
           <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
-            Định nghĩa chuẩn — dùng nhất quán trên toàn hệ thống. Click để xem chi tiết.
+            {t('kpiFormulas.subtitle')}
           </p>
         </div>
 
@@ -135,7 +138,7 @@ export default function KpiFormulasPage() {
               type="text"
               value={searchQ}
               onChange={e => setSearchQ(e.target.value)}
-              placeholder="Tìm KPI..."
+              placeholder={t('kpiFormulas.searchPlaceholder')}
               className="linput pl-8 text-sm"
               style={{ width: 200 }}
             />
@@ -154,7 +157,7 @@ export default function KpiFormulasPage() {
             color: activeGroup === 'all' ? 'var(--primary-600)' : 'var(--text-secondary)',
             boxShadow: activeGroup === 'all' ? 'var(--shadow-sm)' : 'none',
           }}>
-          Tất cả ({Object.keys(KPI_DEFINITIONS).length})
+          {t('common.all')} ({Object.keys(KPI_DEFINITIONS).length})
         </button>
         {Object.entries(KPI_GROUPS).map(([key, grp]) => {
           const count = Object.values(KPI_DEFINITIONS).filter(d => d.group === key).length
@@ -179,7 +182,7 @@ export default function KpiFormulasPage() {
       {filtered.length === 0 ? (
         <div className="lcard p-12 text-center" style={{ color: 'var(--text-tertiary)' }}>
           <span className="icon text-4xl mb-3 block">search_off</span>
-          <p>Không tìm thấy KPI phù hợp với "{searchQ}"</p>
+          <p>{t('kpiFormulas.notFound', { query: searchQ })}</p>
         </div>
       ) : (
         <div className="space-y-6">
