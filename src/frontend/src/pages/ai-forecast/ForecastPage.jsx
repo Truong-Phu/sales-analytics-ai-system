@@ -56,9 +56,9 @@ export default function ForecastPage() {
     setRetrainMsg(null)
     try {
       await api.post('/api/ai/forecast/retrain')
-      setRetrainMsg({ type: 'success', text: 'Đang retrain model Prophet. Quá trình mất 1-3 phút. Sau khi xong, nhấn "Chạy dự báo" để thấy kết quả mới.' })
+      setRetrainMsg({ type: 'success', text: t('forecast.retraining') })
     } catch {
-      setRetrainMsg({ type: 'error', text: 'Không thể kích hoạt retrain. AI Service không khả dụng.' })
+      setRetrainMsg({ type: 'error', text: t('forecast.retrainError') })
     } finally {
       setRetraining(false)
     }
@@ -125,7 +125,7 @@ export default function ForecastPage() {
               {t('forecast.title')}
             </h1>
             <div className="flex items-center gap-2 mt-1 flex-wrap">
-              <span className="text-sm" style={{ color: 'var(--text-tertiary)' }}>Mô hình Prophet</span>
+              <span className="text-sm" style={{ color: 'var(--text-tertiary)' }}>{t('forecast.subtitle')}</span>
               {modelInfo.mape_pct && (
                 <span className="lbadge lbadge-primary text-xs">
                   MAPE {modelInfo.mape_pct}%
@@ -133,7 +133,7 @@ export default function ForecastPage() {
               )}
               {modelInfo.trained_until && (
                 <span className="lbadge lbadge-neutral text-xs">
-                  Train đến {modelInfo.trained_until}
+                  {t('forecast.trainedUntil')} {modelInfo.trained_until}
                 </span>
               )}
             </div>
@@ -248,12 +248,12 @@ export default function ForecastPage() {
                 <>
                   <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full"
                         style={{ animation: 'spin 0.7s linear infinite' }} />
-                  Đang tính toán...
+                  {t('forecast.calculating')}
                 </>
               ) : (
                 <>
                   <span className="icon text-base">auto_awesome</span>
-                  Chạy dự báo
+                  {t('forecast.runForecast')}
                 </>
               )}
             </button>
@@ -265,18 +265,18 @@ export default function ForecastPage() {
               className="lbtn w-full justify-center mt-2"
               style={{ height: 36, fontSize: 12, opacity: retraining ? 0.6 : 1,
                        border: '1px dashed var(--border)', color: 'var(--text-secondary)' }}
-              title="Huấn luyện lại model Prophet với dữ liệu mới nhất"
+              title={t('forecast.retrainTitle')}
             >
               {retraining ? (
                 <>
                   <span className="w-3 h-3 border-2 rounded-full border-current border-t-transparent"
                         style={{ animation: 'spin 0.7s linear infinite' }} />
-                  Đang retrain...
+                  {t('forecast.retraining')}
                 </>
               ) : (
                 <>
                   <span className="icon" style={{ fontSize: 14 }}>model_training</span>
-                  Retrain model Prophet
+                  {t('forecast.retrain')}
                 </>
               )}
             </button>
@@ -356,10 +356,10 @@ export default function ForecastPage() {
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
             {[
-              { label: 'MAE',  tooltip: MT.mae,  value: metrics.mae  != null ? `${(metrics.mae/1000).toFixed(1)}K ₫` : '–', sub: 'Mean Absolute Error',      color: 'var(--accent-500)' },
-              { label: 'RMSE', tooltip: MT.rmse, value: metrics.rmse != null ? `${(metrics.rmse/1000).toFixed(1)}K ₫` : '–', sub: 'Root Mean Squared Error', color: 'var(--color-warning)' },
-              { label: 'MAPE', tooltip: MT.mape, value: metrics.mape_pct != null ? `${metrics.mape_pct}%` : '–',             sub: 'Mean Abs. % Error',        color: 'var(--color-error)' },
-              { label: 'Tập test', tooltip: null, value: `${metrics.n_test ?? '–'} ngày`, sub: `${metrics.test_from ?? ''} → ${metrics.test_to ?? ''}`, color: 'var(--text-tertiary)' },
+              { label: 'MAE',  tooltip: MT.mae,  value: metrics.mae  != null ? `${(metrics.mae/1000).toFixed(1)}K ₫` : '–', sub: 'Sai số tuyệt đối TB',   color: 'var(--accent-500)' },
+              { label: 'RMSE', tooltip: MT.rmse, value: metrics.rmse != null ? `${(metrics.rmse/1000).toFixed(1)}K ₫` : '–', sub: 'Sai số có trọng số',    color: 'var(--color-warning)' },
+              { label: 'MAPE', tooltip: MT.mape, value: metrics.mape_pct != null ? `${metrics.mape_pct}%` : '–',             sub: 'Sai số phần trăm',      color: 'var(--color-error)' },
+              { label: 'Kiểm tra', tooltip: null, value: `${metrics.n_test ?? '–'} ngày`, sub: `${metrics.test_from ?? ''} → ${metrics.test_to ?? ''}`, color: 'var(--text-tertiary)' },
             ].map(({ label, tooltip, value, sub, color }) => (
               <div key={label} className="p-3 rounded-xl" style={{ background: 'var(--bg-elevated)' }}>
                 <div className="flex items-center gap-0.5 mb-1">
@@ -373,13 +373,11 @@ export default function ForecastPage() {
           </div>
 
           <div className="text-xs p-3 rounded-xl" style={{ background: 'var(--bg-elevated)', color: 'var(--text-tertiary)' }}>
-            <strong style={{ color: 'var(--text-secondary)' }}>Dữ liệu train:</strong>{' '}
-            {metrics.n_train} ngày ({metrics.train_from} → {metrics.train_to})
+            <strong style={{ color: 'var(--text-secondary)' }}>Phân chia đánh giá:</strong>{' '}
+            {metrics.n_train} ngày huấn luyện / {metrics.n_test} ngày kiểm tra (tỷ lệ 80/20)
             {' · '}
-            <strong style={{ color: 'var(--text-secondary)' }}>Nguồn:</strong>{' '}
-            {metrics.source === 'local_sample_data' ? 'Sample data nội bộ' : 'Google Colab'}
-            {' · '}
-            <strong style={{ color: 'var(--text-secondary)' }}>Prophet</strong> {metrics.prophet_version ?? '1.3.0'}
+            <strong style={{ color: 'var(--text-secondary)' }}>Dữ liệu kiểm tra:</strong>{' '}
+            {metrics.test_from} → {metrics.test_to}
           </div>
         </div>
       )}
@@ -409,12 +407,12 @@ export default function ForecastPage() {
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border)' }}>
                   {[
-                    { h: 'Mô hình',    tip: null        },
-                    { h: 'Loại',       tip: null        },
-                    { h: 'MAE (VNĐ)',  tip: MT.mae      },
-                    { h: 'RMSE (VNĐ)', tip: MT.rmse     },
-                    { h: 'MAPE',       tip: MT.mape     },
-                    { h: 'SMAPE',      tip: MT.smape    },
+                    { h: t('forecast.colModel'),  tip: null        },
+                    { h: t('forecast.colType'),   tip: null        },
+                    { h: t('forecast.colMae'),    tip: MT.mae      },
+                    { h: t('forecast.colRmse'),   tip: MT.rmse     },
+                    { h: t('forecast.colMape'),   tip: MT.mape     },
+                    { h: t('forecast.colSmape'),  tip: MT.smape    },
                   ].map(({ h, tip }) => (
                     <th key={h} className="pb-2 text-left font-semibold text-xs"
                         style={{ color: 'var(--text-secondary)' }}>
@@ -430,11 +428,11 @@ export default function ForecastPage() {
                   const models    = comparison.models
                   const bestSmape = Math.min(...Object.values(models).map(m => m.smape_pct))
                   const rows = [
-                    { key: 'Naive',        label: 'Naive',        type: 'Baseline',          dim: true },
-                    { key: 'MA-7',         label: 'MA-7',         type: 'Baseline',          dim: true },
-                    { key: 'Holt-Winters', label: 'Holt-Winters', type: 'Thống kê cổ điển',  dim: false },
-                    { key: 'LightGBM',     label: 'LightGBM',     type: 'Machine Learning',  dim: false },
-                    { key: 'Prophet',      label: 'Prophet',      type: 'Time-series AI',    dim: false },
+                    { key: 'Naive',        label: 'Naive',        type: t('forecast.typeBaseline'),  dim: true },
+                    { key: 'MA-7',         label: 'MA-7',         type: t('forecast.typeBaseline'),  dim: true },
+                    { key: 'Holt-Winters', label: 'Holt-Winters', type: t('forecast.typeStatistic'),  dim: false },
+                    { key: 'LightGBM',     label: 'LightGBM',     type: t('forecast.typeML'),        dim: false },
+                    { key: 'Prophet',      label: 'Prophet',      type: t('forecast.typeTS'),         dim: false },
                   ]
                   return rows.filter(r => models[r.key]).map(({ key, label, type, dim }) => {
                     const m         = models[key]
@@ -449,7 +447,7 @@ export default function ForecastPage() {
                         <td className="py-2.5 pr-4">
                           <div className="flex items-center gap-2">
                             <span className="font-medium text-xs" style={{ color: 'var(--text-primary)' }}>{label}</span>
-                            {isProphet && <span className="lbadge lbadge-primary text-xs">Đang dùng</span>}
+                            {isProphet && <span className="lbadge lbadge-primary text-xs">{t('forecast.currentBadge')}</span>}
                           </div>
                         </td>
                         <td className="py-2.5 pr-4 text-xs" style={{ color: 'var(--text-tertiary)' }}>{type}</td>
@@ -531,11 +529,6 @@ export default function ForecastPage() {
             </div>
           )}
 
-          {/* Lý do chọn Prophet */}
-          <p className="text-xs p-3 rounded-xl" style={{ background: 'var(--bg-elevated)', color: 'var(--text-tertiary)' }}>
-            <strong style={{ color: 'var(--text-secondary)' }}>Lý do chọn Prophet:</strong>{' '}
-            {comparison.selection_reason}
-          </p>
         </div>
       )}
 
