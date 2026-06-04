@@ -159,8 +159,9 @@ export const cancelOrder = (id) =>
 // ── Products OLTP CRUD ───────────────────────────────────────────────────────
 
 export const getOltpProducts = async (params = {}) => {
-  const { limit, hasVariations, ...rest } = params
-  const qp = { ...rest, pageSize: limit ?? 20, isActive: true }
+  const { limit, hasVariations, isActive, ...rest } = params
+  const qp = { ...rest, pageSize: limit ?? 20 }
+  if (isActive !== undefined && isActive !== null) qp.isActive = isActive
   if (hasVariations !== undefined && hasVariations !== null) qp.hasVariations = hasVariations
   const res = await api.get('/api/products/oltp', { params: qp }).then(r => r.data)
   return {
@@ -228,22 +229,52 @@ export const getCustomerOrderHistory = (customerId, limit = 5) =>
   api.get(`/api/admin/customers/${customerId}/history`, { params: { page: 1 } })
     .then(r => (r.data.orders ?? []).slice(0, limit))
 
-// ── Drill-down: đơn hàng theo sản phẩm (Dashboard Pareto) ────────────────────
+// ── Drill-down chung — hỗ trợ filter theo product / date / channel / status ───
 
+const _normDrillRow = o => ({
+  orderId:     o.ExternalOrderId ?? o.externalOrderId ?? `#${o.SalesKey ?? o.salesKey}`,
+  date:        (o.SaleDate ?? o.saleDate ?? '').toString().slice(0, 10),
+  channel:     o.ChannelName  ?? o.channelName  ?? '—',
+  productName: o.ProductName  ?? o.productName  ?? '—',
+  qty:         o.Quantity     ?? o.quantity     ?? 0,
+  revenue:     Number(o.NetRevenue ?? o.netRevenue ?? 0),
+  status:      o.Status ?? '—',
+})
+
+// Drill-down đơn hàng theo sản phẩm (Dashboard Pareto)
 export const getDrillDownOrders = async (productKey, from, to, limit = 50) => {
   const params = { limit }
   if (productKey) params.productKey = productKey
   if (from)       params.from       = from
   if (to)         params.to         = to
   const res = await api.get('/api/orders', { params }).then(r => r.data)
-  return (res.data ?? []).map(o => ({
-    orderId:  o.ExternalOrderId ?? o.externalOrderId ?? `#${o.SalesKey ?? o.salesKey}`,
-    date:     (o.SaleDate ?? o.saleDate ?? '').toString().slice(0, 10),
-    channel:  o.ChannelName  ?? o.channelName  ?? '—',
-    qty:      o.Quantity     ?? o.quantity     ?? 0,
-    revenue:  Number(o.NetRevenue    ?? o.netRevenue    ?? 0),
-    status:   o.Status       ?? '—',
-  }))
+  return (res.data ?? []).map(_normDrillRow)
+}
+
+// Drill-down đơn hàng theo kênh bán
+export const getDrillDownByChannel = async (channel, from, to, limit = 50) => {
+  const params = { limit }
+  if (channel) params.channel = channel
+  if (from)    params.from    = from
+  if (to)      params.to      = to
+  const res = await api.get('/api/orders', { params }).then(r => r.data)
+  return (res.data ?? []).map(_normDrillRow)
+}
+
+// Drill-down đơn hàng theo trạng thái (funnel)
+export const getDrillDownByStatus = async (status, from, to, limit = 50) => {
+  const params = { limit }
+  if (status) params.status = status.toUpperCase()
+  if (from)   params.from   = from
+  if (to)     params.to     = to
+  const res = await api.get('/api/orders', { params }).then(r => r.data)
+  return (res.data ?? []).map(_normDrillRow)
+}
+
+// Drill-down đơn hàng theo ngày cụ thể (click vào biểu đồ doanh thu)
+export const getDrillDownByDate = async (date, limit = 50) => {
+  const res = await api.get('/api/orders', { params: { from: date, to: date, limit } }).then(r => r.data)
+  return (res.data ?? []).map(_normDrillRow)
 }
 
 // ── Drill-down: danh sách KH theo phân khúc (Dashboard Customer tab) ──────────
@@ -275,10 +306,6 @@ export const saveChannelPrice = (productId, dto) =>
 export const getOrderNotes   = (orderId)        => api.get(`/api/orders/oltp/${orderId}/notes`).then(r => r.data)
 export const addOrderNote    = (orderId, note)   => api.post(`/api/orders/oltp/${orderId}/notes`, { note }).then(r => r.data)
 export const deleteOrderNote = (orderId, noteId) => api.delete(`/api/orders/oltp/${orderId}/notes/${noteId}`).then(r => r.data)
-
-// ── Facebook Ads Performance ──────────────────────────────────────────────────
-export const getFbAds = (from, to) =>
-  api.get('/api/dashboard/fb-ads', { params: { from, to } }).then(r => r.data)
 
 // ── Heatmap đơn hàng theo giờ × thứ (OLTP) ───────────────────────────────────
 export const getOrderHeatmap = (from, to, channel = null) => {

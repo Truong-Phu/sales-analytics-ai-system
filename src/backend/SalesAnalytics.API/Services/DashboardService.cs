@@ -557,9 +557,9 @@ public class DashboardService
             daysOfStock  = r.DaysOfStock,
         }).ToList<object>();
 
+        // Trả về toàn bộ SP tồn cao (overstock) để frontend quyết định hiển thị top 5 hay tất cả
         var top5Over  = rows.Where(r => r.Stock > r.Forecast * 1.3)
                            .OrderByDescending(r => r.Stock - r.Forecast)
-                           .Take(5)
                            .Select(r => new { product = r.Name, stock = r.Stock, forecast = (int)r.Forecast, stockDiffPct = r.DiffPct.ToString("F1"), daysOfStock = r.DaysOfStock })
                            .ToList<object>();
 

@@ -15,6 +15,7 @@ import DetailDrawer from '../../components/ui/DetailDrawer'
 import AiEmptyState from '../../components/ui/AiEmptyState'
 import DevEmptyState from '../../components/ui/DevEmptyState'
 import { getDashboard, getTodayVsYesterday, getDrillDownOrders, getDrillDownCustomers,
+         getDrillDownByChannel, getDrillDownByStatus, getDrillDownByDate,
          getOrderHeatmap, getOrderFunnel, getMonthlyByChannel,
          getOpsKpi, getInventoryReal, getTopProductsByChannel } from '../../api/dashboardApi'
 import { getInsights, getRecommendations, getLeaderboard, getGeoDistribution, getChannelAttribution,
@@ -425,9 +426,42 @@ function AiInsightsCard({ insights = null, loading = false, autoRecs = null }) {
 }
 
 // ── Tab: 1 — Overview ─────────────────────────────────────────────────────────
-function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd = {}, wl = {} }) {
+function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd = {}, wl = {}, dateRange = {} }) {
   const { t }  = useTranslation()
   const kpi    = data.kpi
+
+  // Drill-down state (click biểu đồ doanh thu theo ngày / click kênh)
+  const [drillCtx,     setDrillCtx]     = useState(null)  // { type: 'date'|'channel', label, key }
+  const [drillItems,   setDrillItems]   = useState([])
+  const [drillLoading, setDrillLoading] = useState(false)
+
+  const openDrill = async (ctx) => {
+    setDrillCtx(ctx)
+    setDrillLoading(true)
+    try {
+      let rows = []
+      if (ctx.type === 'date') {
+        rows = await getDrillDownByDate(ctx.key)
+      } else if (ctx.type === 'channel') {
+        rows = await getDrillDownByChannel(ctx.key, dateRange.from, dateRange.to)
+      }
+      setDrillItems(rows)
+    } catch {
+      setDrillItems([{ is_mock: true, orderId: '—', date: '—', channel: '—', productName: '—', qty: 0, revenue: 0, status: '—' }])
+    } finally {
+      setDrillLoading(false)
+    }
+  }
+
+  const drillCols = [
+    { key: 'orderId',     label: 'Mã đơn' },
+    { key: 'date',        label: 'Ngày' },
+    { key: 'channel',     label: 'Kênh' },
+    { key: 'productName', label: 'Sản phẩm' },
+    { key: 'qty',         label: 'SL' },
+    { key: 'revenue',     label: 'Doanh thu', render: v => Number(v).toLocaleString('vi-VN') + ' ₫' },
+    { key: 'status',      label: 'Trạng thái' },
+  ]
   const sp     = data.sparklines || {}
   const lbData       = wd.leaderboard ?? null
   const lbLoading    = wl.leaderboard ?? false
@@ -459,7 +493,8 @@ function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd 
   const trendData = data.revenueByDay.map((d, i) => {
     const prev = prevData?.revenueByDay?.[i]
     return {
-      date:           d.date.slice(5),
+      date:           d.date.slice(5),  // MM-DD để hiển thị trục X
+      fullDate:       d.date,           // YYYY-MM-DD để drill-down
       netRevenue:     d.netRevenue,
       grossProfit:    d.grossProfit,
       prevRevenue:    prev?.netRevenue   ?? null,
@@ -614,8 +649,19 @@ function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd 
               )}
             </div>
           </div>
+          <p className="text-[11px] mb-2" style={{ color: 'var(--text-tertiary)' }}>
+            Click vào biểu đồ để xem đơn hàng của ngày đó
+          </p>
           <ResponsiveContainer width="100%" height={280}>
-            <AreaChart data={trendData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+            <AreaChart
+              data={trendData}
+              margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+              style={{ cursor: 'pointer' }}
+              onClick={(chartData) => {
+                const pt = chartData?.activePayload?.[0]?.payload
+                if (pt?.fullDate) openDrill({ type: 'date', key: pt.fullDate, label: pt.date })
+              }}
+            >
               <defs>
                 <linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor="#6366F1" stopOpacity={0.25} />
@@ -646,10 +692,17 @@ function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd 
 
         <div className="lcard p-5 col-span-12 lg:col-span-4">
           <SectionTitle>{t('dashboard.chart.channelShare')}</SectionTitle>
+          <p className="text-[11px] mb-2" style={{ color: 'var(--text-tertiary)' }}>
+            Click vào kênh để xem đơn hàng
+          </p>
           <ResponsiveContainer width="100%" height={200}>
             <PieChart>
-              <Pie data={data.revenueByChannel} dataKey="revenue" nameKey="channelName"
-                cx="50%" cy="50%" outerRadius={80} innerRadius={48} paddingAngle={3}>
+              <Pie
+                data={data.revenueByChannel} dataKey="revenue" nameKey="channelName"
+                cx="50%" cy="50%" outerRadius={80} innerRadius={48} paddingAngle={3}
+                onClick={(entry) => openDrill({ type: 'channel', key: entry.channelName, label: entry.channelName })}
+                style={{ cursor: 'pointer' }}
+              >
                 {data.revenueByChannel.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
               </Pie>
               <Tooltip formatter={v => fmtM(v)} />
@@ -657,10 +710,15 @@ function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd 
           </ResponsiveContainer>
           <div className="space-y-1.5 mt-2">
             {data.revenueByChannel.map((ch, i) => (
-              <div key={i} className="flex items-center gap-2 text-caption">
+              <div key={i}
+                className="flex items-center gap-2 text-caption cursor-pointer rounded-lg px-1 py-0.5 transition-colors"
+                onClick={() => openDrill({ type: 'channel', key: ch.channelName, label: ch.channelName })}
+                onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                 <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: getChannelColor(ch.channelName) }} />
                 <span className="flex-1 truncate" style={{ color: 'var(--text-secondary)' }}>{ch.channelName}</span>
                 <span className="font-mono" style={{ color: 'var(--text-primary)' }}>{ch.revenuePct.toFixed(0)}%</span>
+                <span className="icon shrink-0" style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>chevron_right</span>
               </div>
             ))}
           </div>
@@ -694,6 +752,72 @@ function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd 
           <p className="text-xs text-center py-2" style={{ color: 'var(--text-tertiary)' }}>Không tải được dữ liệu</p>
         )}
       </MiniWidget>
+
+      {/* DetailDrawer — drill-down khi click biểu đồ doanh thu hoặc kênh */}
+      <DetailDrawer
+        open={!!drillCtx}
+        onClose={() => { setDrillCtx(null); setDrillItems([]) }}
+        title={drillLoading ? 'Đang tải...' :
+          drillCtx?.type === 'date'    ? `Đơn hàng ngày ${drillCtx.label}` :
+          drillCtx?.type === 'channel' ? `Đơn hàng kênh ${drillCtx.label}` : ''}
+        subtitle={!drillLoading && drillItems.length > 0 ? `${drillItems.length} đơn` : undefined}
+        width={780}
+        footer={
+          drillItems.length > 0 && (
+            <button className="lbtn lbtn-secondary text-xs" style={{ height: 32 }}
+              onClick={() => drillCtx && exportCsv(`orders_${drillCtx.key}.csv`, drillItems.map(({ is_mock, ...r }) => r))}>
+              <span className="icon icon-sm">download</span>
+              Xuất CSV
+            </button>
+          )
+        }
+      >
+        {drillLoading ? (
+          <div className="flex items-center justify-center p-10">
+            <span className="w-6 h-6 border-2 rounded-full"
+              style={{ borderColor: 'var(--border)', borderTopColor: 'var(--primary-500)', animation: 'spin 0.8s linear infinite' }} />
+          </div>
+        ) : (
+          <div>
+            {drillItems.some(r => r.is_mock) && (
+              <div className="flex items-center gap-2 px-4 py-2 text-xs"
+                style={{ background: 'rgba(245,158,11,0.1)', color: '#92400e', borderBottom: '1px solid rgba(245,158,11,0.3)' }}>
+                <span className="icon" style={{ fontSize: 14, color: '#f59e0b' }}>warning</span>
+                Đang dùng dữ liệu mẫu — API chưa phản hồi
+              </div>
+            )}
+            <table className="w-full text-sm border-collapse">
+              <thead className="sticky top-0" style={{ background: 'var(--bg-elevated)' }}>
+                <tr>
+                  {drillCols.map(col => (
+                    <th key={col.key} className="px-4 py-3 text-left font-semibold text-xs uppercase tracking-wide"
+                      style={{ color: 'var(--text-secondary)', borderBottom: '2px solid var(--border)' }}>
+                      {col.label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {drillItems.length > 0 ? drillItems.map((row, i) => (
+                  <tr key={i} style={{ background: i % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.02)' }}>
+                    {drillCols.map(col => (
+                      <td key={col.key} className="px-4 py-2.5"
+                        style={{ borderBottom: '1px solid var(--border)', color: 'var(--text-primary)' }}>
+                        {col.render ? col.render(row[col.key], row) : row[col.key]}
+                      </td>
+                    ))}
+                  </tr>
+                )) : (
+                  <tr>
+                    <td colSpan={drillCols.length} className="py-10 text-center"
+                      style={{ color: 'var(--text-tertiary)' }}>Không có đơn hàng</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </DetailDrawer>
     </div>
   )
 }
@@ -704,7 +828,44 @@ function TabSales({ data, compareMode, prevData, from, to }) {
   const [drillProduct,        setDrillProduct]        = useState(null)
   const [drillOrders,         setDrillOrders]         = useState([])
   const [drillLoading,        setDrillLoading]        = useState(false)
+  // Funnel drill-down state
+  const [drillFunnel,       setDrillFunnel]       = useState(null)
+  const [funnelOrders,      setFunnelOrders]      = useState([])
+  const [funnelLoading,     setFunnelLoading]     = useState(false)
   const maxFunnel = data?.funnel?.[0]?.value ?? 1
+
+  // Map nhãn phễu → status API
+  const FUNNEL_STATUS = {
+    'PENDING':   'PENDING',
+    'PAID':      'PAID',
+    'SHIPPED':   'SHIPPED',
+    'DELIVERED': 'DELIVERED',
+    'RETURNED':  'RETURNED',
+    'CANCELLED': 'CANCELLED',
+  }
+
+  const handleFunnelClick = async (stage) => {
+    const apiStatus = FUNNEL_STATUS[stage.stage?.toUpperCase()] ?? stage.stage
+    setDrillFunnel({ stage: stage.stage, status: apiStatus })
+    setFunnelLoading(true)
+    try {
+      const orders = await getDrillDownByStatus(apiStatus, from, to)
+      setFunnelOrders(orders)
+    } catch {
+      setFunnelOrders([])
+    } finally {
+      setFunnelLoading(false)
+    }
+  }
+
+  const funnelCols = [
+    { key: 'orderId',     label: 'Mã đơn' },
+    { key: 'date',        label: 'Ngày' },
+    { key: 'channel',     label: 'Kênh' },
+    { key: 'productName', label: 'Sản phẩm' },
+    { key: 'qty',         label: 'SL' },
+    { key: 'revenue',     label: 'Doanh thu', render: v => Number(v).toLocaleString('vi-VN') + ' ₫' },
+  ]
 
   // Dữ liệu theo tháng gộp kỳ này + kỳ trước (cho tab Sales)
   const monthlyCompare = compareMode && prevData
@@ -900,7 +1061,7 @@ function TabSales({ data, compareMode, prevData, from, to }) {
       <div className="lcard p-5">
         <SectionTitle>{t('dashboard.chart.funnel')}</SectionTitle>
         <p className="text-caption mb-3" style={{ color: 'var(--text-tertiary)' }}>
-          Luồng xử lý đơn hàng — tỷ lệ chuyển đổi và rơi rụng theo từng bước
+          Luồng xử lý đơn hàng — click vào từng bước để xem danh sách đơn
         </p>
         <div className="space-y-2 max-w-xl">
           {(data.funnel ?? []).map((stage, i) => {
@@ -921,15 +1082,78 @@ function TabSales({ data, compareMode, prevData, from, to }) {
                     {i > 0 && <span style={{ color: 'var(--text-tertiary)' }}> ({convRate}%)</span>}
                   </span>
                 </div>
-                <div className="h-6 rounded-lg" style={{ background: 'var(--bg-elevated)' }}>
+                <div
+                  className="h-6 rounded-lg cursor-pointer transition-opacity"
+                  style={{ background: 'var(--bg-elevated)' }}
+                  onClick={() => stage.value > 0 && handleFunnelClick(stage)}
+                  title={`Click để xem đơn hàng ${stage.stage}`}
+                >
                   <div className="h-full rounded-lg transition-all duration-700"
-                    style={{ width: `${pct}%`, background: CHART_COLORS[i], minWidth: 40 }} />
+                    style={{ width: `${pct}%`, background: CHART_COLORS[i], minWidth: 40 }}
+                    onMouseEnter={e => e.currentTarget.style.opacity = '0.8'}
+                    onMouseLeave={e => e.currentTarget.style.opacity = '1'}
+                  />
                 </div>
               </div>
             )
           })}
         </div>
       </div>
+
+      {/* DetailDrawer — drill-down funnel stage */}
+      <DetailDrawer
+        open={!!drillFunnel}
+        onClose={() => { setDrillFunnel(null); setFunnelOrders([]) }}
+        title={funnelLoading ? 'Đang tải...' : `Đơn hàng trạng thái — ${drillFunnel?.stage ?? ''}`}
+        subtitle={!funnelLoading && funnelOrders.length > 0 ? `${funnelOrders.length} đơn` : undefined}
+        width={780}
+        footer={
+          funnelOrders.length > 0 && (
+            <button className="lbtn lbtn-secondary text-xs" style={{ height: 32 }}
+              onClick={() => drillFunnel && exportCsv(`orders_${drillFunnel.status}.csv`, funnelOrders)}>
+              <span className="icon icon-sm">download</span>
+              Xuất CSV
+            </button>
+          )
+        }
+      >
+        {funnelLoading ? (
+          <div className="flex items-center justify-center p-10">
+            <span className="w-6 h-6 border-2 rounded-full"
+              style={{ borderColor: 'var(--border)', borderTopColor: 'var(--primary-500)', animation: 'spin 0.8s linear infinite' }} />
+          </div>
+        ) : (
+          <table className="w-full text-sm border-collapse">
+            <thead className="sticky top-0" style={{ background: 'var(--bg-elevated)' }}>
+              <tr>
+                {funnelCols.map(col => (
+                  <th key={col.key} className="px-4 py-3 text-left font-semibold text-xs uppercase tracking-wide"
+                    style={{ color: 'var(--text-secondary)', borderBottom: '2px solid var(--border)' }}>
+                    {col.label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {funnelOrders.length > 0 ? funnelOrders.map((row, i) => (
+                <tr key={i} style={{ background: i % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.02)' }}>
+                  {funnelCols.map(col => (
+                    <td key={col.key} className="px-4 py-2.5"
+                      style={{ borderBottom: '1px solid var(--border)', color: 'var(--text-primary)' }}>
+                      {col.render ? col.render(row[col.key], row) : row[col.key]}
+                    </td>
+                  ))}
+                </tr>
+              )) : (
+                <tr>
+                  <td colSpan={funnelCols.length} className="py-10 text-center"
+                    style={{ color: 'var(--text-tertiary)' }}>Không có đơn hàng</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        )}
+      </DetailDrawer>
 
       {/* DetailDrawer khi click bar Pareto */}
       <DetailDrawer
@@ -1354,16 +1578,60 @@ function TabCustomer({ data, wd = {}, wl = {} }) {
         </div>
       </div>
 
-      {/* DrillDown danh sách KH theo phân khúc */}
-      {drillSeg && (
-        <DrillDownModal
-          title={drillCustLoad ? 'Đang tải...' : `Danh sách khách hàng — phân khúc "${drillSeg.label}"`}
-          columns={custCols}
-          data={drillCusts}
-          onClose={() => { setDrillSeg(null); setDrillCusts([]) }}
-          onExport={() => exportCsv(`customers_${drillSeg.key}.csv`, drillCusts)}
-        />
-      )}
+      {/* DetailDrawer — danh sách KH theo phân khúc RFM */}
+      <DetailDrawer
+        open={!!drillSeg}
+        onClose={() => { setDrillSeg(null); setDrillCusts([]) }}
+        title={drillCustLoad ? 'Đang tải...' : `Khách hàng phân khúc "${drillSeg?.label ?? ''}"`}
+        subtitle={!drillCustLoad && drillCusts.length > 0 ? `${drillCusts.length} khách hàng` : undefined}
+        width={680}
+        footer={
+          drillCusts.length > 0 && (
+            <button className="lbtn lbtn-secondary text-xs" style={{ height: 32 }}
+              onClick={() => drillSeg && exportCsv(`customers_${drillSeg.key}.csv`, drillCusts)}>
+              <span className="icon icon-sm">download</span>
+              Xuất CSV
+            </button>
+          )
+        }
+      >
+        {drillCustLoad ? (
+          <div className="flex items-center justify-center p-10">
+            <span className="w-6 h-6 border-2 rounded-full"
+              style={{ borderColor: 'var(--border)', borderTopColor: 'var(--primary-500)', animation: 'spin 0.8s linear infinite' }} />
+          </div>
+        ) : (
+          <table className="w-full text-sm border-collapse">
+            <thead className="sticky top-0" style={{ background: 'var(--bg-elevated)' }}>
+              <tr>
+                {custCols.map(col => (
+                  <th key={col.key} className="px-4 py-3 text-left font-semibold text-xs uppercase tracking-wide"
+                    style={{ color: 'var(--text-secondary)', borderBottom: '2px solid var(--border)' }}>
+                    {col.label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {drillCusts.length > 0 ? drillCusts.map((row, i) => (
+                <tr key={i} style={{ background: i % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.02)' }}>
+                  {custCols.map(col => (
+                    <td key={col.key} className="px-4 py-2.5"
+                      style={{ borderBottom: '1px solid var(--border)', color: 'var(--text-primary)' }}>
+                      {col.render ? col.render(row[col.key], row) : row[col.key]}
+                    </td>
+                  ))}
+                </tr>
+              )) : (
+                <tr>
+                  <td colSpan={custCols.length} className="py-10 text-center"
+                    style={{ color: 'var(--text-tertiary)' }}>Không có dữ liệu</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        )}
+      </DetailDrawer>
 
       {/* Phản hồi mạng xã hội (Facebook) */}
       <SocialFeedbackSection data={sentData} loading={sentLoading} />
@@ -1847,7 +2115,10 @@ function TabMarketing({ data, wd = {}, wl = {} }) {
 function TabInventory({ data, wd = {}, wl = {} }) {
   const { t }      = useTranslation()
   const navigate   = useNavigate()
-  const [showAllLowStock, setShowAllLowStock] = useState(false)
+  const [showAllLowStock,  setShowAllLowStock]  = useState(false)
+  const [showAllOverstock, setShowAllOverstock] = useState(false)
+  // Drawer xem chi tiết tồn kho sản phẩm (click vào sản phẩm sắp hết hoặc ứ đọng)
+  const [invDrawerItem, setInvDrawerItem] = useState(null)
   const invKpi = data.inventoryKpi || { avgDIO: 0, overstockRate: '0.0', stockoutRate: '0.0' }
   const fmtPct = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? `${n.toFixed(1)}%` : '—' }
   const invKpis = [
@@ -1949,7 +2220,20 @@ function TabInventory({ data, wd = {}, wl = {} }) {
       {/* Top 5 tồn cao nhất và sắp hết hàng */}
       <div className="grid grid-cols-12 gap-4">
         <div className="lcard p-5 col-span-12 lg:col-span-6">
-          <SectionTitle>Top 5 tồn kho cao nhất (nguy cơ ứ đọng)</SectionTitle>
+          <div className="flex items-center justify-between mb-3">
+            <SectionTitle>Top 5 tồn kho cao nhất (nguy cơ ứ đọng)</SectionTitle>
+            {(data.top5Overstock?.length ?? 0) > 5 && (
+              <button
+                onClick={() => setShowAllOverstock(v => !v)}
+                className="text-xs font-medium px-2.5 py-1 rounded-lg transition-colors"
+                style={{ color: 'var(--primary-600)', background: 'rgba(99,102,241,0.08)' }}
+                onMouseEnter={e => e.currentTarget.style.background = 'rgba(99,102,241,0.16)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'rgba(99,102,241,0.08)'}
+              >
+                {showAllOverstock ? 'Thu gọn' : `Hiện tất cả (${data.top5Overstock.length})`}
+              </button>
+            )}
+          </div>
           <div className="overflow-x-auto">
             <table className="w-full text-caption border-collapse">
               <thead>
@@ -1960,8 +2244,14 @@ function TabInventory({ data, wd = {}, wl = {} }) {
                 </tr>
               </thead>
               <tbody>
-                {(data.top5Overstock || []).map((item, i) => (
-                  <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
+                {(showAllOverstock ? data.top5Overstock : (data.top5Overstock || []).slice(0, 5)).map((item, i) => (
+                  <tr key={i}
+                    className="cursor-pointer transition-colors"
+                    style={{ borderBottom: '1px solid var(--border)' }}
+                    onClick={() => setInvDrawerItem({ ...item, type: 'overstock' })}
+                    onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                  >
                     <td className="py-2 px-2" style={{ color: 'var(--text-secondary)' }}>{item.product}</td>
                     <td className="py-2 px-2 text-right font-mono" style={{ color: 'var(--text-primary)' }}>{item.stock.toLocaleString('vi-VN')}</td>
                     <td className="py-2 px-2 text-right font-mono" style={{ color: 'var(--text-tertiary)' }}>{item.forecast.toLocaleString('vi-VN')}</td>
@@ -2006,7 +2296,13 @@ function TabInventory({ data, wd = {}, wl = {} }) {
                   {(showAllLowStock ? data.top5LowStock : data.top5LowStock.slice(0, 5)).map((item, i) => {
                     const daysLeft = item.dailySales > 0 ? Math.round(item.stock / item.dailySales) : 999
                     return (
-                      <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
+                      <tr key={i}
+                        className="cursor-pointer transition-colors"
+                        style={{ borderBottom: '1px solid var(--border)' }}
+                        onClick={() => setInvDrawerItem({ ...item, type: 'lowstock', daysLeft })}
+                        onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                      >
                         <td className="py-2 px-2" style={{ color: 'var(--text-secondary)' }}>{item.product}</td>
                         <td className="py-2 px-2 text-right font-mono font-bold" style={{ color: 'var(--color-error)' }}>{item.stock}</td>
                         <td className="py-2 px-2 text-right font-mono" style={{ color: 'var(--text-tertiary)' }}>
@@ -2090,6 +2386,76 @@ function TabInventory({ data, wd = {}, wl = {} }) {
           </div>
         )}
       </div>
+
+      {/* DetailDrawer — chi tiết tồn kho sản phẩm */}
+      <DetailDrawer
+        open={!!invDrawerItem}
+        onClose={() => setInvDrawerItem(null)}
+        title={invDrawerItem?.product ?? ''}
+        subtitle={invDrawerItem?.type === 'lowstock' ? 'Sản phẩm sắp hết hàng' : 'Tồn kho ứ đọng'}
+        width={480}
+      >
+        {invDrawerItem && (
+          <div className="p-5 space-y-4">
+            {invDrawerItem.type === 'lowstock' ? (
+              <>
+                <div className="flex items-center gap-3 px-4 py-3 rounded-xl"
+                  style={{ background: invDrawerItem.stock === 0 ? 'rgba(239,68,68,0.08)' : 'rgba(245,158,11,0.08)', border: `1px solid ${invDrawerItem.stock === 0 ? 'rgba(239,68,68,0.3)' : 'rgba(245,158,11,0.3)'}` }}>
+                  <span className="icon text-2xl" style={{ color: invDrawerItem.stock === 0 ? 'var(--color-error)' : '#F59E0B' }}>
+                    {invDrawerItem.stock === 0 ? 'error' : 'warning'}
+                  </span>
+                  <div>
+                    <p className="font-semibold text-sm" style={{ color: invDrawerItem.stock === 0 ? 'var(--color-error)' : '#D97706' }}>
+                      {invDrawerItem.stock === 0 ? 'Đã hết hàng' : `Còn khoảng ${invDrawerItem.daysLeft} ngày bán`}
+                    </p>
+                    <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
+                      {invDrawerItem.stock === 0 ? 'Cần nhập hàng ngay lập tức' : 'Nên đặt hàng bổ sung sớm'}
+                    </p>
+                  </div>
+                </div>
+                {[
+                  { label: 'Tồn kho hiện tại', value: invDrawerItem.stock.toLocaleString('vi-VN') + ' đơn vị', icon: 'inventory' },
+                  { label: 'Tốc độ bán TB/ngày', value: invDrawerItem.dailySales > 0 ? Number(invDrawerItem.dailySales).toFixed(1) + ' đv/ngày' : 'Chưa có dữ liệu', icon: 'trending_up' },
+                  { label: 'Số ngày còn có thể bán', value: invDrawerItem.daysLeft >= 999 ? '—' : `${invDrawerItem.daysLeft} ngày`, icon: 'schedule' },
+                  { label: 'Mức độ rủi ro', value: invDrawerItem.stock === 0 ? 'Hết hàng' : invDrawerItem.daysLeft <= 7 ? 'RỦI RO CAO' : 'CẢNH BÁO', icon: 'flag', valueColor: invDrawerItem.stock === 0 || invDrawerItem.daysLeft <= 7 ? 'var(--color-error)' : '#F59E0B' },
+                ].map(row => (
+                  <div key={row.label} className="flex items-center justify-between py-2.5 border-b" style={{ borderColor: 'var(--border)' }}>
+                    <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                      <span className="icon" style={{ fontSize: 16 }}>{row.icon}</span>
+                      {row.label}
+                    </div>
+                    <span className="font-semibold text-sm font-mono" style={{ color: row.valueColor ?? 'var(--text-primary)' }}>
+                      {row.value}
+                    </span>
+                  </div>
+                ))}
+              </>
+            ) : (
+              <>
+                <div className="flex items-center gap-3 px-4 py-3 rounded-xl"
+                  style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)' }}>
+                  <span className="icon text-2xl" style={{ color: '#F59E0B' }}>inventory_2</span>
+                  <div>
+                    <p className="font-semibold text-sm" style={{ color: '#D97706' }}>Tồn kho vượt dự báo {invDrawerItem.stockDiffPct}%</p>
+                    <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>Cân nhắc chạy khuyến mãi để giảm tồn</p>
+                  </div>
+                </div>
+                {[
+                  { label: 'Tồn kho thực tế', value: invDrawerItem.stock.toLocaleString('vi-VN') + ' đv' },
+                  { label: 'Tồn kho dự báo 30 ngày', value: (invDrawerItem.forecast ?? 0).toLocaleString('vi-VN') + ' đv' },
+                  { label: 'Chênh lệch', value: (parseFloat(invDrawerItem.stockDiffPct) > 0 ? '+' : '') + invDrawerItem.stockDiffPct + '%', valueColor: '#F59E0B' },
+                  { label: 'Số ngày tồn kho (DIO)', value: `${invDrawerItem.daysOfStock} ngày` },
+                ].map(row => (
+                  <div key={row.label} className="flex items-center justify-between py-2.5 border-b" style={{ borderColor: 'var(--border)' }}>
+                    <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>{row.label}</span>
+                    <span className="font-semibold text-sm font-mono" style={{ color: row.valueColor ?? 'var(--text-primary)' }}>{row.value}</span>
+                  </div>
+                ))}
+              </>
+            )}
+          </div>
+        )}
+      </DetailDrawer>
 
     </div>
   )
@@ -2486,7 +2852,7 @@ export default function DashboardPage() {
         </div>
       ) : data && (
         <div className="page-enter">
-          {activeTab === 'overview'     && <TabOverview     data={data} compareMode={compareMode} prevData={prevData} canViewAnalytics={canViewAnalytics} wd={widgetData} wl={widgetLoading} />}
+          {activeTab === 'overview'     && <TabOverview     data={data} compareMode={compareMode} prevData={prevData} canViewAnalytics={canViewAnalytics} wd={widgetData} wl={widgetLoading} dateRange={getRange()} />}
           {activeTab === 'sales'        && <TabSales        data={data} compareMode={compareMode} prevData={prevData} from={getRange().from} to={getRange().to} />}
           {activeTab === 'multichannel' && <TabMultiChannel data={data} wd={widgetData} wl={widgetLoading} />}
           {activeTab === 'customer'     && <TabCustomer     data={data} wd={widgetData} wl={widgetLoading} />}
