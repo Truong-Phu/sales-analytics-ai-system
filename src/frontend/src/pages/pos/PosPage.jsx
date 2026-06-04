@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import api from '../../api/axios'
 import { showToast } from '../../utils/toast'
 
@@ -14,6 +15,7 @@ const fmtVND = n => new Intl.NumberFormat('vi-VN').format(Math.round(n)) + 'đ'
 
 // ── Modal chọn biến thể ───────────────────────────────────────────────────────
 function VariationModal({ product, variations, onSelect, onClose }) {
+  const { t } = useTranslation()
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
          style={{ background: 'rgba(0,0,0,0.55)' }} onClick={onClose}>
@@ -22,7 +24,7 @@ function VariationModal({ product, variations, onSelect, onClose }) {
         <div className="flex items-center justify-between">
           <div>
             <h3 className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>
-              Chọn biến thể
+              {t('pos.selectVariation')}
             </h3>
             <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>{product.name}</p>
           </div>
@@ -271,6 +273,7 @@ const ALL_PAY_META = {
 
 // ── Main POS ─────────────────────────────────────────────────────────────────
 export default function PosPage() {
+  const { t } = useTranslation()
   const [cart,        setCart]        = useState([])
   const [customer,    setCustomer]    = useState(null)
   const [cusSearch,   setCusSearch]   = useState('')

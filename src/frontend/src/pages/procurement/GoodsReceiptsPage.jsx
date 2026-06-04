@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import api from '../../api/axios'
 import MockToast from '../../components/ui/MockToast'
@@ -255,6 +256,7 @@ function CreateReceiptDrawer({ open, onClose, onSaved, initialPoId = '', product
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function GoodsReceiptsPage() {
+  const { t } = useTranslation()
   const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
   const { user } = useAuth()
@@ -357,9 +359,9 @@ export default function GoodsReceiptsPage() {
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
-          <h1 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>Phiếu nhập kho</h1>
+          <h1 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>{t('goodsReceipts.title')}</h1>
           <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
-            Lịch sử nhận hàng thực tế ({total} phiếu)
+            {t('goodsReceipts.subtitle', { count: total })}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -372,13 +374,13 @@ export default function GoodsReceiptsPage() {
                 ? { background: 'var(--primary-500)', borderColor: 'var(--primary-500)', color: '#fff' }
                 : { borderColor: 'var(--border)', color: 'var(--text-secondary)', background: 'transparent' }}>
               <span className="icon text-sm">person</span>
-              Của tôi
+              {t('goodsReceipts.myToggle')}
             </button>
           )}
           <button onClick={() => openCreate()}
             className="px-4 py-2 rounded-lg text-sm text-white font-medium"
             style={{ background: 'var(--primary-500)' }}>
-            + Nhập kho
+            {t('goodsReceipts.createBtn')}
           </button>
         </div>
       </div>
@@ -389,7 +391,7 @@ export default function GoodsReceiptsPage() {
              style={{ borderColor: 'rgba(245,158,11,0.4)', background: 'rgba(245,158,11,0.04)' }}>
           <p className="text-xs font-semibold flex items-center gap-1.5" style={{ color: '#F59E0B' }}>
             <span className="icon text-sm">pending_actions</span>
-            {pendingPOs.length} phiếu đặt hàng đang chờ nhập kho
+            {t('goodsReceipts.pendingBanner', { count: pendingPOs.length })}
           </p>
           <div className="space-y-1.5">
             {pendingPOs.map(po => (

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import api from '../../api/axios'
 import { useAuth } from '../../hooks/useAuth'
 import DetailDrawer from '../../components/ui/DetailDrawer'
@@ -313,6 +314,7 @@ function SupplierModal({ supplier, onClose, onSaved }) {
 }
 
 export default function SuppliersManagementPage() {
+  const { t } = useTranslation()
   const { user }                    = useAuth()
   const canEdit                     = ['Owner', 'Manager'].includes(user?.role)
   const [rows,         setRows]         = useState([])
@@ -418,23 +420,23 @@ export default function SuppliersManagementPage() {
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
-          <h1 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>Nhà cung cấp</h1>
+          <h1 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>{t('supplierMgmt.title')}</h1>
           <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
-            Quản lý danh sách nhà cung cấp ({total})
+            {t('supplierMgmt.subtitle', { count: total })}
           </p>
         </div>
         <button onClick={handleExport}
           className="px-3 py-2 rounded-lg text-sm border flex items-center gap-1.5"
           style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
-          title="Xuất CSV trang hiện tại">
+          title={t('common.export_csv')}>
           <span className="icon text-base">download</span>
-          <span className="hidden sm:inline">Xuất CSV</span>
+          <span className="hidden sm:inline">{t('common.export_csv')}</span>
         </button>
         {canEdit && (
           <button onClick={() => setModal('create')}
             className="px-4 py-2 rounded-lg text-sm text-white font-medium"
             style={{ background: 'var(--primary-500)' }}>
-            + Thêm NCC
+            {t('supplierMgmt.addBtn')}
           </button>
         )}
       </div>

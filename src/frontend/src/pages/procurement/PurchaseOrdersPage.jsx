@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import api from '../../api/axios'
 import MockToast from '../../components/ui/MockToast'
@@ -402,6 +403,7 @@ function CreateDrawer({ open, onClose, onSaved, defaultProductId = '', defaultPr
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function PurchaseOrdersPage() {
+  const { t } = useTranslation()
   // Đọc URL params để pre-fill drawer khi navigate từ trang thông báo / tồn kho
   const [searchParams] = useSearchParams()
   const navigate       = useNavigate()
@@ -505,15 +507,15 @@ export default function PurchaseOrdersPage() {
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
-          <h1 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>Phiếu nhập hàng</h1>
+          <h1 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>{t('purchaseOrders.title')}</h1>
           <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
-            Quản lý đặt hàng nhà cung cấp ({total})
+            {t('purchaseOrders.subtitle', { count: total })}
           </p>
         </div>
         <button onClick={() => setShowCreate(true)}
           className="px-4 py-2 rounded-lg text-sm text-white font-medium"
           style={{ background: 'var(--primary-500)' }}>
-          + Tạo phiếu
+          {t('purchaseOrders.createBtn')}
         </button>
       </div>
 
