@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   ComposedChart, BarChart, Bar, Line,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine,
@@ -169,6 +170,7 @@ function FeeConfigRow({ cfg, onSave }) {
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function ProfitPage() {
+  const { t } = useTranslation()
   const daysAgo30 = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10)
   const tomorrow  = new Date(Date.now() + 86400000).toISOString().slice(0, 10)
 
@@ -230,13 +232,13 @@ export default function ProfitPage() {
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-gray-800">Phân tích lợi nhuận</h1>
-          <p className="text-sm text-gray-500">Doanh thu · COGS · LN gộp · Phí sàn · Chi phí QC → Lợi nhuận vận hành</p>
+          <h1 className="text-2xl font-bold text-gray-800">{t('profit.title')}</h1>
+          <p className="text-sm text-gray-500">{t('profit.subtitle')}</p>
         </div>
-        <DateRangeFilter from={from} to={to} onChange={(f, t) => { setFrom(f); setTo(t) }} />
+        <DateRangeFilter from={from} to={to} onChange={(f, toVal) => { setFrom(f); setTo(toVal) }} />
       </div>
 
-      {!ov && !loading && <AiEmptyState title="Chưa có dữ liệu lợi nhuận" />}
+      {!ov && !loading && <AiEmptyState title={t('profit.emptyState')} />}
 
       {/* Cảnh báo estimated */}
       {ov?.isEstimated && (
@@ -281,17 +283,19 @@ export default function ProfitPage() {
 
       {/* Tabs */}
       <div className="border-b flex gap-6 text-sm font-medium">
-        {['overview','channel','product','orders','fee-config'].map(t => (
-          <button key={t}
-            onClick={() => setTab(t)}
-            className={`pb-2 border-b-2 transition-colors ${tab === t
+        {[
+          { key: 'overview',    label: t('profit.tabTime') },
+          { key: 'channel',     label: t('profit.tabChannel') },
+          { key: 'product',     label: t('profit.tabProduct') },
+          { key: 'orders',      label: t('profit.tabOrders') },
+          { key: 'fee-config',  label: t('profit.tabFeeConfig') },
+        ].map(({ key, label }) => (
+          <button key={key}
+            onClick={() => setTab(key)}
+            className={`pb-2 border-b-2 transition-colors ${tab === key
               ? 'border-blue-600 text-blue-600'
               : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
-            {t === 'overview'    ? 'Theo thời gian'
-            : t === 'channel'   ? 'Theo kênh'
-            : t === 'product'   ? 'Theo sản phẩm'
-            : t === 'orders'    ? 'Đơn hàng'
-            :                     'Cấu hình phí'}
+            {label}
           </button>
         ))}
       </div>
@@ -299,9 +303,9 @@ export default function ProfitPage() {
       {/* TAB: Theo thời gian */}
       {tab === 'overview' && (
         <div className="bg-white rounded-xl border p-4">
-          <h2 className="font-semibold text-gray-700 mb-4">Doanh thu & Lợi nhuận theo tháng</h2>
+          <h2 className="font-semibold text-gray-700 mb-4">{t('profit.chartTitle')}</h2>
           {byDate.length === 0
-            ? <div className="text-center text-gray-400 py-12">Chưa có dữ liệu</div>
+            ? <div className="text-center text-gray-400 py-12">{t('profit.noData')}</div>
             : <ResponsiveContainer width="100%" height={340}>
                 <ComposedChart data={byDate} margin={{ top: 8, right: 20, left: 20, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
@@ -332,7 +336,7 @@ export default function ProfitPage() {
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b">
               <tr>
-                {['Kênh','Đơn','Doanh thu','Giá vốn','LN Gộp','Biên gộp','Phí sàn (ước)','LN sau phí','Chi phí QC','ACOS','LN vận hành','Biên VH'].map(h => (
+                {[t('profit.colChannel'),t('profit.colOrders'),t('profit.colRevenue'),t('profit.colCogs'),t('profit.colGrossProfit'),t('profit.colGrossMargin'),t('profit.colPlatformFee'),t('profit.colAfterPlatform'),t('profit.colAdCost'),t('profit.colAcos'),t('profit.colOpProfit'),t('profit.colOpMargin')].map(h => (
                   <th key={h} className="text-left py-2 px-3 text-xs font-medium text-gray-600 whitespace-nowrap">{h}</th>
                 ))}
               </tr>
