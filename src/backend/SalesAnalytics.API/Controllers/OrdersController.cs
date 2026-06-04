@@ -74,7 +74,6 @@ public class OrdersController(
                 JOIN dw.dim_channel dc ON fs.channel_key = dc.channel_key
                 JOIN dw.dim_product dp ON fs.product_key = dp.product_key
                 WHERE dp.is_current = TRUE
-                  AND (@status     IS NULL OR dc.channel_name ILIKE '%' || @status  || '%')
                   AND (@channel    IS NULL OR dc.channel_name ILIKE '%' || @channel || '%')
                   AND (@productKey IS NULL OR fs.product_key = @productKey)
                   AND (@from       IS NULL OR dd.full_date >= @from::date)
@@ -94,7 +93,6 @@ public class OrdersController(
                 JOIN dw.dim_channel dc ON fs.channel_key = dc.channel_key
                 JOIN dw.dim_product dp ON fs.product_key = dp.product_key
                 WHERE dp.is_current = TRUE
-                  AND (@status     IS NULL OR dc.channel_name ILIKE '%' || @status  || '%')
                   AND (@channel    IS NULL OR dc.channel_name ILIKE '%' || @channel || '%')
                   AND (@productKey IS NULL OR fs.product_key = @productKey)
                   AND (@from       IS NULL OR dd.full_date >= @from::date)
@@ -107,7 +105,6 @@ public class OrdersController(
 
             void BindParams(NpgsqlCommand c)
             {
-                c.Parameters.Add(new NpgsqlParameter("status",     NpgsqlDbType.Text)    { Value = (object?)status    ?? DBNull.Value });
                 c.Parameters.Add(new NpgsqlParameter("channel",    NpgsqlDbType.Text)    { Value = (object?)channel   ?? DBNull.Value });
                 c.Parameters.Add(new NpgsqlParameter("productKey", NpgsqlDbType.Integer) { Value = (object?)productKey ?? DBNull.Value });
                 c.Parameters.Add(new NpgsqlParameter("from",       NpgsqlDbType.Text)    { Value = from.HasValue ? (object)from.Value.ToString("yyyy-MM-dd") : DBNull.Value });

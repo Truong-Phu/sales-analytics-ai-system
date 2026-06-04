@@ -346,6 +346,82 @@ function DrillDownModal({ title, subtitle, columns, data, onClose, onExport }) {
   )
 }
 
+// ── DrillTable — component tái sử dụng cho bảng drill-down bên trong DetailDrawer ──
+// Props: columns, result={items,total,page,totalPages}, loading, onLoadMore, loadingMore
+function DrillTable({ columns, result = {}, loading = false, onLoadMore, loadingMore = false }) {
+  const { items = [], total = 0, page = 1, totalPages = 1 } = result
+  const hasMock    = items.some(r => r.is_mock)
+  const hasMore    = page < totalPages
+  const displayEnd = Math.min(items.length, page * 20)
+
+  if (loading) return (
+    <div className="flex items-center justify-center p-10">
+      <span className="w-6 h-6 border-2 rounded-full"
+        style={{ borderColor: 'var(--border)', borderTopColor: 'var(--primary-500)', animation: 'spin 0.8s linear infinite' }} />
+    </div>
+  )
+
+  return (
+    <div>
+      {hasMock && (
+        <div className="flex items-center gap-2 px-4 py-2 text-xs"
+          style={{ background: 'rgba(245,158,11,0.1)', color: '#92400e', borderBottom: '1px solid rgba(245,158,11,0.3)' }}>
+          <span className="icon" style={{ fontSize: 14, color: '#f59e0b' }}>warning</span>
+          Đang dùng dữ liệu mẫu — kiểm tra lại kết nối backend
+        </div>
+      )}
+      {total > 0 && (
+        <div className="px-4 py-2 text-xs" style={{ color: 'var(--text-tertiary)', borderBottom: '1px solid var(--border)' }}>
+          Hiển thị {items.length} / {total} bản ghi
+        </div>
+      )}
+      <table className="w-full text-sm border-collapse">
+        <thead className="sticky top-0" style={{ background: 'var(--bg-elevated)' }}>
+          <tr>
+            {columns.map(col => (
+              <th key={col.key} className="px-4 py-3 text-left font-semibold text-xs uppercase tracking-wide"
+                style={{ color: 'var(--text-secondary)', borderBottom: '2px solid var(--border)' }}>
+                {col.label}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {items.length > 0 ? items.filter(r => !r.is_mock || r.orderId !== '—').map((row, i) => (
+            <tr key={i} style={{ background: i % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.02)' }}>
+              {columns.map(col => (
+                <td key={col.key} className="px-4 py-2.5"
+                  style={{ borderBottom: '1px solid var(--border)', color: 'var(--text-primary)', textAlign: col.align ?? 'left' }}>
+                  {col.render ? col.render(row[col.key], row) : (row[col.key] ?? '—')}
+                </td>
+              ))}
+            </tr>
+          )) : (
+            <tr>
+              <td colSpan={columns.length} className="py-10 text-center"
+                style={{ color: 'var(--text-tertiary)' }}>Không có dữ liệu</td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+      {hasMore && onLoadMore && (
+        <div className="flex justify-center py-3 border-t" style={{ borderColor: 'var(--border)' }}>
+          <button
+            onClick={onLoadMore}
+            disabled={loadingMore}
+            className="lbtn lbtn-secondary text-xs !h-8 !px-4"
+            style={{ opacity: loadingMore ? 0.6 : 1 }}
+          >
+            {loadingMore
+              ? <><span className="icon animate-spin text-sm">refresh</span> Đang tải...</>
+              : <>Tải thêm ({total - items.length} còn lại)</>}
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── AI Insights Card — hiện preview gợi ý tự động (cùng nguồn với Gợi ý AI tab) ───
 const PRIORITY_DOT_DASH = { high: '#EF4444', medium: '#F59E0B', low: '#6366F1' }
 
@@ -431,26 +507,42 @@ function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd 
   const kpi    = data.kpi
 
   // Drill-down state (click biểu đồ doanh thu theo ngày / click kênh)
-  const [drillCtx,     setDrillCtx]     = useState(null)  // { type: 'date'|'channel', label, key }
-  const [drillItems,   setDrillItems]   = useState([])
-  const [drillLoading, setDrillLoading] = useState(false)
+  const [drillCtx,        setDrillCtx]        = useState(null)
+  const [drillItems,      setDrillItems]      = useState({ items: [], total: 0, page: 1, totalPages: 1 })
+  const [drillLoading,    setDrillLoading]    = useState(false)
+  const [drillLoadMore,   setDrillLoadMore]   = useState(false)
 
   const openDrill = async (ctx) => {
     setDrillCtx(ctx)
     setDrillLoading(true)
     try {
-      let rows = []
+      let res
       if (ctx.type === 'date') {
-        rows = await getDrillDownByDate(ctx.key)
-      } else if (ctx.type === 'channel') {
-        rows = await getDrillDownByChannel(ctx.key, dateRange.from, dateRange.to)
+        res = await getDrillDownByDate(ctx.key)
+      } else {
+        res = await getDrillDownByChannel(ctx.key, dateRange.from, dateRange.to)
       }
-      setDrillItems(rows)
+      setDrillItems(res)
     } catch {
-      setDrillItems([{ is_mock: true, orderId: '—', date: '—', channel: '—', productName: '—', qty: 0, revenue: 0, status: '—' }])
+      setDrillItems({ items: [], total: 0, page: 1, totalPages: 1 })
     } finally {
       setDrillLoading(false)
     }
+  }
+
+  const loadMoreDrill = async () => {
+    if (!drillCtx || drillItems.page >= drillItems.totalPages) return
+    setDrillLoadMore(true)
+    try {
+      let res
+      const nextPage = { page: drillItems.page + 1 }
+      if (drillCtx.type === 'date') {
+        res = await getDrillDownByDate(drillCtx.key, nextPage)
+      } else {
+        res = await getDrillDownByChannel(drillCtx.key, dateRange.from, dateRange.to, nextPage)
+      }
+      setDrillItems(prev => ({ ...res, items: [...prev.items, ...res.items] }))
+    } catch {} finally { setDrillLoadMore(false) }
   }
 
   const drillCols = [
@@ -460,7 +552,6 @@ function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd 
     { key: 'productName', label: 'Sản phẩm' },
     { key: 'qty',         label: 'SL' },
     { key: 'revenue',     label: 'Doanh thu', render: v => Number(v).toLocaleString('vi-VN') + ' ₫' },
-    { key: 'status',      label: 'Trạng thái' },
   ]
   const sp     = data.sparklines || {}
   const lbData       = wd.leaderboard ?? null
@@ -756,67 +847,29 @@ function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd 
       {/* DetailDrawer — drill-down khi click biểu đồ doanh thu hoặc kênh */}
       <DetailDrawer
         open={!!drillCtx}
-        onClose={() => { setDrillCtx(null); setDrillItems([]) }}
+        onClose={() => { setDrillCtx(null); setDrillItems({ items: [], total: 0, page: 1, totalPages: 1 }) }}
         title={drillLoading ? 'Đang tải...' :
           drillCtx?.type === 'date'    ? `Đơn hàng ngày ${drillCtx.label}` :
           drillCtx?.type === 'channel' ? `Đơn hàng kênh ${drillCtx.label}` : ''}
-        subtitle={!drillLoading && drillItems.length > 0 ? `${drillItems.length} đơn` : undefined}
+        subtitle={!drillLoading && drillItems.total > 0 ? `${drillItems.total} đơn` : undefined}
         width={780}
         footer={
-          drillItems.length > 0 && (
+          drillItems.items.length > 0 && (
             <button className="lbtn lbtn-secondary text-xs" style={{ height: 32 }}
-              onClick={() => drillCtx && exportCsv(`orders_${drillCtx.key}.csv`, drillItems.map(({ is_mock, ...r }) => r))}>
+              onClick={() => drillCtx && exportCsv(`orders_${drillCtx.key}.csv`, drillItems.items.map(({ is_mock, ...r }) => r))}>
               <span className="icon icon-sm">download</span>
               Xuất CSV
             </button>
           )
         }
       >
-        {drillLoading ? (
-          <div className="flex items-center justify-center p-10">
-            <span className="w-6 h-6 border-2 rounded-full"
-              style={{ borderColor: 'var(--border)', borderTopColor: 'var(--primary-500)', animation: 'spin 0.8s linear infinite' }} />
-          </div>
-        ) : (
-          <div>
-            {drillItems.some(r => r.is_mock) && (
-              <div className="flex items-center gap-2 px-4 py-2 text-xs"
-                style={{ background: 'rgba(245,158,11,0.1)', color: '#92400e', borderBottom: '1px solid rgba(245,158,11,0.3)' }}>
-                <span className="icon" style={{ fontSize: 14, color: '#f59e0b' }}>warning</span>
-                Đang dùng dữ liệu mẫu — API chưa phản hồi
-              </div>
-            )}
-            <table className="w-full text-sm border-collapse">
-              <thead className="sticky top-0" style={{ background: 'var(--bg-elevated)' }}>
-                <tr>
-                  {drillCols.map(col => (
-                    <th key={col.key} className="px-4 py-3 text-left font-semibold text-xs uppercase tracking-wide"
-                      style={{ color: 'var(--text-secondary)', borderBottom: '2px solid var(--border)' }}>
-                      {col.label}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {drillItems.length > 0 ? drillItems.map((row, i) => (
-                  <tr key={i} style={{ background: i % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.02)' }}>
-                    {drillCols.map(col => (
-                      <td key={col.key} className="px-4 py-2.5"
-                        style={{ borderBottom: '1px solid var(--border)', color: 'var(--text-primary)' }}>
-                        {col.render ? col.render(row[col.key], row) : row[col.key]}
-                      </td>
-                    ))}
-                  </tr>
-                )) : (
-                  <tr>
-                    <td colSpan={drillCols.length} className="py-10 text-center"
-                      style={{ color: 'var(--text-tertiary)' }}>Không có đơn hàng</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        )}
+        <DrillTable
+          columns={drillCols}
+          result={drillItems}
+          loading={drillLoading}
+          onLoadMore={loadMoreDrill}
+          loadingMore={drillLoadMore}
+        />
       </DetailDrawer>
     </div>
   )
@@ -826,15 +879,17 @@ function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd 
 function TabSales({ data, compareMode, prevData, from, to }) {
   const { t } = useTranslation()
   const [drillProduct,        setDrillProduct]        = useState(null)
-  const [drillOrders,         setDrillOrders]         = useState([])
+  const [drillOrders,         setDrillOrders]         = useState({ items: [], total: 0, page: 1, totalPages: 1 })
   const [drillLoading,        setDrillLoading]        = useState(false)
+  const [drillLoadingMore,    setDrillLoadingMore]    = useState(false)
   // Funnel drill-down state
   const [drillFunnel,       setDrillFunnel]       = useState(null)
-  const [funnelOrders,      setFunnelOrders]      = useState([])
+  const [funnelOrders,      setFunnelOrders]      = useState({ items: [], total: 0, page: 1, totalPages: 1 })
   const [funnelLoading,     setFunnelLoading]     = useState(false)
+  const [funnelLoadingMore, setFunnelLoadingMore] = useState(false)
   const maxFunnel = data?.funnel?.[0]?.value ?? 1
 
-  // Map nhãn phễu → status API
+  // Map nhãn phễu → status OLTP
   const FUNNEL_STATUS = {
     'PENDING':   'PENDING',
     'PAID':      'PAID',
@@ -849,13 +904,22 @@ function TabSales({ data, compareMode, prevData, from, to }) {
     setDrillFunnel({ stage: stage.stage, status: apiStatus })
     setFunnelLoading(true)
     try {
-      const orders = await getDrillDownByStatus(apiStatus, from, to)
-      setFunnelOrders(orders)
+      const res = await getDrillDownByStatus(apiStatus, from, to)
+      setFunnelOrders(res)
     } catch {
-      setFunnelOrders([])
+      setFunnelOrders({ items: [], total: 0, page: 1, totalPages: 1 })
     } finally {
       setFunnelLoading(false)
     }
+  }
+
+  const loadMoreFunnel = async () => {
+    if (!drillFunnel || funnelOrders.page >= funnelOrders.totalPages) return
+    setFunnelLoadingMore(true)
+    try {
+      const res = await getDrillDownByStatus(drillFunnel.status, from, to, { page: funnelOrders.page + 1 })
+      setFunnelOrders(prev => ({ ...res, items: [...prev.items, ...res.items] }))
+    } catch {} finally { setFunnelLoadingMore(false) }
   }
 
   const funnelCols = [
@@ -902,31 +966,38 @@ function TabSales({ data, compareMode, prevData, from, to }) {
     setDrillProduct(entry)
     setDrillLoading(true)
     try {
-      const orders = await getDrillDownOrders(entry.productKey ?? entry.ProductId, from, to)
-      setDrillOrders(orders)
+      // Fix: dùng entry.productId (camelCase từ API JSON) thay vì entry.ProductId (PascalCase)
+      const productKey = entry.productKey ?? entry.productId ?? entry.ProductId
+      const res = await getDrillDownOrders(productKey, from, to)
+      setDrillOrders(res)
     } catch {
-      // Fallback khi API fail — đánh dấu is_mock để UI hiện cảnh báo
-      setDrillOrders(Array.from({ length: 8 }, (_, i) => ({
-        orderId: `ORD-${10000 + i}`,
-        date:    `2025-${String(Math.ceil((i+1)/3)).padStart(2,'0')}-${String(10 + i * 3).padStart(2,'0')}`,
-        channel: ['Shopee','Lazada','TikTok Shop','Offline'][i % 4],
-        qty:     1 + (i % 3),
-        revenue: 200_000 + i * 100_000,
-        status:  'Hoàn thành',
-        is_mock: true,
-      })))
+      // Fallback khi API fail — chỉ dùng khi lỗi thực sự, không dùng để che giấu bug
+      setDrillOrders({
+        items: [{ orderId: '—', date: '—', channel: '—', productName: '—', qty: 0, revenue: 0, is_mock: true }],
+        total: 0, page: 1, totalPages: 1,
+      })
     } finally {
       setDrillLoading(false)
     }
   }
 
+  const loadMoreDrill = async () => {
+    if (!drillProduct || drillOrders.page >= drillOrders.totalPages) return
+    setDrillLoadingMore(true)
+    try {
+      const productKey = drillProduct.productKey ?? drillProduct.productId ?? drillProduct.ProductId
+      const res = await getDrillDownOrders(productKey, from, to, { page: drillOrders.page + 1 })
+      setDrillOrders(prev => ({ ...res, items: [...prev.items, ...res.items] }))
+    } catch {} finally { setDrillLoadingMore(false) }
+  }
+
   const drillColumns = [
-    { key: 'orderId',  label: 'Mã đơn' },
-    { key: 'date',     label: 'Ngày' },
-    { key: 'channel',  label: 'Kênh' },
-    { key: 'qty',      label: 'SL' },
-    { key: 'revenue',  label: 'Doanh thu', render: v => v.toLocaleString('vi-VN') + ' VND' },
-    { key: 'status',   label: 'Trạng thái' },
+    { key: 'orderId',     label: 'Mã đơn' },
+    { key: 'date',        label: 'Ngày' },
+    { key: 'channel',     label: 'Kênh' },
+    { key: 'productName', label: 'Sản phẩm' },
+    { key: 'qty',         label: 'SL' },
+    { key: 'revenue',     label: 'Doanh thu', render: v => Number(v).toLocaleString('vi-VN') + ' ₫' },
   ]
 
   return (
@@ -1103,123 +1174,56 @@ function TabSales({ data, compareMode, prevData, from, to }) {
       {/* DetailDrawer — drill-down funnel stage */}
       <DetailDrawer
         open={!!drillFunnel}
-        onClose={() => { setDrillFunnel(null); setFunnelOrders([]) }}
+        onClose={() => { setDrillFunnel(null); setFunnelOrders({ items: [], total: 0, page: 1, totalPages: 1 }) }}
         title={funnelLoading ? 'Đang tải...' : `Đơn hàng trạng thái — ${drillFunnel?.stage ?? ''}`}
-        subtitle={!funnelLoading && funnelOrders.length > 0 ? `${funnelOrders.length} đơn` : undefined}
+        subtitle={!funnelLoading && funnelOrders.total > 0 ? `${funnelOrders.total} đơn` : undefined}
         width={780}
         footer={
-          funnelOrders.length > 0 && (
+          funnelOrders.items.length > 0 && (
             <button className="lbtn lbtn-secondary text-xs" style={{ height: 32 }}
-              onClick={() => drillFunnel && exportCsv(`orders_${drillFunnel.status}.csv`, funnelOrders)}>
+              onClick={() => drillFunnel && exportCsv(`orders_${drillFunnel.status}.csv`, funnelOrders.items)}>
               <span className="icon icon-sm">download</span>
               Xuất CSV
             </button>
           )
         }
       >
-        {funnelLoading ? (
-          <div className="flex items-center justify-center p-10">
-            <span className="w-6 h-6 border-2 rounded-full"
-              style={{ borderColor: 'var(--border)', borderTopColor: 'var(--primary-500)', animation: 'spin 0.8s linear infinite' }} />
-          </div>
-        ) : (
-          <table className="w-full text-sm border-collapse">
-            <thead className="sticky top-0" style={{ background: 'var(--bg-elevated)' }}>
-              <tr>
-                {funnelCols.map(col => (
-                  <th key={col.key} className="px-4 py-3 text-left font-semibold text-xs uppercase tracking-wide"
-                    style={{ color: 'var(--text-secondary)', borderBottom: '2px solid var(--border)' }}>
-                    {col.label}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {funnelOrders.length > 0 ? funnelOrders.map((row, i) => (
-                <tr key={i} style={{ background: i % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.02)' }}>
-                  {funnelCols.map(col => (
-                    <td key={col.key} className="px-4 py-2.5"
-                      style={{ borderBottom: '1px solid var(--border)', color: 'var(--text-primary)' }}>
-                      {col.render ? col.render(row[col.key], row) : row[col.key]}
-                    </td>
-                  ))}
-                </tr>
-              )) : (
-                <tr>
-                  <td colSpan={funnelCols.length} className="py-10 text-center"
-                    style={{ color: 'var(--text-tertiary)' }}>Không có đơn hàng</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        )}
+        <DrillTable
+          columns={funnelCols}
+          result={funnelOrders}
+          loading={funnelLoading}
+          onLoadMore={loadMoreFunnel}
+          loadingMore={funnelLoadingMore}
+        />
       </DetailDrawer>
 
       {/* DetailDrawer khi click bar Pareto */}
       <DetailDrawer
         open={!!drillProduct}
-        onClose={() => { setDrillProduct(null); setDrillOrders([]) }}
+        onClose={() => { setDrillProduct(null); setDrillOrders({ items: [], total: 0, page: 1, totalPages: 1 }) }}
         title={drillLoading ? 'Đang tải...' : `Chi tiết đơn hàng — ${drillProduct?.productName || drillProduct?.shortName || ''}`}
-        subtitle={!drillLoading && drillOrders.length > 0 ? `${drillOrders.length} đơn hàng` : undefined}
+        subtitle={!drillLoading && drillOrders.total > 0 ? `${drillOrders.total} đơn hàng` : undefined}
         width={780}
         footer={
-          drillOrders.length > 0 && (
-            <button
-              className="lbtn lbtn-secondary text-xs"
-              style={{ height: 32 }}
-              onClick={() => drillProduct && exportCsv(`orders_${drillProduct.shortName ?? 'product'}.csv`, drillOrders.map(({ is_mock, ...r }) => r))}
-            >
+          drillOrders.items.length > 0 && (
+            <button className="lbtn lbtn-secondary text-xs" style={{ height: 32 }}
+              onClick={() => drillProduct && exportCsv(
+                `orders_${drillProduct.shortName ?? 'product'}.csv`,
+                drillOrders.items.map(({ is_mock, ...r }) => r)
+              )}>
               <span className="icon icon-sm">download</span>
               Xuất CSV
             </button>
           )
         }
       >
-        {drillLoading ? (
-          <div className="flex items-center justify-center p-10">
-            <span className="w-6 h-6 border-2 rounded-full"
-              style={{ borderColor: 'var(--border)', borderTopColor: 'var(--primary-500)', animation: 'spin 0.8s linear infinite' }} />
-          </div>
-        ) : (
-          <div className="p-0">
-            {drillOrders.some(r => r.is_mock) && (
-              <div className="flex items-center gap-2 px-4 py-2 text-xs"
-                style={{ background: 'rgba(245,158,11,0.1)', color: '#92400e', borderBottom: '1px solid rgba(245,158,11,0.3)' }}>
-                <span className="icon" style={{ fontSize: 14, color: '#f59e0b' }}>warning</span>
-                Đang dùng dữ liệu mẫu — API chi tiết chưa phản hồi
-              </div>
-            )}
-            <table className="w-full text-sm border-collapse">
-              <thead className="sticky top-0" style={{ background: 'var(--bg-elevated)' }}>
-                <tr>
-                  {drillColumns.map(col => (
-                    <th key={col.key} className="px-4 py-3 text-left font-semibold text-xs uppercase tracking-wide"
-                      style={{ color: 'var(--text-secondary)', borderBottom: '2px solid var(--border)' }}>
-                      {col.label}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {drillOrders.length > 0 ? drillOrders.map((row, i) => (
-                  <tr key={i} style={{ background: i % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.02)' }}>
-                    {drillColumns.map(col => (
-                      <td key={col.key} className="px-4 py-2.5"
-                        style={{ borderBottom: '1px solid var(--border)', textAlign: col.align ?? 'left', color: 'var(--text-primary)' }}>
-                        {col.render ? col.render(row[col.key], row) : row[col.key]}
-                      </td>
-                    ))}
-                  </tr>
-                )) : (
-                  <tr>
-                    <td colSpan={drillColumns.length} className="py-10 text-center"
-                      style={{ color: 'var(--text-tertiary)' }}>Không có dữ liệu</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        )}
+        <DrillTable
+          columns={drillColumns}
+          result={drillOrders}
+          loading={drillLoading}
+          onLoadMore={loadMoreDrill}
+          loadingMore={drillLoadingMore}
+        />
       </DetailDrawer>
     </div>
   )
@@ -1476,9 +1480,10 @@ function buildClvScatterFromRfm(rfm) {
 
 function TabCustomer({ data, wd = {}, wl = {} }) {
   const { t }        = useTranslation()
-  const [drillSeg,      setDrillSeg]      = useState(null)
-  const [drillCusts,    setDrillCusts]    = useState([])
-  const [drillCustLoad, setDrillCustLoad] = useState(false)
+  const [drillSeg,        setDrillSeg]        = useState(null)
+  const [drillCusts,      setDrillCusts]      = useState({ items: [], total: 0, page: 1, totalPages: 1 })
+  const [drillCustLoad,   setDrillCustLoad]   = useState(false)
+  const [drillCustMore,   setDrillCustMore]   = useState(false)
   const geoData    = wd.geo       ?? null
   const geoLoading = wl.geo       ?? false
   const sentData   = wd.sentiment ?? null
@@ -1493,13 +1498,22 @@ function TabCustomer({ data, wd = {}, wl = {} }) {
     setDrillSeg(seg)
     setDrillCustLoad(true)
     try {
-      const custs = await getDrillDownCustomers(seg.key)
-      setDrillCusts(custs)
+      const res = await getDrillDownCustomers(seg.key)
+      setDrillCusts(res)
     } catch {
-      setDrillCusts([])
+      setDrillCusts({ items: [], total: 0, page: 1, totalPages: 1 })
     } finally {
       setDrillCustLoad(false)
     }
+  }
+
+  const loadMoreCust = async () => {
+    if (!drillSeg || drillCusts.page >= drillCusts.totalPages) return
+    setDrillCustMore(true)
+    try {
+      const res = await getDrillDownCustomers(drillSeg.key, { page: drillCusts.page + 1 })
+      setDrillCusts(prev => ({ ...res, items: [...prev.items, ...res.items] }))
+    } catch {} finally { setDrillCustMore(false) }
   }
 
   const custCols = [
@@ -1581,56 +1595,27 @@ function TabCustomer({ data, wd = {}, wl = {} }) {
       {/* DetailDrawer — danh sách KH theo phân khúc RFM */}
       <DetailDrawer
         open={!!drillSeg}
-        onClose={() => { setDrillSeg(null); setDrillCusts([]) }}
+        onClose={() => { setDrillSeg(null); setDrillCusts({ items: [], total: 0, page: 1, totalPages: 1 }) }}
         title={drillCustLoad ? 'Đang tải...' : `Khách hàng phân khúc "${drillSeg?.label ?? ''}"`}
-        subtitle={!drillCustLoad && drillCusts.length > 0 ? `${drillCusts.length} khách hàng` : undefined}
+        subtitle={!drillCustLoad && drillCusts.total > 0 ? `${drillCusts.total} khách hàng` : undefined}
         width={680}
         footer={
-          drillCusts.length > 0 && (
+          drillCusts.items.length > 0 && (
             <button className="lbtn lbtn-secondary text-xs" style={{ height: 32 }}
-              onClick={() => drillSeg && exportCsv(`customers_${drillSeg.key}.csv`, drillCusts)}>
+              onClick={() => drillSeg && exportCsv(`customers_${drillSeg.key}.csv`, drillCusts.items)}>
               <span className="icon icon-sm">download</span>
               Xuất CSV
             </button>
           )
         }
       >
-        {drillCustLoad ? (
-          <div className="flex items-center justify-center p-10">
-            <span className="w-6 h-6 border-2 rounded-full"
-              style={{ borderColor: 'var(--border)', borderTopColor: 'var(--primary-500)', animation: 'spin 0.8s linear infinite' }} />
-          </div>
-        ) : (
-          <table className="w-full text-sm border-collapse">
-            <thead className="sticky top-0" style={{ background: 'var(--bg-elevated)' }}>
-              <tr>
-                {custCols.map(col => (
-                  <th key={col.key} className="px-4 py-3 text-left font-semibold text-xs uppercase tracking-wide"
-                    style={{ color: 'var(--text-secondary)', borderBottom: '2px solid var(--border)' }}>
-                    {col.label}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {drillCusts.length > 0 ? drillCusts.map((row, i) => (
-                <tr key={i} style={{ background: i % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.02)' }}>
-                  {custCols.map(col => (
-                    <td key={col.key} className="px-4 py-2.5"
-                      style={{ borderBottom: '1px solid var(--border)', color: 'var(--text-primary)' }}>
-                      {col.render ? col.render(row[col.key], row) : row[col.key]}
-                    </td>
-                  ))}
-                </tr>
-              )) : (
-                <tr>
-                  <td colSpan={custCols.length} className="py-10 text-center"
-                    style={{ color: 'var(--text-tertiary)' }}>Không có dữ liệu</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        )}
+        <DrillTable
+          columns={custCols}
+          result={drillCusts}
+          loading={drillCustLoad}
+          onLoadMore={loadMoreCust}
+          loadingMore={drillCustMore}
+        />
       </DetailDrawer>
 
       {/* Phản hồi mạng xã hội (Facebook) */}
@@ -2217,111 +2202,104 @@ function TabInventory({ data, wd = {}, wl = {} }) {
         </ResponsiveContainer>
       </div>
 
-      {/* Top 5 tồn cao nhất và sắp hết hàng */}
+      {/* Top 5 tồn cao nhất và sắp hết hàng — dạng ranking bar visual */}
       <div className="grid grid-cols-12 gap-4">
+        {/* ── Tồn kho ứ đọng (OVERSTOCK) ── */}
         <div className="lcard p-5 col-span-12 lg:col-span-6">
-          <div className="flex items-center justify-between mb-3">
-            <SectionTitle>Top 5 tồn kho cao nhất (nguy cơ ứ đọng)</SectionTitle>
+          <div className="flex items-center justify-between mb-4">
+            <SectionTitle>Tồn kho ứ đọng (Top 5)</SectionTitle>
             {(data.top5Overstock?.length ?? 0) > 5 && (
-              <button
-                onClick={() => setShowAllOverstock(v => !v)}
+              <button onClick={() => setShowAllOverstock(v => !v)}
                 className="text-xs font-medium px-2.5 py-1 rounded-lg transition-colors"
                 style={{ color: 'var(--primary-600)', background: 'rgba(99,102,241,0.08)' }}
                 onMouseEnter={e => e.currentTarget.style.background = 'rgba(99,102,241,0.16)'}
-                onMouseLeave={e => e.currentTarget.style.background = 'rgba(99,102,241,0.08)'}
-              >
+                onMouseLeave={e => e.currentTarget.style.background = 'rgba(99,102,241,0.08)'}>
                 {showAllOverstock ? 'Thu gọn' : `Hiện tất cả (${data.top5Overstock.length})`}
               </button>
             )}
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-caption border-collapse">
-              <thead>
-                <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                  {['Sản phẩm','Tồn kho','Dự báo','% Chênh','DIO'].map(h => (
-                    <th key={h} className="text-right py-2 px-2 font-semibold first:text-left" style={{ color: 'var(--text-tertiary)' }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {(showAllOverstock ? data.top5Overstock : (data.top5Overstock || []).slice(0, 5)).map((item, i) => (
-                  <tr key={i}
-                    className="cursor-pointer transition-colors"
-                    style={{ borderBottom: '1px solid var(--border)' }}
+          {(data.top5Overstock?.length ?? 0) === 0 ? (
+            <p className="text-caption text-center py-4" style={{ color: 'var(--text-tertiary)' }}>Không có sản phẩm ứ đọng</p>
+          ) : (
+            <div className="space-y-3">
+              {(showAllOverstock ? data.top5Overstock : (data.top5Overstock || []).slice(0, 5)).map((item, i) => {
+                const diff = parseFloat(item.stockDiffPct)
+                const barPct = Math.min(100, Math.max(5, diff > 0 ? diff : 0))
+                return (
+                  <div key={i} className="cursor-pointer rounded-lg px-3 py-2.5 transition-colors"
+                    style={{ background: 'var(--bg-elevated)' }}
                     onClick={() => setInvDrawerItem({ ...item, type: 'overstock' })}
-                    onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
-                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                  >
-                    <td className="py-2 px-2" style={{ color: 'var(--text-secondary)' }}>{item.product}</td>
-                    <td className="py-2 px-2 text-right font-mono" style={{ color: 'var(--text-primary)' }}>{item.stock.toLocaleString('vi-VN')}</td>
-                    <td className="py-2 px-2 text-right font-mono" style={{ color: 'var(--text-tertiary)' }}>{item.forecast.toLocaleString('vi-VN')}</td>
-                    <td className="py-2 px-2 text-right font-mono"
-                      style={{ color: parseFloat(item.stockDiffPct) > 0 ? '#F59E0B' : 'var(--accent-500)' }}>
-                      {parseFloat(item.stockDiffPct) > 0 ? '+' : ''}{item.stockDiffPct}%
-                    </td>
-                    <td className="py-2 px-2 text-right font-mono" style={{ color: 'var(--text-primary)' }}>{item.daysOfStock}d</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(245,158,11,0.08)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'var(--bg-elevated)'}>
+                    <div className="flex justify-between text-sm mb-1.5">
+                      <span className="font-medium truncate max-w-[65%]" style={{ color: 'var(--text-primary)' }}>{item.product}</span>
+                      <span className="font-mono font-bold text-xs" style={{ color: '#F59E0B' }}>+{item.stockDiffPct}% vượt dự báo</span>
+                    </div>
+                    <div className="h-2 rounded-full mb-1.5" style={{ background: 'rgba(245,158,11,0.15)' }}>
+                      <div className="h-full rounded-full" style={{ width: `${barPct}%`, background: '#F59E0B' }} />
+                    </div>
+                    <div className="flex justify-between text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                      <span>Tồn: <b style={{ color: 'var(--text-primary)' }}>{item.stock.toLocaleString('vi-VN')}</b></span>
+                      <span>Dự báo: {item.forecast.toLocaleString('vi-VN')}</span>
+                      <span>DIO: {item.daysOfStock}d</span>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </div>
 
+        {/* ── Sắp hết hàng (LOW STOCK RISK < 14 ngày bán) ── */}
         <div className="lcard p-5 col-span-12 lg:col-span-6">
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center justify-between mb-4">
             <SectionTitle>Top 5 sắp hết hàng (tồn &lt; 14 ngày bán)</SectionTitle>
             {(data.top5LowStock?.length ?? 0) > 5 && (
-              <button
-                onClick={() => setShowAllLowStock(v => !v)}
+              <button onClick={() => setShowAllLowStock(v => !v)}
                 className="text-xs font-medium px-2.5 py-1 rounded-lg transition-colors"
                 style={{ color: 'var(--primary-600)', background: 'rgba(99,102,241,0.08)' }}
                 onMouseEnter={e => e.currentTarget.style.background = 'rgba(99,102,241,0.16)'}
-                onMouseLeave={e => e.currentTarget.style.background = 'rgba(99,102,241,0.08)'}
-              >
+                onMouseLeave={e => e.currentTarget.style.background = 'rgba(99,102,241,0.08)'}>
                 {showAllLowStock ? 'Thu gọn' : `Hiện tất cả (${data.top5LowStock.length})`}
               </button>
             )}
           </div>
-          {data.top5LowStock && data.top5LowStock.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="w-full text-caption border-collapse">
-                <thead>
-                  <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                    {['Sản phẩm','Tồn kho','Bán/ngày','Còn (ngày)'].map(h => (
-                      <th key={h} className="text-right py-2 px-2 font-semibold first:text-left" style={{ color: 'var(--text-tertiary)' }}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {(showAllLowStock ? data.top5LowStock : data.top5LowStock.slice(0, 5)).map((item, i) => {
-                    const daysLeft = item.dailySales > 0 ? Math.round(item.stock / item.dailySales) : 999
-                    return (
-                      <tr key={i}
-                        className="cursor-pointer transition-colors"
-                        style={{ borderBottom: '1px solid var(--border)' }}
-                        onClick={() => setInvDrawerItem({ ...item, type: 'lowstock', daysLeft })}
-                        onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
-                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                      >
-                        <td className="py-2 px-2" style={{ color: 'var(--text-secondary)' }}>{item.product}</td>
-                        <td className="py-2 px-2 text-right font-mono font-bold" style={{ color: 'var(--color-error)' }}>{item.stock}</td>
-                        <td className="py-2 px-2 text-right font-mono" style={{ color: 'var(--text-tertiary)' }}>
-                          {item.dailySales > 0 ? Number(item.dailySales).toFixed(1) : '—'}
-                        </td>
-                        <td className="py-2 px-2 text-right font-mono font-bold"
-                          style={{ color: item.stock === 0 ? 'var(--color-error)' : daysLeft <= 7 ? 'var(--color-error)' : '#F59E0B' }}>
-                          {item.stock === 0 ? 'Hết hàng' : `${daysLeft}d`}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <p className="text-caption mt-4 text-center" style={{ color: 'var(--text-tertiary)' }}>
-              Tất cả sản phẩm đều còn tồn kho đủ
+          {!data.top5LowStock?.length ? (
+            <p className="text-caption text-center py-4" style={{ color: 'var(--accent-500)' }}>
+              <span className="icon" style={{ fontSize: 16 }}>check_circle</span> Tất cả sản phẩm đủ tồn kho
             </p>
+          ) : (
+            <div className="space-y-3">
+              {(showAllLowStock ? data.top5LowStock : data.top5LowStock.slice(0, 5)).map((item, i) => {
+                const daysLeft = item.dailySales > 0 ? Math.round(item.stock / item.dailySales) : 999
+                const isOut    = item.stock === 0
+                const isCrit   = daysLeft <= 7
+                const barColor = isOut ? 'var(--color-error)' : isCrit ? '#EF4444' : '#F59E0B'
+                // bar width: 0d=100%, 14d=0% (ngược: càng ít ngày càng đỏ nhiều)
+                const barPct   = isOut ? 100 : Math.min(100, Math.max(8, ((14 - daysLeft) / 14) * 100))
+                return (
+                  <div key={i} className="cursor-pointer rounded-lg px-3 py-2.5 transition-colors"
+                    style={{ background: 'var(--bg-elevated)' }}
+                    onClick={() => setInvDrawerItem({ ...item, type: 'lowstock', daysLeft })}
+                    onMouseEnter={e => e.currentTarget.style.background = isOut ? 'rgba(239,68,68,0.06)' : 'rgba(245,158,11,0.06)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'var(--bg-elevated)'}>
+                    <div className="flex justify-between text-sm mb-1.5">
+                      <span className="font-medium truncate max-w-[65%]" style={{ color: 'var(--text-primary)' }}>{item.product}</span>
+                      <span className="font-mono font-bold text-xs" style={{ color: barColor }}>
+                        {isOut ? 'Hết hàng' : `${daysLeft} ngày`}
+                      </span>
+                    </div>
+                    <div className="h-2 rounded-full mb-1.5" style={{ background: `rgba(239,68,68,0.12)` }}>
+                      <div className="h-full rounded-full transition-all" style={{ width: `${barPct}%`, background: barColor }} />
+                    </div>
+                    <div className="flex justify-between text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                      <span>Tồn: <b style={{ color: barColor }}>{item.stock.toLocaleString('vi-VN')}</b></span>
+                      <span>{item.dailySales > 0 ? `${Number(item.dailySales).toFixed(1)} đv/ngày` : 'Chưa bán'}</span>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
           )}
         </div>
       </div>

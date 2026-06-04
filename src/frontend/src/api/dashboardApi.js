@@ -231,6 +231,7 @@ export const getCustomerOrderHistory = (customerId, limit = 5) =>
 
 // ── Drill-down chung — hỗ trợ filter theo product / date / channel / status ───
 
+// Chuẩn hóa row từ DW /api/orders (fact_sales)
 const _normDrillRow = o => ({
   orderId:     o.ExternalOrderId ?? o.externalOrderId ?? `#${o.SalesKey ?? o.salesKey}`,
   date:        (o.SaleDate ?? o.saleDate ?? '').toString().slice(0, 10),
@@ -238,59 +239,99 @@ const _normDrillRow = o => ({
   productName: o.ProductName  ?? o.productName  ?? '—',
   qty:         o.Quantity     ?? o.quantity     ?? 0,
   revenue:     Number(o.NetRevenue ?? o.netRevenue ?? 0),
-  status:      o.Status ?? '—',
 })
 
-// Drill-down đơn hàng theo sản phẩm (Dashboard Pareto)
-export const getDrillDownOrders = async (productKey, from, to, limit = 50) => {
-  const params = { limit }
+// Chuẩn hóa row từ OLTP /api/orders/oltp
+const _normOltpRow = o => ({
+  orderId:     o.orderCode ?? o.externalOrderId ?? `#${o.orderId}`,
+  date:        (o.orderDate ?? o.createdAt ?? '').toString().slice(0, 10),
+  channel:     o.channelLabel ?? o.channel ?? '—',
+  productName: o.details?.length > 0
+    ? (o.details.length === 1 ? (o.details[0].productName ?? '—') : `${o.details.length} sản phẩm`)
+    : '—',
+  qty:         (o.details ?? []).reduce((s, d) => s + (d.quantity ?? 0), 0) || 1,
+  revenue:     Number(o.totalAmount ?? 0),
+  status:      o.status ?? '—',
+})
+
+// Drill-down đơn hàng theo sản phẩm (Dashboard Pareto) — dùng DW fact_sales
+export const getDrillDownOrders = async (productKey, from, to, { page = 1, limit = 20 } = {}) => {
+  const params = { limit, page }
   if (productKey) params.productKey = productKey
   if (from)       params.from       = from
   if (to)         params.to         = to
   const res = await api.get('/api/orders', { params }).then(r => r.data)
-  return (res.data ?? []).map(_normDrillRow)
+  return {
+    items:      (res.Data ?? res.data ?? []).map(_normDrillRow),
+    total:      res.Total ?? res.total ?? 0,
+    page:       res.Page  ?? res.page  ?? page,
+    totalPages: res.TotalPages ?? res.totalPages ?? 1,
+  }
 }
 
-// Drill-down đơn hàng theo kênh bán
-export const getDrillDownByChannel = async (channel, from, to, limit = 50) => {
-  const params = { limit }
+// Drill-down đơn hàng theo kênh bán — dùng DW fact_sales
+export const getDrillDownByChannel = async (channel, from, to, { page = 1, limit = 20 } = {}) => {
+  const params = { limit, page }
   if (channel) params.channel = channel
   if (from)    params.from    = from
   if (to)      params.to      = to
   const res = await api.get('/api/orders', { params }).then(r => r.data)
-  return (res.data ?? []).map(_normDrillRow)
+  return {
+    items:      (res.Data ?? res.data ?? []).map(_normDrillRow),
+    total:      res.Total ?? res.total ?? 0,
+    page:       res.Page  ?? res.page  ?? page,
+    totalPages: res.TotalPages ?? res.totalPages ?? 1,
+  }
 }
 
-// Drill-down đơn hàng theo trạng thái (funnel)
-export const getDrillDownByStatus = async (status, from, to, limit = 50) => {
-  const params = { limit }
+// Drill-down đơn hàng theo trạng thái (funnel) — dùng OLTP /api/orders/oltp
+// (DW fact_sales không lưu trường status, phải dùng OLTP)
+export const getDrillDownByStatus = async (status, from, to, { page = 1, pageSize = 20 } = {}) => {
+  const params = { pageSize, page }
   if (status) params.status = status.toUpperCase()
   if (from)   params.from   = from
   if (to)     params.to     = to
-  const res = await api.get('/api/orders', { params }).then(r => r.data)
-  return (res.data ?? []).map(_normDrillRow)
+  const res = await api.get('/api/orders/oltp', { params }).then(r => r.data)
+  const raw = res.data ?? res.items ?? []
+  return {
+    items:      raw.map(_normOltpRow),
+    total:      res.total ?? raw.length,
+    page:       res.page  ?? page,
+    totalPages: res.totalPages ?? 1,
+  }
 }
 
-// Drill-down đơn hàng theo ngày cụ thể (click vào biểu đồ doanh thu)
-export const getDrillDownByDate = async (date, limit = 50) => {
-  const res = await api.get('/api/orders', { params: { from: date, to: date, limit } }).then(r => r.data)
-  return (res.data ?? []).map(_normDrillRow)
+// Drill-down đơn hàng theo ngày cụ thể (click biểu đồ doanh thu) — dùng DW
+export const getDrillDownByDate = async (date, { page = 1, limit = 20 } = {}) => {
+  const res = await api.get('/api/orders', { params: { from: date, to: date, limit, page } }).then(r => r.data)
+  return {
+    items:      (res.Data ?? res.data ?? []).map(_normDrillRow),
+    total:      res.Total ?? res.total ?? 0,
+    page:       res.Page  ?? res.page  ?? page,
+    totalPages: res.TotalPages ?? res.totalPages ?? 1,
+  }
 }
 
 // ── Drill-down: danh sách KH theo phân khúc (Dashboard Customer tab) ──────────
 
-export const getDrillDownCustomers = async (segment, limit = 50) => {
+export const getDrillDownCustomers = async (segment, { page = 1, limit = 20 } = {}) => {
   const segMap = { new: 'NEW', returning: 'RETURNING', vip: 'VIP', atrisk: 'AT_RISK' }
   const res = await api.get('/api/customers', {
-    params: { segment: segMap[segment] ?? segment, limit },
+    params: { segment: segMap[segment] ?? segment, limit, page },
   }).then(r => r.data)
-  return (res.data ?? []).map(c => ({
-    customerId:    c.CustomerCode  ?? c.customerCode  ?? `#${c.CustomerId ?? c.customerId}`,
-    name:          c.FullName      ?? c.fullName      ?? '—',
-    totalOrders:   Number(c.TotalOrders  ?? c.totalOrders  ?? 0),
-    totalRevenue:  Number(c.TotalRevenue ?? c.totalRevenue ?? 0),
-    lastOrderDate: (c.LastOrderDate ?? c.lastOrderDate ?? '').toString().slice(0, 10),
-  }))
+  const raw = res.data ?? []
+  return {
+    items: raw.map(c => ({
+      customerId:    c.CustomerCode  ?? c.customerCode  ?? `#${c.CustomerId ?? c.customerId}`,
+      name:          c.FullName      ?? c.fullName      ?? '—',
+      totalOrders:   Number(c.TotalOrders  ?? c.totalOrders  ?? 0),
+      totalRevenue:  Number(c.TotalRevenue ?? c.totalRevenue ?? 0),
+      lastOrderDate: (c.LastOrderDate ?? c.lastOrderDate ?? '').toString().slice(0, 10),
+    })),
+    total:      res.total ?? raw.length,
+    page:       res.page  ?? page,
+    totalPages: res.totalPages ?? 1,
+  }
 }
 
 // ── Product Channel Prices ────────────────────────────────────────────────────
