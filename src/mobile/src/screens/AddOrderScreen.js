@@ -1,15 +1,14 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useCallback } from 'react'
 import {
   View, Text, TextInput, TouchableOpacity,
   ScrollView, StyleSheet, KeyboardAvoidingView,
-  Platform, ActivityIndicator, Alert,
+  Platform, ActivityIndicator, Alert, FlatList,
 } from 'react-native'
 import api from '../api/axios'
 import { useTheme } from '../context/ThemeContext'
 import { radius } from '../components/theme'
 
-const CHANNELS = ['Shopee', 'Lazada', 'TikTok Shop', 'Facebook', 'Website']
-const PAYMENT  = ['COD', 'MoMo', 'VNPay', 'ZaloPay', 'Chuyển khoản']
+const PAYMENT = ['COD', 'MoMo', 'VNPay', 'ZaloPay', 'Chuyển khoản']
 
 const makeStyles = (c) => StyleSheet.create({
   container: { flex: 1, backgroundColor: c.surface },
@@ -49,38 +48,103 @@ const makeStyles = (c) => StyleSheet.create({
   btn:        { backgroundColor: c.primaryContainer, borderRadius: radius.md, paddingVertical: 16, alignItems: 'center', marginTop: 8 },
   btnDisabled:{ opacity: 0.6 },
   btnText:    { color: c.surface, fontSize: 16, fontWeight: '700' },
+  // Product search dropdown
+  searchResult: {
+    backgroundColor: c.surfaceContainer, borderRadius: radius.sm,
+    marginTop: 4, borderWidth: 1, borderColor: c.outlineVariant,
+    maxHeight: 160,
+  },
+  searchItem: {
+    padding: 10, borderBottomWidth: 1, borderBottomColor: c.outlineVariant,
+  },
+  searchItemName:  { fontSize: 13, color: c.onSurface, fontWeight: '600' },
+  searchItemSub:   { fontSize: 11, color: c.outline, marginTop: 1 },
+  selectedProduct: {
+    backgroundColor: c.primaryContainer, borderRadius: radius.sm,
+    padding: 8, marginTop: 4, flexDirection: 'row', justifyContent: 'space-between',
+  },
+  selectedProductText: { fontSize: 12, color: c.surface, flex: 1 },
+  clearBtn:            { fontSize: 12, color: c.surface, fontWeight: '700', marginLeft: 6 },
 })
 
 export default function AddOrderScreen({ navigation }) {
   const { colors } = useTheme()
   const s = useMemo(() => makeStyles(colors), [colors])
+
   const [form, setForm] = useState({
-    customerName: '', customerPhone: '', channel: 'Shopee',
-    productName: '', quantity: '1', unitPrice: '',
+    customerName: '', customerPhone: '',
+    productId: null, productName: '',
+    quantity: '1', unitPrice: '',
     paymentMethod: 'COD', note: '',
   })
-  const [loading, setLoading] = useState(false)
+  const [loading,         setLoading]         = useState(false)
+  const [searchQuery,     setSearchQuery]     = useState('')
+  const [searchResults,   setSearchResults]   = useState([])
+  const [searchLoading,   setSearchLoading]   = useState(false)
+  const [showDropdown,    setShowDropdown]    = useState(false)
 
   const set = (key, val) => setForm(f => ({ ...f, [key]: val }))
+
+  // Tìm sản phẩm theo tên
+  const handleProductSearch = useCallback(async (text) => {
+    setSearchQuery(text)
+    set('productName', text)
+    set('productId', null)
+    if (text.length < 2) { setSearchResults([]); setShowDropdown(false); return }
+    setSearchLoading(true)
+    try {
+      const res = await api.get('/api/pos/products/search', { params: { search: text, limit: 8 } })
+      const items = res.data?.items ?? res.data?.data ?? res.data ?? []
+      setSearchResults(Array.isArray(items) ? items : [])
+      setShowDropdown(true)
+    } catch {
+      setSearchResults([])
+    } finally {
+      setSearchLoading(false)
+    }
+  }, [])
+
+  const selectProduct = (product) => {
+    const id    = product.productId ?? product.product_id ?? product.id
+    const name  = product.productName ?? product.product_name ?? product.name ?? ''
+    const price = product.basePrice ?? product.salePrice ?? product.price ?? product.unit_price ?? ''
+    set('productId',   id)
+    set('productName', name)
+    setSearchQuery(name)
+    if (price) set('unitPrice', String(price))
+    setSearchResults([])
+    setShowDropdown(false)
+  }
+
+  const clearProduct = () => {
+    set('productId', null)
+    set('productName', '')
+    setSearchQuery('')
+    setSearchResults([])
+  }
 
   const handleSubmit = async () => {
     if (!form.customerName || !form.productName || !form.unitPrice) {
       Alert.alert('Thiếu thông tin', 'Vui lòng nhập đủ thông tin bắt buộc (*).')
       return
     }
+    if (!form.productId) {
+      Alert.alert('Chọn sản phẩm', 'Vui lòng chọn sản phẩm từ danh sách gợi ý.')
+      return
+    }
     setLoading(true)
     try {
-      await api.post('/api/orders', {
+      await api.post('/api/pos/orders', {
         customerName:  form.customerName,
         customerPhone: form.customerPhone,
-        channel:       form.channel.toLowerCase().replace(' ', '_'),
-        items: [{
-          productName: form.productName,
-          quantity:    parseInt(form.quantity) || 1,
-          unitPrice:   parseFloat(form.unitPrice.replace(/\D/g, '')) || 0,
-        }],
         paymentMethod: form.paymentMethod,
         note:          form.note,
+        usePoints:     0,
+        items: [{
+          productId: form.productId,
+          qty:       parseInt(form.quantity) || 1,
+          price:     parseFloat(String(form.unitPrice).replace(/\D/g, '')) || 0,
+        }],
       })
       Alert.alert('Thành công', 'Đã thêm đơn hàng mới!', [
         { text: 'OK', onPress: () => navigation.goBack() },
@@ -104,7 +168,7 @@ export default function AddOrderScreen({ navigation }) {
       style={s.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <ScrollView contentContainerStyle={s.content}>
+      <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
         <Text style={s.pageTitle}>Thêm đơn hàng mới</Text>
 
         <View style={s.section}>
@@ -124,24 +188,51 @@ export default function AddOrderScreen({ navigation }) {
 
         <View style={s.section}>
           <Text style={s.sectionTitle}>THÔNG TIN ĐƠN HÀNG</Text>
-          <Field label="Kênh bán hàng" required>
-            <View style={s.chipRow}>
-              {CHANNELS.map(c => (
-                <TouchableOpacity
-                  key={c}
-                  onPress={() => set('channel', c)}
-                  style={[s.chip, form.channel === c && s.chipActive]}
-                >
-                  <Text style={[s.chipText, form.channel === c && s.chipTextActive]}>{c}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </Field>
 
-          <Field label="Tên sản phẩm" required>
-            <TextInput style={s.input} placeholder="VD: Áo thun trắng size M"
-              placeholderTextColor={colors.outline}
-              value={form.productName} onChangeText={v => set('productName', v)} />
+          {/* Product search */}
+          <Field label="Tìm sản phẩm" required>
+            {form.productId ? (
+              <View style={s.selectedProduct}>
+                <Text style={s.selectedProductText} numberOfLines={1}>
+                  ✓ {form.productName}
+                </Text>
+                <TouchableOpacity onPress={clearProduct}>
+                  <Text style={s.clearBtn}>✕</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <TextInput
+                    style={[s.input, { flex: 1 }]}
+                    placeholder="Nhập tên sản phẩm để tìm..."
+                    placeholderTextColor={colors.outline}
+                    value={searchQuery}
+                    onChangeText={handleProductSearch}
+                  />
+                  {searchLoading && (
+                    <ActivityIndicator size="small" color={colors.primary} style={{ marginLeft: 8 }} />
+                  )}
+                </View>
+                {showDropdown && searchResults.length > 0 && (
+                  <View style={s.searchResult}>
+                    <FlatList
+                      data={searchResults}
+                      keyExtractor={(item, i) => String(item.productId ?? item.id ?? i)}
+                      keyboardShouldPersistTaps="handled"
+                      renderItem={({ item }) => (
+                        <TouchableOpacity style={s.searchItem} onPress={() => selectProduct(item)}>
+                          <Text style={s.searchItemName}>{item.productName ?? item.product_name ?? item.name}</Text>
+                          <Text style={s.searchItemSub}>
+                            {item.sku ? `SKU: ${item.sku}` : ''}{item.basePrice ? ` · ₫${Number(item.basePrice).toLocaleString('vi-VN')}` : ''}
+                          </Text>
+                        </TouchableOpacity>
+                      )}
+                    />
+                  </View>
+                )}
+              </>
+            )}
           </Field>
 
           <View style={s.row}>
@@ -158,20 +249,20 @@ export default function AddOrderScreen({ navigation }) {
                 <TextInput style={s.input} placeholder="150000"
                   placeholderTextColor={colors.outline}
                   keyboardType="numeric"
-                  value={form.unitPrice} onChangeText={v => set('unitPrice', v)} />
+                  value={String(form.unitPrice)} onChangeText={v => set('unitPrice', v)} />
               </Field>
             </View>
           </View>
 
           {/* Tổng tiền */}
-          {form.unitPrice && (
+          {form.unitPrice ? (
             <View style={s.totalRow}>
               <Text style={s.totalLabel}>Tổng tiền:</Text>
               <Text style={s.totalValue}>
-                ₫{((parseInt(form.quantity) || 1) * (parseFloat(form.unitPrice.replace(/\D/g,'')) || 0)).toLocaleString('vi-VN')}
+                ₫{((parseInt(form.quantity) || 1) * (parseFloat(String(form.unitPrice).replace(/\D/g,'')) || 0)).toLocaleString('vi-VN')}
               </Text>
             </View>
-          )}
+          ) : null}
 
           <Field label="Phương thức thanh toán">
             <View style={s.chipRow}>
@@ -215,4 +306,3 @@ export default function AddOrderScreen({ navigation }) {
     </KeyboardAvoidingView>
   )
 }
-

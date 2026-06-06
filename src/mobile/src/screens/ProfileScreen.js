@@ -204,8 +204,13 @@ export default function ProfileScreen({ navigation }) {
       <View style={{ marginTop: 16, paddingHorizontal: 16 }}>
         <Text style={sectionTitleStyle}>{t('profile.quickNav')}</Text>
         <View style={cardStyle}>
-          <MenuItem icon="📊" label={t('profile.myKpi')} subtitle={t('profile.kpiSub')} onPress={() => navigation.navigate('KPINhanVien')} colors={colors} />
-          <View style={dividerStyle} />
+          {/* KPI cá nhân: chỉ hiện với Staff, không hiện Owner/Manager */}
+          {!['Owner', 'Manager', 'DataIT', 'Viewer'].includes(authUser?.role) && (
+            <>
+              <MenuItem icon="📊" label={t('profile.myKpi')} subtitle={t('profile.kpiSub')} onPress={() => navigation.navigate('KPINhanVien')} colors={colors} />
+              <View style={dividerStyle} />
+            </>
+          )}
           <MenuItem icon="🛍️" label={t('profile.inventory')} subtitle={t('profile.inventorySub')} onPress={() => navigation.navigate('TonKho')} colors={colors} />
           <View style={dividerStyle} />
           <MenuItem icon="💳" label={t('payment.history')} subtitle={t('payment.title')} onPress={() => navigation.navigate('PaymentHistory')} colors={colors} />
@@ -244,24 +249,6 @@ export default function ProfileScreen({ navigation }) {
             onPress={handleThemeChange}
             colors={colors}
           />
-          <View style={dividerStyle} />
-          <MenuItem
-            icon="🖥️"
-            label="IP Server"
-            subtitle={BASE_URL}
-            onPress={() => Alert.alert('Địa chỉ Server', `Địa chỉ hiện tại:\n${BASE_URL}\n\nĐể thay đổi, cập nhật biến EXPO_PUBLIC_API_URL trong file .env và khởi động lại app.`, [{ text: 'Đã hiểu' }])}
-            colors={colors}
-          />
-        </View>
-      </View>
-
-      {/* ỨNG DỤNG */}
-      <View style={{ marginTop: 16, paddingHorizontal: 16 }}>
-        <Text style={sectionTitleStyle}>{t('profile.app')}</Text>
-        <View style={cardStyle}>
-          <MenuItem icon="ℹ️" label={t('profile.version')} subtitle="1.0.0" onPress={() => {}} colors={colors} />
-          <View style={dividerStyle} />
-          <MenuItem icon="🔗" label={t('profile.webLink')} subtitle={BASE_URL} onPress={() => {}} colors={colors} />
         </View>
       </View>
 

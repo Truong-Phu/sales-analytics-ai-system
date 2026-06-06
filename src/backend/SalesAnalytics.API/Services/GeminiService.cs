@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using SalesAnalytics.Core.DTOs;
@@ -20,7 +20,7 @@ public class GeminiService(
     private record SentimentRow(string Sentiment, int Cnt);
     private record CommentRow(string Message, string AuthorName, string Sentiment, int LikeCount);
     private readonly string _apiKey       = cfg["Gemini:ApiKey"]   ?? "";
-    private readonly string _model        = cfg["Gemini:Model"]    ?? "gemini-2.0-flash";
+    private readonly string _model        = cfg["Gemini:Model"]    ?? "gemini-2.5-flash-preview-05-20";
     private readonly int    _maxTok       = int.TryParse(cfg["Gemini:MaxTokens"], out var t) ? t : 1024;
     private readonly double _temp         = double.TryParse(cfg["Gemini:Temperature"],
                                                System.Globalization.NumberStyles.Any,
@@ -30,6 +30,19 @@ public class GeminiService(
     // Groq free-tier fallback (https://console.groq.com — 14,400 req/ngày miễn phí)
     private readonly string _groqApiKey   = cfg["Groq:ApiKey"]     ?? "";
     private readonly string _groqModel    = cfg["Groq:Model"]      ?? "llama-3.3-70b-versatile";
+    // Danh sách Gemini model fallback theo thứ tự ưu tiên (429 → thử model tiếp theo)
+    private static readonly string[] GeminiFallbackModels =
+    [
+        "gemini-2.5-flash-preview-05-20",
+        "gemini-2.0-flash",
+        "gemini-1.5-flash",
+        "gemini-1.5-flash-8b",
+    ];
+
+    // Cooldown: sau khi nhận 429, skip toàn bộ Gemini trong _geminiCooldownSecs giây
+    // Tránh tốn quota khi biết chắc đang bị rate-limit
+    private static DateTime _geminiQuotaExhaustedUntil = DateTime.MinValue;
+    private const int _geminiCooldownSecs = 90;
 
     // ── Danh sách intent hợp lệ cho business tab ─────────────────────────────
     private static readonly string[] BusinessIntents =
@@ -40,19 +53,22 @@ public class GeminiService(
         "customer_overview", "inventory_alert",
         "business_recommendation", "performance_overview",
         "employee_performance",
-        "unknown",  // câu hỏi ngoài phạm vi hệ thống
+        "return_analysis", "payment_analysis",
+        "discount_analysis", "shipping_status",
+        "unknown",
     ];
 
     // ── Phát hiện câu hỏi phân tích chéo nhiều nguồn dữ liệu ────────────────
     // Trả true khi câu hỏi đề cập dữ liệu nội bộ VÀ ít nhất một nguồn ngoài (Facebook/thị trường).
     private static bool IsCrossAnalysis(string question)
     {
-        var q = question.ToLowerInvariant();
-        static bool Has(string text, params string[] words) => words.Any(text.Contains);
+        var q  = question.ToLowerInvariant();
+        var qn = NormalizeVi(q);
+        bool Has(params string[] words) => words.Any(w => q.Contains(w) || qn.Contains(NormalizeVi(w)));
 
-        var hasInternal = Has(q, "doanh thu", "bán chậm", "bán kém", "sản phẩm", "đơn hàng", "giảm", "tăng");
-        var hasFacebook = Has(q, "facebook", "phàn nàn", "khách chê", "bình luận", "phản hồi", "sentiment", "khách hàng chê");
-        var hasMarket   = Has(q, "đối thủ", "thị trường", "giá đối thủ", "google", "sàn", "xu hướng thị trường");
+        var hasInternal = Has("doanh thu", "bán chậm", "bán kém", "sản phẩm", "đơn hàng", "giảm", "tăng");
+        var hasFacebook = Has("facebook", "phàn nàn", "khách chê", "bình luận", "phản hồi", "sentiment", "khách hàng chê");
+        var hasMarket   = Has("đối thủ", "thị trường", "giá đối thủ", "google", "sàn", "xu hướng thị trường");
 
         return hasInternal && (hasFacebook || hasMarket);
     }
@@ -86,75 +102,240 @@ public class GeminiService(
             .ToList();
     }
 
+    // ── Chuẩn hóa tiếng Việt → ASCII (hỗ trợ gõ không dấu, sai chính tả) ──────
+    // Cho phép người dùng gõ "san pham ban chay" thay vì "sản phẩm bán chạy"
+    private static readonly (string Vi, string Ascii)[] ViAsciiMap =
+    [
+        ("ắặằẳẵấầẩẫậăâàáãảạ","a"), ("đ","d"),
+        ("ếệềểễêèéẻẽẹ","e"),
+        ("ịỉĩîìí","i"),
+        ("ốộồổỗôòóõỏọơớợờởỡ","o"),
+        ("ứựừửữưùúũủụ","u"),
+        ("ỳỷỹỵý","y"),
+    ];
+    public static string NormalizeVi(string text)
+    {
+        var sb = new System.Text.StringBuilder(text.Length);
+        foreach (char c in text)
+        {
+            var found = false;
+            foreach (var (vi, ascii) in ViAsciiMap)
+                if (vi.Contains(c)) { sb.Append(ascii); found = true; break; }
+            if (!found) sb.Append(c);
+        }
+        return sb.ToString();
+    }
+
     // ── Phân loại ý định câu hỏi (rule-based fast path) ─────────────────────
-    // Xử lý ~90% câu hỏi thường gặp không cần gọi API.
+    // Xử lý ~95% câu hỏi nghiệp vụ thường gặp không cần gọi API phân loại.
     // Nếu trả về "unknown" → gọi ClassifyIntentWithGeminiAsync() để phân loại chính xác.
     public static string DetectIntent(string question)
     {
-        var q = question.ToLowerInvariant();
-        static bool Has(string text, params string[] words) => words.Any(text.Contains);
+        var q  = question.ToLowerInvariant();
+        var qn = NormalizeVi(q); // bản không dấu để match câu gõ không dấu
 
-        // Tồn kho — kiểm tra trước sản phẩm vì "hết hàng" dễ nhầm với sản phẩm
-        if (Has(q, "tồn kho", "hết hàng", "sắp hết", "nhập thêm", "nhập hàng", "còn bao nhiêu hàng",
-                   "kho", "stock", "cần nhập", "thiếu hàng"))
+        // Match keyword CÓ DẤU (q) HOẶC KHÔNG DẤU (qn) — hỗ trợ cả hai cách gõ
+        bool Has(params string[] words) =>
+            words.Any(w => q.Contains(w) || qn.Contains(NormalizeVi(w)));
+
+        // ── INVENTORY / NHẬP HÀNG — kiểm tra ĐẦU TIÊN vì overlap nhiều intent khác ──
+        // Bao phủ: tồn kho, nhập hàng, đặt hàng, bổ sung kho, kế hoạch nhập
+        if (Has("tồn kho", "hết hàng", "sắp hết", "hàng còn", "còn bao nhiêu hàng",
+                   "kho còn", "stock còn", "hàng tồn"))
+            return "inventory_alert";
+        if (Has("nhập hàng", "nhập thêm", "nhập gấp", "nhập gì", "nên nhập",
+                   "cần nhập", "thiếu hàng", "nhập bao nhiêu"))
+            return "inventory_alert";
+        if (Has("đặt hàng", "đặt thêm", "đặt gì", "order thêm", "order gì", "order gấp",
+                   "đặt hàng nhà cung cấp", "đặt hàng ncc", "đặt hàng supplier"))
+            return "inventory_alert";
+        if (Has("mua thêm hàng", "mua thêm gì", "bổ sung kho", "bổ sung hàng", "bổ sung gì",
+                   "cần bổ sung", "nên bổ sung", "dự trữ hàng", "kế hoạch nhập", "lên kế hoạch nhập"))
+            return "inventory_alert";
+        if (Has("tháng tới nhập", "tháng sau nhập", "tuần tới nhập", "tuần sau nhập",
+                   "tháng tới nên nhập", "tháng tới cần nhập", "tháng tới đặt",
+                   // Seasonal — mùa lễ / sự kiện
+                   "tết nhập", "chuẩn bị tết", "mùa tết", "trước tết nhập",
+                   "black friday nhập", "11/11", "12/12", "mùa hè nhập", "mùa đông nhập",
+                   "cuối năm nhập", "đầu năm nhập", "mùa lễ"))
+            return "inventory_alert";
+        if (Has("hàng nào bán nhanh", "sản phẩm nào bán nhanh", "hàng nào rotation",
+                   "mặt hàng nào cần nhập", "sản phẩm nào cần nhập", "hàng nào thiếu",
+                   "sản phẩm nào thiếu", "mặt hàng nào thiếu"))
+            return "inventory_alert";
+        // "stock", "kho" đứng sau check cụ thể hơn để tránh nhầm
+        if (Has("stock", "kho hàng") && Has("còn", "hết", "thiếu", "bao nhiêu", "thấp"))
             return "inventory_alert";
 
-        // Khách hàng
-        if (Has(q, "khách hàng", "khách vip", "khách mới", "khách trung thành", "rfm", "loyalty",
-                   "khách quay lại", "tỷ lệ quay lại", "khách cũ", "phân khúc khách"))
-            return "customer_overview";
-
-        // declining trước trending để "xu hướng giảm" không bị match trending
-        if (Has(q, "sụt giảm", "xu hướng giảm", "bán ít hơn", "bán kém", "sụt", "ít đơn hơn",
-                   "giảm doanh số", "giảm bán", "bán kém hơn")
-            || (Has(q, "giảm") && Has(q, "sản phẩm", "mặt hàng", "hàng hóa")))
-            return "declining_product";
-
-        if (Has(q, "xu hướng tăng", "đang hot", "trending", "bán tốt gần đây", "tăng doanh số")
-            || (Has(q, "xu hướng", "tăng") && Has(q, "sản phẩm", "mặt hàng")))
-            return "trending_product";
-
-        if (Has(q, "bán chạy", "bán nhiều nhất", "bán tốt nhất", "top sản phẩm", "sản phẩm hot",
-                   "sản phẩm tốt nhất", "hàng bán chạy")
-            || (Has(q, "sản phẩm nào", "mặt hàng nào") && !Has(q, "xu hướng", "giảm", "nên bán")))
-            return "top_product";
-
-        if (Has(q, "nên bán", "nên tập trung", "tập trung bán", "chiến lược", "nên kinh doanh",
-                   "nên làm gì", "làm thế nào để tăng", "cải thiện doanh", "tư vấn", "gợi ý kinh doanh",
-                   "đề xuất", "nên đầu tư"))
-            return "business_recommendation";
-
-        if ((Has(q, "so sánh") && Has(q, "kênh"))
-            || (Has(q, "shopee", "lazada", "tiktok", "facebook shop") && Has(q, "so sánh")))
-            return "channel_comparison";
-
-        if (Has(q, "kênh nào tốt", "kênh nào doanh thu", "kênh bán hàng nào")
-            || (Has(q, "doanh thu") && Has(q, "kênh") && Has(q, "cao nhất", "tốt nhất", "hiệu quả nhất")))
-            return "top_channel";
-
-        if (Has(q, "shopee", "lazada", "tiktok", "facebook shop")
-            && Has(q, "doanh thu", "bán", "đơn", "hiệu quả"))
-            return "channel_comparison";
-
-        if (Has(q, "doanh thu", "doanh số", "tiền về", "thu nhập", "bán được bao nhiêu tiền") && !Has(q, "kênh"))
-            return "revenue_summary";
-
-        // employee_performance phải kiểm tra TRƯỚC order_summary vì "bán được nhiều nhất" dễ nhầm
-        if (Has(q, "nhân viên", "nhân viên nào", "staff", "kpi nhân viên", "hiệu suất nhân viên",
-                   "nhân viên bán", "top nhân viên", "nhân viên đạt", "sales team", "ai bán được",
-                   "ai xử lý", "người bán", "bán được nhiều nhất tháng", "bán nhiều nhất trong"))
+        // ── NHÂN VIÊN — kiểm tra TRƯỚC order_summary vì "bán nhiều nhất" dễ nhầm ──
+        if (Has("nhân viên", "nhân viên nào", "staff", "kpi nhân viên", "hiệu suất nhân viên",
+                   "nhân viên bán", "top nhân viên", "nhân viên đạt", "sales team",
+                   "ai bán được", "ai xử lý", "người bán",
+                   "bán được nhiều nhất tháng", "bán nhiều nhất trong",
+                   "nhân viên nào giỏi", "nhân viên xuất sắc", "nhân viên kém"))
             return "employee_performance";
 
-        if (Has(q, "đơn hàng", "số đơn", "bao nhiêu đơn", "đơn bán", "bao nhiêu đơn hàng")
-            || (Has(q, "bán được") && !Has(q, "tiền", "doanh thu") && !Has(q, "nhân viên", "người")))
+        // ── KHÁCH HÀNG ──────────────────────────────────────────────────────────
+        if (Has("khách hàng", "khách vip", "khách mới", "khách trung thành",
+                   "rfm", "loyalty", "khách quay lại", "tỷ lệ quay lại",
+                   "khách cũ", "phân khúc khách", "khách hàng tiềm năng",
+                   "khách hàng thân thiết", "khách mua lại", "customer",
+                   "khách chưa mua", "khách lâu không mua", "khách bỏ", "khách mất",
+                   "tỷ lệ chuyển đổi", "conversion rate", "khách chốt đơn"))
+            return "customer_overview";
+
+        // ── SẢN PHẨM GIẢM / BÁN CHẬM — declining TRƯỚC trending ──────────────
+        if (Has("sụt giảm", "xu hướng giảm", "bán ít hơn", "bán kém", "sụt",
+                   "ít đơn hơn", "giảm doanh số", "giảm bán", "bán kém hơn",
+                   "bán ế", "bán chậm lại", "doanh số đi xuống", "hàng chậm",
+                   "bán chậm nhất", "bán ít nhất", "worst seller", "bán dở nhất",
+                   "hàng ế", "hàng tồn lâu", "hàng không bán được")
+            || (Has("giảm") && Has("sản phẩm", "mặt hàng", "hàng hóa", "sp nào")))
+            return "declining_product";
+
+        // ── SẢN PHẨM TĂNG / TRENDING ────────────────────────────────────────────
+        if (Has("xu hướng tăng", "đang hot", "trending", "bán tốt gần đây",
+                   "tăng doanh số", "đang nổi", "đang bán chạy lên", "bán tốt hơn",
+                   "hàng nào đang nổi", "sản phẩm nào đang lên")
+            || (Has("xu hướng", "tăng") && Has("sản phẩm", "mặt hàng")))
+            return "trending_product";
+
+        // ── TOP SẢN PHẨM BÁN CHẠY ───────────────────────────────────────────────
+        if (Has("bán chạy", "bán nhiều nhất", "bán tốt nhất", "top sản phẩm",
+                   "sản phẩm hot", "sản phẩm tốt nhất", "hàng bán chạy",
+                   "bestseller", "best seller", "sản phẩm nổi bật", "hàng hot",
+                   "sản phẩm được mua nhiều")
+            || (Has("sản phẩm nào", "mặt hàng nào")
+                && !Has("xu hướng", "giảm", "nên bán", "nên nhập", "cần nhập", "tháng tới")))
+            return "top_product";
+
+        // ── GỢI Ý CHIẾN LƯỢC KINH DOANH ─────────────────────────────────────────
+        if (Has("nên bán", "nên tập trung bán", "tập trung bán", "nên kinh doanh",
+                   "gợi ý kinh doanh", "tư vấn kinh doanh", "đề xuất kinh doanh",
+                   "nên đầu tư", "cơ hội kinh doanh", "tìm cơ hội",
+                   "kế hoạch kinh doanh", "kế hoạch tháng tới", "kế hoạch tháng sau",
+                   "mở rộng thế nào", "phát triển kinh doanh thế nào",
+                   "nên đẩy mạnh gì", "nên tập trung mặt hàng", "tháng tới nên bán gì",
+                   "tháng sau nên bán gì", "nên giảm giá sản phẩm nào",
+                   "nên chạy campaign", "nên marketing gì", "chiến lược tháng"))
+            return "business_recommendation";
+        if (Has("chiến lược") && Has("bán hàng", "kinh doanh", "sản phẩm", "kênh"))
+            return "business_recommendation";
+        if (Has("nên tập trung") && Has("sản phẩm", "mặt hàng", "kênh", "hàng hóa"))
+            return "business_recommendation";
+        if (Has("làm thế nào để tăng", "cách tăng doanh thu", "cách tăng lợi nhuận",
+                   "cải thiện doanh thu", "cải thiện kinh doanh", "nên làm gì để tăng"))
+            return "business_recommendation";
+        // Seasonal business planning
+        if (Has("chuẩn bị tết nên bán", "tết nên kinh doanh", "mùa tết nên",
+                   "black friday nên", "cuối năm nên bán", "đầu năm nên bán",
+                   "dịp lễ nên", "mùa hè nên bán", "chương trình tết"))
+            return "business_recommendation";
+        // Quảng cáo / livestream / KOL (câu hỏi về hiệu quả marketing → cần cross-data → dùng business_recommendation)
+        if (Has("quảng cáo có hiệu quả", "ads hiệu quả", "chạy ads", "chạy quảng cáo",
+                   "livestream bán", "live stream", "kol", "influencer",
+                   "roas", "acos", "chi phí marketing"))
+            return "business_recommendation";
+
+        // ── SO SÁNH KÊNH / KÊNH ĐƠN LẺ ─────────────────────────────────────────
+        if ((Has("so sánh") && Has("kênh"))
+            || (Has("shopee", "lazada", "tiktok", "facebook shop", "tiktok shop") && Has("so sánh")))
+            return "channel_comparison";
+
+        if (Has("kênh nào tốt", "kênh nào doanh thu", "kênh bán hàng nào",
+                   "kênh hiệu quả nhất", "kênh dẫn đầu", "kênh bán tốt nhất")
+            || (Has("doanh thu") && Has("kênh") && Has("cao nhất", "tốt nhất", "hiệu quả nhất")))
+            return "top_channel";
+
+        if (Has("shopee", "lazada", "tiktok", "tiktok shop", "facebook shop")
+            && Has("doanh thu", "bán", "đơn", "hiệu quả", "ra sao", "thế nào"))
+            return "channel_comparison";
+
+        // ── TỔNG QUAN HIỆU QUẢ KINH DOANH — kiểm tra TRƯỚC revenue để tránh nhầm ──
+        // "lợi nhuận" / "tại sao" / từ khoá tổng quan đứng TRƯỚC để tránh nhầm thành revenue_summary
+        if (Has("lợi nhuận", "biên lợi nhuận", "margin", "gross margin",
+                   "lãi", "lãi ròng", "lãi gộp", "net profit", "profit"))
+            return "performance_overview"; // chatbot không có P&L riêng → dùng overview + giải thích
+
+        if (Has("tại sao doanh thu", "vì sao doanh thu", "nguyên nhân doanh thu",
+                   "lý do doanh thu", "tại sao bán", "vì sao bán"))
+            return "performance_overview"; // câu hỏi nhân quả → cần full context
+
+        // ── SO SÁNH THỜI GIAN (follow-up) → revenue_summary ─────────────────────
+        // "so sánh với tháng 5 2025", "so với năm ngoái", "so với quý 1"
+        if ((q.StartsWith("so sánh với")     || qn.StartsWith("so sanh voi")
+             || q.StartsWith("so với tháng") || qn.StartsWith("so voi thang")
+             || q.StartsWith("so với năm")   || qn.StartsWith("so voi nam")
+             || q.StartsWith("so với quý")   || qn.StartsWith("so voi quy"))
+            && !Has("kênh", "sản phẩm", "mặt hàng", "nhân viên"))
+            return "revenue_summary";
+
+        // ── DOANH THU ────────────────────────────────────────────────────────────
+        if (Has("doanh thu", "doanh số", "tiền về", "bán được bao nhiêu tiền",
+                   "thu về bao nhiêu", "thu được bao nhiêu", "bán thu về",
+                   "doanh thu hôm nay", "doanh thu hôm qua", "doanh thu tuần",
+                   "doanh thu tháng", "doanh thu năm", "doanh thu quý", "tổng doanh thu",
+                   // English keywords
+                   "sales", "revenue", "bán hàng được bao nhiêu")
+            && !Has("kênh", "so sánh kênh"))
+            return "revenue_summary";
+
+        // ── SỐ ĐƠN HÀNG ─────────────────────────────────────────────────────────
+        if (Has("đơn hàng", "số đơn", "bao nhiêu đơn", "đơn bán",
+                   "tổng đơn", "đơn hàng hôm nay", "đơn hàng hôm qua",
+                   "đơn hàng tuần", "đơn hàng tháng", "đơn hàng năm", "đơn hàng quý",
+                   "đặt bao nhiêu đơn",
+                   // English
+                   "orders", "order count", "số order", "order tháng này")
+            || (Has("bán được") && !Has("tiền", "doanh thu") && !Has("nhân viên", "người")))
             return "order_summary";
 
-        if (Has(q, "phản hồi", "đánh giá khách", "review", "bình luận", "nhận xét", "cảm xúc khách", "sentiment"))
+        // ── PHẢN HỒI / SENTIMENT ─────────────────────────────────────────────────
+        if (Has("phản hồi", "đánh giá khách", "review", "bình luận", "nhận xét",
+                   "cảm xúc khách", "sentiment", "khách khen", "khách chê",
+                   "khách phàn nàn", "ý kiến khách hàng", "phản ánh"))
             return "customer_feedback";
 
-        // Câu hỏi tổng quan — trả về performance_overview để có full context
-        if (Has(q, "tình hình", "tổng quan", "tháng này thế nào", "tuần này", "hôm nay",
-                   "kinh doanh thế nào", "báo cáo", "tóm tắt", "overview", "summary"))
+        // ── HOÀN HÀNG / HỦY ĐƠN ─────────────────────────────────────────────────
+        if (Has("hoàn hàng", "đơn bị hủy", "tỷ lệ hủy", "hủy đơn", "đơn trả",
+                   "hoàn tiền", "return", "cancelled", "tỷ lệ hoàn",
+                   "bao nhiêu đơn hủy", "bao nhiêu đơn hoàn", "đơn nào bị hủy",
+                   "lý do hủy", "lý do hoàn", "đơn hoàn hàng"))
+            return "return_analysis";
+
+        // ── THANH TOÁN ───────────────────────────────────────────────────────────
+        if (Has("thanh toán", "phương thức thanh toán", "cod", "chuyển khoản",
+                   "ví điện tử", "momo", "vnpay", "zalopay", "payment",
+                   "trả tiền", "thanh toán online", "thanh toán tiền mặt",
+                   "thanh toán qr", "vietqr", "tỷ lệ thanh toán"))
+            return "payment_analysis";
+
+        // ── GIẢM GIÁ / VOUCHER ───────────────────────────────────────────────────
+        if (Has("giảm giá", "voucher", "mã giảm", "khuyến mãi", "discount",
+                   "coupon", "chiết khấu", "tiết kiệm", "giá ưu đãi",
+                   "chương trình giảm", "flashsale", "flash sale", "sale off",
+                   "ưu đãi", "mã coupon", "giảm bao nhiêu"))
+            return "discount_analysis";
+
+        // ── VẬN CHUYỂN / GIAO HÀNG ──────────────────────────────────────────────
+        if (Has("vận chuyển", "giao hàng", "shipping", "giao thành công",
+                   "giao thất bại", "đang giao", "chờ giao", "tình trạng vận chuyển",
+                   "shipper", "ghn", "ghtk", "bao lâu giao", "tracking",
+                   "giao chậm", "giao nhanh", "tốc độ giao", "tình trạng đơn giao"))
+            return "shipping_status";
+
+        // ── TỔNG QUAN HIỆU QUẢ KINH DOANH ──────────────────────────────────────
+        if (Has("tình hình", "tổng quan", "kinh doanh thế nào", "kinh doanh ra sao",
+                   "kết quả kinh doanh", "tình hình kinh doanh", "hoạt động kinh doanh",
+                   "báo cáo", "tóm tắt", "overview", "summary", "dashboard",
+                   "hôm nay thế nào", "hôm qua thế nào", "tuần này thế nào",
+                   "tháng này thế nào", "tháng này ra sao", "hôm nay ra sao",
+                   "kpi tháng này", "kpi tuần này", "kpi hôm nay",
+                   // "doanh thu và đơn" → mixed intent → performance_overview có cả hai
+                   "doanh thu và đơn", "đơn và doanh thu", "doanh thu cùng số đơn"))
+            return "performance_overview";
+        if (Has("tháng này", "tuần này", "hôm nay", "hôm qua")
+            && !Has("doanh thu", "đơn", "sản phẩm", "kênh", "nhân viên"))
             return "performance_overview";
 
         return "unknown"; // → sẽ được Gemini phân loại tiếp
@@ -165,6 +346,8 @@ public class GeminiService(
     private async Task<string> ClassifyIntentWithGeminiAsync(string question)
     {
         if (string.IsNullOrWhiteSpace(_apiKey)) return "performance_overview";
+        // Respect cooldown — không gọi khi quota đang bị exhausted
+        if (DateTime.UtcNow < _geminiQuotaExhaustedUntil) return "performance_overview";
         try
         {
             var prompt = $"""
@@ -184,6 +367,10 @@ public class GeminiService(
                 - business_recommendation: gợi ý, chiến lược, nên làm gì, cách tăng doanh thu
                 - performance_overview: tổng quan tình hình kinh doanh, tóm tắt, không rõ mục tiêu cụ thể
                 - employee_performance: nhân viên bán nhiều nhất, KPI nhân viên, hiệu suất nhân viên, ai bán được nhiều
+                - return_analysis: hoàn hàng, đơn hủy, tỷ lệ hủy, hoàn tiền
+                - payment_analysis: phương thức thanh toán, COD, chuyển khoản, ví điện tử, tỷ lệ thanh toán
+                - discount_analysis: giảm giá, voucher, mã giảm giá, khuyến mãi
+                - shipping_status: vận chuyển, giao hàng, tình trạng giao, giao thành công/thất bại
                 - unknown: câu hỏi hoàn toàn ngoài phạm vi kinh doanh (thời tiết, lịch sử, giải trí, v.v.)
 
                 QUESTION: {question}
@@ -230,14 +417,37 @@ public class GeminiService(
             "order_summary"           => "Chỉ nói về số lượng đơn hàng và so sánh kỳ trước. Không đề cập doanh thu hay sản phẩm.",
             "top_channel"             => "Nêu tên kênh có doanh thu cao nhất và con số cụ thể. Không liệt kê sản phẩm.",
             "channel_comparison"      => "Liệt kê và so sánh các kênh theo doanh thu, có số liệu cụ thể mỗi kênh.",
-            "customer_feedback"       => "Phân tích đúng loại bình luận người dùng hỏi (tiêu cực/tích cực/chung). Trích dẫn nội dung cụ thể từ dữ liệu đã cung cấp.",
+            "customer_feedback"       => "Phân tích tổng quan cảm xúc: tỷ lệ tích cực/tiêu cực, vấn đề nổi bật nhất, điểm được khen nhiều nhất. Trích dẫn 2-3 bình luận tiêu biểu từ dữ liệu.",
+            "feedback_overview"       => "Nêu tỷ lệ tích cực/tiêu cực/trung tính, vấn đề nổi bật nhất từ tiêu cực, điểm được khen nhiều nhất từ tích cực. Trích dẫn 2-3 bình luận tiêu biểu.",
+            "feedback_negative"       => "Tập trung HOÀN TOÀN vào bình luận tiêu cực. Nhóm vấn đề theo chủ đề (giao hàng, chất lượng, giá...). Trích dẫn bình luận cụ thể. Kết thúc bằng: vấn đề nào nghiêm trọng nhất cần xử lý ngay.",
+            "feedback_positive"       => "Tập trung HOÀN TOÀN vào bình luận tích cực. Nêu điểm mạnh được khen nhiều nhất, trích dẫn 2-3 bình luận tiêu biểu. Gợi ý: điểm mạnh nào có thể đẩy mạnh marketing.",
+            "feedback_improvement"    => "Từ bình luận tiêu cực và đề xuất trong data, tổng hợp top 3-5 điều cần cải thiện cụ thể, actionable. Xếp theo mức độ được nhắc nhiều nhất.",
+            "feedback_shipping"       => "Chỉ phân tích bình luận liên quan đến giao hàng/vận chuyển. Nêu tỷ lệ hài lòng/không hài lòng về giao hàng, vấn đề chính (trễ/sai/hỏng), trích dẫn cụ thể.",
+            "feedback_product_quality"=> "Chỉ phân tích bình luận về chất lượng sản phẩm. Nêu điểm được khen (chất liệu, mẫu mã, đúng mô tả) và điểm bị chê. Gợi ý cải thiện sản phẩm.",
+            "feedback_price"          => "Chỉ phân tích bình luận về giá/chi phí/khuyến mãi. Nêu cảm nhận về giá (hợp lý/đắt/rẻ), hiệu quả voucher/discount theo nhận xét khách.",
+            "feedback_service"        => "Chỉ phân tích bình luận về dịch vụ/tư vấn/hỗ trợ. Nêu điểm được khen và chê về thái độ nhân viên, tốc độ phản hồi, chăm sóc khách hàng.",
             "business_recommendation" => "Đưa GỢI Ý kinh doanh cụ thể, hành động được (actionable) dựa trên top sản phẩm và kênh hiệu quả nhất trong dữ liệu. Không chỉ tóm tắt số liệu.",
             "customer_overview"       => "Nêu số KH mới, top KH chi tiêu cao, phân khúc RFM nếu có. Không đề cập doanh thu hay sản phẩm cụ thể.",
-            "inventory_alert"         => "Liệt kê sản phẩm sắp hết hàng (tồn kho thấp nhất trước). Đề xuất nhập thêm sản phẩm nào. Không đề cập doanh thu hay kênh.",
-            "performance_overview"    => "Tóm tắt ngắn gọn theo thứ tự: doanh thu → đơn hàng → sản phẩm nổi bật → kênh dẫn đầu. Mỗi mục 1 câu.",
-            "market"                  => "Phân tích xu hướng thị trường từ dữ liệu Google được cung cấp. Nêu từ khóa hot, xu hướng nổi bật.",
+            "inventory_alert"         => "Đọc kỹ CONTEXT rồi trả lời. Nếu có sản phẩm 🔴/🟡: liệt kê theo thứ tự ưu tiên, nêu tốc độ bán, ngày còn hàng, gợi ý số lượng nhập. Nếu CONTEXT ghi 'Không có sản phẩm cần nhập gấp' hoặc tất cả đều 🟢: trả lời 'Tồn kho đang ổn định, không cần nhập gấp.' rồi liệt kê top sản phẩm bán chạy nhất kèm số ngày tồn kho còn lại từ CONTEXT. Sản phẩm tăng trưởng → gợi ý nhập thêm 20-25%. Không được nói 'không có dữ liệu' nếu CONTEXT có danh sách top sản phẩm.",
+            "performance_overview"    => "Tóm tắt theo thứ tự: doanh thu → đơn hàng → sản phẩm nổi bật → kênh dẫn đầu. Mỗi mục 1 câu. "
+                                       + "Nếu doanh thu = 0 hoặc đơn hàng = 0: hãy nêu thực tế đó và giải thích có thể do đầu tháng chưa có đơn, hoặc dữ liệu chưa đồng bộ — KHÔNG nói 'không có dữ liệu'. "
+                                       + "Nếu người dùng hỏi về 'lợi nhuận/margin': giải thích chatbot chỉ có dữ liệu doanh thu thuần, "
+                                       + "lợi nhuận xem tại trang Tài chính → Báo cáo lợi nhuận. "
+                                       + "Nếu hỏi 'tại sao doanh thu tăng/giảm': phân tích nguyên nhân có thể dựa trên kênh, sản phẩm, "
+                                       + "xu hướng trong dữ liệu có sẵn — gợi ý xem thêm tab Phân bổ và Bất thường để điều tra sâu.",
+            "market"                  => "Tổng quan xu hướng thị trường: liệt kê top từ khóa theo tần suất, nội dung nổi bật nhất. Nếu không đủ dữ liệu: nhắc chạy Google Scraper trong Data Sync.",
+            "market_overview"         => "Tổng quan xu hướng: top 5 từ khóa theo tần suất, 2-3 xu hướng nổi bật từ nội dung thu thập. Ngắn gọn, mỗi trend 1 câu.",
+            "market_keyword"          => "Liệt kê top từ khóa được tìm kiếm nhiều nhất theo tần suất giảm dần, nêu lý do có thể vì sao từ khóa đó hot.",
+            "market_competitor"       => "Từ data thu thập, nêu domain/cửa hàng/thương hiệu nào đang được nhắc nhiều. Phân tích sản phẩm/giá/chiến lược họ đang tập trung. Gợi ý hướng cạnh tranh.",
+            "market_opportunity"      => "Kết hợp từ khóa hot + nội dung thu thập → gợi ý 2-3 cơ hội kinh doanh cụ thể: sản phẩm/thị trường/phân khúc tiềm năng. Ưu tiên cơ hội liên quan đến ngành của doanh nghiệp.",
+            "market_product"          => "Tìm trong context tất cả mention về sản phẩm/ngành được hỏi. Nêu tần suất, cảm nhận chung (positive/neutral/negative từ snippet), và xu hướng.",
+            "market_consumer_trend"   => "Phân tích xu hướng hành vi người tiêu dùng từ dữ liệu Google: người dùng đang tìm kiếm gì, mua gì, quan tâm điều gì. Gợi ý điều chỉnh chiến lược bán hàng.",
             "cross_analysis"          => "Phân tích mối liên hệ giữa dữ liệu nội bộ và dữ liệu ngoài. Nêu rõ nếu thiếu dữ liệu từ bất kỳ nguồn nào.",
             "employee_performance"    => "Xếp hạng nhân viên theo doanh thu POS. Nêu rõ top 3-5 nhân viên và % đóng góp. Nhắc rõ chỉ tính đơn POS, không tính đơn online sàn.",
+            "return_analysis"         => "Nêu số đơn hủy/hoàn, tỷ lệ %, và kênh có tỷ lệ hủy cao nhất. Tuyệt đối không liệt kê doanh thu hay sản phẩm vào đây.",
+            "payment_analysis"        => "Liệt kê phân bố phương thức thanh toán (COD, chuyển khoản, ví...) theo số đơn và %. Không đề cập sản phẩm hay kênh.",
+            "discount_analysis"       => "Nêu tổng giá trị giảm giá/voucher đã áp dụng, % so doanh thu, số đơn có voucher. Không liệt kê thông tin khác.",
+            "shipping_status"         => "Tóm tắt tình trạng giao hàng: đang giao/giao thành công/thất bại theo số lượng và %. Không liệt kê doanh thu hay sản phẩm.",
             _                         => "Trả lời đúng câu hỏi dựa trên dữ liệu có sẵn. Không liệt kê toàn bộ dashboard.",
         };
 
@@ -256,8 +466,8 @@ public class GeminiService(
             [STRICT RULES]
             1. Chỉ trả lời dựa trên dữ liệu trong CONTEXT — không bịa số liệu, không suy đoán.
             2. Câu hỏi thuộc tab {tabDesc} — chỉ dùng dữ liệu tab đó, trừ khi tab là cross_analysis.
-            3. Nếu dữ liệu không đủ, trả lời rõ: "Hệ thống chưa có đủ dữ liệu để trả lời câu hỏi này."
-            4. Trả lời ngắn gọn, đúng trọng tâm, tối đa 3-4 câu, bằng tiếng Việt.
+            3. Nếu CONTEXT chỉ ghi "Chưa có dữ liệu từ hệ thống." hoặc hoàn toàn trống → trả lời: "Hệ thống chưa có dữ liệu. Vui lòng kiểm tra kết nối nguồn dữ liệu trong Data Sync." Nếu CONTEXT có bất kỳ số liệu nào (dù 0, dù ít) → hãy phân tích và trả lời từ dữ liệu đó, không được từ chối.
+            4. Trả lời ngắn gọn, đúng trọng tâm, tối đa 5 câu, bằng tiếng Việt.
             5. Giữ nguyên số liệu backend cung cấp — không tự làm tròn hoặc thay đổi.
             6. Không liệt kê thông tin không liên quan đến câu hỏi.
             7. {intentRule}
@@ -272,11 +482,13 @@ public class GeminiService(
             {(string.IsNullOrEmpty(context) ? "Chưa có dữ liệu từ hệ thống." : context)}
 
             [OUTPUT FORMAT]
-            Nếu câu hỏi phức tạp, trả lời theo:
-            - Kết luận: (1 câu trực tiếp)
-            - Số liệu liên quan: (nếu có)
-            - Gợi ý hành động: (nếu phù hợp)
-            Nếu câu hỏi đơn giản, trả lời 1-2 câu, không cần đủ 3 mục.
+            - Câu hỏi đơn giản (số liệu, 1 chỉ tiêu): trả lời 1-2 câu trực tiếp.
+            - Câu hỏi phân tích (so sánh, xu hướng, gợi ý chiến lược): trình bày theo:
+              • Kết luận: (1 câu trực tiếp — trả lời thẳng câu hỏi)
+              • Phân tích chi tiết: (số liệu cụ thể, xu hướng, so sánh kỳ trước)
+              • Gợi ý hành động: (ưu tiên theo mức độ cấp bách)
+            - Câu hỏi nhập hàng / tồn kho: bắt buộc nêu tốc độ bán, ngày còn hàng, xu hướng, số lượng cụ thể.
+            - Không vượt quá 8 bullet points. Dùng số liệu thực tế từ CONTEXT, không suy đoán.
             """;
     }
 
@@ -376,9 +588,14 @@ public class GeminiService(
                 ? $"{(orderCount >= prevOrderCount ? "+" : "")}{orderCount - prevOrderCount} đơn so tháng trước ({prevOrderCount} đơn)"
                 : "(chưa có dữ liệu tháng trước)";
 
+            var earlyMonthNote = (revenue == 0 && orderCount == 0 && now.Day <= 5)
+                ? $"  ⚠️ Hôm nay là ngày {now.Day}/{now:MM/yyyy} — đầu tháng, chưa có đơn mới."
+                : "";
+
             return $"""
                 === DỮ LIỆU KINH DOANH THỰC TẾ ===
-                Tháng hiện tại: {now:MM/yyyy}  |  Tháng trước: {prevMonthStart:MM/yyyy}
+                Tháng hiện tại: {now:MM/yyyy} (ngày {now.Day})  |  Tháng trước: {prevMonthStart:MM/yyyy}
+                {earlyMonthNote}
 
                 [Doanh thu]
                 - Tháng này  : {revenue:N0} VND  ({revenueChange})
@@ -389,7 +606,7 @@ public class GeminiService(
                 - Tháng trước: {prevOrderCount} đơn
 
                 [Top sản phẩm bán chạy tháng này]
-                {(topProducts.Any() ? string.Join("\n", topProducts.Select((p, i) => $"  {i + 1}. {p}")) : "  Chưa có dữ liệu")}
+                {(topProducts.Any() ? string.Join("\n", topProducts.Select((p, i) => $"  {i + 1}. {p}")) : $"  (Chưa có đơn tháng {now:MM/yyyy} — xem tháng trước: {prevRevenue:N0} VND, {prevOrderCount} đơn)")}
 
                 [Kênh bán hàng tháng này]
                 {(channels.Any() ? string.Join("\n", channels.Select(c => $"  • {c}")) : "  Chưa có dữ liệu")}
@@ -514,81 +731,155 @@ public class GeminiService(
 
     // ── Build context phản hồi KH từ facebook_feedback ──────────────────────
 
-    private async Task<string> BuildFeedbackContext(Guid companyId, List<string> keywords)
+    // Detect khoảng thời gian feedback từ câu hỏi (dùng cho time-based comparison)
+    private static (DateTime? Start, DateTime? End, string Label) ParseFeedbackTimeFromQuestion(string question)
+    {
+        var q = question.ToLowerInvariant();
+        var now = DateTime.UtcNow;
+        var thisMonthStart = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+        var prevMonthStart = thisMonthStart.AddMonths(-1);
+
+        if (q.Contains("tháng trước") || q.Contains("tháng vừa rồi"))
+            return (prevMonthStart, thisMonthStart, $"tháng {prevMonthStart:MM/yyyy}");
+        if (q.Contains("tháng này") || q.Contains("tháng hiện tại"))
+            return (thisMonthStart, now, $"tháng {now:MM/yyyy}");
+        if (q.Contains("tuần này"))
+        {
+            var dayOffset = (int)now.DayOfWeek == 0 ? -6 : 1 - (int)now.DayOfWeek;
+            var weekStart = now.AddDays(dayOffset).Date;
+            return (weekStart, now, "tuần này");
+        }
+        if (q.Contains("tuần trước"))
+        {
+            var dayOffset = (int)now.DayOfWeek == 0 ? -6 : 1 - (int)now.DayOfWeek;
+            var weekStart = now.AddDays(dayOffset - 7).Date;
+            return (weekStart, weekStart.AddDays(7), "tuần trước");
+        }
+        if (q.Contains("30 ngày") || q.Contains("tháng qua"))
+            return (now.AddDays(-30), now, "30 ngày qua");
+        if (q.Contains("7 ngày") || q.Contains("tuần qua"))
+            return (now.AddDays(-7), now, "7 ngày qua");
+        // Không nhận diện → không filter (all-time)
+        return (null, null, "toàn bộ");
+    }
+
+    private async Task<string> BuildFeedbackContext(Guid companyId, List<string> keywords, string question = "")
     {
         try
         {
+            var (timeStart, timeEnd, timeLabel) = ParseFeedbackTimeFromQuestion(question);
+            var isTimeFiltered = timeStart.HasValue;
+
+            // Time filter SQL snippet
+            var timeSql = isTimeFiltered
+                ? $"AND scraped_at >= '{timeStart:yyyy-MM-dd}' AND scraped_at < '{timeEnd:yyyy-MM-dd}'"
+                : "";
+
+            // Thống kê cảm xúc (có time filter nếu được hỏi)
+            var sentimentSqlFull = $$"""
+                SELECT sentiment,
+                       CAST(COUNT(*) AS INTEGER) AS cnt
+                FROM   public.facebook_feedback
+                WHERE  (company_id = {{companyId}} OR company_id IS NULL)
+                  {{timeSql}}
+                GROUP  BY sentiment
+                """;
             var sentiments = await db.Database
-                .SqlQuery<SentimentRow>($"""
-                    SELECT sentiment,
-                           CAST(COUNT(*) AS INTEGER) AS cnt
-                    FROM   public.facebook_feedback
-                    WHERE  (company_id = {companyId} OR company_id IS NULL)
-                    GROUP  BY sentiment
-                    """)
+                .SqlQueryRaw<SentimentRow>(sentimentSqlFull)
                 .ToListAsync();
 
-            // Phát hiện intent cảm xúc từ keyword câu hỏi
-            var allKw = string.Join(" ", keywords).ToLower();
-            var negWords = new[]{"tiêu cực","negative","phàn nàn","xấu","tệ","không hài lòng","chê","kém","dở"};
-            var posWords = new[]{"tích cực","positive","khen","tốt","hài lòng","thích","hay","tuyệt"};
-            var sentimentSql = negWords.Any(w => allKw.Contains(w)) ? "AND sentiment = 'negative'"
-                             : posWords.Any(w => allKw.Contains(w)) ? "AND sentiment = 'positive'"
-                             : "";
-            var sectionLabel = string.IsNullOrEmpty(sentimentSql) ? "Toàn bộ bình luận"
-                             : sentimentSql.Contains("negative")  ? "Bình luận tiêu cực"
+            // Nếu hỏi so sánh tháng này vs tháng trước
+            var q = question.ToLowerInvariant();
+            var wantsComparison = (q.Contains("so sánh") || q.Contains("so với") || q.Contains("tốt hơn") || q.Contains("tệ hơn"))
+                               && (q.Contains("tháng trước") || q.Contains("tháng này") || q.Contains("tuần trước"));
+            var prevSentiments = new List<SentimentRow>();
+            var prevLabel = "";
+            if (wantsComparison && isTimeFiltered)
+            {
+                // Tính kỳ trước tương đương
+                var periodLen  = (timeEnd!.Value - timeStart!.Value).TotalDays;
+                var prevStart  = timeStart!.Value.AddDays(-periodLen);
+                var prevTimeSql = $"AND scraped_at >= '{prevStart:yyyy-MM-dd}' AND scraped_at < '{timeStart:yyyy-MM-dd}'";
+                prevLabel = timeLabel.Contains("tháng") ? $"tháng {timeStart.Value.AddMonths(-1):MM/yyyy}"
+                          : timeLabel.Contains("tuần")  ? "tuần trước đó" : "kỳ trước";
+
+                // companyId là Guid; prevTimeSql được xây từ DateTime — không có user input
+#pragma warning disable EF1002
+                prevSentiments = await db.Database
+                    .SqlQueryRaw<SentimentRow>($$"""
+                        SELECT sentiment, CAST(COUNT(*) AS INTEGER) AS cnt
+                        FROM public.facebook_feedback
+                        WHERE (company_id = {{companyId}} OR company_id IS NULL)
+                          {{prevTimeSql}}
+                        GROUP BY sentiment
+                        """)
+                    .ToListAsync();
+#pragma warning restore EF1002
+            }
+
+            // Phát hiện loại sentiment cần lọc từ sub-intent hoặc keyword
+            var allKw = string.Join(" ", keywords).ToLower() + " " + q;
+            var negWords = new[]{"tiêu cực","negative","phàn nàn","xấu","tệ","không hài lòng","chê","kém","dở","thất vọng"};
+            var posWords = new[]{"tích cực","positive","khen","tốt","hài lòng","thích","hay","tuyệt","xuất sắc"};
+            var sentimentFilter = negWords.Any(w => allKw.Contains(w)) ? "AND sentiment = 'negative'"
+                                : posWords.Any(w => allKw.Contains(w)) ? "AND sentiment = 'positive'"
+                                : "";
+            var sectionLabel = string.IsNullOrEmpty(sentimentFilter) ? "Toàn bộ bình luận"
+                             : sentimentFilter.Contains("negative")  ? "Bình luận tiêu cực"
                              : "Bình luận tích cực";
 
-            // Lọc bình luận theo keyword câu hỏi (tối đa 20 bình luận liên quan)
+            // Keyword filter từ nội dung câu hỏi
             var kwFilter = keywords.Count > 0
                 ? "AND (" + string.Join(" OR ", keywords.Select(kw =>
                     $"message ILIKE '%{kw.Replace("'", "''")}%'")) + ")"
                 : "";
 
-            // SqlQueryRaw để sentimentSql + kwFilter ghép thẳng vào SQL
             var commentSql = $$"""
                 SELECT message,
                        COALESCE(author_name, 'Ẩn danh') AS author_name,
                        COALESCE(sentiment, 'neutral')   AS sentiment,
                        COALESCE(like_count, 0)          AS like_count
                 FROM   public.facebook_feedback
-                WHERE  (company_id = {0} OR company_id IS NULL)
+                WHERE  (company_id = {{companyId}} OR company_id IS NULL)
                   AND  message IS NOT NULL
-                  {{sentimentSql}}
+                  {{sentimentFilter}}
                   {{kwFilter}}
+                  {{timeSql}}
                 ORDER  BY scraped_at DESC NULLS LAST
                 LIMIT  20
                 """;
             var comments = await db.Database
-                .SqlQueryRaw<CommentRow>(commentSql, companyId)
+                .SqlQueryRaw<CommentRow>(commentSql)
                 .ToListAsync();
 
-            // Fallback: nếu không khớp keyword → lấy 20 mới nhất
+            // Fallback: không khớp keyword → lấy tất cả
             if (comments.Count == 0 && keywords.Count > 0)
+            {
+                // companyId là Guid; sentimentFilter là literal; timeSql từ DateTime — không có user input
+#pragma warning disable EF1002
                 comments = await db.Database
-                    .SqlQuery<CommentRow>($"""
-                        SELECT message,
-                               COALESCE(author_name, 'Ẩn danh') AS author_name,
-                               COALESCE(sentiment, 'neutral')   AS sentiment,
-                               COALESCE(like_count, 0)          AS like_count
-                        FROM   public.facebook_feedback
-                        WHERE  (company_id = {companyId} OR company_id IS NULL)
-                          AND  message IS NOT NULL
-                        ORDER  BY scraped_at DESC NULLS LAST
-                        LIMIT  20
+                    .SqlQueryRaw<CommentRow>($$"""
+                        SELECT message, COALESCE(author_name,'Ẩn danh') AS author_name,
+                               COALESCE(sentiment,'neutral') AS sentiment, COALESCE(like_count,0) AS like_count
+                        FROM public.facebook_feedback
+                        WHERE (company_id = {{companyId}} OR company_id IS NULL)
+                          AND message IS NOT NULL
+                          {{sentimentFilter}} {{timeSql}}
+                        ORDER BY scraped_at DESC NULLS LAST LIMIT 20
                         """)
                     .ToListAsync();
+#pragma warning restore EF1002
+            }
 
             if (!sentiments.Any())
                 return "Chưa có dữ liệu phản hồi khách hàng từ Facebook. Hãy kết nối Facebook Page trong Data Sync.";
 
-            var total  = sentiments.Sum(s => s.Cnt);
-            var pos    = sentiments.FirstOrDefault(s => s.Sentiment == "positive")?.Cnt ?? 0;
-            var neg    = sentiments.FirstOrDefault(s => s.Sentiment == "negative")?.Cnt ?? 0;
-            var neu    = sentiments.FirstOrDefault(s => s.Sentiment == "neutral") ?.Cnt ?? 0;
-            var posPct = total > 0 ? Math.Round(pos * 100.0 / total, 1) : 0;
-            var negPct = total > 0 ? Math.Round(neg * 100.0 / total, 1) : 0;
-            var neuPct = total > 0 ? Math.Round(neu * 100.0 / total, 1) : 0;
+            // Tính tỷ lệ
+            static int GetCount(List<SentimentRow> rows, string s) => rows.FirstOrDefault(r => r.Sentiment == s)?.Cnt ?? 0;
+            var total = sentiments.Sum(s => s.Cnt);
+            var pos   = GetCount(sentiments, "positive");
+            var neg   = GetCount(sentiments, "negative");
+            var neu   = GetCount(sentiments, "neutral");
 
             var commentLines = comments.Any()
                 ? string.Join("\n", comments.Select(c =>
@@ -597,25 +888,34 @@ public class GeminiService(
                     + $": {c.Message}"))
                 : "  (Chưa có bình luận phù hợp)";
 
-            var instruction = string.IsNullOrEmpty(sentimentSql)
-                ? "Phân tích tổng quan, nêu vấn đề tiêu cực nổi bật và điểm được khen. Không bịa nội dung ngoài dữ liệu."
-                : sentimentSql.Contains("negative")
-                  ? "Liệt kê và phân tích CÁC BÌNH LUẬN TIÊU CỰC ở trên. Nêu vấn đề cụ thể từng bình luận."
-                  : "Liệt kê và phân tích CÁC BÌNH LUẬN TÍCH CỰC ở trên. Nêu điểm được khen cụ thể.";
+            // So sánh kỳ trước nếu có
+            var compareBlock = "";
+            if (prevSentiments.Any())
+            {
+                var prevTotal = prevSentiments.Sum(s => s.Cnt);
+                var prevPos   = GetCount(prevSentiments, "positive");
+                var prevNeg   = GetCount(prevSentiments, "negative");
+                compareBlock = $"""
+
+                [So sánh — {prevLabel}]
+                - Tổng: {prevTotal} bình luận | Tích cực: {prevPos} ({(prevTotal > 0 ? prevPos * 100 / prevTotal : 0)}%) | Tiêu cực: {prevNeg} ({(prevTotal > 0 ? prevNeg * 100 / prevTotal : 0)}%)
+                """;
+            }
 
             return $"""
-                INTENT: customer_feedback | {sectionLabel}
+                INTENT: customer_feedback | {sectionLabel} | Kỳ: {timeLabel}
                 === DỮ LIỆU PHẢN HỒI KHÁCH HÀNG TỪ FACEBOOK PAGE ===
-                Tổng {total} bình luận đã thu thập.
 
-                [Thống kê cảm xúc]
-                - Tích cực : {pos} ({posPct}%)  Tiêu cực: {neg} ({negPct}%)  Trung tính: {neu} ({neuPct}%)
-
-                [{sectionLabel} — {comments.Count} bình luận]
+                [Thống kê cảm xúc — {timeLabel}]
+                - Tổng    : {total} bình luận
+                - Tích cực: {pos} ({(total > 0 ? Math.Round(pos * 100.0 / total, 1) : 0)}%)
+                - Tiêu cực: {neg} ({(total > 0 ? Math.Round(neg * 100.0 / total, 1) : 0)}%)
+                - Trung tính: {neu} ({(total > 0 ? Math.Round(neu * 100.0 / total, 1) : 0)}%)
+                {compareBlock}
+                [{sectionLabel} — {comments.Count} bình luận{(isTimeFiltered ? $" trong {timeLabel}" : "")}]
                 {commentLines}
 
-                BẮT BUỘC: {instruction}
-                Trả lời bằng tiếng Việt, ngắn gọn và dựa trên dữ liệu thực tế ở trên.
+                BẮT BUỘC: Phân tích chỉ dựa trên dữ liệu thực tế ở trên. Trích dẫn cụ thể từ bình luận.
                 """;
         }
         catch (Exception ex)
@@ -627,28 +927,80 @@ public class GeminiService(
 
     // ── Context builders tập trung theo intent ───────────────────────────────
 
-    private async Task<string> BuildContext_TopProduct(Guid companyId)
+    // Trích xuất kênh cụ thể được nhắc đến trong câu hỏi
+    private static string? ExtractChannelFromQuestion(string question)
+    {
+        var q = question.ToLowerInvariant();
+        if (q.Contains("shopee"))     return "shopee";
+        if (q.Contains("tiktok"))     return "tiktok";
+        if (q.Contains("lazada"))     return "lazada";
+        if (q.Contains("pos") || q.Contains("tại quầy") || q.Contains("trực tiếp") || q.Contains("offline"))
+                                      return "pos";
+        if (q.Contains("facebook shop") || q.Contains("fb shop")) return "facebook";
+        return null;
+    }
+
+    private async Task<string> BuildContext_TopProduct(Guid companyId, string question = "")
     {
         var now = DateTime.UtcNow;
         var monthStart = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+        var channelFilter = ExtractChannelFromQuestion(question);
         try
         {
-            var products = await db.OrderDetails
+            var query = db.OrderDetails
                 .Join(db.Orders,   od => od.OrderId,   o => o.OrderId,   (od, o) => new { od, o })
                 .Join(db.Products, x  => x.od.ProductId, p => p.ProductId, (x, p)  => new { x.od, x.o, p })
+                .Join(db.Channels, x  => x.o.ChannelId,  ch => ch.ChannelId, (x, ch) => new { x.od, x.o, x.p, ch })
                 .Where(x => x.o.CompanyId == companyId && x.o.OrderDate >= monthStart
-                         && x.o.Status != "CANCELLED" && x.o.Status != "RETURNED")
+                         && x.o.Status != "CANCELLED" && x.o.Status != "RETURNED");
+
+            // Filter theo kênh nếu câu hỏi đề cập kênh cụ thể
+            if (!string.IsNullOrEmpty(channelFilter))
+                query = query.Where(x => x.ch.ChannelName.ToLower().Contains(channelFilter));
+
+            var products = await query
                 .GroupBy(x => x.p.ProductName)
                 .OrderByDescending(g => g.Sum(x => x.od.Quantity))
                 .Take(5)
                 .Select(g => new { Name = g.Key, Qty = g.Sum(x => x.od.Quantity), Rev = g.Sum(x => x.od.Subtotal) })
                 .ToListAsync();
 
+            var channelLabel = channelFilter != null ? $" — kênh {channelFilter.ToUpper()}" : " — tất cả kênh";
+
+            // Nếu tháng hiện tại chưa có đơn → fallback sang tháng trước
+            var displayMonth = monthStart;
             if (!products.Any())
-                return $"Chưa có dữ liệu sản phẩm bán trong tháng {now:MM/yyyy}.";
+            {
+                var prevStart = monthStart.AddMonths(-1);
+                var prevQuery = db.OrderDetails
+                    .Join(db.Orders,   od => od.OrderId,   o => o.OrderId,   (od, o) => new { od, o })
+                    .Join(db.Products, x  => x.od.ProductId, p => p.ProductId, (x, p)  => new { x.od, x.o, p })
+                    .Join(db.Channels, x  => x.o.ChannelId,  ch => ch.ChannelId, (x, ch) => new { x.od, x.o, x.p, ch })
+                    .Where(x => x.o.CompanyId == companyId
+                             && x.o.OrderDate >= prevStart && x.o.OrderDate < monthStart
+                             && x.o.Status != "CANCELLED" && x.o.Status != "RETURNED");
+                if (!string.IsNullOrEmpty(channelFilter))
+                    prevQuery = prevQuery.Where(x => x.ch.ChannelName.ToLower().Contains(channelFilter));
+
+                products = await prevQuery
+                    .GroupBy(x => x.p.ProductName)
+                    .OrderByDescending(g => g.Sum(x => x.od.Quantity))
+                    .Take(5)
+                    .Select(g => new { Name = g.Key, Qty = g.Sum(x => x.od.Quantity), Rev = g.Sum(x => x.od.Subtotal) })
+                    .ToListAsync();
+
+                displayMonth = prevStart;
+            }
+
+            if (!products.Any())
+                return $"Chưa có dữ liệu sản phẩm bán trong 2 tháng gần nhất{channelLabel}. Hãy kiểm tra dữ liệu trong Data Sync.";
+
+            var note = displayMonth.Month != now.Month
+                ? $" (dữ liệu tháng {displayMonth:MM/yyyy} — tháng {now:MM/yyyy} chưa có đơn)"
+                : "";
 
             return $"""
-                INTENT: top_product | Tháng: {now:MM/yyyy}
+                INTENT: top_product | Tháng: {displayMonth:MM/yyyy}{channelLabel}{note}
                 [Sản phẩm bán chạy nhất theo số lượng]
                 {string.Join("\n", products.Select((p, i) => $"  {i + 1}. {p.Name}: {p.Qty} sản phẩm đã bán, doanh thu {p.Rev:N0} VND"))}
                 """;
@@ -752,6 +1104,26 @@ public class GeminiService(
                 """;
         }
         catch (Exception ex) { logger.LogWarning("BuildContext_TrendingProduct lỗi: {M}", ex.Message); return "Chưa có dữ liệu xu hướng."; }
+    }
+
+    // ── Parse 2 tháng bất kỳ từ câu hỏi để so sánh: "tháng 4/2025 vs tháng 4/2026" ──
+    private static (int M1, int Y1, int M2, int Y2)? ParseTwoMonthsFromQuestion(string question)
+    {
+        var q = question.ToLowerInvariant();
+        var matches = System.Text.RegularExpressions.Regex.Matches(
+            q, @"tháng\s*(\d{1,2})(?:[/\-\s]+(?:năm\s*)?(\d{4}))?");
+
+        if (matches.Count < 2) return null;
+        if (!int.TryParse(matches[0].Groups[1].Value, out var m1) || m1 < 1 || m1 > 12) return null;
+        if (!int.TryParse(matches[1].Groups[1].Value, out var m2) || m2 < 1 || m2 > 12) return null;
+
+        var now = DateTime.UtcNow;
+        var y1 = matches[0].Groups[2].Success && int.TryParse(matches[0].Groups[2].Value, out var yr1) ? yr1 : now.Year;
+        var y2 = matches[1].Groups[2].Success && int.TryParse(matches[1].Groups[2].Value, out var yr2) ? yr2 : now.Year;
+
+        if (y1 < 2020 || y1 > 2030 || y2 < 2020 || y2 > 2030) return null;
+        if (m1 == m2 && y1 == y2) return null; // cùng tháng, không cần so sánh
+        return (m1, y1, m2, y2);
     }
 
     // ── Parse tháng/năm từ câu hỏi: "tháng 7/2025", "7/2025", "tháng 7 năm 2025" ──
@@ -875,7 +1247,7 @@ public class GeminiService(
         return null;
     }
 
-    // ── Parse "tuần này", "tuần trước" → (startDate, endDate) ────────────────
+    // ── Parse "tuần này", "tuần trước", "hôm qua", "2 ngày qua" → (startDate, endDate) ──
     private static (DateTime Start, DateTime End, string Label)? ParseWeekFromQuestion(string question)
     {
         var q   = question.ToLowerInvariant();
@@ -883,17 +1255,158 @@ public class GeminiService(
         // Đầu tuần = thứ Hai
         var dayOffset = (int)now.DayOfWeek == 0 ? -6 : 1 - (int)now.DayOfWeek;
 
+        // "hôm qua"
+        if (q.Contains("hôm qua") || q.Contains("ngày hôm qua"))
+        {
+            var yesterday = now.AddDays(-1).Date;
+            return (yesterday, yesterday.AddDays(1), "hôm qua");
+        }
+        // "hôm nay" — xử lý rõ hơn thay vì để performance_overview xử lý
+        if (q.Contains("hôm nay") && (q.Contains("doanh thu") || q.Contains("đơn") || q.Contains("bán")))
+        {
+            var today = now.Date;
+            return (today, today.AddDays(1), "hôm nay");
+        }
         if (q.Contains("tuần này"))
         {
             var start = now.AddDays(dayOffset).Date;
             return (start, start.AddDays(7), "tuần này");
         }
-        if (q.Contains("tuần trước") || q.Contains("tuần vừa rồi"))
+        if (q.Contains("tuần trước") || q.Contains("tuần vừa rồi") || q.Contains("tuần qua"))
         {
             var start = now.AddDays(dayOffset - 7).Date;
             return (start, start.AddDays(7), "tuần trước");
         }
+        if (q.Contains("7 ngày") || q.Contains("7 ngày qua") || q.Contains("7 ngày gần"))
+        {
+            var start = now.AddDays(-7).Date;
+            return (start, now, "7 ngày qua");
+        }
+        if (q.Contains("30 ngày") || q.Contains("30 ngày qua") || q.Contains("30 ngày gần"))
+        {
+            var start = now.AddDays(-30).Date;
+            return (start, now, "30 ngày qua");
+        }
         return null;
+    }
+
+    // ── Phân loại sub-intent cho tab Market (scraped_market) ─────────────────
+    private static string DetectMarketIntent(string question)
+    {
+        var q = question.ToLowerInvariant();
+        static bool Has(string text, params string[] words) => words.Any(text.Contains);
+
+        // Đối thủ cạnh tranh / giá thị trường
+        if (Has("đối thủ", "competitor", "cạnh tranh", "shop khác", "cửa hàng khác",
+                   "giá đối thủ", "họ bán", "đối thủ bán", "market share"))
+            return "market_competitor";
+
+        // Cơ hội kinh doanh / ngách thị trường
+        if (Has("cơ hội", "tiềm năng", "nên kinh doanh gì", "thị trường nào", "ngách",
+                   "nên tập trung", "thị trường mới", "phân khúc thị trường", "blue ocean"))
+            return "market_opportunity";
+
+        // Từ khóa / tìm kiếm hot
+        if (Has("từ khóa", "keyword", "tìm kiếm", "hot nhất", "được tìm nhiều",
+                   "search volume", "google trend", "trend search"))
+            return "market_keyword";
+
+        // Sản phẩm cụ thể trên thị trường
+        if (Has("sản phẩm", "mặt hàng", "hàng hóa")
+            && Has("thị trường", "đang nổi", "đang hot", "được tìm", "xu hướng", "trending"))
+            return "market_product";
+
+        // Xu hướng ngành / người tiêu dùng / kênh mới
+        if (Has("xu hướng tiêu dùng", "hành vi mua", "người mua", "khách hàng tiêu dùng",
+                   "mua sắm online", "thương mại điện tử", "ecommerce", "xu hướng ngành",
+                   "livestream", "live stream", "bán hàng trực tiếp", "tiktok trend",
+                   "kol", "influencer", "review sản phẩm", "ugc", "viral"))
+            return "market_consumer_trend";
+
+        // Giá thị trường / định giá
+        if (Has("giá thị trường", "giá bán thị trường", "thị trường đang bán giá",
+                   "giá trung bình thị trường", "giá cạnh tranh", "định giá"))
+            return "market_competitor";
+
+        return "market_overview"; // tổng quan xu hướng thị trường
+    }
+
+    // ── Phân loại sub-intent cho tab Feedback (facebook_feedback) ─────────────
+    private static string DetectFeedbackIntent(string question)
+    {
+        var q = question.ToLowerInvariant();
+        static bool Has(string text, params string[] words) => words.Any(text.Contains);
+
+        // Phàn nàn / tiêu cực
+        if (Has("phàn nàn", "tiêu cực", "chê", "không hài lòng", "vấn đề",
+                   "tệ", "tồi", "xấu", "dở", "bực", "tức", "thất vọng", "negative",
+                   "kém", "không ổn", "lỗi", "hỏng"))
+            return "feedback_negative";
+
+        // Khen ngợi / tích cực
+        if (Has("khen", "tích cực", "hài lòng", "thích", "tốt", "hay", "tuyệt",
+                   "xuất sắc", "positive", "yêu thích", "ổn", "hài lòng", "recommend",
+                   "gợi ý", "giới thiệu"))
+            return "feedback_positive";
+
+        // Đề xuất cải thiện / cần sửa
+        if (Has("cải thiện", "cần sửa", "nên sửa", "đề xuất", "kiến nghị",
+                   "mong muốn", "góp ý", "cần cải thiện", "nên làm gì", "cần thêm"))
+            return "feedback_improvement";
+
+        // Chủ đề giao hàng / vận chuyển
+        if (Has("giao hàng", "vận chuyển", "shipping", "giao trễ", "giao nhanh",
+                   "đóng gói", "bao bì", "shipper", "giao không đúng"))
+            return "feedback_shipping";
+
+        // Chủ đề chất lượng sản phẩm
+        if (Has("chất lượng", "sản phẩm", "hàng", "hàng hóa", "mẫu mã",
+                   "size", "màu sắc", "đúng mô tả", "như ảnh"))
+            return "feedback_product_quality";
+
+        // Chủ đề giá / chi phí
+        if (Has("giá", "chi phí", "đắt", "rẻ", "hợp lý", "giá cả", "discount",
+                   "khuyến mãi", "voucher", "giá trị"))
+            return "feedback_price";
+
+        // Chủ đề dịch vụ / tư vấn
+        if (Has("dịch vụ", "tư vấn", "hỗ trợ", "nhân viên", "thái độ",
+                   "phản hồi nhanh", "chăm sóc khách hàng", "customer service"))
+            return "feedback_service";
+
+        return "feedback_overview"; // tổng quan cảm xúc
+    }
+
+    // ── Detect câu hỏi follow-up (có đại từ thay thế hoặc rất ngắn) ─────────
+    private static bool IsFollowUpQuestion(string question)
+    {
+        var q  = question.ToLowerInvariant().Trim();
+        var qn = NormalizeVi(q);
+        var wordCount = q.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length;
+        bool Has(params string[] words) => words.Any(w => q.Contains(w) || qn.Contains(NormalizeVi(w)));
+        return wordCount <= 5
+            || Has(" nó ", "nó ") || Has(" đó ", "đó ")
+            || Has("so sánh nó", "so với")
+            || Has("cùng kỳ đó", "tháng đó", "giai đoạn đó")
+            || (q.StartsWith("so sánh với") || qn.StartsWith("so sanh voi"))
+            || (q.StartsWith("so với tháng") || qn.StartsWith("so voi thang"))
+            || (q.StartsWith("so với năm")   || qn.StartsWith("so voi nam"))
+            || (q.StartsWith("so với quý")   || qn.StartsWith("so voi quy"))
+            || (Has("so sánh") && !Has("kênh", "sản phẩm", "mặt hàng"));
+    }
+
+    // ── Mở rộng câu hỏi follow-up bằng cách ghép câu hỏi trước từ history ──
+    // Ví dụ: "nó" → "đơn hàng tháng 4 2025" + "so sánh nó với tháng 4/2026"
+    private static string ResolveFollowUp(string userMessage, List<ChatMessage> history)
+    {
+        if (!IsFollowUpQuestion(userMessage) || history.Count == 0)
+            return userMessage;
+        var lastUserMsg = history.LastOrDefault(m =>
+            string.Equals(m.Role, "user", StringComparison.OrdinalIgnoreCase))?.Content ?? "";
+        if (string.IsNullOrWhiteSpace(lastUserMsg) || lastUserMsg == userMessage)
+            return userMessage;
+        // Ghép: câu hỏi trước + câu hỏi hiện tại để intent detection + context builder hiểu ngữ cảnh
+        return $"{lastUserMsg} {userMessage}".Trim();
     }
 
     // ── Helper: doanh thu + đơn theo khoảng ngày ─────────────────────────────
@@ -979,6 +1492,26 @@ public class GeminiService(
                     [Doanh thu {wlabel}]
                     - Doanh thu: {rev:N0} VND, {cnt} đơn ({change})
                     - Tuần trước: {prevRev:N0} VND, {prevCnt} đơn
+                    """;
+            }
+
+            // So sánh 2 tháng bất kỳ (ví dụ: tháng 4/2025 vs tháng 4/2026)
+            var twoMonthsRev = ParseTwoMonthsFromQuestion(question);
+            if (twoMonthsRev.HasValue)
+            {
+                var (rm1, ry1, rm2, ry2) = twoMonthsRev.Value;
+                var rs1 = new DateTime(ry1, rm1, 1, 0, 0, 0, DateTimeKind.Utc);
+                var rs2 = new DateTime(ry2, rm2, 1, 0, 0, 0, DateTimeKind.Utc);
+                var (rev1, cnt1) = await GetRevenueInRange(companyId, rs1, rs1.AddMonths(1));
+                var (rev2, cnt2) = await GetRevenueInRange(companyId, rs2, rs2.AddMonths(1));
+                var revChg = rev2 > 0
+                    ? $"{(rev1 >= rev2 ? "+" : "")}{(rev1 - rev2) / rev2 * 100:F1}% so tháng {rm2:D2}/{ry2}"
+                    : "(chưa có dữ liệu để so sánh)";
+                return $"""
+                    INTENT: revenue_summary | So sánh tháng {rm1:D2}/{ry1} vs tháng {rm2:D2}/{ry2}
+                    [Doanh thu]
+                    - Tháng {rm1:D2}/{ry1}: {rev1:N0} VND, {cnt1} đơn ({revChg})
+                    - Tháng {rm2:D2}/{ry2}: {rev2:N0} VND, {cnt2} đơn
                     """;
             }
 
@@ -1156,6 +1689,26 @@ public class GeminiService(
                     """;
             }
 
+            // So sánh 2 tháng bất kỳ (ví dụ: tháng 4/2025 vs tháng 4/2026 từ effectiveQuestion)
+            var twoMonths = ParseTwoMonthsFromQuestion(question);
+            if (twoMonths.HasValue)
+            {
+                var (qm1, qy1, qm2, qy2) = twoMonths.Value;
+                var s1 = new DateTime(qy1, qm1, 1, 0, 0, 0, DateTimeKind.Utc);
+                var s2 = new DateTime(qy2, qm2, 1, 0, 0, 0, DateTimeKind.Utc);
+                var (_, c1) = await GetRevenueInRange(companyId, s1, s1.AddMonths(1));
+                var (_, c2) = await GetRevenueInRange(companyId, s2, s2.AddMonths(1));
+                var chg = c2 > 0
+                    ? $"{(c1 >= c2 ? "+" : "")}{c1 - c2} đơn so với tháng {qm2:D2}/{qy2}"
+                    : "(chưa có dữ liệu để so sánh)";
+                return $"""
+                    INTENT: order_summary | So sánh tháng {qm1:D2}/{qy1} vs tháng {qm2:D2}/{qy2}
+                    [Số đơn hàng]
+                    - Tháng {qm1:D2}/{qy1}: {c1} đơn ({chg})
+                    - Tháng {qm2:D2}/{qy2}: {c2} đơn
+                    """;
+            }
+
             // Tháng (mặc định)
             var parsed = ParseDateFromQuestion(question);
             DateTime monthStart, prevMonthStart;
@@ -1318,31 +1871,129 @@ public class GeminiService(
 
     private async Task<string> BuildContext_Inventory(Guid companyId)
     {
+        var now        = DateTime.UtcNow;
+        var day30Ago   = now.AddDays(-30);
+        var day60Ago   = now.AddDays(-60);
         try
         {
-            var totalActive  = await db.Products.CountAsync(p => p.CompanyId == companyId && p.IsActive);
-            var outOfStock   = await db.Products.CountAsync(p => p.CompanyId == companyId && p.IsActive && p.StockQuantity == 0);
-            var lowStockCnt  = await db.Products.CountAsync(p => p.CompanyId == companyId && p.IsActive && p.StockQuantity > 0 && p.StockQuantity <= 10);
-
-            var lowStock = await db.Products
-                .Where(p => p.CompanyId == companyId && p.IsActive && p.StockQuantity <= 10)
-                .OrderBy(p => p.StockQuantity)
-                .Take(10)
-                .Select(p => new { p.ProductName, p.StockQuantity, p.Sku })
+            // Tốc độ bán 30 ngày qua
+            var sales30d = await db.OrderDetails
+                .Join(db.Orders,   od => od.OrderId,   o => o.OrderId,   (od, o) => new { od, o })
+                .Join(db.Products, x  => x.od.ProductId, p => p.ProductId, (x, p)  => new { x.od, x.o, p })
+                .Where(x => x.o.CompanyId == companyId
+                         && x.o.OrderDate >= day30Ago
+                         && x.o.Status != "CANCELLED" && x.o.Status != "RETURNED")
+                .GroupBy(x => new { x.p.ProductId, x.p.ProductName, x.p.Sku, x.p.StockQuantity })
+                .Select(g => new
+                {
+                    g.Key.ProductId,
+                    g.Key.ProductName,
+                    g.Key.Sku,
+                    Stock      = g.Key.StockQuantity,
+                    QtySold30  = g.Sum(x => x.od.Quantity),
+                    Revenue30  = g.Sum(x => x.od.Subtotal),
+                })
                 .ToListAsync();
 
+            // Tốc độ bán 30-60 ngày trước (để tính xu hướng)
+            var sales30to60 = await db.OrderDetails
+                .Join(db.Orders,   od => od.OrderId,   o => o.OrderId,   (od, o) => new { od, o })
+                .Join(db.Products, x  => x.od.ProductId, p => p.ProductId, (x, p)  => new { x.od, x.o, p })
+                .Where(x => x.o.CompanyId == companyId
+                         && x.o.OrderDate >= day60Ago && x.o.OrderDate < day30Ago
+                         && x.o.Status != "CANCELLED" && x.o.Status != "RETURNED")
+                .GroupBy(x => x.p.ProductId)
+                .Select(g => new { ProductId = g.Key, QtySoldPrev = g.Sum(x => x.od.Quantity) })
+                .ToListAsync();
+
+            var prevDict = sales30to60.ToDictionary(x => x.ProductId, x => x.QtySoldPrev);
+
+            // Phân tích từng sản phẩm: ngày còn hàng + xu hướng
+            var analyzed = sales30d
+                .Select(p =>
+                {
+                    var avgDaily = p.QtySold30 / 30.0;
+                    var daysLeft = avgDaily > 0 ? (int)Math.Floor(p.Stock / avgDaily) : 9999;
+                    var prevQty  = prevDict.TryGetValue(p.ProductId, out var pq) ? pq : 0;
+                    var trend    = prevQty > 0 ? (p.QtySold30 - prevQty) * 100.0 / prevQty : 0.0;
+                    return new { p.ProductName, p.Sku, p.Stock, p.QtySold30, p.Revenue30, avgDaily, daysLeft, prevQty, trend };
+                })
+                .Where(p => p.daysLeft < 90 || p.Stock <= 50) // Giữ sản phẩm cần theo dõi trong 90 ngày
+                .OrderBy(p => p.daysLeft)
+                .Take(15)
+                .ToList();
+
+            // Sản phẩm bán chạy nhất 30 ngày (top 5) — cần tồn kho đủ để tiếp tục bán
+            var topSellers = sales30d
+                .OrderByDescending(p => p.QtySold30)
+                .Take(5)
+                .ToList();
+
+            // Tổng quan kho
+            var totalActive = await db.Products.CountAsync(p => p.CompanyId == companyId && p.IsActive);
+            var outOfStock  = await db.Products.CountAsync(p => p.CompanyId == companyId && p.IsActive && p.StockQuantity == 0);
+            var lowStockCnt = await db.Products.CountAsync(p => p.CompanyId == companyId && p.IsActive && p.StockQuantity > 0 && p.StockQuantity <= 10);
+
+            // Format từng sản phẩm cần nhập
+            var urgentLines = analyzed.Select(p =>
+            {
+                var urgency  = p.Stock == 0  ? "🔴 HẾT HÀNG"
+                             : p.daysLeft <= 7  ? "🔴 CẤP BÁCH"
+                             : p.daysLeft <= 14 ? "🟡 ƯU TIÊN"
+                             : p.daysLeft <= 30 ? "🟡 CHÚ Ý"
+                             : "🟢 THEO DÕI";
+                var dayStr   = p.Stock == 0         ? "đã hết hàng"
+                             : p.daysLeft == 9999   ? "chưa bán 30 ngày qua"
+                             : $"còn ~{p.daysLeft} ngày";
+                var trendStr = p.trend >  10  ? $"📈 tăng {p.trend:F0}% so 30 ngày trước"
+                             : p.trend < -10  ? $"📉 giảm {Math.Abs(p.trend):F0}% so 30 ngày trước"
+                             : "➡️ ổn định";
+                // Gợi ý số lượng nhập: đủ 45 ngày, nhân 1.2 nếu tăng trưởng
+                var reorderBase = (int)Math.Ceiling(p.avgDaily * 45);
+                var reorderQty  = p.trend > 10 ? (int)(reorderBase * 1.25) : reorderBase;
+                return $"  {urgency} {p.ProductName}: tồn {p.Stock} sp | {dayStr} | "
+                     + $"tốc độ {p.avgDaily:F1} sp/ngày | {trendStr} | → gợi ý nhập {reorderQty} sp";
+            }).ToList();
+
+            var topSellerLines = topSellers.Select((p, i) =>
+            {
+                var avgD     = p.QtySold30 / 30.0;
+                var daysLeft = avgD > 0 ? (int)Math.Floor(p.Stock / avgD) : 9999;
+                var dayStr   = daysLeft == 9999 ? "chưa tính được"
+                             : daysLeft <= 14   ? $"🔴 ~{daysLeft} ngày"
+                             : daysLeft <= 30   ? $"🟡 ~{daysLeft} ngày"
+                             : $"🟢 ~{daysLeft} ngày";
+                var suggest  = avgD > 0 ? (int)Math.Ceiling(avgD * 45) : 0;
+                return $"  {i + 1}. {p.ProductName}: {p.QtySold30} sp/30 ngày | "
+                     + $"tốc độ {avgD:F1} sp/ngày | tồn {p.Stock} sp ({dayStr} còn hàng)"
+                     + (suggest > 0 ? $" | → đủ 45 ngày cần {suggest} sp" : "");
+            }).ToList();
+
             return $"""
-                INTENT: inventory_alert
-                [Tổng quan tồn kho]
+                INTENT: inventory_alert | Phân tích tồn kho & gợi ý nhập hàng
+                Thời điểm: {now:dd/MM/yyyy} | Kỳ so sánh: 30 ngày gần nhất vs 30 ngày trước đó
+
+                [Tổng quan kho]
                 - Tổng sản phẩm đang bán: {totalActive}
                 - Hết hàng (0 sp)        : {outOfStock} sản phẩm
                 - Sắp hết (≤10 sp)       : {lowStockCnt} sản phẩm
 
-                [Danh sách cần nhập thêm]
-                {(lowStock.Any()
-                    ? string.Join("\n", lowStock.Select(p =>
-                        $"  • {p.ProductName} [{p.Sku}]: còn {p.StockQuantity} sp"))
-                    : "  Không có sản phẩm sắp hết — tồn kho ổn định")}
+                [Sản phẩm cần nhập — theo mức độ ưu tiên]
+                {(urgentLines.Any()
+                    ? string.Join("\n", urgentLines)
+                    : "  Không có sản phẩm cần nhập gấp — tồn kho ổn định")}
+
+                [Top sản phẩm bán chạy nhất 30 ngày qua — cần đảm bảo tồn kho đủ]
+                {(topSellerLines.Any()
+                    ? string.Join("\n", topSellerLines)
+                    : "  (Chưa có dữ liệu bán hàng 30 ngày)")}
+
+                [Hướng dẫn phân tích cho AI]
+                - Ưu tiên phân tích 🔴 CẤP BÁCH trước, nêu lý do cụ thể (tốc độ bán vs tồn kho)
+                - Sản phẩm 📈 tăng trưởng → gợi ý nhập nhiều hơn 20-25% so bình thường
+                - Sản phẩm 📉 giảm → gợi ý nhập ít lại hoặc theo dõi thêm
+                - Đối chiếu với top seller để đảm bảo hàng bán chạy không bị đứt hàng
+                - Trình bày theo thứ tự: ưu tiên 🔴 → 🟡 → 🟢, số lượng cụ thể, lý do rõ ràng
                 """;
         }
         catch (Exception ex) { logger.LogWarning("BuildContext_Inventory lỗi: {M}", ex.Message); return "Chưa có dữ liệu tồn kho."; }
@@ -1492,6 +2143,144 @@ public class GeminiService(
         catch (Exception ex) { logger.LogWarning("BuildContext_EmployeePerformance lỗi: {M}", ex.Message); return "Chưa có dữ liệu hiệu suất nhân viên."; }
     }
 
+    // ── Phân tích hoàn hàng / đơn hủy ────────────────────────────────────────
+    private async Task<string> BuildContext_ReturnAnalysis(Guid companyId, string question)
+    {
+        var now   = DateTime.UtcNow;
+        DateTime start, end;
+        string   label;
+        if (IsYearLevelQuery(question) && ParseYearsFromQuestion(question) is { } yrs)
+        { start = new DateTime(yrs.Year1, 1, 1, 0, 0, 0, DateTimeKind.Utc); end = start.AddYears(1); label = $"Năm {yrs.Year1}"; }
+        else if (ParseQuarterFromQuestion(question) is { } qtr2)
+        { var sm2 = (qtr2.Quarter - 1) * 3 + 1; start = new DateTime(qtr2.Year, sm2, 1, 0, 0, 0, DateTimeKind.Utc); end = start.AddMonths(3); label = $"Q{qtr2.Quarter}/{qtr2.Year}"; }
+        else { var ms = ParseDateFromQuestion(question); start = ms.HasValue ? new DateTime(ms.Value.Year, ms.Value.Month, 1, 0, 0, 0, DateTimeKind.Utc) : new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc); end = start.AddMonths(1); label = $"Tháng {start:MM/yyyy}"; }
+        try
+        {
+            var total     = await db.Orders.CountAsync(o => o.CompanyId == companyId && o.OrderDate >= start && o.OrderDate < end);
+            var cancelled = await db.Orders.CountAsync(o => o.CompanyId == companyId && o.OrderDate >= start && o.OrderDate < end && o.Status == "CANCELLED");
+            var returned  = await db.Orders.CountAsync(o => o.CompanyId == companyId && o.OrderDate >= start && o.OrderDate < end && o.Status == "RETURNED");
+            var cancelPct = total > 0 ? $"{cancelled * 100.0 / total:F1}%" : "N/A";
+            var returnPct = total > 0 ? $"{returned  * 100.0 / total:F1}%" : "N/A";
+
+            // Kênh có tỷ lệ hủy cao nhất
+            var channelCancel = await db.Orders
+                .Join(db.Channels, o => o.ChannelId, ch => ch.ChannelId, (o, ch) => new { o, ch })
+                .Where(x => x.o.CompanyId == companyId && x.o.OrderDate >= start && x.o.OrderDate < end && x.o.Status == "CANCELLED")
+                .GroupBy(x => x.ch.ChannelName)
+                .Select(g => new { Name = g.Key, Count = g.Count() })
+                .OrderByDescending(g => g.Count).FirstOrDefaultAsync();
+
+            return $"""
+                INTENT: return_analysis | {label}
+                [Tình trạng hủy/hoàn đơn — {label}]
+                - Tổng đơn       : {total}
+                - Đơn bị hủy     : {cancelled} ({cancelPct})
+                - Đơn hoàn trả   : {returned}  ({returnPct})
+                - Kênh hủy nhiều nhất: {channelCancel?.Name ?? "Chưa có"} ({channelCancel?.Count ?? 0} đơn)
+                """;
+        }
+        catch (Exception ex) { logger.LogWarning("BuildContext_ReturnAnalysis lỗi: {M}", ex.Message); return "Chưa có dữ liệu hoàn hàng."; }
+    }
+
+    // ── Phân tích phương thức thanh toán ─────────────────────────────────────
+    private async Task<string> BuildContext_PaymentAnalysis(Guid companyId, string question)
+    {
+        var now = DateTime.UtcNow;
+        DateTime start, end;
+        string   label;
+        if (IsYearLevelQuery(question) && ParseYearsFromQuestion(question) is { } yrs)
+        { start = new DateTime(yrs.Year1, 1, 1, 0, 0, 0, DateTimeKind.Utc); end = start.AddYears(1); label = $"Năm {yrs.Year1}"; }
+        else { var ms = ParseDateFromQuestion(question); start = ms.HasValue ? new DateTime(ms.Value.Year, ms.Value.Month, 1, 0, 0, 0, DateTimeKind.Utc) : new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc); end = start.AddMonths(1); label = $"Tháng {start:MM/yyyy}"; }
+        try
+        {
+            var methods = await db.Orders
+                .Where(o => o.CompanyId == companyId && o.OrderDate >= start && o.OrderDate < end && o.Status != "CANCELLED")
+                .GroupBy(o => o.PaymentMethod ?? "Không xác định")
+                .Select(g => new { Method = g.Key, Count = g.Count(), Revenue = g.Sum(o => o.TotalAmount) })
+                .OrderByDescending(g => g.Count).ToListAsync();
+
+            if (!methods.Any()) return $"INTENT: payment_analysis | {label}\nChưa có dữ liệu thanh toán trong {label}.";
+
+            var total = methods.Sum(m => m.Count);
+            return $"""
+                INTENT: payment_analysis | {label}
+                [Phân bố phương thức thanh toán — {label}]
+                {string.Join("\n", methods.Select(m =>
+                    $"  • {m.Method}: {m.Count} đơn ({(total > 0 ? m.Count * 100.0 / total : 0):F1}%) — {m.Revenue:N0} VND"))}
+                """;
+        }
+        catch (Exception ex) { logger.LogWarning("BuildContext_PaymentAnalysis lỗi: {M}", ex.Message); return "Chưa có dữ liệu thanh toán."; }
+    }
+
+    // ── Phân tích giảm giá / voucher ─────────────────────────────────────────
+    private async Task<string> BuildContext_DiscountAnalysis(Guid companyId, string question)
+    {
+        var now = DateTime.UtcNow;
+        DateTime start, end;
+        string   label;
+        if (IsYearLevelQuery(question) && ParseYearsFromQuestion(question) is { } yrs)
+        { start = new DateTime(yrs.Year1, 1, 1, 0, 0, 0, DateTimeKind.Utc); end = start.AddYears(1); label = $"Năm {yrs.Year1}"; }
+        else { var ms = ParseDateFromQuestion(question); start = ms.HasValue ? new DateTime(ms.Value.Year, ms.Value.Month, 1, 0, 0, 0, DateTimeKind.Utc) : new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc); end = start.AddMonths(1); label = $"Tháng {start:MM/yyyy}"; }
+        try
+        {
+            var total      = await db.Orders.CountAsync(o => o.CompanyId == companyId && o.OrderDate >= start && o.OrderDate < end && o.Status != "CANCELLED");
+            var withVoucher= await db.Orders.CountAsync(o => o.CompanyId == companyId && o.OrderDate >= start && o.OrderDate < end && o.Status != "CANCELLED" && o.VoucherCode != null);
+            var totalDisc  = await db.Orders.Where(o => o.CompanyId == companyId && o.OrderDate >= start && o.OrderDate < end && o.Status != "CANCELLED").SumAsync(o => (decimal?)o.DiscountAmount) ?? 0;
+            var totalRev   = await db.Orders.Where(o => o.CompanyId == companyId && o.OrderDate >= start && o.OrderDate < end && o.Status != "CANCELLED").SumAsync(o => (decimal?)o.TotalAmount) ?? 0;
+            var discPct    = totalRev > 0 ? $"{totalDisc / totalRev * 100:F1}%" : "N/A";
+
+            return $"""
+                INTENT: discount_analysis | {label}
+                [Phân tích giảm giá/voucher — {label}]
+                - Đơn có voucher   : {withVoucher}/{total} đơn ({(total > 0 ? withVoucher * 100.0 / total : 0):F1}%)
+                - Tổng giá trị giảm: {totalDisc:N0} VND ({discPct} so doanh thu)
+                - Doanh thu thuần  : {totalRev:N0} VND
+                """;
+        }
+        catch (Exception ex) { logger.LogWarning("BuildContext_DiscountAnalysis lỗi: {M}", ex.Message); return "Chưa có dữ liệu giảm giá."; }
+    }
+
+    // ── Phân tích tình trạng vận chuyển ──────────────────────────────────────
+    private async Task<string> BuildContext_ShippingStatus(Guid companyId, string question)
+    {
+        var now = DateTime.UtcNow;
+        DateTime start, end;
+        string   label;
+        if (IsYearLevelQuery(question) && ParseYearsFromQuestion(question) is { } yrs)
+        { start = new DateTime(yrs.Year1, 1, 1, 0, 0, 0, DateTimeKind.Utc); end = start.AddYears(1); label = $"Năm {yrs.Year1}"; }
+        else { var ms = ParseDateFromQuestion(question); start = ms.HasValue ? new DateTime(ms.Value.Year, ms.Value.Month, 1, 0, 0, 0, DateTimeKind.Utc) : new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc); end = start.AddMonths(1); label = $"Tháng {start:MM/yyyy}"; }
+        try
+        {
+            var statuses = await db.Orders
+                .Where(o => o.CompanyId == companyId && o.OrderDate >= start && o.OrderDate < end && o.Status != "CANCELLED")
+                .GroupBy(o => o.ShippingStatus ?? "NOT_SHIPPED")
+                .Select(g => new { Status = g.Key, Count = g.Count() })
+                .OrderByDescending(g => g.Count).ToListAsync();
+
+            if (!statuses.Any()) return $"INTENT: shipping_status | {label}\nChưa có dữ liệu vận chuyển trong {label}.";
+
+            var total = statuses.Sum(s => s.Count);
+            var labelMap = new Dictionary<string, string>
+            {
+                ["DELIVERED"]   = "Giao thành công",
+                ["DELIVERING"]  = "Đang giao",
+                ["NOT_SHIPPED"] = "Chưa giao",
+                ["FAILED"]      = "Giao thất bại",
+                ["RETURNED"]    = "Đã hoàn",
+                ["PICKED_UP"]   = "Đã lấy hàng",
+                ["READY"]       = "Chờ lấy hàng",
+            };
+
+            return $"""
+                INTENT: shipping_status | {label}
+                [Tình trạng vận chuyển — {label}]
+                {string.Join("\n", statuses.Select(s =>
+                    $"  • {(labelMap.TryGetValue(s.Status, out var lbl) ? lbl : s.Status)}: {s.Count} đơn ({(total > 0 ? s.Count * 100.0 / total : 0):F1}%)"))}
+                """;
+        }
+        catch (Exception ex) { logger.LogWarning("BuildContext_ShippingStatus lỗi: {M}", ex.Message); return "Chưa có dữ liệu vận chuyển."; }
+    }
+
     // ── Build context phân tích chéo nhiều nguồn ─────────────────────────────
     // Kết hợp dữ liệu nội bộ + Facebook/thị trường theo nội dung câu hỏi.
     private async Task<string> BuildContext_CrossAnalysis(Guid companyId, string question, List<string> keywords)
@@ -1505,14 +2294,14 @@ public class GeminiService(
 
         // Thêm dữ liệu Facebook nếu câu hỏi đề cập phản hồi KH
         static bool Has(string text, params string[] words) => words.Any(text.Contains);
-        if (Has(q, "facebook", "phàn nàn", "khách chê", "bình luận", "phản hồi", "khách hàng chê"))
+        if (Has("facebook", "phàn nàn", "khách chê", "bình luận", "phản hồi", "khách hàng chê"))
         {
             var fbCtx = await BuildFeedbackContext(companyId, keywords);
             parts.Add("\n--- DỮ LIỆU PHẢN HỒI FACEBOOK ---\n" + fbCtx);
         }
 
         // Thêm dữ liệu thị trường nếu câu hỏi đề cập đối thủ/xu hướng
-        if (Has(q, "đối thủ", "thị trường", "giá đối thủ", "google", "xu hướng thị trường"))
+        if (Has("đối thủ", "thị trường", "giá đối thủ", "google", "xu hướng thị trường"))
         {
             var mktCtx = await BuildMarketContext(companyId, keywords);
             parts.Add("\n--- DỮ LIỆU XU HƯỚNG THỊ TRƯỜNG ---\n" + mktCtx);
@@ -1583,18 +2372,25 @@ public class GeminiService(
             _                   => "database",
         };
 
-        // 2. Detect sub-intent — rule-based fast path
+        // Resolve follow-up references: ghép câu hỏi trước từ history nếu câu hỏi hiện tại có đại từ thay thế
+        // Ví dụ: "nó" → "đơn hàng tháng 4 2025" + "so sánh nó với tháng 4/2026"
+        var effectiveQuestion = ResolveFollowUp(userMessage, history);
+        if (effectiveQuestion != userMessage)
+            logger.LogInformation("[CHATBOT] follow-up resolved: '{Q}' → '{EQ}'",
+                userMessage[..Math.Min(60, userMessage.Length)], effectiveQuestion[..Math.Min(120, effectiveQuestion.Length)]);
+
+        // 2. Detect sub-intent — rule-based fast path (dùng effectiveQuestion để nhận diện đúng context)
         var intent = taxonomyTab switch
         {
-            "facebook_feedback" => "customer_feedback",
-            "scraped_market"    => "market",
+            "facebook_feedback" => DetectFeedbackIntent(effectiveQuestion),  // 8 sub-intents
+            "scraped_market"    => DetectMarketIntent(effectiveQuestion),     // 6 sub-intents
             "cross_analysis"    => "cross_analysis",
-            _                   => DetectIntent(userMessage),  // internal_business
+            _                   => DetectIntent(effectiveQuestion),           // 16 sub-intents
         };
 
         if (intent == "unknown")
         {
-            intent = await ClassifyIntentWithGeminiAsync(userMessage);
+            intent = await ClassifyIntentWithGeminiAsync(effectiveQuestion);
             logger.LogInformation("[CHATBOT] Gemini classified intent: {I}", intent);
         }
 
@@ -1620,42 +2416,128 @@ public class GeminiService(
         result.Intent    = intent;
         result.SubIntent = intent;
 
-        // 4. Extract keywords để lọc DB (dùng cho market/feedback/cross tab)
-        var keywords = ExtractKeywords(userMessage);
+        // 4. Extract keywords để lọc DB (dùng effectiveQuestion để bắt được keyword từ câu hỏi trước)
+        var keywords = ExtractKeywords(effectiveQuestion);
 
-        // 5. Build focused context theo taxonomy tab + intent
+        // 5. Build focused context theo taxonomy tab + intent (dùng effectiveQuestion để parse ngày/tháng đúng)
         var context = string.Empty;
         if (companyId.HasValue)
         {
             context = (taxonomyTab, intent) switch
             {
                 ("scraped_market",    _)                        => await BuildMarketContext              (companyId.Value, keywords),
-                ("facebook_feedback", _)                        => await BuildFeedbackContext            (companyId.Value, keywords),
-                ("cross_analysis",    _)                        => await BuildContext_CrossAnalysis      (companyId.Value, userMessage, keywords),
-                (_,                   "top_product")            => await BuildContext_TopProduct         (companyId.Value),
+                ("facebook_feedback", _)                        => await BuildFeedbackContext            (companyId.Value, keywords, effectiveQuestion),
+                ("cross_analysis",    _)                        => await BuildContext_CrossAnalysis      (companyId.Value, effectiveQuestion, keywords),
+                (_,                   "top_product")            => await BuildContext_TopProduct         (companyId.Value, effectiveQuestion),
                 (_,                   "declining_product")      => await BuildContext_DecliningProduct   (companyId.Value),
                 (_,                   "trending_product")       => await BuildContext_TrendingProduct    (companyId.Value),
-                (_,                   "revenue_summary")        => await BuildContext_Revenue            (companyId.Value, userMessage),
-                (_,                   "order_summary")          => await BuildContext_OrderSummary       (companyId.Value, userMessage),
+                (_,                   "revenue_summary")        => await BuildContext_Revenue            (companyId.Value, effectiveQuestion),
+                (_,                   "order_summary")          => await BuildContext_OrderSummary       (companyId.Value, effectiveQuestion),
                 (_,                   "top_channel")            => await BuildContext_Channels              (companyId.Value, topOnly: true),
                 (_,                   "channel_comparison")     => await BuildContext_Channels              (companyId.Value, topOnly: false),
                 (_,                   "business_recommendation")=> await BuildContext_BusinessRecommendation(companyId.Value),
                 (_,                   "customer_overview")      => await BuildContext_CustomerOverview      (companyId.Value),
                 (_,                   "inventory_alert")        => await BuildContext_Inventory             (companyId.Value),
-                (_,                   "employee_performance")   => await BuildContext_EmployeePerformance   (companyId.Value, userMessage),
+                (_,                   "employee_performance")   => await BuildContext_EmployeePerformance   (companyId.Value, effectiveQuestion),
+                (_,                   "return_analysis")        => await BuildContext_ReturnAnalysis        (companyId.Value, effectiveQuestion),
+                (_,                   "payment_analysis")       => await BuildContext_PaymentAnalysis       (companyId.Value, effectiveQuestion),
+                (_,                   "discount_analysis")      => await BuildContext_DiscountAnalysis      (companyId.Value, effectiveQuestion),
+                (_,                   "shipping_status")        => await BuildContext_ShippingStatus        (companyId.Value, effectiveQuestion),
                 _                                               => await BuildContext_PerformanceOverview   (companyId.Value),
             };
         }
 
         // 6. Debug log
         logger.LogInformation(
-            "[CHATBOT] user_question={Q} | taxonomy_tab={TT} | sub_intent={I} | context_len={L}",
-            userMessage[..Math.Min(80, userMessage.Length)], taxonomyTab, intent, context.Length);
+            "[CHATBOT] user_question={Q} | effective_question={EQ} | taxonomy_tab={TT} | sub_intent={I} | context_len={L}",
+            userMessage[..Math.Min(80, userMessage.Length)],
+            effectiveQuestion[..Math.Min(120, effectiveQuestion.Length)],
+            taxonomyTab, intent, context.Length);
 
-        // 7. Build focused system prompt theo spec
-        var systemPrompt = BuildFocusedSystemPrompt(userMessage, intent, context, taxonomyTab);
+        // 7. Build focused system prompt (dùng effectiveQuestion để AI hiểu đúng "nó" là gì)
+        var systemPrompt = BuildFocusedSystemPrompt(effectiveQuestion, intent, context, taxonomyTab);
 
-        // 6. Build request body
+        try
+        {
+            // 8. Tier 1: Gemini với multi-model fallback (429 → thử model khác)
+            var (geminiText, geminiModel) = await CallGeminiWithFallbackAsync(systemPrompt, userMessage, history);
+            if (geminiText is not null)
+            {
+                result.Answer    = geminiText;
+                result.ModelUsed = geminiModel!;
+                logger.LogInformation("[CHATBOT] Gemini ({M}) trả lời intent={I}", geminiModel, intent);
+                return result;
+            }
+
+            // Tất cả Gemini 429 → Groq
+            logger.LogWarning("Tất cả Gemini model thất bại — thử Groq");
+            var groqText = await CallGroqAsync(systemPrompt, userMessage, history);
+            if (groqText is not null)
+            {
+                result.Answer         = groqText;
+                result.ModelUsed      = _groqModel;
+                result.FallbackUsed   = true;
+                result.FallbackReason = "Tất cả Gemini 429/503, dùng Groq";
+                return result;
+            }
+
+            // Groq cũng fail → FastAPI (non-business tab)
+            if (taxonomyTab != "internal_business")
+            {
+                var fastApi = await CallRecommendationFallbackAsync(userMessage, tab, companyId);
+                if (fastApi is not null)
+                {
+                    result.Answer         = fastApi;
+                    result.ModelUsed      = "fastapi_fallback";
+                    result.FallbackUsed   = true;
+                    result.FallbackReason = "Gemini + Groq thất bại, FastAPI";
+                    return result;
+                }
+            }
+
+            // Tier 4: template rule-based (tất cả AI đều fail)
+            var rb0 = BuildRuleBasedResponse(userMessage, intent, context);
+            result.Answer         = rb0;
+            result.ModelUsed      = "template_fallback";
+            result.IsAiGenerated  = false;
+            result.FallbackUsed   = true;
+            result.FallbackReason = "Tất cả AI thất bại, rule-based";
+            return result;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "ChatAsync unexpected exception");
+            var rb = BuildRuleBasedResponse(userMessage, intent, context);
+            result.Answer         = rb;
+            result.ModelUsed      = "template_fallback";
+            result.IsAiGenerated  = false;
+            result.FallbackUsed   = true;
+            result.FallbackReason = $"Exception: {ex.Message[..Math.Min(80, ex.Message.Length)]}";
+            return result;
+        }
+    }
+
+    // ── Tier 1: Gemini với multi-model fallback (429 → thử model tiếp theo) ──
+    // Trả về (responseText, modelUsed) hoặc (null, null) nếu tất cả fail.
+    private async Task<(string? Text, string? ModelUsed)> CallGeminiWithFallbackAsync(
+        string systemPrompt, string userMessage, List<ChatMessage> history)
+    {
+        if (string.IsNullOrWhiteSpace(_apiKey)) return (null, null);
+
+        // Kiểm tra cooldown — nếu đang trong thời gian bị 429, skip Gemini hoàn toàn
+        if (DateTime.UtcNow < _geminiQuotaExhaustedUntil)
+        {
+            var remaining = (int)(_geminiQuotaExhaustedUntil - DateTime.UtcNow).TotalSeconds;
+            logger.LogInformation("[CHATBOT] Gemini cooldown còn {S}s — skip thẳng sang Groq", remaining);
+            return (null, null);
+        }
+
+        // Bắt đầu từ model được cấu hình, nếu không phải model đầu trong list thì thêm vào đầu
+        var modelsToTry = GeminiFallbackModels
+            .Prepend(_model)
+            .Distinct()
+            .ToList();
+
         var contents = new List<object>();
         foreach (var msg in history.TakeLast(10))
             contents.Add(new { role = msg.Role, parts = new[] { new { text = msg.Content } } });
@@ -1665,122 +2547,65 @@ public class GeminiService(
         {
             system_instruction = new { parts = new[] { new { text = systemPrompt } } },
             contents,
-            generationConfig   = new { temperature = _temp, maxOutputTokens = _maxTok, candidateCount = 1 },
+            generationConfig = new { temperature = _temp, maxOutputTokens = _maxTok, candidateCount = 1 },
         };
+        var json = System.Text.Json.JsonSerializer.Serialize(requestBody);
 
-        var json = JsonSerializer.Serialize(requestBody);
-        var url  = $"https://generativelanguage.googleapis.com/v1beta/models/{_model}:generateContent?key={_apiKey}";
-
-        try
+        bool hit429 = false;
+        foreach (var model in modelsToTry)
         {
-            var http = httpFactory.CreateClient();
-            http.Timeout = TimeSpan.FromSeconds(30);
-
-            var httpContent = new StringContent(json, Encoding.UTF8, "application/json");
-            var response    = await http.PostAsync(url, httpContent);
-
-            var body   = await response.Content.ReadAsStringAsync();
-            var status = (int)response.StatusCode;
-
-            // Gemini hết quota (429) hoặc quá tải (503) → thử Groq trước khi rule-based
-            if (status == 429 || status == 503)
+            try
             {
-                logger.LogWarning("Gemini {Status} — thử Groq fallback", status);
-                var groqText = await CallGroqAsync(systemPrompt, userMessage, history);
-                if (groqText is not null)
+                var http = httpFactory.CreateClient();
+                http.Timeout = TimeSpan.FromSeconds(20);
+                var url = $"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={_apiKey}";
+                var response = await http.PostAsync(url, new StringContent(json, System.Text.Encoding.UTF8, "application/json"));
+                var status = (int)response.StatusCode;
+
+                if (status == 429)
                 {
-                    result.Answer         = groqText;
-                    result.ModelUsed      = _groqModel;
-                    result.FallbackUsed   = true;
-                    result.FallbackReason = $"Gemini {status}, dùng Groq ({_groqModel})";
-                    logger.LogInformation("[CHATBOT] Groq trả lời thành công cho intent={I}", intent);
-                    return result;
+                    // Đặt cooldown — tránh gọi thêm model khác khi đang bị rate-limit
+                    hit429 = true;
+                    _geminiQuotaExhaustedUntil = DateTime.UtcNow.AddSeconds(_geminiCooldownSecs);
+                    logger.LogWarning("[CHATBOT] Gemini 429 quota exhausted — cooldown {S}s, skip tất cả model", _geminiCooldownSecs);
+                    break; // không thử model tiếp → tiết kiệm quota
+                }
+
+                if (status == 503)
+                {
+                    logger.LogWarning("[CHATBOT] Gemini model {M} 503 → thử model tiếp", model);
+                    continue;
+                }
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    logger.LogError("[CHATBOT] Gemini model {M} lỗi HTTP {S}", model, status);
+                    return (null, null); // lỗi thực sự → không thử tiếp
+                }
+
+                var body = await response.Content.ReadAsStringAsync();
+                using var doc = System.Text.Json.JsonDocument.Parse(body);
+                var text = doc.RootElement
+                    .GetProperty("candidates")[0].GetProperty("content")
+                    .GetProperty("parts")[0].GetProperty("text").GetString();
+
+                if (!string.IsNullOrWhiteSpace(text))
+                {
+                    logger.LogInformation("[CHATBOT] Gemini ({M}) trả lời thành công", model);
+                    return (text, model);
                 }
             }
-
-            if (!response.IsSuccessStatusCode)
+            catch (Exception ex)
             {
-                logger.LogError("Gemini API lỗi {Status}: {Body}", status, body[..Math.Min(300, body.Length)]);
-
-                if (status == 403)
-                {
-                    result.Answer        = "AI chưa được cấp quyền (403). Vui lòng báo quản trị viên kiểm tra API key.";
-                    result.ModelUsed     = "none";
-                    result.IsAiGenerated = false;
-                    result.FallbackUsed  = true;
-                    result.FallbackReason = "Gemini 403";
-                    return result;
-                }
-
-                // Thử FastAPI fallback cho non-business tab
-                if (taxonomyTab != "internal_business")
-                {
-                    var fastApi = await CallRecommendationFallbackAsync(userMessage, tab, companyId);
-                    if (fastApi is not null)
-                    {
-                        result.Answer         = fastApi;
-                        result.ModelUsed      = "fastapi_fallback";
-                        result.FallbackUsed   = true;
-                        result.FallbackReason = $"Gemini HTTP {status}, FastAPI";
-                        return result;
-                    }
-                }
-
-                var rb = BuildRuleBasedResponse(userMessage, intent, context);
-                result.Answer         = rb;
-                result.ModelUsed      = "template_fallback";
-                result.IsAiGenerated  = false;
-                result.FallbackUsed   = true;
-                result.FallbackReason = $"Gemini HTTP {status}, rule-based intent={intent}";
-                return result;
+                logger.LogWarning("[CHATBOT] Gemini model {M} exception: {E} → thử tiếp", model, ex.Message);
             }
-
-            using var doc = JsonDocument.Parse(body);
-            var aiText = doc.RootElement
-                .GetProperty("candidates")[0].GetProperty("content")
-                .GetProperty("parts")[0].GetProperty("text").GetString() ?? "";
-
-            result.Answer    = aiText;
-            result.ModelUsed = _model;
-            logger.LogInformation("[CHATBOT] Gemini trả lời ({I}): {A}", intent, aiText[..Math.Min(120, aiText.Length)]);
-            return result;
         }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Gemini ChatAsync exception — thử Groq");
 
-            // Exception (timeout, network) → thử Groq
-            var groqText = await CallGroqAsync(systemPrompt, userMessage, history);
-            if (groqText is not null)
-            {
-                result.Answer         = groqText;
-                result.ModelUsed      = _groqModel;
-                result.FallbackUsed   = true;
-                result.FallbackReason = "Gemini exception, dùng Groq";
-                return result;
-            }
-
-            if (taxonomyTab != "internal_business")
-            {
-                var fastApi = await CallRecommendationFallbackAsync(userMessage, tab, companyId);
-                if (fastApi is not null)
-                {
-                    result.Answer         = fastApi;
-                    result.ModelUsed      = "fastapi_fallback";
-                    result.FallbackUsed   = true;
-                    result.FallbackReason = "Gemini exception, FastAPI";
-                    return result;
-                }
-            }
-
-            var rb = BuildRuleBasedResponse(userMessage, intent, context);
-            result.Answer         = rb;
-            result.ModelUsed      = "template_fallback";
-            result.IsAiGenerated  = false;
-            result.FallbackUsed   = true;
-            result.FallbackReason = $"Gemini exception, rule-based intent={intent}";
-            return result;
-        }
+        if (hit429)
+            logger.LogWarning("[CHATBOT] Gemini quota exhausted — fallback Groq ngay (cooldown {S}s)", _geminiCooldownSecs);
+        else
+            logger.LogWarning("[CHATBOT] Tất cả Gemini model đều thất bại → Groq");
+        return (null, null);
     }
 
     // ── Tier 2A: Groq free-tier fallback (OpenAI-compatible API) ────────────
@@ -1791,7 +2616,7 @@ public class GeminiService(
         try
         {
             var http = httpFactory.CreateClient();
-            http.Timeout = TimeSpan.FromSeconds(30);
+            http.Timeout = TimeSpan.FromSeconds(20);
             http.DefaultRequestHeaders.Authorization =
                 new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _groqApiKey);
 

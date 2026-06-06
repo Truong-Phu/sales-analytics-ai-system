@@ -242,75 +242,6 @@ function PaymentModal({ visible, total, discount, voucherDiscount, onClose, onCo
   )
 }
 
-function TodayOrdersModal({ visible, onClose, colors }) {
-  const [orders,   setOrders]   = useState([])
-  const [loading,  setLoading]  = useState(true)
-  const [refreshing, setRefreshing] = useState(false)
-  const fetchToday = useCallback(async () => {
-    try {
-      const today = new Date().toISOString().slice(0, 10)
-      const res = await api.get('/api/orders/oltp', {
-        params: { channel: 'offline', from: today, to: today, pageSize: 50 },
-      })
-      const raw   = res.data?.data ?? res.data
-      const items = Array.isArray(raw) ? raw : (raw?.items ?? [])
-      setOrders(items)
-    } catch { setOrders([]) }
-  }, [])
-  useEffect(() => {
-    if (visible) { setLoading(true); fetchToday().finally(() => setLoading(false)) }
-  }, [visible, fetchToday])
-  const onRefresh = async () => { setRefreshing(true); await fetchToday(); setRefreshing(false) }
-
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)' }}>
-        <View style={{
-          position: 'absolute', bottom: 0, left: 0, right: 0,
-          backgroundColor: colors.card,
-          borderTopLeftRadius: 20, borderTopRightRadius: 20,
-          padding: 20, maxHeight: '70%',
-        }}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-            <Text style={{ color: colors.textPrimary, fontSize: 16, fontWeight: '700' }}>Đơn offline hôm nay</Text>
-            <TouchableOpacity onPress={onClose}><Text style={{ color: colors.outline, fontSize: 18 }}>✕</Text></TouchableOpacity>
-          </View>
-          {loading ? (
-            <View style={{ alignItems: 'center', justifyContent: 'center', padding: 40 }}>
-              <ActivityIndicator color={colors.primary} />
-            </View>
-          ) : (
-            <FlatList
-              data={orders}
-              keyExtractor={(item, i) => `today-${item.orderId ?? item.id ?? i}`}
-              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
-              renderItem={({ item }) => {
-                const total = item.totalAmount ?? item.total_amount ?? 0
-                const code  = item.externalOrderId ?? item.external_order_id ?? `#${item.orderId ?? item.id}`
-                return (
-                  <View style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.surfaceContainerHigh }}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 13, color: colors.textPrimary, fontWeight: '600' }}>{code}</Text>
-                      <Text style={{ fontSize: 12, color: colors.textSecondary }}>{item.customerName ?? item.customer_name ?? 'Khách lẻ'}</Text>
-                    </View>
-                    <Text style={{ fontSize: 14, fontWeight: '700', color: colors.interactive }}>₫{formatMoney(total)}</Text>
-                  </View>
-                )
-              }}
-              ListEmptyComponent={
-                <View style={{ alignItems: 'center', paddingTop: 24 }}>
-                  <Text style={{ fontSize: 36, marginBottom: 8 }}>🛍️</Text>
-                  <Text style={{ fontSize: 14, color: colors.outline }}>Chưa có đơn offline hôm nay</Text>
-                </View>
-              }
-            />
-          )}
-        </View>
-      </View>
-    </Modal>
-  )
-}
-
 export default function POSScreen({ navigation }) {
   const { user } = useAuth()
   const { colors } = useTheme()
@@ -328,7 +259,6 @@ export default function POSScreen({ navigation }) {
   const [voucherLoading, setVoucherLoading] = useState(false)
 
   const [showPayment,     setShowPayment]     = useState(false)
-  const [showTodayOrders, setShowTodayOrders] = useState(false)
   const [showCart,        setShowCart]        = useState(false)
   const [payLoading,      setPayLoading]      = useState(false)
 
@@ -422,29 +352,23 @@ export default function POSScreen({ navigation }) {
     if (cart.length === 0) { Alert.alert('Giỏ trống', 'Vui lòng thêm sản phẩm vào giỏ hàng.'); return }
     setPayLoading(true)
     try {
-      await api.post('/api/orders', {
-        channel:        'offline',
-        companyId:      user?.companyId,
-        customerName:   customerName || 'Khách lẻ',
-        customerPhone:  customerPhone || null,
-        paymentMethod:  method,
-        discount:       discountVal + voucherDiscount,
-        voucherCode:    voucher.trim() || null,
+      await api.post('/api/pos/orders', {
+        customerName:  customerName || 'Khách lẻ',
+        customerPhone: customerPhone || null,
+        paymentMethod: method,
+        voucherCode:   voucher.trim() || null,
+        usePoints:     0,
         items: cart.map(c => ({
-          productId:   c.id,
-          productName: c.name,
-          quantity:    c.qty,
-          unitPrice:   c.price,
+          productId: c.id,
+          qty:       c.qty,
+          price:     c.price,
         })),
       })
       setShowPayment(false)
       Alert.alert(
         '✅ Thanh toán thành công',
         `Tổng thu: ₫${formatMoneyFull(finalTotal)}`,
-        [
-          { text: 'Xem đơn hôm nay', onPress: () => { clearCart(); setShowTodayOrders(true) } },
-          { text: 'Đơn mới',         onPress: clearCart },
-        ]
+        [{ text: 'Đơn mới', onPress: clearCart }]
       )
     } catch (err) {
       Alert.alert('Lỗi', err.response?.data?.message ?? 'Không thể tạo đơn. Thử lại sau.')
@@ -464,18 +388,12 @@ export default function POSScreen({ navigation }) {
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
       {/* Header */}
       <View style={{
-        flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+        flexDirection: 'row', alignItems: 'center',
         paddingHorizontal: 16, paddingTop: 52, paddingBottom: 10,
         backgroundColor: colors.surfaceContainerLow,
         borderBottomWidth: 1, borderBottomColor: colors.outlineVariant,
       }}>
         <Text style={{ fontSize: 17, fontWeight: '700', color: colors.onSurface }}>🛍️  Bán hàng (POS)</Text>
-        <TouchableOpacity
-          onPress={() => setShowTodayOrders(true)}
-          style={{ backgroundColor: colors.surfaceContainerHigh, paddingHorizontal: 12, paddingVertical: 6, borderRadius: radius.full }}
-        >
-          <Text style={{ fontSize: 13, color: colors.primary, fontWeight: '600' }}>Hôm nay</Text>
-        </TouchableOpacity>
       </View>
 
       {isMockProd && (
@@ -700,11 +618,6 @@ export default function POSScreen({ navigation }) {
         colors={colors}
       />
 
-      <TodayOrdersModal
-        visible={showTodayOrders}
-        onClose={() => setShowTodayOrders(false)}
-        colors={colors}
-      />
     </View>
   )
 }

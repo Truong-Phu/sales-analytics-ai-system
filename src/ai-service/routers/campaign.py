@@ -107,47 +107,18 @@ def _upcoming_events(days_ahead: int = 60) -> List[dict]:
     return result
 
 
-def _mock_campaign() -> CampaignResponse:
-    windows = [
-        CampaignWindow(
-            period="2026-W21", period_type="week", avg_revenue=35_200_000,
-            vs_overall_pct=25.3, recommendation="PREPARE",
-            label="Tuần 21 – Chuẩn bị trước 01/06",
-            events=["Ngày Quốc tế Thiếu nhi (01/06)"],
-        ),
-        CampaignWindow(
-            period="2026-11", period_type="month", avg_revenue=68_500_000,
-            vs_overall_pct=144.6, recommendation="RUN_CAMPAIGN",
-            label="Tháng 11 – Mùa 11.11",
-            events=["11.11 Sale (11/11)"],
-        ),
-        CampaignWindow(
-            period="2026-07", period_type="month", avg_revenue=18_200_000,
-            vs_overall_pct=-35.2, recommendation="LOW_SEASON",
-            label="Tháng 7 – Mùa thấp điểm",
-            events=[],
-        ),
-    ]
-    insight = SeasonalInsight(
-        best_month=11, best_month_name="Tháng 11 (11.11)",
-        worst_month=7, worst_month_name="Tháng 7",
-        best_weekday="Thứ 7",
-        weekly_pattern=[
-            {"day": "Thứ 2", "avg": 22_000_000, "rank": 5},
-            {"day": "Thứ 3", "avg": 20_500_000, "rank": 6},
-            {"day": "Thứ 4", "avg": 21_800_000, "rank": 4},
-            {"day": "Thứ 5", "avg": 23_000_000, "rank": 3},
-            {"day": "Thứ 6", "avg": 25_500_000, "rank": 2},
-            {"day": "Thứ 7", "avg": 32_000_000, "rank": 1},
-            {"day": "Chủ nhật", "avg": 28_000_000, "rank": 1},
-        ],
-    )
+def _empty_campaign(days_ahead: int) -> CampaignResponse:
     return CampaignResponse(
-        windows=windows,
-        seasonal_insight=insight,
-        upcoming_events=_upcoming_events(60),
-        note="Đang dùng dữ liệu mẫu (cần ≥ 90 ngày dữ liệu thực tế)",
-        is_mock=True,
+        windows=[],
+        seasonal_insight=SeasonalInsight(
+            best_month=0, best_month_name="Chưa đủ dữ liệu",
+            worst_month=0, worst_month_name="Chưa đủ dữ liệu",
+            best_weekday="Chưa đủ dữ liệu",
+            weekly_pattern=[],
+        ),
+        upcoming_events=_upcoming_events(days_ahead),
+        note="Cần ≥ 60 ngày dữ liệu để phân tích seasonal pattern.",
+        is_mock=False,
     )
 
 
@@ -171,7 +142,7 @@ def get_campaign_plan(
 
     df = load_revenue_series(company_id=company_id)
     if df.empty or len(df) < 60:
-        return _mock_campaign()
+        return _empty_campaign(days_ahead)
 
     df["ds"] = pd.to_datetime(df["ds"]) if "ds" in df.columns else df.index
     df["month"]   = df["ds"].dt.month

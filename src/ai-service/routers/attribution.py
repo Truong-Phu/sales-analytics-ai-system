@@ -51,52 +51,17 @@ class AttributionResponse(BaseModel):
     is_mock:            bool
 
 
-def _mock_attribution() -> AttributionResponse:
-    channels = [
-        ChannelAttribution(
-            channel="Shopee", revenue=45_000_000, orders=312,
-            attribution_pct=45.0, avg_order_value=144_231, ad_spend=3_500_000,
-            roi_pct=1185.7, cpa=11_218,
-            recommendation="Kênh hiệu quả nhất – tăng ngân sách quảng cáo thêm 20%",
-        ),
-        ChannelAttribution(
-            channel="TikTok Shop", revenue=28_000_000, orders=195,
-            attribution_pct=28.0, avg_order_value=143_590, ad_spend=5_200_000,
-            roi_pct=438.5, cpa=26_667,
-            recommendation="ROI tốt nhưng CPA cao – tối ưu creative quảng cáo",
-        ),
-        ChannelAttribution(
-            channel="Lazada", revenue=15_000_000, orders=98,
-            attribution_pct=15.0, avg_order_value=153_061, ad_spend=2_100_000,
-            roi_pct=614.3, cpa=21_429,
-            recommendation="Ổn định – duy trì ngân sách hiện tại",
-        ),
-        ChannelAttribution(
-            channel="Facebook", revenue=7_000_000, orders=45,
-            attribution_pct=7.0, avg_order_value=155_556, ad_spend=4_800_000,
-            roi_pct=45.8, cpa=106_667,
-            recommendation="ROI thấp nhất – xem xét lại chiến lược targeting hoặc cắt giảm ngân sách",
-        ),
-        ChannelAttribution(
-            channel="Website trực tiếp", revenue=5_000_000, orders=30,
-            attribution_pct=5.0, avg_order_value=166_667, ad_spend=0,
-            roi_pct=0.0, cpa=0,
-            recommendation="AOV cao nhất – đầu tư SEO để tăng traffic organic",
-        ),
-    ]
+def _empty_attribution(days: int, model: str) -> AttributionResponse:
     return AttributionResponse(
-        model="last_touch",
-        total_revenue=100_000_000,
-        total_orders=680,
-        analysis_days=30,
-        channels=channels,
-        top_channel="Shopee",
-        worst_roi_channel="Facebook",
-        insight=(
-            "Shopee đóng góp 45% doanh thu với ROI cao nhất. "
-            "Facebook có ROI thấp nhất (45.8%) – nên xem xét chuyển ngân sách sang Shopee/TikTok."
-        ),
-        is_mock=True,
+        model=model,
+        total_revenue=0,
+        total_orders=0,
+        analysis_days=days,
+        channels=[],
+        top_channel="",
+        worst_roi_channel="",
+        insight="Chưa có dữ liệu doanh thu theo kênh trong khoảng thời gian này.",
+        is_mock=False,
     )
 
 
@@ -139,7 +104,7 @@ def get_channel_attribution(
     df = query_df(sql, params or None)
 
     if df.empty:
-        return _mock_attribution()
+        return _empty_attribution(days, model)
 
     total_revenue = float(df["revenue"].sum())
     total_orders  = int(df["orders"].sum())

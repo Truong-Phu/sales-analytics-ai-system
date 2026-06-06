@@ -264,19 +264,6 @@ def get_root_cause(
     channels = _channel_breakdown(date, float(anomaly["expected"]), company_id)
     products = _product_breakdown(date, company_id)
 
-    is_mock = len(channels) == 0 and len(products) == 0
-
-    if is_mock:
-        channels = [
-            ChannelBreakdown(channel="Shopee",     revenue=8_500_000, vs_avg=142.0, contribution=52.0),
-            ChannelBreakdown(channel="TikTok Shop",revenue=4_200_000, vs_avg=18.0,  contribution=26.0),
-            ChannelBreakdown(channel="Lazada",     revenue=3_600_000, vs_avg=-5.0,  contribution=22.0),
-        ]
-        products = [
-            ProductBreakdown(product_name="Áo thun nam cổ tròn", revenue=5_200_000, qty_sold=48, vs_avg=180.0),
-            ProductBreakdown(product_name="Váy hoa mùa hè",      revenue=3_100_000, qty_sold=28, vs_avg=65.0),
-        ]
-
     summary, causes, actions = _build_root_cause_summary(
         date=date,
         actual=float(anomaly["actual"]),
@@ -300,5 +287,5 @@ def get_root_cause(
         root_cause_summary=summary,
         possible_causes=causes,
         actions=actions,
-        is_mock=is_mock,
+        is_mock=False,
     )

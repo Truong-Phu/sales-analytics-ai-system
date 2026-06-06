@@ -40,26 +40,6 @@ def _recommend(gap_pct: float) -> str:
     return "HOLD"
 
 
-MOCK_PRODUCTS = [
-    ProductPrice(product_name="Áo thun nam cổ tròn",    category="Áo nam",
-                 our_price=250_000, market_avg=285_000, market_min=220_000, market_max=320_000,
-                 gap_pct=-12.3, recommendation="INCREASE", sources=["shopee_scrape"]),
-    ProductPrice(product_name="Quần jeans slim fit",     category="Quần nam",
-                 our_price=420_000, market_avg=395_000, market_min=350_000, market_max=480_000,
-                 gap_pct=6.3,  recommendation="HOLD",     sources=["lazada_scrape"]),
-    ProductPrice(product_name="Váy hoa mùa hè",          category="Váy nữ",
-                 our_price=380_000, market_avg=340_000, market_min=290_000, market_max=420_000,
-                 gap_pct=11.8, recommendation="DECREASE", sources=["shopee_scrape", "lazada_scrape"]),
-    ProductPrice(product_name="Áo sơ mi công sở nữ",    category="Áo nữ",
-                 our_price=310_000, market_avg=325_000, market_min=280_000, market_max=390_000,
-                 gap_pct=-4.6, recommendation="HOLD",     sources=["tiktok_scrape"]),
-    ProductPrice(product_name="Áo khoác denim",          category="Áo khoác",
-                 our_price=680_000, market_avg=820_000, market_min=650_000, market_max=950_000,
-                 gap_pct=-17.1, recommendation="INCREASE", sources=["shopee_scrape"]),
-    ProductPrice(product_name="Quần short thể thao",     category="Quần nam",
-                 our_price=195_000, market_avg=180_000, market_min=150_000, market_max=230_000,
-                 gap_pct=8.3,  recommendation="HOLD",     sources=["lazada_scrape"]),
-]
 
 
 @router.get("", response_model=PriceResponse, summary="So sánh giá sản phẩm với thị trường")
@@ -95,11 +75,8 @@ def get_price_intelligence(
         df = None
 
     if df is None or df.empty:
-        mock = MOCK_PRODUCTS
-        if category:
-            mock = [p for p in mock if category.lower() in p.category.lower()] or MOCK_PRODUCTS
         return PriceResponse(category_filter=category, analysis_date=date.today().isoformat(),
-                             is_mock=True, products=mock)
+                             is_mock=False, products=[])
 
     products = []
     for _, row in df.iterrows():

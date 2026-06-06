@@ -861,16 +861,17 @@ public class AdminController(
 
         // Tăng trưởng công ty mới theo tháng (6 tháng gần nhất)
         var sixMonthsAgo = DateTime.UtcNow.AddMonths(-5);
-        var monthlyGrowth = await db.Companies
+        var monthlyGrowthRaw = await db.Companies
             .Where(c => c.CreatedAt >= sixMonthsAgo)
             .GroupBy(c => new { c.CreatedAt.Year, c.CreatedAt.Month })
-            .Select(g => new
-            {
-                month        = $"{g.Key.Year}-{g.Key.Month:D2}",
-                newCompanies = g.Count(),
-            })
-            .OrderBy(r => r.month)
+            .Select(g => new { g.Key.Year, g.Key.Month, Count = g.Count() })
+            .OrderBy(r => r.Year).ThenBy(r => r.Month)
             .ToListAsync();
+        var monthlyGrowth = monthlyGrowthRaw.Select(r => new
+        {
+            month        = $"{r.Year}-{r.Month:D2}",
+            newCompanies = r.Count,
+        }).ToList();
 
         return Ok(new
         {

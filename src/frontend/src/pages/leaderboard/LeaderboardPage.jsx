@@ -43,6 +43,7 @@ export default function LeaderboardPage() {
   const [timeMode,    setTimeMode]    = useState('days_30')
   const [customStart, setCustomStart] = useState('')
   const [customEnd,   setCustomEnd]   = useState('')
+  const [sortOrder,   setSortOrder]   = useState('desc') // 'desc' = cao→thấp, 'asc' = thấp→cao
 
   const CATEGORIES = [
     { value: 'product',  label: t('leaderboard.catProducts'),  icon: '📦' },
@@ -73,15 +74,24 @@ export default function LeaderboardPage() {
     if (timeMode === 'custom' && (!customStart || !customEnd)) return
     setLoading(true)
     try {
-      const params = buildApiParams(timeMode, customStart, customEnd, apiCategory)
-      const res = await getLeaderboard(params)
+      const res = await getLeaderboard(buildApiParams(timeMode, customStart, customEnd, apiCategory))
+      // Sắp xếp client-side theo sortOrder
+      if (res?.entries) {
+        res.entries = [...res.entries].sort((a, b) =>
+          sortOrder === 'desc' ? b.value - a.value : a.value - b.value
+        ).map((e, i) => ({
+          ...e,
+          rank: i + 1,
+          badge: i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : undefined,
+        }))
+      }
       setData(res)
     } catch {
       setData(null)
     } finally { setLoading(false) }
   }
 
-  useEffect(() => { load() }, [apiCategory, timeMode, customStart, customEnd])
+  useEffect(() => { load() }, [apiCategory, timeMode, customStart, customEnd, sortOrder])
 
   const hasData = data && (data.entries ?? []).length > 0
 
@@ -95,8 +105,23 @@ export default function LeaderboardPage() {
           <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>{t('leaderboard.title')}</h1>
           <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>{t('leaderboard.subtitle')}</p>
         </div>
-        {/* Time filter pills */}
-        <div className="flex items-center gap-1.5 flex-wrap">
+        <div className="flex items-center gap-3 flex-wrap">
+          {/* Sort direction toggle */}
+          <div className="flex rounded-lg overflow-hidden border" style={{ borderColor: 'var(--border)' }}>
+            {[
+              { value: 'desc', label: '↓ Cao → Thấp' },
+              { value: 'asc',  label: '↑ Thấp → Cao' },
+            ].map(s => (
+              <button key={s.value} onClick={() => setSortOrder(s.value)}
+                className="px-3 py-1.5 text-xs font-medium transition-all"
+                style={sortOrder === s.value
+                  ? { background: 'var(--primary-500)', color: '#fff' }
+                  : { background: 'transparent', color: 'var(--text-secondary)' }}>
+                {s.label}
+              </button>
+            ))}
+          </div>
+          {/* Time filter pills */}
           {TIME_FILTERS.map(f => (
             <button key={f.value} onClick={() => setTimeMode(f.value)}
               className="px-3 py-1.5 rounded-lg text-xs font-medium border transition-all"

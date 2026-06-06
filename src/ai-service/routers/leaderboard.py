@@ -91,6 +91,7 @@ def get_leaderboard(
     company_id: Optional[str] = Query(default=None),
     start_date: Optional[str] = Query(default=None, description="YYYY-MM-DD — nếu có thì dùng date range thay vì days"),
     end_date:   Optional[str] = Query(default=None, description="YYYY-MM-DD exclusive"),
+    metric:     str            = Query(default="revenue", description="revenue|orders — sắp xếp theo doanh thu hoặc số đơn"),
 ):
     valid_cats = ("product", "customer", "channel", "staff", "staff_warehouse", "staff_marketing")
     if category not in valid_cats:
@@ -353,17 +354,30 @@ def get_leaderboard(
     if df.empty:
         return _empty_leaderboard(category, analysis_days, period_label)
 
+    # Sắp xếp lại theo metric được chọn
+    use_orders = metric == "orders"
+    sort_col   = "orders" if use_orders else "value"
+    df = df.sort_values(sort_col, ascending=False).head(top_n).reset_index(drop=True)
+
     total_rev = float(df["value"].sum())
     entries: List[RankEntry] = []
     for i, (_, row) in enumerate(df.iterrows(), start=1):
-        val      = float(row["value"])
+        rev_val  = float(row["value"])
+        ord_val  = int(row["orders"])
         prev_val = float(row["prev_value"]) if "prev_value" in row and row["prev_value"] else 0.0
-        chg_pct  = round((val - prev_val) / prev_val * 100, 1) if prev_val > 0 else 0.0
+        # Trend luôn so sánh theo doanh thu (prev_value là revenue)
+        chg_pct  = round((rev_val - prev_val) / prev_val * 100, 1) if prev_val > 0 else 0.0
         trend    = "UP" if chg_pct > 2 else ("DOWN" if chg_pct < -2 else "STABLE")
+        if use_orders:
+            display_val   = float(ord_val)
+            display_label = f"{ord_val:,} đơn"
+        else:
+            display_val   = rev_val
+            display_label = _fmt_vnd(rev_val)
         entries.append(RankEntry(
             rank=i, name=str(row["name"]),
-            value=val, value_label=_fmt_vnd(val),
-            orders=int(row["orders"]),
+            value=display_val, value_label=display_label,
+            orders=ord_val,
             badge=_badge(i), trend=trend, change_pct=chg_pct,
         ))
 

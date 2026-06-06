@@ -66,10 +66,29 @@ public class SmartAlertJob : BackgroundService
 
             if (notifs.Count > 0)
             {
-                db.Notifications.AddRange(notifs);
+                // Lọc theo preference từng user trước khi lưu vào DB
+                var userIds = notifs.Select(n => n.UserId).Distinct().ToList();
+                var prefMap = (await db.NotificationPreferences
+                    .Where(p => userIds.Contains(p.UserId))
+                    .ToListAsync())
+                    .ToDictionary(p => p.UserId);
+
+                var filteredNotifs = notifs
+                    .Where(n => IsNotifEnabled(
+                        prefMap.TryGetValue(n.UserId, out var p) ? p : null, n))
+                    .ToList();
+
+                if (filteredNotifs.Count == 0)
+                {
+                    _logger.LogInformation("SmartAlertJob: {Count} cảnh báo bị lọc bởi preference người dùng", notifs.Count);
+                    return;
+                }
+
+                db.Notifications.AddRange(filteredNotifs);
                 await db.SaveChangesAsync();
-                _logger.LogInformation("SmartAlertJob: tạo {Count} cảnh báo mới", notifs.Count);
-                await SendAlertEmailsAsync(scope, db, notifs);
+                _logger.LogInformation("SmartAlertJob: tạo {Count} cảnh báo (đã lọc từ {Total})",
+                    filteredNotifs.Count, notifs.Count);
+                await SendAlertEmailsAsync(scope, db, filteredNotifs);
             }
             else
             {
@@ -100,7 +119,7 @@ public class SmartAlertJob : BackgroundService
 
             var title = $"⚠️ Sắp hết hàng: {p.ProductName}";
             var body  = $"Tồn kho chỉ còn {p.StockQuantity} đơn vị. Cần nhập thêm hàng.";
-            result.AddRange(await BuildNotificationsAsync(db, companyId, "warning", title, body, alertKey, now));
+            result.AddRange(await BuildNotificationsAsync(db, companyId, "warning", title, body, alertKey, now, "inventory"));
         }
 
         return result;
@@ -224,7 +243,6 @@ public class SmartAlertJob : BackgroundService
                 SELECT EXISTS(
                     SELECT 1 FROM public.notifications
                     WHERE company_id = {companyId}::uuid
-                      AND category   = 'anomaly'
                       AND data       IS NOT NULL
                       AND data::text LIKE {pattern}
                       AND created_at > {cutoff}
@@ -233,15 +251,21 @@ public class SmartAlertJob : BackgroundService
             .SingleAsync();
     }
 
-    /// <summary>Tạo Notification record cho tất cả Owner và Manager trong công ty</summary>
+    /// <summary>Tạo Notification record theo role phù hợp với category.</summary>
     private static async Task<List<Notification>> BuildNotificationsAsync(
         AppDbContext db, Guid companyId,
-        string type, string title, string body, string alertKey, DateTime now)
+        string type, string title, string body, string alertKey, DateTime now,
+        string category = "anomaly")
     {
+        // low_stock → gửi thêm cho Staff_Warehouse và DataIT
+        var roles = category == "inventory"
+            ? new[] { UserRole.Owner, UserRole.Manager, UserRole.Staff_Warehouse, UserRole.DataIT }
+            : new[] { UserRole.Owner, UserRole.Manager };
+
         var userIds = await db.Users
             .Where(u => u.CompanyId == companyId
                      && u.IsActive
-                     && (u.Role == UserRole.Owner || u.Role == UserRole.Manager))
+                     && roles.Contains(u.Role))
             .Select(u => u.Id)
             .ToListAsync();
 
@@ -250,7 +274,7 @@ public class SmartAlertJob : BackgroundService
             UserId    = uid,
             CompanyId = companyId,
             Type      = type,
-            Category  = "anomaly",
+            Category  = category,
             Title     = title,
             Body      = body,
             Data      = $"{{\"alertKey\":\"{alertKey}\"}}",
@@ -272,17 +296,19 @@ public class SmartAlertJob : BackgroundService
                 .Select(u => new { u.Id, u.Email })
                 .ToListAsync();
 
-            // Users đã tắt EmailNotify hoặc AnomalyAlert → không gửi
-            var disabledIds = (await db.NotificationPreferences
-                .Where(p => userIds.Contains(p.UserId) && (!p.EmailNotify || !p.AnomalyAlert))
-                .Select(p => p.UserId)
-                .ToListAsync()).ToHashSet();
+            // Tải preference của tất cả user liên quan
+            var prefMap = (await db.NotificationPreferences
+                .Where(p => userIds.Contains(p.UserId))
+                .ToListAsync())
+                .ToDictionary(p => p.UserId);
 
             foreach (var user in users)
             {
-                if (disabledIds.Contains(user.Id)) continue;
+                // Master toggle: EmailNotify tắt → bỏ qua hoàn toàn
+                if (prefMap.TryGetValue(user.Id, out var pref) && !pref.EmailNotify) continue;
 
-                var userNotifs = notifs.Where(n => n.UserId == user.Id).ToList();
+                // Lọc thông báo theo preference từng loại
+                var userNotifs = notifs.Where(n => n.UserId == user.Id && IsNotifEnabled(pref, n)).ToList();
                 var title = userNotifs.Count == 1
                     ? userNotifs[0].Title
                     : $"[MSAS] {userNotifs.Count} cảnh báo mới";
@@ -295,5 +321,17 @@ public class SmartAlertJob : BackgroundService
         {
             _logger.LogError(ex, "SmartAlertJob: lỗi gửi email cảnh báo");
         }
+    }
+
+    /// <summary>Kiểm tra preference có cho phép gửi notification theo category không.</summary>
+    private static bool IsNotifEnabled(NotificationPreference? pref, Notification n)
+    {
+        if (pref is null) return true; // chưa cài đặt → gửi mặc định
+        return n.Category switch
+        {
+            "inventory" => pref.LowStockAlert,
+            "anomaly"   => pref.AnomalyAlert,
+            _           => true,
+        };
     }
 }

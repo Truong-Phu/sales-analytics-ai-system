@@ -259,7 +259,7 @@ export default function ForecastPage() {
             </button>
 
             {/* Retrain button - Owner/DataIT only */}
-            <button
+            {/* <button
               onClick={handleRetrain}
               disabled={retraining}
               className="lbtn w-full justify-center mt-2"
@@ -279,7 +279,7 @@ export default function ForecastPage() {
                   {t('forecast.retrain')}
                 </>
               )}
-            </button>
+            </button> */}
             {retrainMsg && (
               <div className="mt-2 p-2 rounded-lg text-xs"
                    style={{

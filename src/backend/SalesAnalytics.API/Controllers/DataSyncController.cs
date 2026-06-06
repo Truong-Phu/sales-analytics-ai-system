@@ -61,7 +61,7 @@ public class DataSyncController(
                     await conn.OpenAsync();
                 await using var cmd = conn.CreateCommand();
                 cmd.CommandText =
-                    "SELECT id::text, platform, is_active FROM public.integrations WHERE company_id = @cid";
+                    "SELECT id::text, platform, is_active FROM public.integrations WHERE company_id = @cid::uuid";
                 var p = cmd.CreateParameter();
                 p.ParameterName = "cid";
                 p.Value = companyId.Value.ToString();

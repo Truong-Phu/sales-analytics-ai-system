@@ -471,7 +471,7 @@ function AiInsightsCard({ insights = null, loading = false, autoRecs = null }) {
         </div>
       ) : !hasData ? (
         <div className="text-xs text-muted-foreground">
-          AI Service chưa khởi động — chạy start_all.bat để bật đầy đủ tính năng AI.
+          Dịch vụ AI đang tạm thời chưa hoạt động. Một số tính năng phân tích thông minh có thể chưa hiển thị đầy đủ.
         </div>
       ) : (
         <>
@@ -736,9 +736,9 @@ function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd 
               )}
             </div>
           </div>
-          <p className="text-[11px] mb-2" style={{ color: 'var(--text-tertiary)' }}>
-            Click vào biểu đồ để xem đơn hàng của ngày đó
-          </p>
+          {/*<p className="text-[11px] mb-2" style={{ color: 'var(--text-tertiary)' }}>*/}
+          {/*  Click vào biểu đồ để xem đơn hàng của ngày đó*/}
+          {/*</p>*/}
           <ResponsiveContainer width="100%" height={280}>
             <AreaChart
               data={trendData}
@@ -2017,49 +2017,49 @@ function TabMarketing({ data, wd = {}, wl = {} }) {
       </div>
 
       {/* Chi phí theo loại quảng cáo */}
-      {data?.adTypeCosts?.length > 0 ? (
-        <div className="grid grid-cols-12 gap-4">
-          <div className="lcard p-5 col-span-12 lg:col-span-5">
-            <SectionTitle>Chi phí theo loại quảng cáo</SectionTitle>
-            <ResponsiveContainer width="100%" height={220}>
-              <PieChart>
-                <Pie data={data.adTypeCosts} dataKey="value" nameKey="name"
-                  cx="50%" cy="50%" outerRadius={80} innerRadius={45} paddingAngle={3}>
-                  {data.adTypeCosts.map((_, i) => <Cell key={i} fill={adPieColors[i % adPieColors.length]} />)}
-                </Pie>
-                <Tooltip formatter={v => fmtM(v)} />
-                <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="lcard p-5 col-span-12 lg:col-span-7">
-            <SectionTitle>Chi phí quảng cáo — phân bổ ngang</SectionTitle>
-            <div className="space-y-3 mt-2">
-              {data.adTypeCosts.map((item, i) => {
-                const total = data.adTypeCosts.reduce((s, x) => s + x.value, 0)
-                const pct   = total > 0 ? ((item.value / total) * 100).toFixed(1) : '0.0'
-                return (
-                  <div key={i}>
-                    <div className="flex justify-between text-caption mb-1" style={{ color: 'var(--text-secondary)' }}>
-                      <span>{item.name}</span>
-                      <span className="font-mono">{fmtM(item.value)} <span style={{ color: 'var(--text-tertiary)' }}>({pct}%)</span></span>
-                    </div>
-                    <div className="h-2.5 rounded-full" style={{ background: 'var(--bg-elevated)' }}>
-                      <div className="h-full rounded-full transition-all duration-500"
-                        style={{ width: `${pct}%`, background: adPieColors[i % adPieColors.length] }} />
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        </div>
-      ) : (
-        <div className="lcard p-5">
-          <SectionTitle>Chi phí theo loại quảng cáo</SectionTitle>
-          <DevEmptyState title="Chưa có dữ liệu chi phí quảng cáo theo loại" desc="Hệ thống chưa thu thập dữ liệu phân loại chi phí QC (Sponsored, Banner, Video...) từ các nền tảng." />
-        </div>
-      )}
+      {/*{data?.adTypeCosts?.length > 0 ? (*/}
+      {/*  <div className="grid grid-cols-12 gap-4">*/}
+      {/*    <div className="lcard p-5 col-span-12 lg:col-span-5">*/}
+      {/*      <SectionTitle>Chi phí theo loại quảng cáo</SectionTitle>*/}
+      {/*      <ResponsiveContainer width="100%" height={220}>*/}
+      {/*        <PieChart>*/}
+      {/*          <Pie data={data.adTypeCosts} dataKey="value" nameKey="name"*/}
+      {/*            cx="50%" cy="50%" outerRadius={80} innerRadius={45} paddingAngle={3}>*/}
+      {/*            {data.adTypeCosts.map((_, i) => <Cell key={i} fill={adPieColors[i % adPieColors.length]} />)}*/}
+      {/*          </Pie>*/}
+      {/*          <Tooltip formatter={v => fmtM(v)} />*/}
+      {/*          <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />*/}
+      {/*        </PieChart>*/}
+      {/*      </ResponsiveContainer>*/}
+      {/*    </div>*/}
+      {/*    <div className="lcard p-5 col-span-12 lg:col-span-7">*/}
+      {/*      <SectionTitle>Chi phí quảng cáo — phân bổ ngang</SectionTitle>*/}
+      {/*      <div className="space-y-3 mt-2">*/}
+      {/*        {data.adTypeCosts.map((item, i) => {*/}
+      {/*          const total = data.adTypeCosts.reduce((s, x) => s + x.value, 0)*/}
+      {/*          const pct   = total > 0 ? ((item.value / total) * 100).toFixed(1) : '0.0'*/}
+      {/*          return (*/}
+      {/*            <div key={i}>*/}
+      {/*              <div className="flex justify-between text-caption mb-1" style={{ color: 'var(--text-secondary)' }}>*/}
+      {/*                <span>{item.name}</span>*/}
+      {/*                <span className="font-mono">{fmtM(item.value)} <span style={{ color: 'var(--text-tertiary)' }}>({pct}%)</span></span>*/}
+      {/*              </div>*/}
+      {/*              <div className="h-2.5 rounded-full" style={{ background: 'var(--bg-elevated)' }}>*/}
+      {/*                <div className="h-full rounded-full transition-all duration-500"*/}
+      {/*                  style={{ width: `${pct}%`, background: adPieColors[i % adPieColors.length] }} />*/}
+      {/*              </div>*/}
+      {/*            </div>*/}
+      {/*          )*/}
+      {/*        })}*/}
+      {/*      </div>*/}
+      {/*    </div>*/}
+      {/*  </div>*/}
+      {/*) : (*/}
+      {/*  <div className="lcard p-5">*/}
+      {/*    <SectionTitle>Chi phí theo loại quảng cáo</SectionTitle>*/}
+      {/*    <DevEmptyState title="Chưa có dữ liệu chi phí quảng cáo theo loại" desc="Hệ thống chưa thu thập dữ liệu phân loại chi phí QC (Sponsored, Banner, Video...) từ các nền tảng." />*/}
+      {/*  </div>*/}
+      {/*)}*/}
 
       {/* ── Campaign mini-widget ── */}
       <MiniWidget title="Chiến dịch Marketing được đề xuất" icon="campaign" href="/campaign" loading={campLoading}>

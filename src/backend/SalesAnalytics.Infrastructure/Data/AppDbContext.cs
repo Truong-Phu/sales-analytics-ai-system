@@ -48,6 +48,9 @@ public class AppDbContext : DbContext
     public DbSet<PaymentWebhookLog>   PaymentWebhookLogs   => Set<PaymentWebhookLog>();
     public DbSet<PaymentMethodConfig> PaymentMethodConfigs => Set<PaymentMethodConfig>();
 
+    // Chatbot history (thêm 2026-06-03)
+    public DbSet<ChatHistory> ChatHistories => Set<ChatHistory>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         // ── User ─────────────────────────────────────────────────────────────
@@ -517,6 +520,24 @@ public class AppDbContext : DbContext
             e.Property(c => c.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("NOW()");
             e.Property(c => c.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()");
             e.HasIndex(c => c.PaymentMethod).IsUnique();
+        });
+
+        // ── ChatHistory ──────────────────────────────────────────────────────
+        modelBuilder.Entity<ChatHistory>(e =>
+        {
+            e.ToTable("chat_history", "public");
+            e.HasKey(c => c.Id);
+            e.Property(c => c.Id).HasColumnName("id").UseIdentityAlwaysColumn();
+            e.Property(c => c.UserId).HasColumnName("user_id").IsRequired();
+            e.Property(c => c.CompanyId).HasColumnName("company_id");
+            e.Property(c => c.Tab).HasColumnName("tab").HasMaxLength(30).HasDefaultValue("business");
+            e.Property(c => c.Question).HasColumnName("question").IsRequired();
+            e.Property(c => c.Answer).HasColumnName("answer").IsRequired();
+            e.Property(c => c.Intent).HasColumnName("intent").HasMaxLength(50);
+            e.Property(c => c.ModelUsed).HasColumnName("model_used").HasMaxLength(60);
+            e.Property(c => c.FallbackUsed).HasColumnName("fallback_used").HasDefaultValue(false);
+            e.Property(c => c.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()");
+            e.HasIndex(c => new { c.UserId, c.CompanyId, c.Tab, c.CreatedAt });
         });
 
         // ── NotificationPreference ───────────────────────────────────────────

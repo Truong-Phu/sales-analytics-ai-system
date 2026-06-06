@@ -156,7 +156,6 @@ export default function SettingsPage() {
     ...(['Owner','Manager'].includes(user?.role)
       ? [{ key: 'loyalty', icon: 'loyalty', label: 'Loyalty & Voucher' }]
       : []),
-    { key: 'guide',         icon: 'menu_book',        label: 'Hướng dẫn sử dụng' },
     { key: 'policy',        icon: 'gavel',            label: 'Điều khoản & Chính sách' },
   ]
 
@@ -181,13 +180,16 @@ export default function SettingsPage() {
 
   // Notification preferences
   const [notif, setNotif] = useState({
-    emailNotify:       true,
-    anomalyAlert:      true,
-    dailyReport:       false,
-    weeklyReport:      true,
-    syncErrorNotify:   true,
+    emailNotify:        true,
+    anomalyAlert:       true,
+    lowStockAlert:      true,
+    newOrderNotify:     true,
+    syncErrorNotify:    true,
     subscriptionNotify: true,
-    pushNotify:        false,
+    aiRecommendAlert:   false,
+    dailyReport:        false,
+    weeklyReport:       true,
+    pushNotify:         false,
   })
 
   // Load profile từ API khi mount để lấy phone, birthdate, timezone, langPref, avatarUrl
@@ -496,44 +498,87 @@ export default function SettingsPage() {
           )}
 
           {/* ── NOTIFICATIONS ── */}
-          {section === 'notifications' && (
-            <div className="lcard p-5 space-y-1">
-              <h2 className="text-subtitle font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>Tùy chọn thông báo</h2>
-              <p className="text-xs font-semibold uppercase tracking-wide pb-1"
-                 style={{ color: 'var(--text-tertiary)' }}>In-App & Email</p>
-              <NotifToggle label="Nhận thông báo qua email"
-                desc="Gửi email cho các cập nhật quan trọng"
-                value={notif.emailNotify} onChange={v => setNotif(n => ({ ...n, emailNotify: v }))} />
-              <NotifToggle label="Cảnh báo bất thường (Anomaly)"
-                desc="Thông báo khi AI phát hiện dữ liệu bất thường"
-                value={notif.anomalyAlert} onChange={v => setNotif(n => ({ ...n, anomalyAlert: v }))} />
-              <NotifToggle label="Thông báo lỗi đồng bộ"
-                desc="Nhận thông báo khi pipeline ETL gặp lỗi"
-                value={notif.syncErrorNotify} onChange={v => setNotif(n => ({ ...n, syncErrorNotify: v }))} />
-              <NotifToggle label="Thông báo đăng ký & Thanh toán"
-                desc="Cập nhật về gói dịch vụ, gia hạn, hóa đơn"
-                value={notif.subscriptionNotify} onChange={v => setNotif(n => ({ ...n, subscriptionNotify: v }))} />
-              <p className="text-xs font-semibold uppercase tracking-wide py-1 pt-3"
-                 style={{ color: 'var(--text-tertiary)' }}>Báo cáo định kỳ</p>
-              <NotifToggle label="Báo cáo hàng ngày"
-                desc="Nhận tóm tắt doanh thu mỗi ngày lúc 8:00"
-                value={notif.dailyReport} onChange={v => setNotif(n => ({ ...n, dailyReport: v }))} />
-              <NotifToggle label="Báo cáo hàng tuần"
-                desc="Nhận báo cáo tổng hợp mỗi thứ Hai"
-                value={notif.weeklyReport} onChange={v => setNotif(n => ({ ...n, weeklyReport: v }))} />
-              <p className="text-xs font-semibold uppercase tracking-wide py-1 pt-3"
-                 style={{ color: 'var(--text-tertiary)' }}>Push Notification (App mobile)</p>
-              <NotifToggle label="Push notification trên mobile"
-                desc="Nhận thông báo đẩy khi dùng ứng dụng mobile (cần đăng nhập app)"
-                value={notif.pushNotify} onChange={v => setNotif(n => ({ ...n, pushNotify: v }))} />
-              <div className="pt-3">
-                <button onClick={saveNotif} className="lbtn lbtn-primary" style={{ height: 40 }}>
-                  <span className="icon icon-sm">save</span>
-                  Lưu tùy chọn
-                </button>
+          {section === 'notifications' && (() => {
+            const role = user?.role ?? ''
+            const isOwner    = role === 'Owner'
+            const isManager  = ['Owner','Manager'].includes(role)
+            const isDataIT   = ['Owner','DataIT'].includes(role)
+            const isWarehouse= ['Owner','Manager','Staff_Warehouse','DataIT'].includes(role)
+            const isStaff    = ['Owner','Manager','Staff_Sales','Staff_Warehouse','Staff_Marketing'].includes(role)
+            return (
+              <div className="lcard p-5 space-y-1">
+                <h2 className="text-subtitle font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>Tùy chọn thông báo</h2>
+                <p className="text-xs mb-3" style={{ color: 'var(--text-tertiary)' }}>
+                  Tùy chọn được lưu cho tài khoản của bạn. Email chỉ được gửi khi "Nhận thông báo qua email" được bật.
+                </p>
+
+                {/* ── Cảnh báo & Phân tích ── */}
+                <p className="text-xs font-semibold uppercase tracking-wide pb-1 pt-2"
+                   style={{ color: 'var(--text-tertiary)' }}>Cảnh báo &amp; Phân tích</p>
+                <NotifToggle label="Nhận thông báo qua email"
+                  desc="Bật/tắt toàn bộ email thông báo từ hệ thống"
+                  value={notif.emailNotify} onChange={v => setNotif(n => ({ ...n, emailNotify: v }))} />
+                {isManager && (
+                  <NotifToggle label="Phát hiện doanh thu bất thường"
+                    desc="Thông báo khi AI phát hiện ngày có doanh thu tăng/giảm đột biến so với xu hướng thường ngày"
+                    value={notif.anomalyAlert} onChange={v => setNotif(n => ({ ...n, anomalyAlert: v }))} />
+                )}
+                {isWarehouse && (
+                  <NotifToggle label="Cảnh báo sắp hết hàng"
+                    desc="Thông báo khi sản phẩm tồn kho dưới ngưỡng an toàn (dưới 10 đơn vị)"
+                    value={notif.lowStockAlert} onChange={v => setNotif(n => ({ ...n, lowStockAlert: v }))} />
+                )}
+                {isManager && (
+                  <NotifToggle label="Gợi ý AI &amp; Khuyến nghị kinh doanh"
+                    desc="Thông báo khi AI tạo gợi ý mới về chiến lược bán hàng, tồn kho hoặc khách hàng"
+                    value={notif.aiRecommendAlert} onChange={v => setNotif(n => ({ ...n, aiRecommendAlert: v }))} />
+                )}
+                {isStaff && (
+                  <NotifToggle label="Đơn hàng mới"
+                    desc="Thông báo khi có đơn hàng mới được tạo hoặc đơn đang chờ xử lý quá lâu"
+                    value={notif.newOrderNotify} onChange={v => setNotif(n => ({ ...n, newOrderNotify: v }))} />
+                )}
+                {isDataIT && (
+                  <NotifToggle label="Lỗi đồng bộ dữ liệu"
+                    desc="Thông báo khi pipeline ETL gặp lỗi hoặc kênh đồng bộ bị gián đoạn"
+                    value={notif.syncErrorNotify} onChange={v => setNotif(n => ({ ...n, syncErrorNotify: v }))} />
+                )}
+                {isOwner && (
+                  <NotifToggle label="Gói dịch vụ &amp; Thanh toán"
+                    desc="Nhắc nhở sắp hết hạn gói Pro, xác nhận thanh toán và hóa đơn"
+                    value={notif.subscriptionNotify} onChange={v => setNotif(n => ({ ...n, subscriptionNotify: v }))} />
+                )}
+
+                {/* ── Báo cáo định kỳ ── */}
+                {isManager && (
+                  <>
+                    <p className="text-xs font-semibold uppercase tracking-wide py-1 pt-4"
+                       style={{ color: 'var(--text-tertiary)' }}>Báo cáo định kỳ qua email</p>
+                    <NotifToggle label="Tóm tắt doanh thu hàng ngày"
+                      desc="Nhận email tóm tắt doanh thu, số đơn và so sánh hôm qua mỗi sáng 8:00"
+                      value={notif.dailyReport} onChange={v => setNotif(n => ({ ...n, dailyReport: v }))} />
+                    <NotifToggle label="Báo cáo tổng hợp hàng tuần"
+                      desc="Nhận báo cáo phân tích tuần vào mỗi sáng thứ Hai (kênh, sản phẩm, khách hàng)"
+                      value={notif.weeklyReport} onChange={v => setNotif(n => ({ ...n, weeklyReport: v }))} />
+                  </>
+                )}
+
+                {/* ── Mobile ── */}
+                <p className="text-xs font-semibold uppercase tracking-wide py-1 pt-4"
+                   style={{ color: 'var(--text-tertiary)' }}>Ứng dụng di động</p>
+                <NotifToggle label="Thông báo đẩy trên điện thoại"
+                  desc="Nhận thông báo đẩy khi dùng app MSAS trên điện thoại (cần đăng nhập app mobile)"
+                  value={notif.pushNotify} onChange={v => setNotif(n => ({ ...n, pushNotify: v }))} />
+
+                <div className="pt-4">
+                  <button onClick={saveNotif} className="lbtn lbtn-primary" style={{ height: 40 }}>
+                    <span className="icon icon-sm">save</span>
+                    Lưu tùy chọn
+                  </button>
+                </div>
               </div>
-            </div>
-          )}
+            )
+          })()}
 
           {/* ── APPEARANCE ── */}
           {section === 'appearance' && (
@@ -598,9 +643,6 @@ export default function SettingsPage() {
 
           {/* ── LOYALTY & VOUCHER ── */}
           {section === 'loyalty' && <LoyaltySection />}
-
-          {/* ── HƯỚNG DẪN SỬ DỤNG ── */}
-          {section === 'guide' && <GuideSection />}
 
           {/* ── ĐIỀU KHOẢN & CHÍNH SÁCH ── */}
           {section === 'policy' && <PolicySection />}
@@ -921,120 +963,76 @@ function AccordionItem({ title, children }) {
   )
 }
 
-// ── Hướng dẫn sử dụng ──────────────────────────────────────────────────────
-function GuideSection() {
-  return (
-    <div className="space-y-4">
-      <div className="lcard p-5">
-        <h2 className="text-subtitle font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>Hướng dẫn sử dụng</h2>
-        <p className="text-sm mb-4" style={{ color: 'var(--text-secondary)' }}>
-          MSAS (Multi-Source Analytics System) là hệ thống phân tích dữ liệu bán hàng đa kênh tích hợp AI,
-          giúp doanh nghiệp SME hợp nhất dữ liệu từ nhiều nền tảng và ra quyết định dựa trên dữ liệu thay vì cảm tính.
-        </p>
-
-        <div className="space-y-0">
-          <AccordionItem title="Tổng quan hệ thống (Dashboard)">
-            <p>Trang Tổng quan hiển thị các chỉ số KPI quan trọng như doanh thu hôm nay, số đơn hàng, lợi nhuận gộp và tỷ lệ chuyển đổi.
-            Bạn có thể lọc theo khoảng thời gian và xem biểu đồ xu hướng doanh thu theo kênh bán hàng.</p>
-          </AccordionItem>
-          <AccordionItem title="Module Bán hàng (Đơn hàng, Sản phẩm, Khách hàng)">
-            <p>Quản lý toàn bộ dữ liệu kinh doanh: xem danh sách đơn hàng, thêm/sửa sản phẩm và danh mục, theo dõi thông tin khách hàng.
-            Hỗ trợ tìm kiếm, lọc và phân trang nhanh chóng.</p>
-          </AccordionItem>
-          <AccordionItem title="Phân tích AI (Dự báo & Bất thường)">
-            <p><b>Dự báo doanh thu:</b> Sử dụng mô hình Prophet được huấn luyện trên dữ liệu thực tế, dự báo doanh thu 30–90 ngày tới với confidence interval.</p>
-            <p className="mt-2"><b>Phát hiện bất thường:</b> Tự động phát hiện các điểm dữ liệu bất thường (đột tăng/giảm doanh thu, đơn hàng trùng lặp...) và gửi cảnh báo.</p>
-          </AccordionItem>
-          <AccordionItem title="Gợi ý AI (Recommendations)">
-            <p>Hệ thống phân tích xu hướng thị trường và đưa ra các gợi ý hành động cụ thể như: tăng tồn kho sản phẩm A, chạy khuyến mãi tháng X, tối ưu ngân sách quảng cáo kênh Y.</p>
-          </AccordionItem>
-          <AccordionItem title="Báo cáo & Xuất PDF">
-            <p>Tạo báo cáo chuyên nghiệp với đầy đủ biểu đồ, KPI và nhận xét AI. Hỗ trợ lọc theo khoảng thời gian, kênh bán hàng và xuất PDF chất lượng cao.</p>
-          </AccordionItem>
-          <AccordionItem title="Đồng bộ dữ liệu (Data Sync & ETL Monitor)">
-            <p>Quản lý kết nối với các nguồn dữ liệu (Shopee, Lazada, Facebook...). Theo dõi trạng thái pipeline ETL, xem log đồng bộ và xử lý lỗi khi cần.</p>
-            <p className="mt-2"><i>Chức năng này chỉ dành cho vai trò DataIT và Admin.</i></p>
-          </AccordionItem>
-          <AccordionItem title="Kết nối kênh bán hàng">
-            <p>Vào <b>Đồng bộ dữ liệu</b> → chọn nền tảng (Shopee, Lazada, TikTok Shop...) → nhập API Key hoặc xác thực OAuth → bật lịch đồng bộ tự động.
-            Nếu chưa có API, có thể import file CSV/Excel để test và demo hệ thống.</p>
-          </AccordionItem>
-        </div>
-      </div>
-
-      <div className="lcard p-5">
-        <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>Câu hỏi thường gặp (FAQ)</h3>
-        <div className="space-y-0">
-          <AccordionItem title="Tôi có thể dùng hệ thống trên điện thoại không?">
-            <p>Có. Tải app MSAS trên điện thoại (iOS/Android) để xem nhanh dashboard KPI, nhập đơn hàng và nhận thông báo. App mobile tối ưu cho thao tác nhanh.</p>
-          </AccordionItem>
-          <AccordionItem title="Dữ liệu của tôi có an toàn không?">
-            <p>Dữ liệu được mã hóa AES-256 khi lưu trữ và TLS 1.3 khi truyền tải. Chỉ người trong công ty bạn (theo role được phân quyền) mới truy cập được dữ liệu của bạn.</p>
-          </AccordionItem>
-          <AccordionItem title="Làm thế nào để thêm nhân viên vào hệ thống?">
-            <p>Tài khoản Admin vào <b>Quản trị hệ thống</b> → <b>Quản lý người dùng</b> → <b>Thêm người dùng</b>, nhập email và chọn vai trò phù hợp. Hệ thống sẽ gửi email mời.</p>
-          </AccordionItem>
-          <AccordionItem title="Tôi quên mật khẩu thì xử lý thế nào?">
-            <p>Tại trang đăng nhập, chọn <b>Quên mật khẩu</b>, nhập email đã đăng ký. Hệ thống gửi link đặt lại mật khẩu vào email trong vòng 5 phút.</p>
-          </AccordionItem>
-          <AccordionItem title="Hệ thống hỗ trợ bao nhiêu kênh bán hàng?">
-            <p>Hiện hỗ trợ: Shopee, Lazada, TikTok Shop (TMĐT); Facebook, Zalo OA (mạng xã hội); GHN, GHTK (vận chuyển); MoMo, VNPay, ZaloPay (thanh toán). Sẽ bổ sung thêm theo lộ trình phát triển.</p>
-          </AccordionItem>
-          <AccordionItem title="Nâng cấp hoặc hủy gói dịch vụ như thế nào?">
-            <p>Vào <b>Cài đặt → Gói dịch vụ</b> (chỉ Owner). Chọn <b>Nâng cấp</b> để đổi gói hoặc <b>Hủy gia hạn</b> để không gia hạn sau kỳ hiện tại.</p>
-          </AccordionItem>
-          <AccordionItem title="Liên hệ hỗ trợ khi gặp sự cố?">
-            <p>Email hỗ trợ: <a href="mailto:support@msas.vn" style={{ color: 'var(--primary-500)' }}>support@msas.vn</a><br />
-            Thời gian: Thứ 2 – Thứ 6, 8:00–17:00 (GMT+7)</p>
-          </AccordionItem>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 // ── Điều khoản & Chính sách ─────────────────────────────────────────────────
 function PolicySection() {
   return (
     <div className="space-y-4">
+
+      {/* Header */}
+      <div className="lcard p-5">
+        <div className="flex items-start gap-3">
+          <span className="icon text-2xl mt-0.5" style={{ color: 'var(--primary-500)' }}>gavel</span>
+          <div>
+            <h2 className="text-subtitle font-semibold" style={{ color: 'var(--text-primary)' }}>
+              Điều khoản &amp; Chính sách MSAS
+            </h2>
+            <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
+              Cập nhật lần cuối: 01/06/2026 · Áp dụng cho tất cả người dùng hệ thống MSAS
+            </p>
+          </div>
+        </div>
+      </div>
+
       {/* Điều khoản dịch vụ */}
       <div className="lcard p-5">
-        <h2 className="text-subtitle font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>Điều khoản dịch vụ</h2>
+        <h3 className="text-sm font-bold mb-3" style={{ color: 'var(--text-primary)' }}>
+          1. Điều khoản sử dụng dịch vụ
+        </h3>
         <div className="text-sm leading-relaxed space-y-3" style={{ color: 'var(--text-secondary)' }}>
-          <p>Bằng cách sử dụng MSAS, bạn đồng ý với các điều khoản sau:</p>
-          <p><b>1. Phạm vi dịch vụ:</b> MSAS cung cấp nền tảng phân tích dữ liệu bán hàng đa kênh, bao gồm thu thập dữ liệu, phân tích BI, dự báo AI và xuất báo cáo. Dịch vụ được cung cấp theo mô hình SaaS.</p>
-          <p><b>2. Tài khoản và bảo mật:</b> Người dùng chịu trách nhiệm bảo mật thông tin đăng nhập. Không chia sẻ tài khoản với người khác. Thông báo ngay cho chúng tôi nếu phát hiện truy cập trái phép.</p>
-          <p><b>3. Sử dụng hợp lệ:</b> Không được dùng MSAS cho mục đích bất hợp pháp, thu thập dữ liệu vượt quá phạm vi được cấp quyền, hoặc cố ý làm hại hệ thống.</p>
-          <p><b>4. Sở hữu dữ liệu:</b> Dữ liệu kinh doanh bạn nhập vào hệ thống thuộc sở hữu của bạn. MSAS chỉ xử lý dữ liệu đó để cung cấp dịch vụ theo thỏa thuận.</p>
-          <p><b>5. Thay đổi điều khoản:</b> Chúng tôi có thể cập nhật điều khoản và thông báo qua email trước 30 ngày. Tiếp tục sử dụng sau thời điểm đó đồng nghĩa với việc chấp nhận điều khoản mới.</p>
-          <p><b>6. Chấm dứt dịch vụ:</b> Chúng tôi có quyền tạm ngừng tài khoản vi phạm điều khoản mà không cần thông báo trước. Dữ liệu của bạn sẽ được lưu 30 ngày sau khi chấm dứt để bạn có thể xuất ra.</p>
+          <p>Bằng cách đăng ký và sử dụng MSAS, bạn xác nhận đã đọc, hiểu và đồng ý với các điều khoản dưới đây.</p>
+          <p><b>Phạm vi dịch vụ:</b> MSAS cung cấp nền tảng phân tích dữ liệu bán hàng đa kênh tích hợp AI, bao gồm thu thập dữ liệu, phân tích BI, dự báo doanh thu và xuất báo cáo. Dịch vụ vận hành theo mô hình SaaS với hai gói: Free và Pro.</p>
+          <p><b>Tài khoản và bảo mật:</b> Mỗi tài khoản chỉ được sử dụng bởi một cá nhân. Bạn chịu trách nhiệm bảo mật thông tin đăng nhập và toàn bộ hoạt động phát sinh từ tài khoản của mình. Thông báo ngay cho chúng tôi nếu phát hiện truy cập trái phép.</p>
+          <p><b>Sử dụng hợp lệ:</b> Nghiêm cấm sử dụng MSAS cho mục đích bất hợp pháp, cố ý làm suy giảm hiệu năng hệ thống, hoặc truy cập dữ liệu của công ty khác ngoài phạm vi được cấp quyền.</p>
+          <p><b>Quyền sở hữu dữ liệu:</b> Toàn bộ dữ liệu kinh doanh bạn nhập vào hoặc đồng bộ qua MSAS thuộc sở hữu của bạn. MSAS chỉ xử lý dữ liệu đó nhằm cung cấp dịch vụ đã thỏa thuận.</p>
+          <p><b>Thay đổi điều khoản:</b> Khi có cập nhật quan trọng, chúng tôi thông báo qua email trước ít nhất 14 ngày. Tiếp tục sử dụng sau thời điểm đó đồng nghĩa với việc chấp nhận điều khoản mới.</p>
+          <p><b>Chấm dứt dịch vụ:</b> Tài khoản vi phạm điều khoản có thể bị tạm ngừng. Sau khi chấm dứt, dữ liệu được lưu thêm 30 ngày để bạn có thể xuất ra trước khi xóa vĩnh viễn.</p>
         </div>
       </div>
 
       {/* Chính sách bảo mật */}
       <div className="lcard p-5">
-        <h2 className="text-subtitle font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>Chính sách bảo mật dữ liệu</h2>
+        <h3 className="text-sm font-bold mb-3" style={{ color: 'var(--text-primary)' }}>
+          2. Chính sách bảo mật &amp; quyền riêng tư
+        </h3>
         <div className="text-sm leading-relaxed space-y-3" style={{ color: 'var(--text-secondary)' }}>
-          <p><b>Dữ liệu chúng tôi thu thập:</b> Thông tin tài khoản (họ tên, email), dữ liệu kinh doanh bạn đồng bộ vào hệ thống, log hoạt động (để bảo mật và hỗ trợ kỹ thuật).</p>
-          <p><b>Lưu trữ:</b> Dữ liệu lưu trên máy chủ đặt tại Việt Nam. Dữ liệu nghỉ ngơi (at rest) được mã hóa AES-256. Dữ liệu truyền tải (in transit) dùng TLS 1.3.</p>
-          <p><b>Quyền truy cập:</b> Chỉ nhân viên kỹ thuật được cấp quyền mới truy cập dữ liệu, khi cần thiết để hỗ trợ hoặc xử lý sự cố. Mọi truy cập đều được ghi log.</p>
-          <p><b>Không bán dữ liệu:</b> Chúng tôi cam kết không bán, cho thuê hoặc chia sẻ dữ liệu cá nhân và kinh doanh của bạn với bất kỳ bên thứ ba nào vì mục đích thương mại.</p>
-          <p><b>Quyền của bạn:</b> Bạn có quyền yêu cầu xuất toàn bộ dữ liệu, chỉnh sửa thông tin cá nhân, hoặc xóa tài khoản (dữ liệu sẽ bị xóa vĩnh viễn sau 30 ngày).</p>
-          <p><b>Tuân thủ pháp luật:</b> Chúng tôi tuân thủ Luật An ninh mạng 2018, Nghị định 13/2023/NĐ-CP về bảo vệ dữ liệu cá nhân và các quy định hiện hành của pháp luật Việt Nam.</p>
+          <p><b>Dữ liệu thu thập:</b> Thông tin tài khoản (họ tên, email, số điện thoại), dữ liệu kinh doanh bạn nhập vào hoặc đồng bộ từ các kênh bán hàng, và nhật ký hoạt động phục vụ bảo mật và hỗ trợ kỹ thuật.</p>
+          <p><b>Lưu trữ và bảo mật:</b> Dữ liệu lưu trên máy chủ tại Việt Nam. Dữ liệu khi lưu trữ được mã hóa bằng AES-256; khi truyền tải sử dụng giao thức bảo mật HTTPS/TLS. Mật khẩu được băm một chiều, không ai có thể xem lại.</p>
+          <p><b>Kiểm soát truy cập:</b> Hệ thống áp dụng phân quyền theo vai trò (Owner, Manager, Nhân viên, DataIT, Viewer) — mỗi người chỉ thấy dữ liệu phù hợp với vai trò. Chủ doanh nghiệp (Owner) có thể xem toàn bộ nhật ký hoạt động trong công ty.</p>
+          <p><b>Cam kết không bán dữ liệu:</b> MSAS không bán, cho thuê hoặc chia sẻ dữ liệu cá nhân và kinh doanh của bạn với bên thứ ba vì mục đích thương mại dưới bất kỳ hình thức nào.</p>
+          <p><b>Quyền của bạn:</b> Bạn có quyền yêu cầu xuất toàn bộ dữ liệu của mình, chỉnh sửa thông tin cá nhân trong phần Hồ sơ, hoặc yêu cầu xóa tài khoản (dữ liệu bị xóa vĩnh viễn sau 30 ngày kể từ ngày xác nhận).</p>
+          <p><b>Tuân thủ pháp luật:</b> MSAS tuân thủ Luật An ninh mạng 2018 (24/2018/QH14), Nghị định 13/2023/NĐ-CP về bảo vệ dữ liệu cá nhân, và Luật Giao dịch điện tử 2023 (20/2023/QH15).</p>
         </div>
       </div>
 
       {/* Chính sách hoàn tiền */}
       <div className="lcard p-5">
-        <h2 className="text-subtitle font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>Chính sách hoàn tiền</h2>
+        <h3 className="text-sm font-bold mb-3" style={{ color: 'var(--text-primary)' }}>
+          3. Chính sách hoàn tiền
+        </h3>
         <div className="space-y-3">
           {[
-            { plan: 'Gói Miễn phí (Free)', icon: 'card_membership', color: '#6B7280',
-              content: 'Gói miễn phí không áp dụng chính sách hoàn tiền vì không thu phí.' },
-            { plan: 'Gói Pro', icon: 'workspace_premium', color: 'var(--primary-500)',
-              content: 'Hỗ trợ hoàn tiền trong vòng 7 ngày kể từ ngày thanh toán nếu lỗi phát sinh từ hệ thống MSAS (dịch vụ ngừng hoạt động trên 24h liên tục, dữ liệu bị mất do lỗi máy chủ...). Không hoàn tiền trong trường hợp người dùng không sử dụng hoặc chủ động hủy gói.' },
-            { plan: 'Gói Enterprise', icon: 'business', color: 'var(--accent-500)',
-              content: 'Áp dụng theo thỏa thuận hợp đồng riêng giữa hai bên. Liên hệ email support@msas.vn để biết chi tiết.' },
+            {
+              plan: 'Gói Miễn phí (Free)',
+              icon: 'card_membership',
+              color: '#6B7280',
+              content: 'Gói miễn phí không áp dụng chính sách hoàn tiền vì không thu phí.',
+            },
+            {
+              plan: 'Gói Pro — 490.000đ/tháng hoặc 4.704.000đ/năm',
+              icon: 'workspace_premium',
+              color: 'var(--primary-500)',
+              content: 'Hỗ trợ hoàn tiền trong vòng 7 ngày kể từ ngày thanh toán nếu sự cố phát sinh từ phía MSAS (dịch vụ gián đoạn liên tục trên 24 giờ, mất dữ liệu do lỗi hệ thống...). Không hoàn tiền khi người dùng chủ động không sử dụng hoặc hủy gói.',
+            },
           ].map(item => (
             <div key={item.plan} className="flex gap-3 p-4 rounded-xl" style={{ background: 'var(--bg-elevated)' }}>
               <span className="icon w-9 h-9 flex items-center justify-center rounded-lg shrink-0"
@@ -1049,9 +1047,36 @@ function PolicySection() {
           ))}
         </div>
         <p className="text-xs mt-4" style={{ color: 'var(--text-tertiary)' }}>
-          Để yêu cầu hoàn tiền, gửi email đến <a href="mailto:billing@msas.vn" style={{ color: 'var(--primary-500)' }}>billing@msas.vn</a> với tiêu đề "YÊU CẦU HOÀN TIỀN – [Tên công ty]" và mô tả sự cố.
+          Yêu cầu hoàn tiền: gửi email đến{' '}
+          <a href="mailto:support@msas.vn" style={{ color: 'var(--primary-500)' }}>support@msas.vn</a>
+          {' '}với tiêu đề <b>"YÊU CẦU HOÀN TIỀN – [Tên công ty]"</b> kèm mô tả sự cố.
         </p>
       </div>
+
+      {/* Liên hệ */}
+      <div className="lcard p-5">
+        <h3 className="text-sm font-bold mb-3" style={{ color: 'var(--text-primary)' }}>
+          4. Liên hệ &amp; hỗ trợ
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {[
+            { icon: 'email',    label: 'Hỗ trợ kỹ thuật', value: 'support@msas.vn',  href: 'mailto:support@msas.vn' },
+            { icon: 'schedule', label: 'Giờ làm việc',     value: 'Thứ 2–6, 8:00–17:00 (GMT+7)', href: null },
+          ].map(c => (
+            <div key={c.label} className="flex items-center gap-3 p-3 rounded-xl" style={{ background: 'var(--bg-elevated)' }}>
+              <span className="icon text-lg" style={{ color: 'var(--primary-500)' }}>{c.icon}</span>
+              <div>
+                <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{c.label}</div>
+                {c.href
+                  ? <a href={c.href} className="text-sm font-medium" style={{ color: 'var(--primary-500)' }}>{c.value}</a>
+                  : <div className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>{c.value}</div>
+                }
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
     </div>
   )
 }

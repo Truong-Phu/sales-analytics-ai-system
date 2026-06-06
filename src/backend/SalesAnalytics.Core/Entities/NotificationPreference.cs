@@ -34,6 +34,15 @@ public class NotificationPreference
     [Column("push_notify")]
     public bool PushNotify { get; set; } = false;
 
+    [Column("low_stock_alert")]
+    public bool LowStockAlert { get; set; } = true;
+
+    [Column("ai_recommend_alert")]
+    public bool AiRecommendAlert { get; set; } = false;
+
+    [Column("new_order_notify")]
+    public bool NewOrderNotify { get; set; } = true;
+
     [Column("updated_at")]
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 

@@ -106,33 +106,14 @@ class GeoResponse(BaseModel):
     is_mock:         bool
 
 
-def _mock_geo() -> GeoResponse:
-    raw = [
-        ("TP. Hồ Chí Minh",  4500, 285_000_000, 1820),
-        ("Hà Nội",           3200, 198_000_000, 1340),
-        ("Đà Nẵng",           890,  52_000_000,  423),
-        ("Bình Dương",        780,  41_000_000,  310),
-        ("Đồng Nai",          640,  33_000_000,  265),
-        ("Hải Phòng",         520,  28_000_000,  198),
-        ("Cần Thơ",           410,  22_000_000,  168),
-        ("Khánh Hòa",         320,  17_000_000,  124),
-    ]
-    max_cust = max(r[1] for r in raw)
-    points = []
-    for prov, cust, rev, orders in raw:
-        coords = VN_PROVINCE_COORDS.get(prov, (16.0, 106.0))
-        points.append(GeoPoint(
-            province=prov, lat=coords[0], lng=coords[1],
-            customer_count=cust, revenue=rev, orders=orders,
-            intensity=round(cust / max_cust, 3),
-        ))
+def _empty_geo(days: int) -> GeoResponse:
     return GeoResponse(
-        total_customers=sum(r[1] for r in raw),
-        total_provinces=len(raw),
-        top_province="TP. Hồ Chí Minh",
-        points=points,
-        analysis_days=30,
-        is_mock=True,
+        total_customers=0,
+        total_provinces=0,
+        top_province="",
+        points=[],
+        analysis_days=days,
+        is_mock=False,
     )
 
 
@@ -175,7 +156,7 @@ def get_geo_distribution(
     df = query_df(sql, params or None)
 
     if df.empty:
-        return _mock_geo()
+        return _empty_geo(days)
 
     metric_col = {
         "customers": "customer_count",

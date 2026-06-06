@@ -185,13 +185,30 @@ public class UsersController : ControllerBase
                 .FirstOrDefaultAsync(n => n.UserId == CurrentUserId());
 
             if (prefs is null)
-                return Ok(new { emailNotify = true, anomalyAlert = true, dailyReport = false, weeklyReport = true });
+                return Ok(new {
+                    emailNotify       = true,
+                    anomalyAlert      = true,
+                    lowStockAlert     = true,
+                    newOrderNotify    = true,
+                    syncErrorNotify   = true,
+                    subscriptionNotify= true,
+                    aiRecommendAlert  = false,
+                    dailyReport       = false,
+                    weeklyReport      = true,
+                    pushNotify        = false,
+                });
 
             return Ok(new {
-                emailNotify  = prefs.EmailNotify,
-                anomalyAlert = prefs.AnomalyAlert,
-                dailyReport  = prefs.DailyReport,
-                weeklyReport = prefs.WeeklyReport,
+                emailNotify        = prefs.EmailNotify,
+                anomalyAlert       = prefs.AnomalyAlert,
+                lowStockAlert      = prefs.LowStockAlert,
+                newOrderNotify     = prefs.NewOrderNotify,
+                syncErrorNotify    = prefs.SyncErrorNotify,
+                subscriptionNotify = prefs.SubscriptionNotify,
+                aiRecommendAlert   = prefs.AiRecommendAlert,
+                dailyReport        = prefs.DailyReport,
+                weeklyReport       = prefs.WeeklyReport,
+                pushNotify         = prefs.PushNotify,
             });
         }
         catch (Exception ex)
@@ -215,21 +232,33 @@ public class UsersController : ControllerBase
             {
                 _db.NotificationPreferences.Add(new SalesAnalytics.Core.Entities.NotificationPreference
                 {
-                    UserId       = CurrentUserId(),
-                    EmailNotify  = req.EmailNotify,
-                    AnomalyAlert = req.AnomalyAlert,
-                    DailyReport  = req.DailyReport,
-                    WeeklyReport = req.WeeklyReport,
-                    UpdatedAt    = DateTime.UtcNow,
+                    UserId             = CurrentUserId(),
+                    EmailNotify        = req.EmailNotify,
+                    AnomalyAlert       = req.AnomalyAlert,
+                    LowStockAlert      = req.LowStockAlert,
+                    NewOrderNotify     = req.NewOrderNotify,
+                    SyncErrorNotify    = req.SyncErrorNotify,
+                    SubscriptionNotify = req.SubscriptionNotify,
+                    AiRecommendAlert   = req.AiRecommendAlert,
+                    DailyReport        = req.DailyReport,
+                    WeeklyReport       = req.WeeklyReport,
+                    PushNotify         = req.PushNotify,
+                    UpdatedAt          = DateTime.UtcNow,
                 });
             }
             else
             {
-                prefs.EmailNotify  = req.EmailNotify;
-                prefs.AnomalyAlert = req.AnomalyAlert;
-                prefs.DailyReport  = req.DailyReport;
-                prefs.WeeklyReport = req.WeeklyReport;
-                prefs.UpdatedAt    = DateTime.UtcNow;
+                prefs.EmailNotify        = req.EmailNotify;
+                prefs.AnomalyAlert       = req.AnomalyAlert;
+                prefs.LowStockAlert      = req.LowStockAlert;
+                prefs.NewOrderNotify     = req.NewOrderNotify;
+                prefs.SyncErrorNotify    = req.SyncErrorNotify;
+                prefs.SubscriptionNotify = req.SubscriptionNotify;
+                prefs.AiRecommendAlert   = req.AiRecommendAlert;
+                prefs.DailyReport        = req.DailyReport;
+                prefs.WeeklyReport       = req.WeeklyReport;
+                prefs.PushNotify         = req.PushNotify;
+                prefs.UpdatedAt          = DateTime.UtcNow;
             }
 
             await _db.SaveChangesAsync();
@@ -254,6 +283,12 @@ public record UpdateProfileRequest(
 public record NotifPrefsRequest(
     bool EmailNotify,
     bool AnomalyAlert,
+    bool LowStockAlert,
+    bool NewOrderNotify,
+    bool SyncErrorNotify,
+    bool SubscriptionNotify,
+    bool AiRecommendAlert,
     bool DailyReport,
-    bool WeeklyReport
+    bool WeeklyReport,
+    bool PushNotify
 );

@@ -1024,6 +1024,20 @@ function ImportTab() {
                 {result.success} thành công · {result.skipped} bỏ qua
                 {result.newCategories > 0 ? ` · ${result.newCategories} danh mục mới` : ''}
               </p>
+              {result.skipped > 0 && result.skippedDetails?.length > 0 && (
+                <details className="mt-1">
+                  <summary className="text-xs cursor-pointer font-medium" style={{ color: 'var(--text-secondary)' }}>
+                    Xem chi tiết {result.skipped} đơn bỏ qua
+                  </summary>
+                  <div className="mt-2 space-y-1">
+                    {result.skippedDetails.map((s, i) => (
+                      <p key={i} className="text-xs pl-2" style={{ color: 'var(--text-tertiary)', borderLeft: '2px solid var(--border)' }}>
+                        Dòng {s.row}{s.orderCode ? ` (${s.orderCode})` : ''}: {s.reason}
+                      </p>
+                    ))}
+                  </div>
+                </details>
+              )}
               {result.errors?.length > 0 && (
                 <p className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
                   ETL pipeline đang đồng bộ lên Data Warehouse...

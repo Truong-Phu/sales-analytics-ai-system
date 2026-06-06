@@ -239,6 +239,28 @@ try
         // Chỉ redirect HTTPS trên production để tránh break Vite proxy trong dev
         app.UseHttpsRedirection();
     }
+    // ── Tạo bảng chat_history nếu chưa có (idempotent) ──────────────────────
+    using (var scope = app.Services.CreateScope())
+    {
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        await db.Database.ExecuteSqlRawAsync("""
+            CREATE TABLE IF NOT EXISTS public.chat_history (
+                id            BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+                user_id       INT         NOT NULL,
+                company_id    UUID,
+                tab           VARCHAR(30) NOT NULL DEFAULT 'business',
+                question      TEXT        NOT NULL,
+                answer        TEXT        NOT NULL,
+                intent        VARCHAR(50),
+                model_used    VARCHAR(60),
+                fallback_used BOOLEAN     NOT NULL DEFAULT FALSE,
+                created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );
+            CREATE INDEX IF NOT EXISTS idx_chat_history_user_tab
+                ON public.chat_history(user_id, company_id, tab, created_at DESC);
+            """);
+    }
+
     app.UseStaticFiles();             // Serve wwwroot/ (avatars, product images...)
     app.UseRateLimiter();             // Rate limiting trước khi xử lý request
     app.UseSerilogRequestLogging(opt => // Ghi log mỗi request với thông tin cơ bản

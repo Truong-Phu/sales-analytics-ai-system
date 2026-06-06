@@ -96,6 +96,19 @@ export default function BasketPage() {
             <span className="w-6 h-6 border-2 rounded-full animate-spin"
               style={{ borderColor: 'var(--border)', borderTopColor: 'var(--primary-500)' }} />
           </div>
+        ) : (data && data.total_rules === 0 && !loading) ? (
+          <div className="lcard p-8 text-center space-y-2">
+            <div className="text-3xl">🛒</div>
+            <p className="font-medium text-sm" style={{ color: 'var(--text-primary)' }}>
+              {t('basket.noRulesFound', 'Không tìm thấy association rules')}
+            </p>
+            <p className="text-xs max-w-md mx-auto" style={{ color: 'var(--text-secondary)' }}>
+              {data.note}
+            </p>
+            <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+              {t('basket.noRulesHint', 'Thử giảm Min Confidence hoặc Min Lift, hoặc nhập thêm đơn hàng có nhiều sản phẩm.')}
+            </p>
+          </div>
         ) : (data?.rules ?? []).map((rule, i) => (
           <div key={i} className="lcard p-4 transition-colors lcard-hover">
             <div className="flex items-center gap-2 flex-wrap">

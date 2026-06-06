@@ -1,6 +1,6 @@
 ﻿import { useState, useEffect, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import AiEmptyState from '../../components/ui/AiEmptyState'
 import { getRecommendations } from '../../api/aiApi'
 import api from '../../api/axios'
@@ -131,12 +131,40 @@ function LoadingSkeleton() {
 
 // Khung chat 1 tab
 function ChatTab({ tab }) {
-  const [question,        setQuestion]        = useState('')
-  const [loading,         setLoading]         = useState(false)
-  const [history,         setHistory]         = useState([])    // [{question, answer}]
-  const [error,           setError]           = useState('')
+  const [question,         setQuestion]         = useState('')
+  const [loading,          setLoading]          = useState(false)
+  const [historyLoading,   setHistoryLoading]   = useState(true)
+  const [history,          setHistory]          = useState([])   // [{question, answer}]
+  const [error,            setError]            = useState('')
   const [smartSuggestions, setSmartSuggestions] = useState(tab.samples)
   const bottomRef = useRef(null)
+
+  // Load lịch sử hội thoại từ DB khi mở tab
+  useEffect(() => {
+    setHistoryLoading(true)
+    api.get(`/api/chatbot/history?tab=${tab.id}&limit=50`)
+      .then(res => {
+        const rows = res.data?.data ?? []
+        setHistory(rows.map(r => ({
+          question: r.question,
+          answer: {
+            text:           r.answer,
+            recommendation: r.answer,
+            confidence:     r.fallbackUsed ? 'medium' : 'high',
+            fallbackUsed:   r.fallbackUsed,
+            isAiGenerated:  true,
+            intent:         r.intent,
+            modelUsed:      r.modelUsed,
+            sources_used:   tab.sources,
+            context_type:   tab.context,
+            question:       r.question,
+            timestamp:      r.createdAt,
+          },
+        })))
+      })
+      .catch(() => {}) // Giữ nguyên [] nếu lỗi
+      .finally(() => setHistoryLoading(false))
+  }, [tab.id])
 
   // Load gợi ý câu hỏi từ backend theo tab
   useEffect(() => {
@@ -144,10 +172,15 @@ function ChatTab({ tab }) {
       .then(res => {
         if (res.data?.data?.length > 0) setSmartSuggestions(res.data.data)
       })
-      .catch(() => {}) // Fallback: giữ nguyên tab.samples nếu lỗi
+      .catch(() => {})
   }, [tab.id])
 
-  const clearHistory = () => setHistory([])
+  const clearHistory = async () => {
+    try {
+      await api.delete(`/api/chatbot/history?tab=${tab.id}`)
+    } catch { /* ignore */ }
+    setHistory([])
+  }
 
   const handleAsk = useCallback(async () => {
     const q = question.trim()
@@ -155,19 +188,20 @@ function ChatTab({ tab }) {
     setLoading(true)
     setError('')
     try {
-      // Gọi backend ASP.NET → Gemini API
+      // Backend tự load lịch sử từ DB — không cần truyền history từ frontend
       const res = await api.post('/api/chatbot/chat', {
         message: q,
         tab:     tab.id,
-        history: history.flatMap(item => ([
-          { role: 'user',  content: item.question },
-          { role: 'model', content: item.answer?.text ?? item.answer?.recommendation ?? '' },
-        ])),
-      })
+        history: [], // backend sẽ tự query DB
+      }, { timeout: 90_000 })
       const aiText      = res.data.answer ?? res.data.message ?? 'Xin lỗi, không có phản hồi.'
       const fallback    = res.data.fallbackUsed ?? false
       const isAi        = res.data.isAiGenerated ?? true
-      const confidence  = (!isAi || fallback) ? 'low' : 'high'
+      const modelUsed   = res.data.modelUsed ?? ''
+      // Groq là AI thật → medium; template_fallback → low; Gemini → high
+      const confidence  = !isAi || modelUsed === 'template_fallback'
+                            ? 'low'
+                            : fallback ? 'medium' : 'high'
       setHistory(prev => [
         ...prev,
         {
@@ -223,7 +257,13 @@ function ChatTab({ tab }) {
 
       {/* Lịch sử chat */}
       <div className="space-y-3 min-h-[120px]">
-        {history.length === 0 && !loading && (
+        {historyLoading ? (
+          <div className="flex items-center justify-center py-8 gap-2" style={{ color: 'var(--text-tertiary)' }}>
+            <span className="w-4 h-4 border-2 rounded-full"
+                  style={{ borderColor: 'var(--border)', borderTopColor: 'var(--primary-500)', animation: 'spin 0.7s linear infinite' }} />
+            <span className="text-xs">Đang tải lịch sử...</span>
+          </div>
+        ) : history.length === 0 && !loading && (
           <div className="flex flex-col items-center justify-center py-10 gap-2"
                style={{ color: 'var(--text-tertiary)' }}>
             <span className="icon" style={{ fontSize: 36, opacity: 0.25 }}>chat_bubble_outline</span>
@@ -336,8 +376,8 @@ function ChatTab({ tab }) {
         <textarea
           value={question}
           onChange={e => setQuestion(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleAsk() }}
-          placeholder="Nhập câu hỏi... (Ctrl+Enter để gửi)"
+          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAsk() } }}
+          placeholder="Nhập câu hỏi... (Enter để gửi, Shift+Enter xuống dòng)"
           rows={2}
           className="flex-1 rounded-xl border text-sm resize-none px-3 py-2.5 transition-colors"
           style={{
@@ -357,7 +397,7 @@ function ChatTab({ tab }) {
             background: question.trim() && !loading ? tab.badgeColor : 'var(--bg-elevated)',
             color: question.trim() && !loading ? 'white' : 'var(--text-tertiary)',
           }}
-          title="Gửi (Ctrl+Enter)"
+          title="Gửi (Enter)"
         >
           {loading
             ? <span className="w-4 h-4 border-2 border-current/30 border-t-current rounded-full"
@@ -390,12 +430,16 @@ function ChatTab({ tab }) {
 
 export default function RecommendationsPage() {
   const { t } = useTranslation()
-
   const navigate = useNavigate()
-  // Trạng thái tab đang active
+  const [searchParams, setSearchParams] = useSearchParams()
+
+  // 2 main tabs: 'chat' = Hỏi AI | 'auto' = Gợi ý AI
+  const [mainTab, setMainTab] = useState(() => searchParams.get('tab') === 'auto' ? 'auto' : 'chat')
+
+  // Sub-tab của Hỏi AI
   const [activeTab, setActiveTab] = useState('business')
 
-  // Auto-recommendations (danh sách bên dưới)
+  // Auto-recommendations
   const [autoData,    setAutoData]    = useState(null)
   const [autoLoading, setAutoLoading] = useState(true)
   const [filter,      setFilter]      = useState('all')
@@ -407,6 +451,12 @@ export default function RecommendationsPage() {
     window.addEventListener('scroll', onScroll, { passive: true })
     return () => window.removeEventListener('scroll', onScroll)
   }, [])
+
+  // Đồng bộ URL khi đổi main tab
+  const switchMainTab = (tab) => {
+    setMainTab(tab)
+    setSearchParams(tab === 'auto' ? { tab: 'auto' } : {})
+  }
 
   const scrollToTop = () => window.scrollTo({ top: 0, behavior: 'smooth' })
 
@@ -423,7 +473,6 @@ export default function RecommendationsPage() {
   useEffect(() => { fetchAutoRecs() }, [])
 
   const filtered = autoData?.recommendations?.filter(r => filter === 'all' || r.type === filter) ?? []
-  const chatbotOpen = false  // chatbot đã được xóa
   const currentTab = TABS.find(t => t.id === activeTab)
 
   return (
@@ -438,140 +487,167 @@ export default function RecommendationsPage() {
         </p>
       </div>
 
-      {!autoData && !autoLoading && <AiEmptyState title="Chưa có dữ liệu gợi ý AI" />}
-
-      {/* ── 3 Tab Chat ── */}
+      {/* ── 2 Main Tabs ── */}
       <div className="lcard overflow-hidden">
-        {/* Tab headers */}
         <div className="flex border-b" style={{ borderColor: 'var(--border)' }}>
-          {TABS.map(tab => (
+          {[
+            { id: 'chat', icon: 'smart_toy',   label: 'Hỏi AI',    color: '#6366F1' },
+            { id: 'auto', icon: 'auto_awesome', label: 'Gợi ý AI', color: '#10B981' },
+          ].map(tab => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className="flex-1 flex items-center justify-center gap-1.5 px-3 py-3 text-xs font-medium transition-all"
+              onClick={() => switchMainTab(tab.id)}
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-3.5 text-sm font-semibold transition-all"
               style={{
-                color:       activeTab === tab.id ? tab.badgeColor : 'var(--text-secondary)',
-                borderBottom: activeTab === tab.id ? `2px solid ${tab.badgeColor}` : '2px solid transparent',
-                background:  activeTab === tab.id ? `${tab.badgeColor}08` : 'transparent',
+                color:        mainTab === tab.id ? tab.color : 'var(--text-secondary)',
+                borderBottom: mainTab === tab.id ? `2px solid ${tab.color}` : '2px solid transparent',
+                background:   mainTab === tab.id ? `${tab.color}08` : 'transparent',
               }}
             >
-              <span className="icon" style={{ fontSize: 15 }}>{tab.icon}</span>
-              <span className="hidden sm:inline">{tab.label}</span>
-              <span className="sm:hidden">{tab.emoji}</span>
-            </button>
-          ))}
-        </div>
-
-        {/* Tab body */}
-        <div className="p-5">
-          {currentTab && (
-            <ChatTab
-              key={activeTab}
-              tab={currentTab}
-            />
-          )}
-        </div>
-      </div>
-
-      {/* ── Auto recommendations ── */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between gap-4">
-          <h2 className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>
-            Gợi ý tự động từ AI
-          </h2>
-          <button onClick={fetchAutoRecs} className="lbtn lbtn-secondary !h-8 text-xs" disabled={autoLoading}>
-            <span className="icon text-base"
-                  style={{ ...(autoLoading && { animation: 'spin 1s linear infinite' }) }}>
-              refresh
-            </span>
-            {t('common.refresh')}
-          </button>
-        </div>
-
-        {/* Bộ lọc loại */}
-        <div className="flex flex-wrap gap-2">
-          {TYPE_FILTER_KEYS.map(type => (
-            <button
-              key={type}
-              onClick={() => setFilter(type)}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium border transition-all"
-              style={{
-                background:  filter === type ? 'var(--primary-500)' : 'transparent',
-                borderColor: filter === type ? 'var(--primary-500)' : 'var(--border)',
-                color:       filter === type ? 'white' : 'var(--text-secondary)',
-              }}
-            >
-              {type === 'all' ? t('common.all') : t(`recommendations.type.${type}`)}
-            </button>
-          ))}
-        </div>
-
-        {autoLoading ? (
-          <div className="lcard p-10 flex items-center justify-center">
-            <span className="w-6 h-6 border-2 rounded-full"
-                  style={{ borderColor: 'var(--border-strong)', borderTopColor: 'var(--primary-500)', animation: 'spin 0.8s linear infinite' }} />
-          </div>
-        ) : filtered.length === 0 ? (
-          <div className="lcard p-10 flex flex-col items-center gap-3" style={{ color: 'var(--text-tertiary)' }}>
-            <span className="icon" style={{ fontSize: 40, opacity: 0.4 }}>sentiment_satisfied</span>
-            <p className="text-sm">{t('recommendations.noItems')}</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {filtered.map((rec, i) => (
-              <div key={i} className="lcard p-4 flex items-start gap-4"
-                   style={{ borderLeft: `3px solid ${PRIORITY_DOT[rec.priority] ?? PRIORITY_DOT.low}` }}>
-                <span className="icon w-9 h-9 flex items-center justify-center rounded-xl shrink-0"
-                      style={{ fontSize: 20, background: 'var(--bg-elevated)', color: 'var(--primary-500)' }}>
-                  {TYPE_ICON[rec.type] ?? 'lightbulb'}
+              <span className="icon" style={{ fontSize: 18 }}>{tab.icon}</span>
+              {tab.label}
+              {tab.id === 'auto' && autoData?.recommendations?.length > 0 && (
+                <span className="px-1.5 py-0.5 rounded-full text-xs font-bold"
+                      style={{ background: '#10B98118', color: '#10B981' }}>
+                  {autoData.recommendations.length}
                 </span>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap mb-1.5">
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
-                          style={{
-                            background: `${PRIORITY_DOT[rec.priority]}18`,
-                            color: PRIORITY_DOT[rec.priority],
-                            border: `1px solid ${PRIORITY_DOT[rec.priority]}40`,
-                          }}>
-                      <span className="w-1.5 h-1.5 rounded-full" style={{ background: PRIORITY_DOT[rec.priority] }} />
-                      {t(`recommendations.priority.${rec.priority}`)}
-                    </span>
-                    <span className="lbadge lbadge-neutral text-xs">
-                      {t(`recommendations.type.${rec.type}`)}
-                    </span>
-                  </div>
-                  <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{rec.message}</p>
-                  {rec.detail && (
-                    <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>{rec.detail}</p>
-                  )}
-                  {/* Nút link đến trang liên quan */}
-                  {(() => {
-                    const link = CATEGORY_LINK[rec.category] ?? TYPE_LINK[rec.type]
-                    if (!link) return null
-                    return (
-                      <button
-                        onClick={() => navigate(link.path)}
-                        className="mt-2 flex items-center gap-1 text-xs font-medium transition-colors"
-                        style={{ color: 'var(--primary-500)' }}
-                        onMouseEnter={e => e.currentTarget.style.color = 'var(--primary-700)'}
-                        onMouseLeave={e => e.currentTarget.style.color = 'var(--primary-500)'}
-                      >
-                        <span className="icon" style={{ fontSize: 13 }}>{link.icon}</span>
-                        {link.label}
-                        <span className="icon" style={{ fontSize: 13 }}>arrow_forward</span>
-                      </button>
-                    )
-                  })()}
-                </div>
-              </div>
-            ))}
+              )}
+            </button>
+          ))}
+        </div>
+
+        {/* ── Tab: Hỏi AI ── */}
+        {mainTab === 'chat' && (
+          <div>
+            {/* 3 sub-tabs nguồn dữ liệu */}
+            <div className="flex border-b" style={{ borderColor: 'var(--border)' }}>
+              {TABS.map(tab => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 text-xs font-medium transition-all"
+                  style={{
+                    color:       activeTab === tab.id ? tab.badgeColor : 'var(--text-secondary)',
+                    borderBottom: activeTab === tab.id ? `2px solid ${tab.badgeColor}` : '2px solid transparent',
+                    background:  activeTab === tab.id ? `${tab.badgeColor}08` : 'transparent',
+                  }}
+                >
+                  <span className="icon" style={{ fontSize: 14 }}>{tab.icon}</span>
+                  <span className="hidden sm:inline">{tab.label}</span>
+                  <span className="sm:hidden">{tab.emoji}</span>
+                </button>
+              ))}
+            </div>
+            <div className="p-5">
+              {currentTab && <ChatTab key={activeTab} tab={currentTab} />}
+            </div>
           </div>
         )}
 
-        {autoData?.generatedAt && (
-          <p className="text-xs text-center" style={{ color: 'var(--text-tertiary)' }}>
-            Cập nhật: {new Date(autoData.generatedAt).toLocaleString('vi-VN')}
-          </p>
+        {/* ── Tab: Gợi ý AI ── */}
+        {mainTab === 'auto' && (
+          <div className="p-5 space-y-4">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-2">
+                <span className="icon" style={{ color: '#10B981', fontSize: 18 }}>auto_awesome</span>
+                <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+                  Gợi ý tự động từ AI
+                </span>
+                {autoData?.generatedAt && (
+                  <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                    · Cập nhật: {new Date(autoData.generatedAt).toLocaleString('vi-VN')}
+                  </span>
+                )}
+              </div>
+              <button onClick={fetchAutoRecs} className="lbtn lbtn-secondary !h-8 text-xs" disabled={autoLoading}>
+                <span className="icon text-base" style={{ ...(autoLoading && { animation: 'spin 1s linear infinite' }) }}>
+                  refresh
+                </span>
+                {t('common.refresh')}
+              </button>
+            </div>
+
+            {/* Bộ lọc loại */}
+            <div className="flex flex-wrap gap-2">
+              {TYPE_FILTER_KEYS.map(type => (
+                <button
+                  key={type}
+                  onClick={() => setFilter(type)}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium border transition-all"
+                  style={{
+                    background:  filter === type ? 'var(--primary-500)' : 'transparent',
+                    borderColor: filter === type ? 'var(--primary-500)' : 'var(--border)',
+                    color:       filter === type ? 'white' : 'var(--text-secondary)',
+                  }}
+                >
+                  {type === 'all' ? t('common.all') : t(`recommendations.type.${type}`)}
+                </button>
+              ))}
+            </div>
+
+            {!autoData && !autoLoading && <AiEmptyState title="Chưa có dữ liệu gợi ý AI" />}
+
+            {autoLoading ? (
+              <div className="py-10 flex items-center justify-center">
+                <span className="w-6 h-6 border-2 rounded-full"
+                      style={{ borderColor: 'var(--border-strong)', borderTopColor: 'var(--primary-500)', animation: 'spin 0.8s linear infinite' }} />
+              </div>
+            ) : filtered.length === 0 ? (
+              <div className="py-10 flex flex-col items-center gap-3" style={{ color: 'var(--text-tertiary)' }}>
+                <span className="icon" style={{ fontSize: 40, opacity: 0.4 }}>sentiment_satisfied</span>
+                <p className="text-sm">{t('recommendations.noItems')}</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {filtered.map((rec, i) => (
+                  <div key={i} className="lcard p-4 flex items-start gap-4"
+                       style={{ borderLeft: `3px solid ${PRIORITY_DOT[rec.priority] ?? PRIORITY_DOT.low}` }}>
+                    <span className="icon w-9 h-9 flex items-center justify-center rounded-xl shrink-0"
+                          style={{ fontSize: 20, background: 'var(--bg-elevated)', color: 'var(--primary-500)' }}>
+                      {TYPE_ICON[rec.type] ?? 'lightbulb'}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap mb-1.5">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
+                              style={{
+                                background: `${PRIORITY_DOT[rec.priority]}18`,
+                                color: PRIORITY_DOT[rec.priority],
+                                border: `1px solid ${PRIORITY_DOT[rec.priority]}40`,
+                              }}>
+                          <span className="w-1.5 h-1.5 rounded-full" style={{ background: PRIORITY_DOT[rec.priority] }} />
+                          {t(`recommendations.priority.${rec.priority}`)}
+                        </span>
+                        <span className="lbadge lbadge-neutral text-xs">
+                          {t(`recommendations.type.${rec.type}`)}
+                        </span>
+                      </div>
+                      <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{rec.message}</p>
+                      {rec.detail && (
+                        <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>{rec.detail}</p>
+                      )}
+                      {(() => {
+                        const link = CATEGORY_LINK[rec.category] ?? TYPE_LINK[rec.type]
+                        if (!link) return null
+                        return (
+                          <button
+                            onClick={() => navigate(link.path)}
+                            className="mt-2 flex items-center gap-1 text-xs font-medium transition-colors"
+                            style={{ color: 'var(--primary-500)' }}
+                            onMouseEnter={e => e.currentTarget.style.color = 'var(--primary-700)'}
+                            onMouseLeave={e => e.currentTarget.style.color = 'var(--primary-500)'}
+                          >
+                            <span className="icon" style={{ fontSize: 13 }}>{link.icon}</span>
+                            {link.label}
+                            <span className="icon" style={{ fontSize: 13 }}>arrow_forward</span>
+                          </button>
+                        )
+                      })()}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         )}
       </div>
 
