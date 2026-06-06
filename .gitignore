@@ -60,6 +60,12 @@ scripts/
 logs/
 
 # Environment secrets (không push lên GitHub)
+*.local
+*.local.ps1
+set-user-secrets.local.ps1
+verify-user-secrets.local.ps1
+replacements.txt
+
 # Root
 .env
 
