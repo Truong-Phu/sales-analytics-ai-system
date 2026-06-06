@@ -1,4 +1,0 @@
-﻿NGROK_URL=https://rust-tightly-atrium.ngrok-free.dev
-DEMO_URL=https://rust-tightly-atrium.ngrok-free.dev
-SEPAY_WEBHOOK=https://rust-tightly-atrium.ngrok-free.dev/api/payment/webhook/sepay
-UPDATED=05-06-2026 03:07:05
