@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Npgsql;
+using NpgsqlTypes;
 using SalesAnalytics.API.Services;
 
 namespace SalesAnalytics.API.Controllers;
@@ -820,15 +821,16 @@ public class PurchaseOrdersController(
                     approved_at            = NOW(),
                     updated_at             = NOW(),
                     expected_delivery_date = @delivDate,
-                    note                   = CASE WHEN @note IS NOT NULL AND @note <> ''
-                                                  THEN COALESCE(note || E'\n', '') || '[NCC] ' || @note
+                    note                   = CASE WHEN @note::text IS NOT NULL AND @note::text <> ''
+                                                  THEN COALESCE(note || E'\n', '') || '[NCC] ' || @note::text
                                                   ELSE note END,
                     confirmation_token     = NULL
                 WHERE purchase_order_id = @id
                 """, conn);
-            upd.Parameters.AddWithValue("id",       poId);
-            upd.Parameters.AddWithValue("delivDate", deliveryDate.ToDateTime(TimeOnly.MinValue));
-            upd.Parameters.AddWithValue("note",      (object?)supplierNote ?? DBNull.Value);
+            upd.Parameters.Add("id", NpgsqlDbType.Bigint).Value = poId;
+            upd.Parameters.Add("delivDate", NpgsqlDbType.Date).Value = deliveryDate;
+            upd.Parameters.Add("note", NpgsqlDbType.Text).Value =
+                string.IsNullOrWhiteSpace(supplierNote) ? DBNull.Value : supplierNote.Trim();
             await upd.ExecuteNonQueryAsync();
 
             return Content(HtmlResult(

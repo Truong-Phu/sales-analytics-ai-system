@@ -63,8 +63,10 @@ logs/
 *.local
 *.local.ps1
 set-user-secrets.local.ps1
+set-ngrok-cors.local.ps1
 verify-user-secrets.local.ps1
 replacements.txt
+ngrok-current.txt
 
 # Root
 .env

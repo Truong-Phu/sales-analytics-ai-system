@@ -81,14 +81,53 @@ try
     });
 
     // ── 4. CORS ───────────────────────────────────────────────────────────────
+    var defaultCorsOrigins = new[]
+    {
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://localhost:5174",
+    };
+
+    var configuredCorsOriginList = builder.Configuration
+        .GetSection("Cors:AllowedOrigins")
+        .Get<string[]>() ?? [];
+    var configuredCorsOriginText = builder.Configuration["Cors:AllowedOrigins"] ?? "";
+    var configuredCorsOrigins = configuredCorsOriginList
+        .Concat(configuredCorsOriginText.Split(
+            [';', ','],
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+
+    static bool IsValidCorsOrigin(string origin)
+    {
+        return Uri.TryCreate(origin, UriKind.Absolute, out var uri)
+               && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps)
+               && string.IsNullOrEmpty(uri.PathAndQuery.Trim('/'));
+    }
+
+    static bool IsNgrokOrigin(string origin)
+    {
+        return Uri.TryCreate(origin, UriKind.Absolute, out var uri)
+               && uri.Scheme == Uri.UriSchemeHttps
+               && (uri.Host.EndsWith(".ngrok-free.dev", StringComparison.OrdinalIgnoreCase)
+                   || uri.Host.EndsWith(".ngrok.io", StringComparison.OrdinalIgnoreCase));
+    }
+
+    var allowedCorsOrigins = defaultCorsOrigins
+        .Concat(configuredCorsOrigins)
+        .Where(origin => !string.IsNullOrWhiteSpace(origin))
+        .Select(origin => origin.Trim().TrimEnd('/'))
+        .Where(IsValidCorsOrigin)
+        .Where(origin => builder.Environment.IsDevelopment() || !IsNgrokOrigin(origin))
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .ToArray();
+
+    if (builder.Environment.IsDevelopment())
+        Log.Information("Allowed CORS origins: {Origins}", string.Join(", ", allowedCorsOrigins));
+
     builder.Services.AddCors(opt =>
         opt.AddPolicy("AllowFrontend", policy =>
             policy
-                .WithOrigins(
-                    "http://localhost:3000",
-                    "http://localhost:5173",
-                    "http://localhost:5174"
-                )
+                .WithOrigins(allowedCorsOrigins)
                 .AllowAnyHeader()
                 .AllowAnyMethod()
                 .AllowCredentials()
