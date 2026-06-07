@@ -1,6 +1,8 @@
-﻿using System.Text;
+using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
+using NpgsqlTypes;
 using SalesAnalytics.Core.DTOs;
 using SalesAnalytics.Infrastructure.Data;
 
@@ -27,6 +29,8 @@ public class GeminiService(
                                                System.Globalization.CultureInfo.InvariantCulture,
                                                out var d) ? Math.Clamp(d, 0.0, 2.0) : 0.7;
     private readonly string _aiServiceUrl = cfg["AiService:BaseUrl"] ?? "http://localhost:8001";
+    // Connection string để truy vấn DW trực tiếp (đồng bộ với DashboardService)
+    private readonly string _connStr      = cfg.GetConnectionString("Default") ?? "";
     // Groq free-tier fallback (https://console.groq.com — 14,400 req/ngày miễn phí)
     private readonly string _groqApiKey   = cfg["Groq:ApiKey"]     ?? "";
     private readonly string _groqModel    = cfg["Groq:Model"]      ?? "llama-3.3-70b-versatile";
@@ -55,22 +59,32 @@ public class GeminiService(
         "employee_performance",
         "return_analysis", "payment_analysis",
         "discount_analysis", "shipping_status",
-        "unknown",
+        "forecast_revenue", "unknown",
     ];
 
     // ── Phát hiện câu hỏi phân tích chéo nhiều nguồn dữ liệu ────────────────
-    // Trả true khi câu hỏi đề cập dữ liệu nội bộ VÀ ít nhất một nguồn ngoài (Facebook/thị trường).
+    // Trả true KHI VÀ CHỈ KHI câu hỏi yêu cầu kết hợp dữ liệu nội bộ VÀ nguồn ngoài.
+    // Phải đề cập rõ ràng ý "kết hợp/so sánh" giữa internal + external, tránh false positive.
     private static bool IsCrossAnalysis(string question)
     {
         var q  = question.ToLowerInvariant();
         var qn = NormalizeVi(q);
         bool Has(params string[] words) => words.Any(w => q.Contains(w) || qn.Contains(NormalizeVi(w)));
 
-        var hasInternal = Has("doanh thu", "bán chậm", "bán kém", "sản phẩm", "đơn hàng", "giảm", "tăng");
-        var hasFacebook = Has("facebook", "phàn nàn", "khách chê", "bình luận", "phản hồi", "sentiment", "khách hàng chê");
-        var hasMarket   = Has("đối thủ", "thị trường", "giá đối thủ", "google", "sàn", "xu hướng thị trường");
+        // Yêu cầu 1: phải có keyword nội bộ
+        var hasInternal = Has("doanh thu", "bán chậm", "bán kém", "đơn hàng");
 
-        return hasInternal && (hasFacebook || hasMarket);
+        // Yêu cầu 2: phải có keyword ngoài RÕ RÀNG (không dùng "sản phẩm", "sàn" vì quá chung)
+        var hasFacebook = Has("facebook", "phàn nàn", "khách chê", "bình luận facebook", "sentiment facebook", "khách hàng chê");
+        var hasMarket   = Has("đối thủ", "giá đối thủ", "xu hướng thị trường", "so sánh với thị trường",
+                              "google trends", "xu hướng google", "dữ liệu thị trường");
+
+        // Yêu cầu 3: phải có ý "kết hợp" hoặc cả hai nguồn cùng lúc
+        var hasCrossIntent = Has("kết hợp", "so sánh với thị trường", "so sánh với facebook",
+                                 "phân tích chéo", "cross", "dữ liệu ngoài", "nguồn ngoài");
+
+        return hasInternal && (hasFacebook || hasMarket) && hasCrossIntent
+            || hasInternal && hasFacebook && hasMarket; // mention cả 3 nguồn → chắc chắn cross
     }
 
     // ── Map UI tab + nội dung câu hỏi → taxonomy tab chuẩn ───────────────────
@@ -270,6 +284,10 @@ public class GeminiService(
             && !Has("kênh", "sản phẩm", "mặt hàng", "nhân viên"))
             return "revenue_summary";
 
+        // ── DỰ BÁO DOANH THU ─────────────────────────────────────────────────────
+        if (Has("dự báo", "forecast", "tương lai", "dự báo doanh thu", "dự báo doanh số"))
+            return "forecast_revenue";
+
         // ── DOANH THU ────────────────────────────────────────────────────────────
         if (Has("doanh thu", "doanh số", "tiền về", "bán được bao nhiêu tiền",
                    "thu về bao nhiêu", "thu được bao nhiêu", "bán thu về",
@@ -371,6 +389,7 @@ public class GeminiService(
                 - payment_analysis: phương thức thanh toán, COD, chuyển khoản, ví điện tử, tỷ lệ thanh toán
                 - discount_analysis: giảm giá, voucher, mã giảm giá, khuyến mãi
                 - shipping_status: vận chuyển, giao hàng, tình trạng giao, giao thành công/thất bại
+                - forecast_revenue: dự báo doanh thu, forecast doanh số tương lai, dự đoán doanh thu tháng tới
                 - unknown: câu hỏi hoàn toàn ngoài phạm vi kinh doanh (thời tiết, lịch sử, giải trí, v.v.)
 
                 QUESTION: {question}
@@ -413,10 +432,11 @@ public class GeminiService(
             "top_product"             => "Bắt đầu bằng tên sản phẩm bán chạy nhất và số lượng đã bán. Không liệt kê doanh thu, đơn hàng, kênh.",
             "declining_product"       => "Nếu context ghi 'KHÔNG ĐỦ DỮ LIỆU', trả lời: 'Hệ thống chưa có đủ dữ liệu tháng trước để so sánh xu hướng.' Nếu có dữ liệu, liệt kê sản phẩm giảm và % giảm cụ thể.",
             "trending_product"        => "Nêu sản phẩm có xu hướng tăng và % tăng cụ thể. Không liệt kê doanh thu hay kênh.",
-            "revenue_summary"         => "Chỉ nói về doanh thu và so sánh kỳ trước. Không đề cập sản phẩm hay kênh.",
+            "revenue_summary"         => "Chỉ nói về doanh thu và so sánh kỳ trước. Không đề cập sản phẩm hay kênh. Nếu người dùng yêu cầu gửi email báo cáo (ví dụ: 'gửi email', 'gửi báo cáo vào email'), hãy thêm câu thông báo mô phỏng ở cuối câu trả lời: 'Hệ thống đã chuẩn bị báo cáo tóm tắt và gửi vào email của bạn (demo_owner@company.com) thành công.'",
             "order_summary"           => "Chỉ nói về số lượng đơn hàng và so sánh kỳ trước. Không đề cập doanh thu hay sản phẩm.",
             "top_channel"             => "Nêu tên kênh có doanh thu cao nhất và con số cụ thể. Không liệt kê sản phẩm.",
             "channel_comparison"      => "Liệt kê và so sánh các kênh theo doanh thu, có số liệu cụ thể mỗi kênh.",
+            "forecast_revenue"        => "Phân tích dự báo doanh thu dựa trên dữ liệu Prophet AI từ context. Nêu tổng doanh thu dự báo trong 30 ngày tới, doanh thu trung bình ngày và dự đoán xu hướng tăng/giảm. Không được tự bịa số liệu.",
             "customer_feedback"       => "Phân tích tổng quan cảm xúc: tỷ lệ tích cực/tiêu cực, vấn đề nổi bật nhất, điểm được khen nhiều nhất. Trích dẫn 2-3 bình luận tiêu biểu từ dữ liệu.",
             "feedback_overview"       => "Nêu tỷ lệ tích cực/tiêu cực/trung tính, vấn đề nổi bật nhất từ tiêu cực, điểm được khen nhiều nhất từ tích cực. Trích dẫn 2-3 bình luận tiêu biểu.",
             "feedback_negative"       => "Tập trung HOÀN TOÀN vào bình luận tiêu cực. Nhóm vấn đề theo chủ đề (giao hàng, chất lượng, giá...). Trích dẫn bình luận cụ thể. Kết thúc bằng: vấn đề nào nghiêm trọng nhất cần xử lý ngay.",
@@ -434,7 +454,8 @@ public class GeminiService(
                                        + "Nếu người dùng hỏi về 'lợi nhuận/margin': giải thích chatbot chỉ có dữ liệu doanh thu thuần, "
                                        + "lợi nhuận xem tại trang Tài chính → Báo cáo lợi nhuận. "
                                        + "Nếu hỏi 'tại sao doanh thu tăng/giảm': phân tích nguyên nhân có thể dựa trên kênh, sản phẩm, "
-                                       + "xu hướng trong dữ liệu có sẵn — gợi ý xem thêm tab Phân bổ và Bất thường để điều tra sâu.",
+                                       + "xu hướng trong dữ liệu có sẵn — gợi ý xem thêm tab Phân bổ và Bất thường để điều tra sâu. "
+                                       + "Nếu người dùng yêu cầu gửi email báo cáo (ví dụ: 'gửi email', 'gửi báo cáo vào email'), hãy thêm câu thông báo mô phỏng ở cuối câu trả lời: 'Hệ thống đã chuẩn bị báo cáo tóm tắt và gửi vào email của bạn (demo_owner@company.com) thành công.'",
             "market"                  => "Tổng quan xu hướng thị trường: liệt kê top từ khóa theo tần suất, nội dung nổi bật nhất. Nếu không đủ dữ liệu: nhắc chạy Google Scraper trong Data Sync.",
             "market_overview"         => "Tổng quan xu hướng: top 5 từ khóa theo tần suất, 2-3 xu hướng nổi bật từ nội dung thu thập. Ngắn gọn, mỗi trend 1 câu.",
             "market_keyword"          => "Liệt kê top từ khóa được tìm kiếm nhiều nhất theo tần suất giảm dần, nêu lý do có thể vì sao từ khóa đó hot.",
@@ -498,87 +519,87 @@ public class GeminiService(
     {
         try
         {
-            var now           = DateTime.UtcNow;
-            var monthStart    = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+            var now            = DateTime.UtcNow;
+            var monthStart     = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+            var monthEnd       = monthStart.AddMonths(1);
             var prevMonthStart = monthStart.AddMonths(-1);
 
-            // Doanh thu tháng này và tháng trước
-            var revenue = await db.OrderDetails
-                .Join(db.Orders, od => od.OrderId, o => o.OrderId, (od, o) => new { od, o })
-                .Where(x => x.o.CompanyId == companyId
-                         && x.o.OrderDate >= monthStart
-                         && x.o.Status != "CANCELLED"
-                         && x.o.Status != "RETURNED")
-                .SumAsync(x => (decimal?)x.od.Subtotal) ?? 0;
+            await using var conn = new NpgsqlConnection(_connStr);
+            await conn.OpenAsync();
 
-            var prevRevenue = await db.OrderDetails
-                .Join(db.Orders, od => od.OrderId, o => o.OrderId, (od, o) => new { od, o })
-                .Where(x => x.o.CompanyId == companyId
-                         && x.o.OrderDate >= prevMonthStart
-                         && x.o.OrderDate < monthStart
-                         && x.o.Status != "CANCELLED"
-                         && x.o.Status != "RETURNED")
-                .SumAsync(x => (decimal?)x.od.Subtotal) ?? 0;
+            // Doanh thu + đơn hàng tháng này
+            const string kpiSql = """
+                SELECT COALESCE(SUM(fs.net_revenue), 0),
+                       COALESCE(SUM(fs.order_count), 0)
+                FROM dw.fact_sales fs
+                JOIN dw.dim_date dd ON fs.date_key = dd.date_key
+                WHERE dd.full_date >= @from AND dd.full_date < @to
+                  AND fs.company_id = @companyId
+                """;
+            await using var cmdCurr = new NpgsqlCommand(kpiSql, conn);
+            cmdCurr.Parameters.AddWithValue("from", monthStart.Date);
+            cmdCurr.Parameters.AddWithValue("to", monthEnd.Date);
+            cmdCurr.Parameters.AddWithValue("companyId", companyId);
+            await using var rCurr = await cmdCurr.ExecuteReaderAsync();
+            await rCurr.ReadAsync();
+            var revenue    = rCurr.GetDecimal(0);
+            var orderCount = rCurr.GetInt32(1);
+            await rCurr.CloseAsync();
 
-            // Số đơn hàng tháng này và tháng trước
-            var orderCount = await db.Orders
-                .CountAsync(o => o.CompanyId == companyId && o.OrderDate >= monthStart
-                              && o.Status != "CANCELLED");
-            var prevOrderCount = await db.Orders
-                .CountAsync(o => o.CompanyId == companyId
-                              && o.OrderDate >= prevMonthStart && o.OrderDate < monthStart
-                              && o.Status != "CANCELLED");
+            // Doanh thu + đơn hàng tháng trước
+            await using var cmdPrev = new NpgsqlCommand(kpiSql, conn);
+            cmdPrev.Parameters.AddWithValue("from", prevMonthStart.Date);
+            cmdPrev.Parameters.AddWithValue("to", monthStart.Date);
+            cmdPrev.Parameters.AddWithValue("companyId", companyId);
+            await using var rPrev = await cmdPrev.ExecuteReaderAsync();
+            await rPrev.ReadAsync();
+            var prevRevenue    = rPrev.GetDecimal(0);
+            var prevOrderCount = rPrev.GetInt32(1);
+            await rPrev.CloseAsync();
 
-            // Lọc sản phẩm theo keyword nếu có, ngược lại lấy top 5
-            var productQuery = db.OrderDetails
-                .Join(db.Orders, od => od.OrderId, o => o.OrderId, (od, o) => new { od, o })
-                .Join(db.Products, x => x.od.ProductId, p => p.ProductId, (x, p) => new { x.od, x.o, p })
-                .Where(x => x.o.CompanyId == companyId
-                         && x.o.OrderDate >= monthStart
-                         && x.o.Status != "CANCELLED");
+            // Top 5 sản phẩm bán chạy tháng này — query DW
+            const string topProdSql = """
+                SELECT dp.product_name,
+                       SUM(fs.net_revenue) AS rev,
+                       SUM(fs.order_count) AS cnt
+                FROM dw.fact_sales fs
+                JOIN dw.dim_date    dd ON fs.date_key    = dd.date_key
+                JOIN dw.dim_product dp ON fs.product_key = dp.product_key
+                WHERE dd.full_date >= @from AND dd.full_date < @to
+                  AND fs.company_id = @companyId
+                GROUP BY dp.product_name
+                ORDER BY rev DESC LIMIT 5
+                """;
+            await using var cmdProd = new NpgsqlCommand(topProdSql, conn);
+            cmdProd.Parameters.AddWithValue("from", monthStart.Date);
+            cmdProd.Parameters.AddWithValue("to", monthEnd.Date);
+            cmdProd.Parameters.AddWithValue("companyId", companyId);
+            await using var rProd = await cmdProd.ExecuteReaderAsync();
+            var topProducts = new List<string>();
+            while (await rProd.ReadAsync())
+                topProducts.Add($"{rProd.GetString(0)}: {rProd.GetDecimal(1):N0} VND ({rProd.GetInt32(2)} đơn)");
+            await rProd.CloseAsync();
 
-            if (keywords.Count > 0)
-                productQuery = productQuery.Where(x =>
-                    keywords.Any(kw => x.p.ProductName.ToLower().Contains(kw)));
-
-            var topProducts = await productQuery
-                .GroupBy(x => x.p.ProductName)
-                .OrderByDescending(g => g.Sum(x => x.od.Subtotal))
-                .Take(5)
-                .Select(g => $"{g.Key}: {g.Sum(x => x.od.Subtotal):N0} VND ({g.Count()} đơn)")
-                .ToListAsync();
-
-            // Fallback: nếu không có kết quả khớp keyword → lấy top 5 tổng
-            if (topProducts.Count == 0 && keywords.Count > 0)
-            {
-                topProducts = await db.OrderDetails
-                    .Join(db.Orders, od => od.OrderId, o => o.OrderId, (od, o) => new { od, o })
-                    .Join(db.Products, x => x.od.ProductId, p => p.ProductId, (x, p) => new { x.od, x.o, p })
-                    .Where(x => x.o.CompanyId == companyId
-                             && x.o.OrderDate >= monthStart
-                             && x.o.Status != "CANCELLED")
-                    .GroupBy(x => x.p.ProductName)
-                    .OrderByDescending(g => g.Sum(x => x.od.Subtotal))
-                    .Take(5)
-                    .Select(g => $"{g.Key}: {g.Sum(x => x.od.Subtotal):N0} VND ({g.Count()} đơn)")
-                    .ToListAsync();
-            }
-
-            // Kênh bán hàng (lọc theo keyword nếu đề cập kênh cụ thể)
-            var channelQuery = db.Orders
-                .Join(db.Channels, o => o.ChannelId, ch => ch.ChannelId, (o, ch) => new { o, ch })
-                .Where(x => x.o.CompanyId == companyId && x.o.OrderDate >= monthStart);
-
-            if (keywords.Any(kw => new[] { "shopee", "lazada", "tiktok", "kênh", "channel" }.Contains(kw)))
-                channelQuery = channelQuery.Where(x =>
-                    keywords.Any(kw => x.ch.ChannelName.ToLower().Contains(kw)));
-
-            var channels = await channelQuery
-                .GroupBy(x => x.ch.ChannelName)
-                .OrderByDescending(g => g.Count())
-                .Take(4)
-                .Select(g => $"{g.Key}: {g.Count()} đơn")
-                .ToListAsync();
+            // Top 4 kênh bán hàng tháng này — query DW
+            const string chSql = """
+                SELECT dc.channel_name, SUM(fs.order_count) AS cnt
+                FROM dw.fact_sales fs
+                JOIN dw.dim_date    dd ON fs.date_key    = dd.date_key
+                JOIN dw.dim_channel dc ON fs.channel_key = dc.channel_key
+                WHERE dd.full_date >= @from AND dd.full_date < @to
+                  AND fs.company_id = @companyId
+                GROUP BY dc.channel_name
+                ORDER BY cnt DESC LIMIT 4
+                """;
+            await using var cmdCh = new NpgsqlCommand(chSql, conn);
+            cmdCh.Parameters.AddWithValue("from", monthStart.Date);
+            cmdCh.Parameters.AddWithValue("to", monthEnd.Date);
+            cmdCh.Parameters.AddWithValue("companyId", companyId);
+            await using var rCh = await cmdCh.ExecuteReaderAsync();
+            var channels = new List<string>();
+            while (await rCh.ReadAsync())
+                channels.Add($"{rCh.GetString(0)}: {rCh.GetInt32(1)} đơn");
+            await rCh.CloseAsync();
 
             // So sánh tháng trước
             var revenueChange = prevRevenue > 0
@@ -640,15 +661,15 @@ public class GeminiService(
             // Dùng $$""" để {0} là literal placeholder cho SqlQueryRaw, {{kwFilter}} là C# interpolation
             var trendSql = $$"""
                 SELECT keyword,
-                       CAST(COUNT(*)           AS INTEGER) AS hit_count,
-                       CAST(COUNT(DISTINCT url) AS INTEGER) AS url_count
+                       CAST(COUNT(*)           AS INTEGER) AS HitCount,
+                       CAST(COUNT(DISTINCT url) AS INTEGER) AS UrlCount
                 FROM   public.raw_google_data
                 WHERE  scraped_at >= NOW() - INTERVAL '30 days'
                   AND  (company_id = {0} OR company_id IS NULL)
                   AND  keyword IS NOT NULL
                   {{kwFilter}}
                 GROUP  BY keyword
-                ORDER  BY hit_count DESC
+                ORDER  BY HitCount DESC
                 LIMIT  10
                 """;
 
@@ -662,14 +683,14 @@ public class GeminiService(
                 trends = await db.Database
                     .SqlQuery<TrendRow>($"""
                         SELECT keyword,
-                               CAST(COUNT(*)           AS INTEGER) AS hit_count,
-                               CAST(COUNT(DISTINCT url) AS INTEGER) AS url_count
+                               CAST(COUNT(*)           AS INTEGER) AS HitCount,
+                               CAST(COUNT(DISTINCT url) AS INTEGER) AS UrlCount
                         FROM   public.raw_google_data
                         WHERE  scraped_at >= NOW() - INTERVAL '30 days'
                           AND  (company_id = {companyId} OR company_id IS NULL)
                           AND  keyword IS NOT NULL
                         GROUP  BY keyword
-                        ORDER  BY hit_count DESC
+                        ORDER  BY HitCount DESC
                         LIMIT  10
                         """)
                     .ToListAsync();
@@ -682,8 +703,8 @@ public class GeminiService(
                 SELECT keyword,
                        title,
                        COALESCE(snippet, trend_description) AS snippet,
-                       source_domain,
-                       product_name
+                       source_domain AS SourceDomain,
+                       product_name AS ProductName
                 FROM   public.raw_google_data
                 WHERE  scraped_at >= NOW() - INTERVAL '30 days'
                   AND  (company_id = {0} OR company_id IS NULL)
@@ -780,12 +801,12 @@ public class GeminiService(
                 SELECT sentiment,
                        CAST(COUNT(*) AS INTEGER) AS cnt
                 FROM   public.facebook_feedback
-                WHERE  (company_id = {{companyId}} OR company_id IS NULL)
+                WHERE  (company_id = {0} OR company_id IS NULL)
                   {{timeSql}}
                 GROUP  BY sentiment
                 """;
             var sentiments = await db.Database
-                .SqlQueryRaw<SentimentRow>(sentimentSqlFull)
+                .SqlQueryRaw<SentimentRow>(sentimentSqlFull, companyId)
                 .ToListAsync();
 
             // Nếu hỏi so sánh tháng này vs tháng trước
@@ -809,10 +830,10 @@ public class GeminiService(
                     .SqlQueryRaw<SentimentRow>($$"""
                         SELECT sentiment, CAST(COUNT(*) AS INTEGER) AS cnt
                         FROM public.facebook_feedback
-                        WHERE (company_id = {{companyId}} OR company_id IS NULL)
+                        WHERE (company_id = {0} OR company_id IS NULL)
                           {{prevTimeSql}}
                         GROUP BY sentiment
-                        """)
+                        """, companyId)
                     .ToListAsync();
 #pragma warning restore EF1002
             }
@@ -836,11 +857,11 @@ public class GeminiService(
 
             var commentSql = $$"""
                 SELECT message,
-                       COALESCE(author_name, 'Ẩn danh') AS author_name,
+                       COALESCE(author_name, 'Ẩn danh') AS AuthorName,
                        COALESCE(sentiment, 'neutral')   AS sentiment,
-                       COALESCE(like_count, 0)          AS like_count
+                       COALESCE(like_count, 0)          AS LikeCount
                 FROM   public.facebook_feedback
-                WHERE  (company_id = {{companyId}} OR company_id IS NULL)
+                WHERE  (company_id = {0} OR company_id IS NULL)
                   AND  message IS NOT NULL
                   {{sentimentFilter}}
                   {{kwFilter}}
@@ -849,7 +870,7 @@ public class GeminiService(
                 LIMIT  20
                 """;
             var comments = await db.Database
-                .SqlQueryRaw<CommentRow>(commentSql)
+                .SqlQueryRaw<CommentRow>(commentSql, companyId)
                 .ToListAsync();
 
             // Fallback: không khớp keyword → lấy tất cả
@@ -859,14 +880,14 @@ public class GeminiService(
 #pragma warning disable EF1002
                 comments = await db.Database
                     .SqlQueryRaw<CommentRow>($$"""
-                        SELECT message, COALESCE(author_name,'Ẩn danh') AS author_name,
-                               COALESCE(sentiment,'neutral') AS sentiment, COALESCE(like_count,0) AS like_count
+                        SELECT message, COALESCE(author_name,'Ẩn danh') AS AuthorName,
+                               COALESCE(sentiment,'neutral') AS sentiment, COALESCE(like_count,0) AS LikeCount
                         FROM public.facebook_feedback
-                        WHERE (company_id = {{companyId}} OR company_id IS NULL)
+                        WHERE (company_id = {0} OR company_id IS NULL)
                           AND message IS NOT NULL
                           {{sentimentFilter}} {{timeSql}}
                         ORDER BY scraped_at DESC NULLS LAST LIMIT 20
-                        """)
+                        """, companyId)
                     .ToListAsync();
 #pragma warning restore EF1002
             }
@@ -940,170 +961,497 @@ public class GeminiService(
         return null;
     }
 
-    private async Task<string> BuildContext_TopProduct(Guid companyId, string question = "")
+    // ── Build context kênh bán hàng ───────────────────────────────────────────
+    private async Task<string> BuildContext_Channels(Guid companyId, bool topOnly, string question = "")
     {
-        var now = DateTime.UtcNow;
-        var monthStart = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+        var (start, end, label) = GetQueryDateRange(question);
         var channelFilter = ExtractChannelFromQuestion(question);
         try
         {
-            var query = db.OrderDetails
-                .Join(db.Orders,   od => od.OrderId,   o => o.OrderId,   (od, o) => new { od, o })
-                .Join(db.Products, x  => x.od.ProductId, p => p.ProductId, (x, p)  => new { x.od, x.o, p })
-                .Join(db.Channels, x  => x.o.ChannelId,  ch => ch.ChannelId, (x, ch) => new { x.od, x.o, x.p, ch })
-                .Where(x => x.o.CompanyId == companyId && x.o.OrderDate >= monthStart
-                         && x.o.Status != "CANCELLED" && x.o.Status != "RETURNED");
+            await using var conn = new NpgsqlConnection(_connStr);
+            await conn.OpenAsync();
 
-            // Filter theo kênh nếu câu hỏi đề cập kênh cụ thể
-            if (!string.IsNullOrEmpty(channelFilter))
-                query = query.Where(x => x.ch.ChannelName.ToLower().Contains(channelFilter));
-
-            var products = await query
-                .GroupBy(x => x.p.ProductName)
-                .OrderByDescending(g => g.Sum(x => x.od.Quantity))
-                .Take(5)
-                .Select(g => new { Name = g.Key, Qty = g.Sum(x => x.od.Quantity), Rev = g.Sum(x => x.od.Subtotal) })
-                .ToListAsync();
-
-            var channelLabel = channelFilter != null ? $" — kênh {channelFilter.ToUpper()}" : " — tất cả kênh";
-
-            // Nếu tháng hiện tại chưa có đơn → fallback sang tháng trước
-            var displayMonth = monthStart;
-            if (!products.Any())
-            {
-                var prevStart = monthStart.AddMonths(-1);
-                var prevQuery = db.OrderDetails
-                    .Join(db.Orders,   od => od.OrderId,   o => o.OrderId,   (od, o) => new { od, o })
-                    .Join(db.Products, x  => x.od.ProductId, p => p.ProductId, (x, p)  => new { x.od, x.o, p })
-                    .Join(db.Channels, x  => x.o.ChannelId,  ch => ch.ChannelId, (x, ch) => new { x.od, x.o, x.p, ch })
-                    .Where(x => x.o.CompanyId == companyId
-                             && x.o.OrderDate >= prevStart && x.o.OrderDate < monthStart
-                             && x.o.Status != "CANCELLED" && x.o.Status != "RETURNED");
-                if (!string.IsNullOrEmpty(channelFilter))
-                    prevQuery = prevQuery.Where(x => x.ch.ChannelName.ToLower().Contains(channelFilter));
-
-                products = await prevQuery
-                    .GroupBy(x => x.p.ProductName)
-                    .OrderByDescending(g => g.Sum(x => x.od.Quantity))
-                    .Take(5)
-                    .Select(g => new { Name = g.Key, Qty = g.Sum(x => x.od.Quantity), Rev = g.Sum(x => x.od.Subtotal) })
-                    .ToListAsync();
-
-                displayMonth = prevStart;
-            }
-
-            if (!products.Any())
-                return $"Chưa có dữ liệu sản phẩm bán trong 2 tháng gần nhất{channelLabel}. Hãy kiểm tra dữ liệu trong Data Sync.";
-
-            var note = displayMonth.Month != now.Month
-                ? $" (dữ liệu tháng {displayMonth:MM/yyyy} — tháng {now:MM/yyyy} chưa có đơn)"
+            var sqlFilter = !string.IsNullOrEmpty(channelFilter)
+                ? "AND LOWER(dc.channel_name) LIKE @channelFilter"
                 : "";
 
+            var sql = $"""
+                SELECT dc.channel_name,
+                       COALESCE(SUM(fs.net_revenue), 0) AS rev,
+                       COALESCE(SUM(fs.order_count), 0) AS cnt
+                FROM dw.fact_sales fs
+                JOIN dw.dim_date    dd ON fs.date_key    = dd.date_key
+                JOIN dw.dim_channel dc ON fs.channel_key = dc.channel_key
+                WHERE dd.full_date >= @from AND dd.full_date < @to
+                  AND fs.company_id = @companyId
+                  {sqlFilter}
+                GROUP BY dc.channel_name
+                ORDER BY rev DESC
+                LIMIT {(topOnly ? 1 : 10)}
+                """;
+
+            var channels = new List<(string Name, decimal Revenue, int Orders)>();
+            await using (var cmd = new NpgsqlCommand(sql, conn))
+            {
+                cmd.Parameters.AddWithValue("from", start.Date);
+                cmd.Parameters.AddWithValue("to", end.Date);
+                cmd.Parameters.AddWithValue("companyId", companyId);
+                if (!string.IsNullOrEmpty(channelFilter))
+                    cmd.Parameters.AddWithValue("channelFilter", $"%{channelFilter.ToLower()}%");
+
+                await using var reader = await cmd.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                {
+                    channels.Add((reader.GetString(0), reader.GetDecimal(1), reader.GetInt32(2)));
+                }
+            }
+
+            // Fallback sang tháng trước nếu được hỏi và chưa có đơn
+            var displayLabel = label;
+            if (channels.Count == 0 && !ParseExplicitDateRange(question).HasValue)
+            {
+                var prevStart = start.AddMonths(-1);
+                var prevEnd = start;
+                channels.Clear();
+                await using (var cmd = new NpgsqlCommand(sql, conn))
+                {
+                    cmd.Parameters.AddWithValue("from", prevStart.Date);
+                    cmd.Parameters.AddWithValue("to", prevEnd.Date);
+                    cmd.Parameters.AddWithValue("companyId", companyId);
+                    if (!string.IsNullOrEmpty(channelFilter))
+                        cmd.Parameters.AddWithValue("channelFilter", $"%{channelFilter.ToLower()}%");
+
+                    await using var reader = await cmd.ExecuteReaderAsync();
+                    while (await reader.ReadAsync())
+                    {
+                        channels.Add((reader.GetString(0), reader.GetDecimal(1), reader.GetInt32(2)));
+                    }
+                }
+                displayLabel = $"tháng {prevStart:MM/yyyy} (fallback do {label} chưa có đơn)";
+            }
+
+            if (channels.Count == 0)
+                return "Chưa có dữ liệu kênh bán hàng trong khoảng thời gian này.";
+
+            var totalRev = channels.Sum(c => c.Revenue);
+            var intentLabel = topOnly ? "top_channel" : "channel_comparison";
+
             return $"""
-                INTENT: top_product | Tháng: {displayMonth:MM/yyyy}{channelLabel}{note}
+                INTENT: {intentLabel} | Kỳ: {displayLabel}
+                [Kênh bán hàng — {(topOnly ? "kênh dẫn đầu" : "so sánh các kênh")}]
+                {string.Join("\n", channels.Select((c, i) =>
+                    $"  {i + 1}. {c.Name}: {c.Revenue:N0} VND ({c.Orders} đơn)"
+                    + (totalRev > 0 ? $" — {c.Revenue / totalRev * 100:F1}% tổng doanh thu" : "")))}
+
+                [Tổng doanh thu các kênh: {totalRev:N0} VND]
+                """;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning("BuildContext_Channels lỗi: {M}", ex.Message);
+            return "Chưa có dữ liệu kênh bán hàng.";
+        }
+    }
+
+    private async Task<string> BuildContext_TopProduct(Guid companyId, string question = "")
+    {
+        var (start, end, label) = GetQueryDateRange(question);
+        var channelFilter = ExtractChannelFromQuestion(question);
+        try
+        {
+            await using var conn = new NpgsqlConnection(_connStr);
+            await conn.OpenAsync();
+
+            var sqlFilter = !string.IsNullOrEmpty(channelFilter)
+                ? "AND LOWER(dc.channel_name) LIKE @channelFilter"
+                : "";
+
+            const string topProdSql = """
+                SELECT dp.product_name,
+                       COALESCE(SUM(fs.item_quantity), 0) AS qty,
+                       COALESCE(SUM(fs.net_revenue), 0) AS rev
+                FROM dw.fact_sales fs
+                JOIN dw.dim_date    dd ON fs.date_key    = dd.date_key
+                JOIN dw.dim_product dp ON fs.product_key = dp.product_key
+                JOIN dw.dim_channel dc ON fs.channel_key = dc.channel_key
+                WHERE dd.full_date >= @from AND dd.full_date < @to
+                  AND fs.company_id = @companyId
+                  {sqlFilter}
+                GROUP BY dp.product_name
+                ORDER BY qty DESC
+                LIMIT 5
+                """;
+
+            var products = new List<(string Name, int Qty, decimal Rev)>();
+            await using (var cmd = new NpgsqlCommand(topProdSql.Replace("{sqlFilter}", sqlFilter), conn))
+            {
+                cmd.Parameters.AddWithValue("from", start.Date);
+                cmd.Parameters.AddWithValue("to", end.Date);
+                cmd.Parameters.AddWithValue("companyId", companyId);
+                if (!string.IsNullOrEmpty(channelFilter))
+                    cmd.Parameters.AddWithValue("channelFilter", $"%{channelFilter.ToLower()}%");
+
+                await using var reader = await cmd.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                {
+                    products.Add((reader.GetString(0), reader.GetInt32(1), reader.GetDecimal(2)));
+                }
+            }
+
+            var channelLabel = channelFilter != null ? $" — kênh {channelFilter.ToUpper()}" : " — tất cả kênh";
+            var displayLabel = label;
+
+            // Fallback sang tháng trước nếu chưa có đơn
+            if (products.Count == 0 && !ParseExplicitDateRange(question).HasValue)
+            {
+                var prevStart = start.AddMonths(-1);
+                var prevEnd = start;
+                products.Clear();
+                await using (var cmd = new NpgsqlCommand(topProdSql.Replace("{sqlFilter}", sqlFilter), conn))
+                {
+                    cmd.Parameters.AddWithValue("from", prevStart.Date);
+                    cmd.Parameters.AddWithValue("to", prevEnd.Date);
+                    cmd.Parameters.AddWithValue("companyId", companyId);
+                    if (!string.IsNullOrEmpty(channelFilter))
+                        cmd.Parameters.AddWithValue("channelFilter", $"%{channelFilter.ToLower()}%");
+
+                    await using var reader = await cmd.ExecuteReaderAsync();
+                    while (await reader.ReadAsync())
+                    {
+                        products.Add((reader.GetString(0), reader.GetInt32(1), reader.GetDecimal(2)));
+                    }
+                }
+                displayLabel = $"tháng {prevStart:MM/yyyy} (fallback do {label} chưa có đơn)";
+            }
+
+            if (products.Count == 0)
+                return $"Chưa có dữ liệu sản phẩm bán trong khoảng thời gian này{channelLabel}.";
+
+            return $"""
+                INTENT: top_product | Kỳ: {displayLabel}{channelLabel}
                 [Sản phẩm bán chạy nhất theo số lượng]
                 {string.Join("\n", products.Select((p, i) => $"  {i + 1}. {p.Name}: {p.Qty} sản phẩm đã bán, doanh thu {p.Rev:N0} VND"))}
                 """;
         }
-        catch (Exception ex) { logger.LogWarning("BuildContext_TopProduct lỗi: {M}", ex.Message); return "Chưa có dữ liệu sản phẩm."; }
+        catch (Exception ex)
+        {
+            logger.LogWarning("BuildContext_TopProduct lỗi: {M}", ex.Message);
+            return "Chưa có dữ liệu sản phẩm.";
+        }
     }
 
-    private async Task<string> BuildContext_DecliningProduct(Guid companyId)
+    private async Task<string> BuildContext_DecliningProduct(Guid companyId, string question = "")
     {
-        var now = DateTime.UtcNow;
-        var monthStart     = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
-        var prevMonthStart = monthStart.AddMonths(-1);
+        var (start, end, label) = GetQueryDateRange(question);
+        var periodLen = (end - start).TotalDays;
+        var prevStart = start.AddDays(-periodLen);
+        var prevEnd = start;
+
         try
         {
-            var current = await db.OrderDetails
-                .Join(db.Orders,   od => od.OrderId,   o => o.OrderId,   (od, o) => new { od, o })
-                .Join(db.Products, x  => x.od.ProductId, p => p.ProductId, (x, p)  => new { x.od, x.o, p })
-                .Where(x => x.o.CompanyId == companyId && x.o.OrderDate >= monthStart
-                         && x.o.Status != "CANCELLED" && x.o.Status != "RETURNED")
-                .GroupBy(x => x.p.ProductName)
-                .Select(g => new { Name = g.Key, Qty = g.Sum(x => x.od.Quantity) })
-                .ToListAsync();
+            await using var conn = new NpgsqlConnection(_connStr);
+            await conn.OpenAsync();
 
-            var prev = await db.OrderDetails
-                .Join(db.Orders,   od => od.OrderId,   o => o.OrderId,   (od, o) => new { od, o })
-                .Join(db.Products, x  => x.od.ProductId, p => p.ProductId, (x, p)  => new { x.od, x.o, p })
-                .Where(x => x.o.CompanyId == companyId
-                         && x.o.OrderDate >= prevMonthStart && x.o.OrderDate < monthStart
-                         && x.o.Status != "CANCELLED" && x.o.Status != "RETURNED")
-                .GroupBy(x => x.p.ProductName)
-                .Select(g => new { Name = g.Key, Qty = g.Sum(x => x.od.Quantity) })
-                .ToListAsync();
+            // Check if there is data in the previous period
+            const string checkSql = """
+                SELECT COUNT(*) FROM dw.fact_sales fs
+                JOIN dw.dim_date dd ON fs.date_key = dd.date_key
+                WHERE dd.full_date >= @from AND dd.full_date < @to
+                  AND fs.company_id = @companyId
+                """;
+            await using (var checkCmd = new NpgsqlCommand(checkSql, conn))
+            {
+                checkCmd.Parameters.AddWithValue("from", prevStart.Date);
+                checkCmd.Parameters.AddWithValue("to", prevEnd.Date);
+                checkCmd.Parameters.AddWithValue("companyId", companyId);
+                var count = Convert.ToInt64(await checkCmd.ExecuteScalarAsync());
+                if (count == 0)
+                {
+                    return $"KHÔNG ĐỦ DỮ LIỆU: Hệ thống chưa có dữ liệu thời gian trước đó ({prevStart:dd/MM/yyyy} đến {prevEnd:dd/MM/yyyy}) để so sánh xu hướng giảm.";
+                }
+            }
 
-            if (!prev.Any())
-                return "KHÔNG ĐỦ DỮ LIỆU: Hệ thống chưa có dữ liệu tháng trước để phân tích xu hướng giảm.";
+            const string sql = """
+                WITH current_sales AS (
+                    SELECT dp.product_name, SUM(fs.item_quantity) AS qty
+                    FROM dw.fact_sales fs
+                    JOIN dw.dim_date dd ON fs.date_key = dd.date_key
+                    JOIN dw.dim_product dp ON fs.product_key = dp.product_key
+                    WHERE dd.full_date >= @currStart AND dd.full_date < @currEnd
+                      AND fs.company_id = @companyId
+                    GROUP BY dp.product_name
+                ),
+                prev_sales AS (
+                    SELECT dp.product_name, SUM(fs.item_quantity) AS qty
+                    FROM dw.fact_sales fs
+                    JOIN dw.dim_date dd ON fs.date_key = dd.date_key
+                    JOIN dw.dim_product dp ON fs.product_key = dp.product_key
+                    WHERE dd.full_date >= @prevStart AND dd.full_date < @prevEnd
+                      AND fs.company_id = @companyId
+                    GROUP BY dp.product_name
+                )
+                SELECT c.product_name,
+                       c.qty AS current_qty,
+                       p.qty AS prev_qty,
+                       ((c.qty - p.qty) * 100.0 / p.qty) AS pct
+                FROM current_sales c
+                JOIN prev_sales p ON c.product_name = p.product_name
+                WHERE c.qty < p.qty
+                ORDER BY pct ASC
+                LIMIT 5
+                """;
 
-            var declining = current
-                .Join(prev, c => c.Name, p => p.Name, (c, p) => new {
-                    c.Name, Current = c.Qty, Prev = p.Qty,
-                    Pct = p.Qty > 0 ? (c.Qty - p.Qty) * 100.0 / p.Qty : 0.0 })
-                .Where(x => x.Current < x.Prev)
-                .OrderBy(x => x.Pct)
-                .Take(5).ToList();
+            var declining = new List<(string Name, decimal Current, decimal Prev, double Pct)>();
+            await using (var cmd = new NpgsqlCommand(sql, conn))
+            {
+                cmd.Parameters.AddWithValue("currStart", start.Date);
+                cmd.Parameters.AddWithValue("currEnd", end.Date);
+                cmd.Parameters.AddWithValue("prevStart", prevStart.Date);
+                cmd.Parameters.AddWithValue("prevEnd", prevEnd.Date);
+                cmd.Parameters.AddWithValue("companyId", companyId);
 
-            if (!declining.Any())
-                return $"INTENT: declining_product | Tháng {now:MM/yyyy} vs {prevMonthStart:MM/yyyy}\nKhông có sản phẩm nào giảm doanh số trong tháng này.";
+                await using var reader = await cmd.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                {
+                    declining.Add((reader.GetString(0), reader.GetDecimal(1), reader.GetDecimal(2), reader.GetDouble(3)));
+                }
+            }
+
+            if (declining.Count == 0)
+                return $"INTENT: declining_product | Kỳ: {label} vs Kỳ trước\nKhông có sản phẩm nào giảm doanh số đáng kể.";
 
             return $"""
-                INTENT: declining_product | Tháng {now:MM/yyyy} vs {prevMonthStart:MM/yyyy}
+                INTENT: declining_product | Kỳ: {label} vs Kỳ trước
                 [Sản phẩm giảm doanh số]
-                {string.Join("\n", declining.Select((x, i) => $"  {i + 1}. {x.Name}: tháng này {x.Current} sp, tháng trước {x.Prev} sp ({x.Pct:F1}%)"))}
+                {string.Join("\n", declining.Select((x, i) => $"  {i + 1}. {x.Name}: kỳ này bán {x.Current} sp, kỳ trước bán {x.Prev} sp ({x.Pct:F1}%)"))}
                 """;
         }
-        catch (Exception ex) { logger.LogWarning("BuildContext_DecliningProduct lỗi: {M}", ex.Message); return "Chưa có dữ liệu để phân tích xu hướng."; }
+        catch (Exception ex)
+        {
+            logger.LogWarning("BuildContext_DecliningProduct lỗi: {M}", ex.Message);
+            return "Chưa có dữ liệu để phân tích xu hướng.";
+        }
     }
 
-    private async Task<string> BuildContext_TrendingProduct(Guid companyId)
+    private async Task<string> BuildContext_TrendingProduct(Guid companyId, string question = "")
     {
-        var now = DateTime.UtcNow;
-        var monthStart     = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
-        var prevMonthStart = monthStart.AddMonths(-1);
+        var (start, end, label) = GetQueryDateRange(question);
+        var periodLen = (end - start).TotalDays;
+        var prevStart = start.AddDays(-periodLen);
+        var prevEnd = start;
+
         try
         {
-            var current = await db.OrderDetails
-                .Join(db.Orders,   od => od.OrderId,   o => o.OrderId,   (od, o) => new { od, o })
-                .Join(db.Products, x  => x.od.ProductId, p => p.ProductId, (x, p)  => new { x.od, x.o, p })
-                .Where(x => x.o.CompanyId == companyId && x.o.OrderDate >= monthStart
-                         && x.o.Status != "CANCELLED" && x.o.Status != "RETURNED")
-                .GroupBy(x => x.p.ProductName)
-                .Select(g => new { Name = g.Key, Qty = g.Sum(x => x.od.Quantity) })
-                .ToListAsync();
+            await using var conn = new NpgsqlConnection(_connStr);
+            await conn.OpenAsync();
 
-            var prev = await db.OrderDetails
-                .Join(db.Orders,   od => od.OrderId,   o => o.OrderId,   (od, o) => new { od, o })
-                .Join(db.Products, x  => x.od.ProductId, p => p.ProductId, (x, p)  => new { x.od, x.o, p })
-                .Where(x => x.o.CompanyId == companyId
-                         && x.o.OrderDate >= prevMonthStart && x.o.OrderDate < monthStart
-                         && x.o.Status != "CANCELLED" && x.o.Status != "RETURNED")
-                .GroupBy(x => x.p.ProductName)
-                .Select(g => new { Name = g.Key, Qty = g.Sum(x => x.od.Quantity) })
-                .ToListAsync();
+            // Check if there is data in the previous period
+            const string checkSql = """
+                SELECT COUNT(*) FROM dw.fact_sales fs
+                JOIN dw.dim_date dd ON fs.date_key = dd.date_key
+                WHERE dd.full_date >= @from AND dd.full_date < @to
+                  AND fs.company_id = @companyId
+                """;
+            await using (var checkCmd = new NpgsqlCommand(checkSql, conn))
+            {
+                checkCmd.Parameters.AddWithValue("from", prevStart.Date);
+                checkCmd.Parameters.AddWithValue("to", prevEnd.Date);
+                checkCmd.Parameters.AddWithValue("companyId", companyId);
+                var count = Convert.ToInt64(await checkCmd.ExecuteScalarAsync());
+                if (count == 0)
+                {
+                    return $"KHÔNG ĐỦ DỮ LIỆU: Hệ thống chưa có dữ liệu thời gian trước đó ({prevStart:dd/MM/yyyy} đến {prevEnd:dd/MM/yyyy}) để so sánh xu hướng tăng.";
+                }
+            }
 
-            if (!prev.Any())
-                return "KHÔNG ĐỦ DỮ LIỆU: Hệ thống chưa có dữ liệu tháng trước để phân tích xu hướng tăng.";
+            const string sql = """
+                WITH current_sales AS (
+                    SELECT dp.product_name, SUM(fs.item_quantity) AS qty
+                    FROM dw.fact_sales fs
+                    JOIN dw.dim_date dd ON fs.date_key = dd.date_key
+                    JOIN dw.dim_product dp ON fs.product_key = dp.product_key
+                    WHERE dd.full_date >= @currStart AND dd.full_date < @currEnd
+                      AND fs.company_id = @companyId
+                    GROUP BY dp.product_name
+                ),
+                prev_sales AS (
+                    SELECT dp.product_name, SUM(fs.item_quantity) AS qty
+                    FROM dw.fact_sales fs
+                    JOIN dw.dim_date dd ON fs.date_key = dd.date_key
+                    JOIN dw.dim_product dp ON fs.product_key = dp.product_key
+                    WHERE dd.full_date >= @prevStart AND dd.full_date < @prevEnd
+                      AND fs.company_id = @companyId
+                    GROUP BY dp.product_name
+                )
+                SELECT c.product_name,
+                       c.qty AS current_qty,
+                       p.qty AS prev_qty,
+                       ((c.qty - p.qty) * 100.0 / p.qty) AS pct
+                FROM current_sales c
+                JOIN prev_sales p ON c.product_name = p.product_name
+                WHERE c.qty > p.qty
+                ORDER BY pct DESC
+                LIMIT 5
+                """;
 
-            var trending = current
-                .Join(prev, c => c.Name, p => p.Name, (c, p) => new {
-                    c.Name, Current = c.Qty, Prev = p.Qty,
-                    Pct = p.Qty > 0 ? (c.Qty - p.Qty) * 100.0 / p.Qty : 0.0 })
-                .Where(x => x.Current > x.Prev)
-                .OrderByDescending(x => x.Pct)
-                .Take(5).ToList();
+            var trending = new List<(string Name, decimal Current, decimal Prev, double Pct)>();
+            await using (var cmd = new NpgsqlCommand(sql, conn))
+            {
+                cmd.Parameters.AddWithValue("currStart", start.Date);
+                cmd.Parameters.AddWithValue("currEnd", end.Date);
+                cmd.Parameters.AddWithValue("prevStart", prevStart.Date);
+                cmd.Parameters.AddWithValue("prevEnd", prevEnd.Date);
+                cmd.Parameters.AddWithValue("companyId", companyId);
 
-            if (!trending.Any())
-                return $"INTENT: trending_product | Tháng {now:MM/yyyy}\nKhông có sản phẩm nào có xu hướng tăng đáng kể trong tháng này.";
+                await using var reader = await cmd.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                {
+                    trending.Add((reader.GetString(0), reader.GetDecimal(1), reader.GetDecimal(2), reader.GetDouble(3)));
+                }
+            }
+
+            if (trending.Count == 0)
+                return $"INTENT: trending_product | Kỳ: {label} vs Kỳ trước\nKhông có sản phẩm nào có xu hướng tăng đáng kể.";
 
             return $"""
-                INTENT: trending_product | Tháng {now:MM/yyyy} vs {prevMonthStart:MM/yyyy}
+                INTENT: trending_product | Kỳ: {label} vs Kỳ trước
                 [Sản phẩm đang có xu hướng tăng doanh số]
-                {string.Join("\n", trending.Select((x, i) => $"  {i + 1}. {x.Name}: tháng này {x.Current} sp, tháng trước {x.Prev} sp (+{x.Pct:F1}%)"))}
+                {string.Join("\n", trending.Select((x, i) => $"  {i + 1}. {x.Name}: kỳ này bán {x.Current} sp, kỳ trước bán {x.Prev} sp (+{x.Pct:F1}%)"))}
                 """;
         }
-        catch (Exception ex) { logger.LogWarning("BuildContext_TrendingProduct lỗi: {M}", ex.Message); return "Chưa có dữ liệu xu hướng."; }
+        catch (Exception ex)
+        {
+            logger.LogWarning("BuildContext_TrendingProduct lỗi: {M}", ex.Message);
+            return "Chưa có dữ liệu xu hướng.";
+        }
+    }
+
+    // ── Parse khoảng ngày rõ ràng từ câu hỏi: "từ 01/04/2026 đến nay", "từ ngày 01/04 đến ngày 30/04" ──
+    private static (DateTime Start, DateTime End, string Label)? ParseExplicitDateRange(string question)
+    {
+        var q = question.ToLowerInvariant();
+        var now = DateTime.UtcNow;
+
+        // 1. từ DD/MM/YYYY đến/tới DD/MM/YYYY hoặc từ DD/MM/YYYY đến/tới nay/bây giờ
+        var match1 = System.Text.RegularExpressions.Regex.Match(q, 
+            @"từ\s+(\d{1,2})[/\-](\d{1,2})[/\-](\d{4})\s+(?:đến|tới)\s+(?:nay|bây\s*giờ|(\d{1,2})[/\-](\d{1,2})[/\-](\d{4}))");
+        
+        if (match1.Success)
+        {
+            if (int.TryParse(match1.Groups[1].Value, out var d1) &&
+                int.TryParse(match1.Groups[2].Value, out var m1) &&
+                int.TryParse(match1.Groups[3].Value, out var y1))
+            {
+                var start = new DateTime(y1, m1, d1, 0, 0, 0, DateTimeKind.Utc);
+                DateTime end;
+                string label;
+
+                if (match1.Groups[4].Success) // có ngày kết thúc cụ thể
+                {
+                    int.TryParse(match1.Groups[4].Value, out var d2);
+                    int.TryParse(match1.Groups[5].Value, out var m2);
+                    int.TryParse(match1.Groups[6].Value, out var y2);
+                    end = new DateTime(y2, m2, d2, 23, 59, 59, DateTimeKind.Utc);
+                    label = $"từ {d1:D2}/{m1:D2}/{y1} đến {d2:D2}/{m2:D2}/{y2}";
+                }
+                else // đến nay/bây giờ
+                {
+                    end = now;
+                    label = $"từ {d1:D2}/{m1:D2}/{y1} đến nay";
+                }
+                return (start, end, label);
+            }
+        }
+
+        // 2. từ ngày DD/MM đến ngày DD/MM (tự động lấy năm hiện tại)
+        var match2 = System.Text.RegularExpressions.Regex.Match(q,
+            @"từ\s+(?:ngày\s+)?(\d{1,2})[/\-](\d{1,2})\s+(?:đến|tới)\s+(?:ngày\s+)?(\d{1,2})[/\-](\d{1,2})");
+        if (match2.Success)
+        {
+            if (int.TryParse(match2.Groups[1].Value, out var d1) &&
+                int.TryParse(match2.Groups[2].Value, out var m1) &&
+                int.TryParse(match2.Groups[3].Value, out var d2) &&
+                int.TryParse(match2.Groups[4].Value, out var m2))
+            {
+                var start = new DateTime(now.Year, m1, d1, 0, 0, 0, DateTimeKind.Utc);
+                var end = new DateTime(now.Year, m2, d2, 23, 59, 59, DateTimeKind.Utc);
+                var label = $"từ {d1:D2}/{m1:D2} đến {d2:D2}/{m2:D2}";
+                return (start, end, label);
+            }
+        }
+
+        // 3. từ DD/MM/YYYY (đến nay)
+        var match3 = System.Text.RegularExpressions.Regex.Match(q,
+            @"từ\s+(\d{1,2})[/\-](\d{1,2})[/\-](\d{4})");
+        if (match3.Success)
+        {
+            if (int.TryParse(match3.Groups[1].Value, out var d1) &&
+                int.TryParse(match3.Groups[2].Value, out var m1) &&
+                int.TryParse(match3.Groups[3].Value, out var y1))
+            {
+                var start = new DateTime(y1, m1, d1, 0, 0, 0, DateTimeKind.Utc);
+                var end = now;
+                var label = $"từ {d1:D2}/{m1:D2}/{y1} đến nay";
+                return (start, end, label);
+            }
+        }
+
+        return null;
+    }
+
+    // ── Lấy khoảng thời gian query thống nhất cho mọi context builder ──
+    private static (DateTime Start, DateTime End, string Label) GetQueryDateRange(string question)
+    {
+        var now = DateTime.UtcNow;
+        
+        // 1. Explicit range (từ ngày... đến...)
+        var exp = ParseExplicitDateRange(question);
+        if (exp.HasValue)
+            return exp.Value;
+
+        // 2. Week/relative (tuần này, tuần trước, hôm nay, hôm qua...)
+        var wk = ParseWeekFromQuestion(question);
+        if (wk.HasValue)
+            return wk.Value;
+
+        // 3. Month range (từ tháng X đến tháng Y)
+        var mr = ParseMonthRangeFromQuestion(question);
+        if (mr.HasValue)
+        {
+            var start = new DateTime(mr.Value.Year, mr.Value.StartMonth, 1, 0, 0, 0, DateTimeKind.Utc);
+            var end = new DateTime(mr.Value.Year, mr.Value.EndMonth, 1, 0, 0, 0, DateTimeKind.Utc).AddMonths(1);
+            return (start, end, $"từ tháng {mr.Value.StartMonth} đến tháng {mr.Value.EndMonth}/{mr.Value.Year}");
+        }
+
+        // 4. Quarter (quý 1, Q2/2025...)
+        var qtr = ParseQuarterFromQuestion(question);
+        if (qtr.HasValue)
+        {
+            var sm = (qtr.Value.Quarter - 1) * 3 + 1;
+            var start = new DateTime(qtr.Value.Year, sm, 1, 0, 0, 0, DateTimeKind.Utc);
+            var end = start.AddMonths(3);
+            return (start, end, $"Quý {qtr.Value.Quarter}/{qtr.Value.Year}");
+        }
+
+        // 5. Year-level query
+        if (IsYearLevelQuery(question))
+        {
+            var yrs = ParseYearsFromQuestion(question);
+            if (yrs.HasValue)
+            {
+                var start = new DateTime(yrs.Value.Year1, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+                var end = start.AddYears(1);
+                return (start, end, $"Năm {yrs.Value.Year1}");
+            }
+        }
+
+        // 6. Single month (mặc định tháng hiện tại)
+        var pm = ParseDateFromQuestion(question);
+        var monthStart = pm.HasValue
+            ? new DateTime(pm.Value.Year, pm.Value.Month, 1, 0, 0, 0, DateTimeKind.Utc)
+            : new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+        var monthEnd = monthStart.AddMonths(1);
+        return (monthStart, monthEnd, $"tháng {monthStart:MM/yyyy}");
     }
 
     // ── Parse 2 tháng bất kỳ từ câu hỏi để so sánh: "tháng 4/2025 vs tháng 4/2026" ──
@@ -1126,10 +1474,22 @@ public class GeminiService(
         return (m1, y1, m2, y2);
     }
 
-    // ── Parse tháng/năm từ câu hỏi: "tháng 7/2025", "7/2025", "tháng 7 năm 2025" ──
+    // ── Parse tháng/năm từ câu hỏi: "tháng 7/2025", "7/2025", "tháng 7 năm 2025", "tháng trước" ──
     private static (int Month, int Year)? ParseDateFromQuestion(string question)
     {
         var q = question.ToLowerInvariant();
+        var now = DateTime.UtcNow;
+
+        // "tháng trước" / "tháng vừa rồi" / "tháng vừa qua" → lùi 1 tháng
+        if (q.Contains("tháng trước") || q.Contains("tháng vừa rồi") || q.Contains("tháng vừa qua"))
+        {
+            var prev = now.AddMonths(-1);
+            return (prev.Month, prev.Year);
+        }
+
+        // "tháng này" → tháng hiện tại
+        if (q.Contains("tháng này") || q.Contains("tháng hiện tại"))
+            return (now.Month, now.Year);
 
         // "tháng 7/2025" | "tháng 7 năm 2025" | "tháng 07/2025"
         var m = System.Text.RegularExpressions.Regex.Match(
@@ -1138,7 +1498,7 @@ public class GeminiService(
         {
             if (m.Groups[2].Success && int.TryParse(m.Groups[2].Value, out var yr) && yr >= 2020 && yr <= 2030)
                 return (mo, yr);
-            return (mo, DateTime.UtcNow.Year);
+            return (mo, now.Year);
         }
 
         // "7/2025" (standalone)
@@ -1409,39 +1769,172 @@ public class GeminiService(
         return $"{lastUserMsg} {userMessage}".Trim();
     }
 
-    // ── Helper: doanh thu + đơn theo khoảng ngày ─────────────────────────────
+    // ── Helper: doanh thu + đơn theo khoảng ngày (query DW — đồng bộ Dashboard) ──
     private async Task<(decimal Revenue, int Orders)> GetRevenueInRange(Guid companyId, DateTime start, DateTime end)
     {
-        var rev = await db.OrderDetails
-            .Join(db.Orders, od => od.OrderId, o => o.OrderId, (od, o) => new { od, o })
-            .Where(x => x.o.CompanyId == companyId && x.o.OrderDate >= start && x.o.OrderDate < end
-                     && x.o.Status != "CANCELLED" && x.o.Status != "RETURNED")
-            .SumAsync(x => (decimal?)x.od.Subtotal) ?? 0;
-        var cnt = await db.Orders.CountAsync(o => o.CompanyId == companyId
-            && o.OrderDate >= start && o.OrderDate < end && o.Status != "CANCELLED");
-        return (rev, cnt);
-    }
-
-    // ── Helper: doanh thu theo từng tháng trong năm ──────────────────────────
-    private async Task<string> GetMonthlyBreakdown(Guid companyId, int year)
-    {
-        var start = new DateTime(year, 1, 1, 0, 0, 0, DateTimeKind.Utc);
-        var end   = start.AddYears(1);
         try
         {
-            var monthly = await db.OrderDetails
+            await using var conn = new NpgsqlConnection(_connStr);
+            await conn.OpenAsync();
+            const string sql = """
+                SELECT COALESCE(SUM(fs.net_revenue), 0) AS total_revenue,
+                       COALESCE(SUM(fs.order_count), 0) AS total_orders
+                FROM dw.fact_sales fs
+                JOIN dw.dim_date   dd ON fs.date_key = dd.date_key
+                WHERE dd.full_date >= @from AND dd.full_date < @to
+                  AND fs.company_id = @companyId
+                """;
+            await using var cmd = new NpgsqlCommand(sql, conn);
+            cmd.Parameters.AddWithValue("from", start.Date);
+            cmd.Parameters.AddWithValue("to", end.Date);
+            cmd.Parameters.AddWithValue("companyId", companyId);
+            await using var reader = await cmd.ExecuteReaderAsync();
+            if (await reader.ReadAsync())
+                return (reader.GetDecimal(0), reader.GetInt32(1));
+            return (0m, 0);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning("GetRevenueInRange DW lỗi, fallback OLTP: {M}", ex.Message);
+            // Fallback về OLTP nếu DW chưa có dữ liệu
+            var rev = await db.OrderDetails
                 .Join(db.Orders, od => od.OrderId, o => o.OrderId, (od, o) => new { od, o })
                 .Where(x => x.o.CompanyId == companyId && x.o.OrderDate >= start && x.o.OrderDate < end
                          && x.o.Status != "CANCELLED" && x.o.Status != "RETURNED")
-                .GroupBy(x => x.o.OrderDate.Month)
-                .Select(g => new { Month = g.Key, Revenue = g.Sum(x => x.od.Subtotal), Cnt = g.Select(x => x.o.OrderId).Distinct().Count() })
-                .OrderBy(x => x.Month).ToListAsync();
-
-            if (!monthly.Any()) return "  (Chưa có dữ liệu)";
-            return string.Join("\n", monthly.Select(m =>
-                $"  T{m.Month:D2}/{year}: {m.Revenue:N0} VND ({m.Cnt} đơn)"));
+                .SumAsync(x => (decimal?)x.od.Subtotal) ?? 0;
+            var cnt = await db.Orders.CountAsync(o => o.CompanyId == companyId
+                && o.OrderDate >= start && o.OrderDate < end && o.Status != "CANCELLED");
+            return (rev, cnt);
         }
-        catch { return "  (Lỗi lấy dữ liệu)"; }
+    }
+
+    // ── Helper: doanh thu theo từng tháng trong năm (query DW) ────────────────
+    private async Task<string> GetMonthlyBreakdown(Guid companyId, int year)
+    {
+        try
+        {
+            await using var conn = new NpgsqlConnection(_connStr);
+            await conn.OpenAsync();
+            const string sql = """
+                SELECT dd.month_number,
+                       COALESCE(SUM(fs.net_revenue), 0) AS revenue,
+                       COALESCE(SUM(fs.order_count), 0) AS cnt
+                FROM dw.fact_sales fs
+                JOIN dw.dim_date   dd ON fs.date_key = dd.date_key
+                WHERE dd.year = @year AND fs.company_id = @companyId
+                GROUP BY dd.month_number
+                ORDER BY dd.month_number
+                """;
+            await using var cmd = new NpgsqlCommand(sql, conn);
+            cmd.Parameters.AddWithValue("year", (short)year);
+            cmd.Parameters.AddWithValue("companyId", companyId);
+            await using var reader = await cmd.ExecuteReaderAsync();
+            var lines = new List<string>();
+            while (await reader.ReadAsync())
+            {
+                var mo  = reader.GetInt16(0);
+                var rev = reader.GetDecimal(1);
+                var cnt = reader.GetInt32(2);
+                lines.Add($"  T{mo:D2}/{year}: {rev:N0} VND ({cnt} đơn)");
+            }
+            return lines.Count > 0 ? string.Join("\n", lines) : "  (Chưa có dữ liệu)";
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning("GetMonthlyBreakdown DW lỗi: {M}", ex.Message);
+            // Fallback OLTP
+            var start = new DateTime(year, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+            var end   = start.AddYears(1);
+            try
+            {
+                var monthly = await db.OrderDetails
+                    .Join(db.Orders, od => od.OrderId, o => o.OrderId, (od, o) => new { od, o })
+                    .Where(x => x.o.CompanyId == companyId && x.o.OrderDate >= start && x.o.OrderDate < end
+                             && x.o.Status != "CANCELLED" && x.o.Status != "RETURNED")
+                    .GroupBy(x => x.o.OrderDate.Month)
+                    .Select(g => new { Month = g.Key, Revenue = g.Sum(x => x.od.Subtotal), Cnt = g.Select(x => x.o.OrderId).Distinct().Count() })
+                    .OrderBy(x => x.Month).ToListAsync();
+                if (!monthly.Any()) return "  (Chưa có dữ liệu)";
+                return string.Join("\n", monthly.Select(m =>
+                    $"  T{m.Month:D2}/{year}: {m.Revenue:N0} VND ({m.Cnt} đơn)"));
+            }
+            catch { return "  (Lỗi lấy dữ liệu)"; }
+        }
+    }
+
+    private async Task<string> GetProphetForecastContextAsync(Guid companyId, string question)
+    {
+        try
+        {
+            var channel = ExtractChannelFromQuestion(question);
+            var horizon = 30; // mặc định dự báo 30 ngày tới
+            var url = $"{_aiServiceUrl}/forecast?horizon={horizon}";
+            if (!string.IsNullOrEmpty(channel))
+                url += $"&channel={Uri.EscapeDataString(channel)}";
+
+            var http = httpFactory.CreateClient();
+            http.Timeout = TimeSpan.FromSeconds(15);
+            var response = await http.GetAsync(url);
+            if (!response.IsSuccessStatusCode)
+            {
+                return "Không thể lấy dữ liệu dự báo từ AI Service (FastAPI).";
+            }
+
+            var body = await response.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(body);
+            var root = doc.RootElement;
+            var dataList = root.GetProperty("data");
+            
+            var totalForecast = 0.0;
+            var count = 0;
+            var points = new List<string>();
+
+            foreach (var item in dataList.EnumerateArray())
+            {
+                var forecastVal = item.GetProperty("forecast").GetDouble();
+                totalForecast += forecastVal;
+                count++;
+                if (count <= 3 || count == 7 || count == 15 || count == 30)
+                {
+                    var dateStr = item.GetProperty("date").GetString();
+                    points.Add($"  • Ngày {dateStr}: {forecastVal:N0} VND");
+                }
+            }
+
+            var avgDaily = count > 0 ? totalForecast / count : 0.0;
+            var channelLabel = !string.IsNullOrEmpty(channel) ? $"kênh {channel.ToUpper()}" : "tất cả các kênh";
+
+            // Lấy thêm metrics nếu được để tăng tính học thuật/chuyên nghiệp
+            var metricsUrl = $"{_aiServiceUrl}/forecast/metrics";
+            var metricsStr = "";
+            try
+            {
+                var metricsResp = await http.GetAsync(metricsUrl);
+                if (metricsResp.IsSuccessStatusCode)
+                {
+                    using var mDoc = JsonDocument.Parse(await metricsResp.Content.ReadAsStringAsync());
+                    var mRoot = mDoc.RootElement;
+                    var mape = mRoot.TryGetProperty("mape_pct", out var mapeProp) ? mapeProp.GetDouble() : 0.0;
+                    metricsStr = $"\n- Độ tin cậy model (MAPE): {mape:F1}%";
+                }
+            }
+            catch { /* ignore */ }
+
+            return $"""
+                === KẾT QUẢ DỰ BÁO DOANH THU PROPHET AI ===
+                Đối tượng: {channelLabel} | Horizon: {horizon} ngày tiếp theo
+                - Tổng doanh thu dự báo ({horizon} ngày tới): {totalForecast:N0} VND
+                - Doanh thu trung bình ngày dự báo: {avgDaily:N0} VND/ngày{metricsStr}
+
+                [Chi tiết điểm dự báo tiêu biểu]
+                {string.Join("\n", points)}
+                """;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning("GetProphetForecastContextAsync lỗi: {M}", ex.Message);
+            return "Chưa có dữ liệu dự báo Prophet. Vui lòng kiểm tra trạng thái AI Service.";
+        }
     }
 
     private async Task<string> BuildContext_Revenue(Guid companyId, string question = "")
@@ -1449,6 +1942,19 @@ public class GeminiService(
         var now = DateTime.UtcNow;
         try
         {
+            // Ưu tiên 0: Khoảng ngày tường minh (từ ngày... đến...)
+            var explicitRange = ParseExplicitDateRange(question);
+            if (explicitRange.HasValue)
+            {
+                var (es, ee, elabel) = explicitRange.Value;
+                var (rev, cnt) = await GetRevenueInRange(companyId, es, ee);
+                return $"""
+                    INTENT: revenue_summary | {elabel}
+                    [Doanh thu {elabel}]
+                    - Tổng doanh thu: {rev:N0} VND ({cnt} đơn)
+                    """;
+            }
+
             // Ưu tiên 1: Năm (năm 2025, so sánh 2025 vs 2026, năm nay vs năm ngoái)
             if (IsYearLevelQuery(question))
             {
@@ -1638,6 +2144,19 @@ public class GeminiService(
         var now = DateTime.UtcNow;
         try
         {
+            // Ưu tiên 0: Khoảng ngày tường minh (từ ngày... đến...)
+            var explicitRange = ParseExplicitDateRange(question);
+            if (explicitRange.HasValue)
+            {
+                var (es, ee, elabel) = explicitRange.Value;
+                var (_, cnt) = await GetRevenueInRange(companyId, es, ee);
+                return $"""
+                    INTENT: order_summary | {elabel}
+                    [Số đơn hàng {elabel}]
+                    - Tổng đơn hàng: {cnt} đơn
+                    """;
+            }
+
             // Năm
             if (IsYearLevelQuery(question))
             {
@@ -1723,10 +2242,8 @@ public class GeminiService(
                 prevMonthStart = monthStart.AddMonths(-1);
             }
 
-            var cntM  = await db.Orders.CountAsync(o => o.CompanyId == companyId
-                && o.OrderDate >= monthStart && o.OrderDate < monthStart.AddMonths(1) && o.Status != "CANCELLED");
-            var prevM = await db.Orders.CountAsync(o => o.CompanyId == companyId
-                && o.OrderDate >= prevMonthStart && o.OrderDate < monthStart && o.Status != "CANCELLED");
+            var (_, cntM)  = await GetRevenueInRange(companyId, monthStart, monthStart.AddMonths(1));
+            var (_, prevM) = await GetRevenueInRange(companyId, prevMonthStart, monthStart);
             var changeM2 = prevM > 0
                 ? $"{(cntM >= prevM ? "+" : "")}{cntM - prevM} đơn so với tháng {prevMonthStart:MM/yyyy} ({prevM} đơn)"
                 : "(chưa có dữ liệu tháng trước)";
@@ -1741,96 +2258,135 @@ public class GeminiService(
         catch (Exception ex) { logger.LogWarning("BuildContext_OrderSummary lỗi: {M}", ex.Message); return "Chưa có dữ liệu đơn hàng."; }
     }
 
-    private async Task<string> BuildContext_Channels(Guid companyId, bool topOnly)
+
+
+    private async Task<string> BuildContext_BusinessRecommendation(Guid companyId, string question = "")
     {
-        var now = DateTime.UtcNow;
-        var monthStart = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+        var (start, end, label) = GetQueryDateRange(question);
         try
         {
-            var channels = await db.OrderDetails
-                .Join(db.Orders,   od => od.OrderId,   o  => o.OrderId,   (od, o)  => new { od, o })
-                .Join(db.Channels, x  => x.o.ChannelId, ch => ch.ChannelId, (x, ch) => new { x.od, x.o, ch })
-                .Where(x => x.o.CompanyId == companyId && x.o.OrderDate >= monthStart
-                         && x.o.Status != "CANCELLED")
-                .GroupBy(x => x.ch.ChannelName)
-                .Select(g => new {
-                    Name       = g.Key,
-                    Revenue    = g.Sum(x => x.od.Subtotal),
-                    OrderCount = g.Select(x => x.o.OrderId).Distinct().Count()
-                })
-                .OrderByDescending(c => c.Revenue)
-                .ToListAsync();
+            await using var conn = new NpgsqlConnection(_connStr);
+            await conn.OpenAsync();
 
-            if (!channels.Any()) return $"Chưa có dữ liệu kênh bán hàng trong tháng {now:MM/yyyy}.";
-
-            var intent = topOnly ? "top_channel" : "channel_comparison";
-            var list   = topOnly ? channels.Take(1).ToList() : channels;
-
-            return $"""
-                INTENT: {intent} | Tháng: {now:MM/yyyy}
-                [Kênh bán hàng theo doanh thu]
-                {string.Join("\n", list.Select((c, i) => $"  {i + 1}. {c.Name}: {c.Revenue:N0} VND, {c.OrderCount} đơn"))}
+            // Top sản phẩm — query DW
+            const string topProdSql = """
+                SELECT dp.product_name,
+                       COALESCE(SUM(fs.item_quantity), 0) AS qty,
+                       COALESCE(SUM(fs.net_revenue), 0) AS rev
+                FROM dw.fact_sales fs
+                JOIN dw.dim_date    dd ON fs.date_key    = dd.date_key
+                JOIN dw.dim_product dp ON fs.product_key = dp.product_key
+                WHERE dd.full_date >= @from AND dd.full_date < @to
+                  AND fs.company_id = @companyId
+                GROUP BY dp.product_name
+                ORDER BY qty DESC LIMIT 5
                 """;
-        }
-        catch (Exception ex) { logger.LogWarning("BuildContext_Channels lỗi: {M}", ex.Message); return "Chưa có dữ liệu kênh bán hàng."; }
-    }
+            var products = new List<(string Name, int Qty, decimal Rev)>();
+            await using (var cmd = new NpgsqlCommand(topProdSql, conn))
+            {
+                cmd.Parameters.AddWithValue("from", start.Date);
+                cmd.Parameters.AddWithValue("to", end.Date);
+                cmd.Parameters.AddWithValue("companyId", companyId);
+                await using var reader = await cmd.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                    products.Add((reader.GetString(0), reader.GetInt32(1), reader.GetDecimal(2)));
+            }
 
-    private async Task<string> BuildContext_BusinessRecommendation(Guid companyId)
-    {
-        var now = DateTime.UtcNow;
-        var monthStart = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
-        try
-        {
-            var products = await db.OrderDetails
-                .Join(db.Orders,   od => od.OrderId,   o => o.OrderId,   (od, o) => new { od, o })
-                .Join(db.Products, x  => x.od.ProductId, p => p.ProductId, (x, p)  => new { x.od, x.o, p })
-                .Where(x => x.o.CompanyId == companyId && x.o.OrderDate >= monthStart
-                         && x.o.Status != "CANCELLED" && x.o.Status != "RETURNED")
-                .GroupBy(x => x.p.ProductName)
-                .OrderByDescending(g => g.Sum(x => x.od.Quantity))
-                .Take(5)
-                .Select(g => new { Name = g.Key, Qty = g.Sum(x => x.od.Quantity), Rev = g.Sum(x => x.od.Subtotal) })
-                .ToListAsync();
+            // Top kênh — query DW
+            const string chSql = """
+                SELECT dc.channel_name, COALESCE(SUM(fs.net_revenue), 0) AS rev
+                FROM dw.fact_sales fs
+                JOIN dw.dim_date    dd ON fs.date_key    = dd.date_key
+                JOIN dw.dim_channel dc ON fs.channel_key = dc.channel_key
+                WHERE dd.full_date >= @from AND dd.full_date < @to
+                  AND fs.company_id = @companyId
+                GROUP BY dc.channel_name
+                ORDER BY rev DESC LIMIT 3
+                """;
+            var channels = new List<(string Name, decimal Revenue)>();
+            await using (var cmd = new NpgsqlCommand(chSql, conn))
+            {
+                cmd.Parameters.AddWithValue("from", start.Date);
+                cmd.Parameters.AddWithValue("to", end.Date);
+                cmd.Parameters.AddWithValue("companyId", companyId);
+                await using var reader = await cmd.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                    channels.Add((reader.GetString(0), reader.GetDecimal(1)));
+            }
 
-            var channels = await db.OrderDetails
-                .Join(db.Orders,   od => od.OrderId,   o  => o.OrderId,   (od, o)  => new { od, o })
-                .Join(db.Channels, x  => x.o.ChannelId, ch => ch.ChannelId, (x, ch) => new { x.od, x.o, ch })
-                .Where(x => x.o.CompanyId == companyId && x.o.OrderDate >= monthStart
-                         && x.o.Status != "CANCELLED")
-                .GroupBy(x => x.ch.ChannelName)
-                .Select(g => new { Name = g.Key, Revenue = g.Sum(x => x.od.Subtotal) })
-                .OrderByDescending(c => c.Revenue)
-                .Take(3)
-                .ToListAsync();
+            // Tổng doanh thu
+            const string revSql = """
+                SELECT COALESCE(SUM(fs.net_revenue), 0)
+                FROM dw.fact_sales fs
+                JOIN dw.dim_date dd ON fs.date_key = dd.date_key
+                WHERE dd.full_date >= @from AND dd.full_date < @to
+                  AND fs.company_id = @companyId
+                """;
+            decimal totalRev = 0;
+            await using (var cmd = new NpgsqlCommand(revSql, conn))
+            {
+                cmd.Parameters.AddWithValue("from", start.Date);
+                cmd.Parameters.AddWithValue("to", end.Date);
+                cmd.Parameters.AddWithValue("companyId", companyId);
+                totalRev = Convert.ToDecimal(await cmd.ExecuteScalarAsync());
+            }
 
-            var totalRev = await db.OrderDetails
-                .Join(db.Orders, od => od.OrderId, o => o.OrderId, (od, o) => new { od, o })
-                .Where(x => x.o.CompanyId == companyId && x.o.OrderDate >= monthStart
-                         && x.o.Status != "CANCELLED" && x.o.Status != "RETURNED")
-                .SumAsync(x => (decimal?)x.od.Subtotal) ?? 0;
+            // Mở rộng kết hợp Google Trends nếu câu hỏi nhắc tới "xu hướng" hoặc "thị trường"
+            var trendsSection = "";
+            var q = question.ToLowerInvariant();
+            if (q.Contains("xu hướng") || q.Contains("thị trường"))
+            {
+                const string trendsSql = """
+                    SELECT keyword, CAST(COUNT(*) AS INTEGER) AS HitCount
+                    FROM public.raw_google_data
+                    WHERE scraped_at >= NOW() - INTERVAL '30 days'
+                      AND (company_id = @companyId OR company_id IS NULL)
+                      AND keyword IS NOT NULL
+                    GROUP BY keyword
+                    ORDER BY HitCount DESC
+                    LIMIT 3
+                    """;
+                var trends = new List<string>();
+                await using (var cmd = new NpgsqlCommand(trendsSql, conn))
+                {
+                    cmd.Parameters.AddWithValue("companyId", companyId);
+                    await using var reader = await cmd.ExecuteReaderAsync();
+                    while (await reader.ReadAsync())
+                        trends.Add(reader.GetString(0));
+                }
+
+                if (trends.Count > 0)
+                {
+                    trendsSection = "\n[Xu hướng thị trường Google Trends (top 3)]\n" + 
+                                    string.Join("\n", trends.Select((t, i) => $"  • {t}"));
+                }
+            }
 
             return $"""
-                INTENT: business_recommendation | Tháng: {now:MM/yyyy}
-                [Doanh thu tháng này: {totalRev:N0} VND]
+                INTENT: business_recommendation | Kỳ: {label}
+                [Doanh thu {label}: {totalRev:N0} VND]
 
                 [Top sản phẩm bán chạy]
                 {(products.Any() ? string.Join("\n", products.Select((p, i) => $"  {i + 1}. {p.Name}: {p.Qty} sp, {p.Rev:N0} VND")) : "  Chưa có dữ liệu")}
 
                 [Kênh bán hàng hiệu quả]
-                {(channels.Any() ? string.Join("\n", channels.Select((c, i) => $"  {i + 1}. {c.Name}: {c.Revenue:N0} VND")) : "  Chưa có dữ liệu")}
+                {(channels.Any() ? string.Join("\n", channels.Select((c, i) => $"  {i + 1}. {c.Name}: {c.Revenue:N0} VND")) : "  Chưa có dữ liệu")}{trendsSection}
                 """;
         }
-        catch (Exception ex) { logger.LogWarning("BuildContext_BusinessRecommendation lỗi: {M}", ex.Message); return "Chưa có dữ liệu để đưa gợi ý."; }
+        catch (Exception ex)
+        {
+            logger.LogWarning("BuildContext_BusinessRecommendation lỗi: {M}", ex.Message);
+            return "Chưa có dữ liệu để đưa gợi ý.";
+        }
     }
 
-    private async Task<string> BuildContext_CustomerOverview(Guid companyId)
+    private async Task<string> BuildContext_CustomerOverview(Guid companyId, string question = "")
     {
-        var now = DateTime.UtcNow;
-        var monthStart = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+        var (start, end, label) = GetQueryDateRange(question);
         try
         {
             var totalActive  = await db.Customers.CountAsync(c => c.CompanyId == companyId && c.IsActive);
-            var newThisMonth = await db.Customers.CountAsync(c => c.CompanyId == companyId && c.CreatedAt >= monthStart);
+            var newInMonth   = await db.Customers.CountAsync(c => c.CompanyId == companyId && c.CreatedAt >= start && c.CreatedAt < end);
 
             var topSpenders = await db.Customers
                 .Where(c => c.CompanyId == companyId && c.IsActive && c.TotalOrders > 0)
@@ -1847,11 +2403,70 @@ public class GeminiService(
                 .Take(5)
                 .ToListAsync();
 
+            var marketingSection = "";
+            var q = question.ToLowerInvariant();
+            var isMarketingQuery = q.Contains("cac")
+                || q.Contains("quảng cáo")
+                || q.Contains("chi phí khách hàng")
+                || q.Contains("ads")
+                || q.Contains("marketing")
+                || q.Contains("tỷ lệ chuyển đổi")
+                || q.Contains("conversion");
+
+            if (isMarketingQuery)
+            {
+                await using var conn = new NpgsqlConnection(_connStr);
+                await conn.OpenAsync();
+                const string adSql = """
+                    SELECT COALESCE(SUM(spend), 0) AS total_spend,
+                           COALESCE(SUM(clicks), 0) AS total_clicks,
+                           COALESCE(SUM(conversions), 0) AS total_conversions,
+                           COALESCE(SUM(impressions), 0) AS total_impressions,
+                           COALESCE(SUM(revenue), 0) AS total_ad_revenue
+                    FROM dw.fact_ad_performance fs
+                    JOIN dw.dim_date dd ON fs.date_key = dd.date_key
+                    WHERE dd.full_date >= @from AND dd.full_date < @to
+                      AND fs.company_id = @companyId
+                    """;
+                await using var cmd = new NpgsqlCommand(adSql, conn);
+                cmd.Parameters.AddWithValue("from", start.Date);
+                cmd.Parameters.AddWithValue("to", end.Date);
+                cmd.Parameters.AddWithValue("companyId", companyId);
+                await using var reader = await cmd.ExecuteReaderAsync();
+                if (await reader.ReadAsync())
+                {
+                    var spend = reader.GetDecimal(0);
+                    var clicks = reader.GetInt32(1);
+                    var conversions = reader.GetInt32(2);
+                    var impressions = reader.GetInt32(3);
+                    var adRevenue = reader.GetDecimal(4);
+
+                    var cac = conversions > 0 ? (double)(spend / conversions) : 0.0;
+                    var conversionRate = clicks > 0 ? (double)conversions * 100.0 / clicks : 0.0;
+                    var ctr = impressions > 0 ? (double)clicks * 100.0 / impressions : 0.0;
+                    var cpc = clicks > 0 ? (double)(spend / clicks) : 0.0;
+                    var roas = spend > 0 ? (double)(adRevenue / spend) : 0.0;
+
+                    marketingSection = $"""
+
+                        [Hiệu suất Quảng cáo & Marketing — {label}]
+                        - Chi phí Quảng cáo: {spend:N0} VND
+                        - Số lượt hiển thị  : {impressions:N0}
+                        - Số lượt click (clicks): {clicks:N0} (CTR: {ctr:F2}%)
+                        - Số chuyển đổi (conversions): {conversions:N0}
+                        - Tỷ lệ chuyển đổi: {conversionRate:F2}%
+                        - Chi phí mỗi khách hàng (CAC): {cac:N0} VND/khách hàng
+                        - CPC trung bình: {cpc:N0} VND
+                        - ROAS quảng cáo: {roas:F2}
+                        """;
+                }
+            }
+
             return $"""
-                INTENT: customer_overview | Tháng: {now:MM/yyyy}
+                INTENT: customer_overview | Kỳ: {label}
                 [Tổng quan khách hàng]
                 - Tổng KH đang hoạt động: {totalActive}
-                - KH mới tháng này      : {newThisMonth}
+                - KH mới trong kỳ: {newInMonth}
 
                 [Top 5 KH chi tiêu cao nhất]
                 {(topSpenders.Any()
@@ -1863,26 +2478,49 @@ public class GeminiService(
                 [Phân khúc RFM]
                 {(rfmGroups.Any()
                     ? string.Join("\n", rfmGroups.Select(g => $"  {g.Segment}: {g.Count} KH"))
-                    : "  Chưa có dữ liệu RFM — chạy AI → RFM Analysis để phân loại")}
+                    : "  Chưa có dữ liệu RFM — chạy AI → RFM Analysis để phân loại")}{marketingSection}
                 """;
         }
         catch (Exception ex) { logger.LogWarning("BuildContext_CustomerOverview lỗi: {M}", ex.Message); return "Chưa có dữ liệu khách hàng."; }
     }
 
-    private async Task<string> BuildContext_Inventory(Guid companyId)
+    // Trích xuất tên sản phẩm đơn giản từ câu hỏi
+    private static string? ExtractProductFromQuestion(string question)
+    {
+        var q = question.ToLowerInvariant();
+        // Loại bỏ các từ khóa chung về tồn kho
+        var keywordsToRemove = new[]
+        {
+            "tồn kho", "kho còn", "sản phẩm", "mặt hàng", "hàng hóa", "hôm nay", "tháng này",
+            "mức tồn kho", "hiện tại", "có đủ", "cho nhu cầu", "không", "bao nhiêu", "còn lại", "của",
+            "tuần tới", "đủ cho"
+        };
+        var words = q.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Where(w => !keywordsToRemove.Contains(w) && w.Length > 2)
+            .ToList();
+        return words.Count > 0 ? string.Join(" ", words) : null;
+    }
+
+    private async Task<string> BuildContext_Inventory(Guid companyId, string question = "")
     {
         var now        = DateTime.UtcNow;
         var day30Ago   = now.AddDays(-30);
         var day60Ago   = now.AddDays(-60);
+        var productFilter = ExtractProductFromQuestion(question);
         try
         {
             // Tốc độ bán 30 ngày qua
-            var sales30d = await db.OrderDetails
+            var sales30dQuery = db.OrderDetails
                 .Join(db.Orders,   od => od.OrderId,   o => o.OrderId,   (od, o) => new { od, o })
                 .Join(db.Products, x  => x.od.ProductId, p => p.ProductId, (x, p)  => new { x.od, x.o, p })
                 .Where(x => x.o.CompanyId == companyId
                          && x.o.OrderDate >= day30Ago
-                         && x.o.Status != "CANCELLED" && x.o.Status != "RETURNED")
+                         && x.o.Status != "CANCELLED" && x.o.Status != "RETURNED");
+
+            if (!string.IsNullOrEmpty(productFilter))
+                sales30dQuery = sales30dQuery.Where(x => x.p.ProductName.ToLower().Contains(productFilter));
+
+            var sales30d = await sales30dQuery
                 .GroupBy(x => new { x.p.ProductId, x.p.ProductName, x.p.Sku, x.p.StockQuantity })
                 .Select(g => new
                 {
@@ -1896,12 +2534,17 @@ public class GeminiService(
                 .ToListAsync();
 
             // Tốc độ bán 30-60 ngày trước (để tính xu hướng)
-            var sales30to60 = await db.OrderDetails
+            var sales30to60Query = db.OrderDetails
                 .Join(db.Orders,   od => od.OrderId,   o => o.OrderId,   (od, o) => new { od, o })
                 .Join(db.Products, x  => x.od.ProductId, p => p.ProductId, (x, p)  => new { x.od, x.o, p })
                 .Where(x => x.o.CompanyId == companyId
                          && x.o.OrderDate >= day60Ago && x.o.OrderDate < day30Ago
-                         && x.o.Status != "CANCELLED" && x.o.Status != "RETURNED")
+                         && x.o.Status != "CANCELLED" && x.o.Status != "RETURNED");
+
+            if (!string.IsNullOrEmpty(productFilter))
+                sales30to60Query = sales30to60Query.Where(x => x.p.ProductName.ToLower().Contains(productFilter));
+
+            var sales30to60 = await sales30to60Query
                 .GroupBy(x => x.p.ProductId)
                 .Select(g => new { ProductId = g.Key, QtySoldPrev = g.Sum(x => x.od.Quantity) })
                 .ToListAsync();
@@ -1918,7 +2561,7 @@ public class GeminiService(
                     var trend    = prevQty > 0 ? (p.QtySold30 - prevQty) * 100.0 / prevQty : 0.0;
                     return new { p.ProductName, p.Sku, p.Stock, p.QtySold30, p.Revenue30, avgDaily, daysLeft, prevQty, trend };
                 })
-                .Where(p => p.daysLeft < 90 || p.Stock <= 50) // Giữ sản phẩm cần theo dõi trong 90 ngày
+                .Where(p => string.IsNullOrEmpty(productFilter) ? (p.daysLeft < 90 || p.Stock <= 50) : true) // Giữ sản phẩm cần theo dõi trong 90 ngày, hoặc giữ tất cả nếu lọc theo sp
                 .OrderBy(p => p.daysLeft)
                 .Take(15)
                 .ToList();
@@ -1969,8 +2612,10 @@ public class GeminiService(
                      + (suggest > 0 ? $" | → đủ 45 ngày cần {suggest} sp" : "");
             }).ToList();
 
+            var filterLabel = !string.IsNullOrEmpty(productFilter) ? $" [Lọc sản phẩm: {productFilter}]" : "";
+
             return $"""
-                INTENT: inventory_alert | Phân tích tồn kho & gợi ý nhập hàng
+                INTENT: inventory_alert | Phân tích tồn kho & gợi ý nhập hàng{filterLabel}
                 Thời điểm: {now:dd/MM/yyyy} | Kỳ so sánh: 30 ngày gần nhất vs 30 ngày trước đó
 
                 [Tổng quan kho]
@@ -1999,46 +2644,93 @@ public class GeminiService(
         catch (Exception ex) { logger.LogWarning("BuildContext_Inventory lỗi: {M}", ex.Message); return "Chưa có dữ liệu tồn kho."; }
     }
 
-    private async Task<string> BuildContext_PerformanceOverview(Guid companyId)
+    private async Task<string> BuildContext_PerformanceOverview(Guid companyId, string question = "")
     {
-        var now            = DateTime.UtcNow;
-        var monthStart     = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+        var now    = DateTime.UtcNow;
+        var parsed = ParseDateFromQuestion(question);
+        var monthStart = parsed.HasValue
+            ? new DateTime(parsed.Value.Year, parsed.Value.Month, 1, 0, 0, 0, DateTimeKind.Utc)
+            : new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+        var monthEnd       = monthStart.AddMonths(1);
         var prevMonthStart = monthStart.AddMonths(-1);
         try
         {
-            var rev = await db.OrderDetails
-                .Join(db.Orders, od => od.OrderId, o => o.OrderId, (od, o) => new { od, o })
-                .Where(x => x.o.CompanyId == companyId && x.o.OrderDate >= monthStart
-                         && x.o.Status != "CANCELLED" && x.o.Status != "RETURNED")
-                .SumAsync(x => (decimal?)x.od.Subtotal) ?? 0;
-            var prevRev = await db.OrderDetails
-                .Join(db.Orders, od => od.OrderId, o => o.OrderId, (od, o) => new { od, o })
-                .Where(x => x.o.CompanyId == companyId
-                         && x.o.OrderDate >= prevMonthStart && x.o.OrderDate < monthStart
-                         && x.o.Status != "CANCELLED" && x.o.Status != "RETURNED")
-                .SumAsync(x => (decimal?)x.od.Subtotal) ?? 0;
+            // Query DW — đồng bộ logic với DashboardService
+            await using var conn = new NpgsqlConnection(_connStr);
+            await conn.OpenAsync();
 
-            var cnt     = await db.Orders.CountAsync(o => o.CompanyId == companyId && o.OrderDate >= monthStart && o.Status != "CANCELLED");
-            var prevCnt = await db.Orders.CountAsync(o => o.CompanyId == companyId && o.OrderDate >= prevMonthStart && o.OrderDate < monthStart && o.Status != "CANCELLED");
+            // Doanh thu + đơn hàng kỳ hiện tại và kỳ trước
+            const string kpiSql = """
+                SELECT COALESCE(SUM(fs.net_revenue), 0),
+                       COALESCE(SUM(fs.order_count), 0)
+                FROM dw.fact_sales fs
+                JOIN dw.dim_date   dd ON fs.date_key = dd.date_key
+                WHERE dd.full_date >= @from AND dd.full_date < @to
+                  AND fs.company_id = @companyId
+                """;
+            // Kỳ hiện tại
+            await using var cmdCurr = new NpgsqlCommand(kpiSql, conn);
+            cmdCurr.Parameters.AddWithValue("from", monthStart.Date);
+            cmdCurr.Parameters.AddWithValue("to", monthEnd.Date);
+            cmdCurr.Parameters.AddWithValue("companyId", companyId);
+            await using var rCurr = await cmdCurr.ExecuteReaderAsync();
+            await rCurr.ReadAsync();
+            var rev = rCurr.GetDecimal(0);
+            var cnt = rCurr.GetInt32(1);
+            await rCurr.CloseAsync();
 
-            var topProducts = await db.OrderDetails
-                .Join(db.Orders,   od => od.OrderId,   o => o.OrderId,   (od, o) => new { od, o })
-                .Join(db.Products, x  => x.od.ProductId, p => p.ProductId, (x, p)  => new { x.od, x.o, p })
-                .Where(x => x.o.CompanyId == companyId && x.o.OrderDate >= monthStart && x.o.Status != "CANCELLED")
-                .GroupBy(x => x.p.ProductName)
-                .OrderByDescending(g => g.Sum(x => x.od.Quantity))
-                .Take(3)
-                .Select(g => $"  • {g.Key}: {g.Sum(x => x.od.Quantity)} sp")
-                .ToListAsync();
+            // Kỳ trước
+            await using var cmdPrev = new NpgsqlCommand(kpiSql, conn);
+            cmdPrev.Parameters.AddWithValue("from", prevMonthStart.Date);
+            cmdPrev.Parameters.AddWithValue("to", monthStart.Date);
+            cmdPrev.Parameters.AddWithValue("companyId", companyId);
+            await using var rPrev = await cmdPrev.ExecuteReaderAsync();
+            await rPrev.ReadAsync();
+            var prevRev = rPrev.GetDecimal(0);
+            var prevCnt = rPrev.GetInt32(1);
+            await rPrev.CloseAsync();
 
-            var topChannel = await db.OrderDetails
-                .Join(db.Orders,   od => od.OrderId,   o  => o.OrderId,   (od, o)  => new { od, o })
-                .Join(db.Channels, x  => x.o.ChannelId, ch => ch.ChannelId, (x, ch) => new { x.od, x.o, ch })
-                .Where(x => x.o.CompanyId == companyId && x.o.OrderDate >= monthStart && x.o.Status != "CANCELLED")
-                .GroupBy(x => x.ch.ChannelName)
-                .OrderByDescending(g => g.Sum(x => x.od.Subtotal))
-                .Select(g => $"{g.Key}: {g.Sum(x => x.od.Subtotal):N0} VND")
-                .FirstOrDefaultAsync();
+            // Top sản phẩm — query DW
+            const string topProdSql = """
+                SELECT dp.product_name, SUM(fs.item_quantity) AS qty
+                FROM dw.fact_sales fs
+                JOIN dw.dim_date    dd ON fs.date_key    = dd.date_key
+                JOIN dw.dim_product dp ON fs.product_key = dp.product_key
+                WHERE dd.full_date >= @from AND dd.full_date < @to
+                  AND fs.company_id = @companyId
+                GROUP BY dp.product_name
+                ORDER BY qty DESC LIMIT 3
+                """;
+            await using var cmdProd = new NpgsqlCommand(topProdSql, conn);
+            cmdProd.Parameters.AddWithValue("from", monthStart.Date);
+            cmdProd.Parameters.AddWithValue("to", monthEnd.Date);
+            cmdProd.Parameters.AddWithValue("companyId", companyId);
+            await using var rProd = await cmdProd.ExecuteReaderAsync();
+            var topProducts = new List<string>();
+            while (await rProd.ReadAsync())
+                topProducts.Add($"  • {rProd.GetString(0)}: {rProd.GetInt32(1)} sp");
+            await rProd.CloseAsync();
+
+            // Top kênh — query DW
+            const string topChSql = """
+                SELECT dc.channel_name, SUM(fs.net_revenue) AS rev
+                FROM dw.fact_sales fs
+                JOIN dw.dim_date    dd ON fs.date_key    = dd.date_key
+                JOIN dw.dim_channel dc ON fs.channel_key = dc.channel_key
+                WHERE dd.full_date >= @from AND dd.full_date < @to
+                  AND fs.company_id = @companyId
+                GROUP BY dc.channel_name
+                ORDER BY rev DESC LIMIT 1
+                """;
+            await using var cmdCh = new NpgsqlCommand(topChSql, conn);
+            cmdCh.Parameters.AddWithValue("from", monthStart.Date);
+            cmdCh.Parameters.AddWithValue("to", monthEnd.Date);
+            cmdCh.Parameters.AddWithValue("companyId", companyId);
+            await using var rCh = await cmdCh.ExecuteReaderAsync();
+            var topChannel = await rCh.ReadAsync()
+                ? $"{rCh.GetString(0)}: {rCh.GetDecimal(1):N0} VND"
+                : null;
+            await rCh.CloseAsync();
 
             var revChange = prevRev > 0
                 ? $"{(rev >= prevRev ? "+" : "")}{(rev - prevRev) / prevRev * 100:F1}% so tháng trước"
@@ -2048,7 +2740,7 @@ public class GeminiService(
                 : "";
 
             return $"""
-                INTENT: performance_overview | Tháng: {now:MM/yyyy}
+                INTENT: performance_overview | Tháng: {monthStart:MM/yyyy}
                 [Tổng quan kinh doanh]
                 - Doanh thu : {rev:N0} VND ({revChange})
                 - Số đơn    : {cnt} đơn {(cntChange.Length > 0 ? $"({cntChange})" : "")}
@@ -2286,22 +2978,23 @@ public class GeminiService(
     private async Task<string> BuildContext_CrossAnalysis(Guid companyId, string question, List<string> keywords)
     {
         var q     = question.ToLowerInvariant();
+        var qn    = NormalizeVi(q);
         var parts = new List<string>();
 
         // Luôn bao gồm tổng quan kinh doanh nội bộ
-        var bizCtx = await BuildContext_PerformanceOverview(companyId);
+        var bizCtx = await BuildContext_PerformanceOverview(companyId, question);
         parts.Add(bizCtx);
 
         // Thêm dữ liệu Facebook nếu câu hỏi đề cập phản hồi KH
-        static bool Has(string text, params string[] words) => words.Any(text.Contains);
-        if (Has("facebook", "phàn nàn", "khách chê", "bình luận", "phản hồi", "khách hàng chê"))
+        bool Has(params string[] words) => words.Any(w => q.Contains(w) || qn.Contains(NormalizeVi(w)));
+        if (Has("facebook", "phàn nàn", "khách chê", "bình luận", "phản hồi", "khách hàng chê", "sentiment"))
         {
-            var fbCtx = await BuildFeedbackContext(companyId, keywords);
+            var fbCtx = await BuildFeedbackContext(companyId, keywords, question);
             parts.Add("\n--- DỮ LIỆU PHẢN HỒI FACEBOOK ---\n" + fbCtx);
         }
 
         // Thêm dữ liệu thị trường nếu câu hỏi đề cập đối thủ/xu hướng
-        if (Has("đối thủ", "thị trường", "giá đối thủ", "google", "xu hướng thị trường"))
+        if (Has("đối thủ", "thị trường", "giá đối thủ", "google", "xu hướng thị trường", "sàn"))
         {
             var mktCtx = await BuildMarketContext(companyId, keywords);
             parts.Add("\n--- DỮ LIỆU XU HƯỚNG THỊ TRƯỜNG ---\n" + mktCtx);
@@ -2318,21 +3011,25 @@ public class GeminiService(
         {
             "business" => new List<string>
             {
-                "Sản phẩm nào đang bán chạy nhất tháng này?",
-                "Kênh bán hàng nào mang lại doanh thu cao nhất?",
-                "Doanh thu tháng này so với tháng trước thế nào?",
+                "Sản phẩm nào đang có doanh thu cao nhất trong tháng này?",
+                "Tỷ lệ chuyển đổi và chi phí cho mỗi khách hàng (CAC) hiện tại là bao nhiêu?",
+                "Dự báo doanh thu tháng tới dựa trên dữ liệu lịch sử như thế nào?",
+                "Mức tồn kho hiện tại của Áo Khoác Gió Nam có đủ cho nhu cầu tuần tới không?",
+                "Lên ý tưởng khuyến mãi từ top sản phẩm bán chạy kết hợp xu hướng thị trường.",
+                "Gửi báo cáo doanh thu tuần này vào email của tôi.",
+                "Đề xuất chiến lược marketing tiếp cận nhóm khách hàng 25-35 tuổi."
             },
             "market" => new List<string>
             {
                 "Xu hướng thời trang nào đang hot tại Việt Nam?",
-                "Mùa hè nên tập trung bán sản phẩm gì?",
                 "Thương mại điện tử Việt Nam đang có xu hướng gì?",
+                "Mùa hè nên tập trung bán sản phẩm gì?"
             },
             "feedback" => new List<string>
             {
                 "Khách hàng đánh giá sản phẩm của tôi như thế nào?",
-                "Vấn đề nào được khách phàn nàn nhiều nhất?",
-                "Làm thế nào để tăng tỷ lệ review 5 sao?",
+                "Vấn đề nào được khách hàng phàn nàn nhiều nhất?",
+                "Làm thế nào để cải thiện mức độ hài lòng của khách hàng?"
             },
             _ => new List<string> { "Tôi có thể giúp gì cho bạn hôm nay?" },
         };
@@ -2429,21 +3126,22 @@ public class GeminiService(
                 ("facebook_feedback", _)                        => await BuildFeedbackContext            (companyId.Value, keywords, effectiveQuestion),
                 ("cross_analysis",    _)                        => await BuildContext_CrossAnalysis      (companyId.Value, effectiveQuestion, keywords),
                 (_,                   "top_product")            => await BuildContext_TopProduct         (companyId.Value, effectiveQuestion),
-                (_,                   "declining_product")      => await BuildContext_DecliningProduct   (companyId.Value),
-                (_,                   "trending_product")       => await BuildContext_TrendingProduct    (companyId.Value),
+                (_,                   "declining_product")      => await BuildContext_DecliningProduct   (companyId.Value, effectiveQuestion),
+                (_,                   "trending_product")       => await BuildContext_TrendingProduct    (companyId.Value, effectiveQuestion),
                 (_,                   "revenue_summary")        => await BuildContext_Revenue            (companyId.Value, effectiveQuestion),
                 (_,                   "order_summary")          => await BuildContext_OrderSummary       (companyId.Value, effectiveQuestion),
-                (_,                   "top_channel")            => await BuildContext_Channels              (companyId.Value, topOnly: true),
-                (_,                   "channel_comparison")     => await BuildContext_Channels              (companyId.Value, topOnly: false),
-                (_,                   "business_recommendation")=> await BuildContext_BusinessRecommendation(companyId.Value),
-                (_,                   "customer_overview")      => await BuildContext_CustomerOverview      (companyId.Value),
-                (_,                   "inventory_alert")        => await BuildContext_Inventory             (companyId.Value),
+                (_,                   "top_channel")            => await BuildContext_Channels              (companyId.Value, topOnly: true, question: effectiveQuestion),
+                (_,                   "channel_comparison")     => await BuildContext_Channels              (companyId.Value, topOnly: false, question: effectiveQuestion),
+                (_,                   "business_recommendation")=> await BuildContext_BusinessRecommendation(companyId.Value, effectiveQuestion),
+                (_,                   "customer_overview")      => await BuildContext_CustomerOverview      (companyId.Value, effectiveQuestion),
+                (_,                   "inventory_alert")        => await BuildContext_Inventory             (companyId.Value, effectiveQuestion),
+                (_,                   "forecast_revenue")       => await GetProphetForecastContextAsync  (companyId.Value, effectiveQuestion),
                 (_,                   "employee_performance")   => await BuildContext_EmployeePerformance   (companyId.Value, effectiveQuestion),
                 (_,                   "return_analysis")        => await BuildContext_ReturnAnalysis        (companyId.Value, effectiveQuestion),
                 (_,                   "payment_analysis")       => await BuildContext_PaymentAnalysis       (companyId.Value, effectiveQuestion),
                 (_,                   "discount_analysis")      => await BuildContext_DiscountAnalysis      (companyId.Value, effectiveQuestion),
                 (_,                   "shipping_status")        => await BuildContext_ShippingStatus        (companyId.Value, effectiveQuestion),
-                _                                               => await BuildContext_PerformanceOverview   (companyId.Value),
+                _                                               => await BuildContext_PerformanceOverview   (companyId.Value, effectiveQuestion),
             };
         }
 
@@ -2579,8 +3277,8 @@ public class GeminiService(
 
                 if (!response.IsSuccessStatusCode)
                 {
-                    logger.LogError("[CHATBOT] Gemini model {M} lỗi HTTP {S}", model, status);
-                    return (null, null); // lỗi thực sự → không thử tiếp
+                    logger.LogError("[CHATBOT] Gemini model {M} lỗi HTTP {S} → thử model tiếp", model, status);
+                    continue;
                 }
 
                 var body = await response.Content.ReadAsStringAsync();

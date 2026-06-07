@@ -16,6 +16,7 @@ public class ChatbotController(
     GeminiService              gemini,
     AppDbContext               db,
     ITenantContext             tenant,
+    IServiceScopeFactory       scopeFactory,
     ILogger<ChatbotController> logger) : ControllerBase
 {
     /// <summary>
@@ -145,7 +146,9 @@ public class ChatbotController(
     {
         try
         {
-            db.Set<ChatHistory>().Add(new ChatHistory
+            using var scope = scopeFactory.CreateScope();
+            var scopedDb = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            scopedDb.Set<ChatHistory>().Add(new ChatHistory
             {
                 UserId       = userId,
                 CompanyId    = companyId,
@@ -157,7 +160,7 @@ public class ChatbotController(
                 FallbackUsed = response.FallbackUsed,
                 CreatedAt    = DateTime.UtcNow,
             });
-            await db.SaveChangesAsync();
+            await scopedDb.SaveChangesAsync();
         }
         catch (Exception ex)
         {
