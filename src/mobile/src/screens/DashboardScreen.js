@@ -8,6 +8,7 @@ import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
 import api from '../api/axios'
 import { radius } from '../components/theme'
+import { formatMoney } from '../utils/format'
 
 const BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://192.168.1.10:5136'
 
@@ -15,15 +16,6 @@ const BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://192.168.1.10:5136'
 // TODO: cài react-native-svg nếu muốn dùng line chart SVG thật
 
 // ─── Hàm format tiền tệ rút gọn cho mobile ───────────────────────────────────
-function formatMoney(value) {
-  if (value == null || isNaN(value)) return '0'
-  const n = Number(value)
-  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)} tỷ`
-  if (n >= 1_000_000)     return `${(n / 1_000_000).toFixed(1)} triệu`
-  if (n >= 1_000)         return `${(n / 1_000).toFixed(1)}K`
-  return n.toLocaleString('vi-VN')
-}
-
 // ─── Mock data fallback khi API lỗi ──────────────────────────────────────────
 const MOCK_KPI = {
   todayRevenue:              125_400_000,
@@ -132,15 +124,14 @@ function Skeleton({ width = '100%', height = 16, style, bgColor }) {
 }
 
 // ─── Tách chuỗi tiền tệ thành số và đơn vị để render khác kích thước ─────────
-// "125.4 triệu" → { num: "125.4", unit: "triệu" }
-// "1.2 tỷ"      → { num: "1.2",   unit: "tỷ"    }
+// "125,400,000" → { num: "125,400,000", unit: "" }
 // "500K"         → { num: "500",   unit: "K"     }
 // "125"          → { num: "125",   unit: ""      }
 function splitMoneyStr(str) {
   const s = String(str ?? '').trim()
-  const m = s.match(/^([\d,\.]+)\s*(triệu|tỷ|K|ng)?$/)
+  const m = s.match(/^([\d,.]+)$/)
   if (!m) return { num: s, unit: '' }
-  return { num: m[1], unit: m[2] ?? '' }
+  return { num: m[1], unit: '' }
 }
 
 // ─── KPI Card ─────────────────────────────────────────────────────────────────

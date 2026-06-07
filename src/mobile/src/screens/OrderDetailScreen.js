@@ -8,15 +8,7 @@ import api from '../api/axios'
 import { usePermission } from '../hooks/usePermission'
 import { useTheme } from '../context/ThemeContext'
 import { radius } from '../components/theme'
-
-function formatMoney(value) {
-  if (value == null || isNaN(value)) return '0'
-  const n = Number(value)
-  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)} tỷ`
-  if (n >= 1_000_000)     return `${(n / 1_000_000).toFixed(1)}M`
-  if (n >= 1_000)         return `${(n / 1_000).toFixed(1)}K`
-  return n.toLocaleString('vi-VN')
-}
+import { formatMoney } from '../utils/format'
 
 const STATUS_CONFIG = {
   pending:   { bg: '#FEF3C7', text: '#92400E', border: '#F59E0B', emoji: '⏳' },

@@ -8,17 +8,9 @@ import api from '../api/axios'
 import { usePermission } from '../hooks/usePermission'
 import { useTheme } from '../context/ThemeContext'
 import { radius } from '../components/theme'
+import { formatMoney } from '../utils/format'
 
 const BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://192.168.1.10:5136'
-
-function formatMoney(v) {
-  if (v == null || !Number.isFinite(Number(v))) return '0'
-  const n = Number(v)
-  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)} tỷ`
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)} triệu`
-  if (n >= 1_000) return `${(n / 1_000).toFixed(0)}K`
-  return n.toLocaleString('vi-VN')
-}
 
 const STATUS_CONFIG = {
   active:       { label: 'Đang bán',  color: '#4ae176', bg: 'rgba(74,225,118,0.15)'  },

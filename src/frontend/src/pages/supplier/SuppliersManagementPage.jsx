@@ -4,7 +4,7 @@ import api from '../../api/axios'
 import { useAuth } from '../../hooks/useAuth'
 import DetailDrawer from '../../components/ui/DetailDrawer'
 import ConfirmDialog from '../../components/ui/ConfirmDialog'
-import { exportToCsv } from '../../utils/format'
+import { exportToCsv, fmtMoneyExact } from '../../utils/format'
 import { useDebounce } from '../../hooks/useDebounce'
 
 // Phí sàn thương mại điện tử Việt Nam (tỷ lệ phổ biến)
@@ -27,7 +27,7 @@ function PriceAdvisor({ importPrice }) {
       {PLATFORM_FEES.map(pf => (
         <span key={pf.name} className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
           {pf.icon} {pf.name} ≥ <strong style={{ color: 'var(--text-secondary)' }}>
-            {calcMinPrice(importPrice, pf.rate).toLocaleString('vi-VN')}đ
+            {fmtMoneyExact(calcMinPrice(importPrice, pf.rate))}
           </strong>
         </span>
       ))}
@@ -259,7 +259,7 @@ function SupplierModal({ supplier, onClose, onSaved }) {
                       </span>
                       {currentBase > 0 && (
                         <span className="ml-2 text-[11px]" style={{ color: isLossRisk ? '#EF4444' : 'var(--text-tertiary)' }}>
-                          Giá bán: {currentBase.toLocaleString('vi-VN')}đ
+                          Giá bán: {fmtMoneyExact(currentBase)}
                         </span>
                       )}
                     </div>
@@ -284,8 +284,8 @@ function SupplierModal({ supplier, onClose, onSaved }) {
                         <div className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg"
                              style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)' }}>
                           <span className="text-[11px]" style={{ color: '#EF4444' }}>
-                            ⚠ Giá nhập ({importPrice.toLocaleString('vi-VN')}đ) ≥ giá bán ({currentBase.toLocaleString('vi-VN')}đ) — sẽ lỗ!
-                            &nbsp;Đề xuất: <strong>{suggestedPrice.toLocaleString('vi-VN')}đ</strong>
+                            ⚠ Giá nhập ({fmtMoneyExact(importPrice)}) ≥ giá bán ({fmtMoneyExact(currentBase)}) — sẽ lỗ!
+                            &nbsp;Đề xuất: <strong>{fmtMoneyExact(suggestedPrice)}</strong>
                           </span>
                           {updateState === 'done' ? (
                             <span className="text-[11px] shrink-0" style={{ color: '#22C55E' }}>✓ Đã cập nhật</span>
@@ -295,7 +295,7 @@ function SupplierModal({ supplier, onClose, onSaved }) {
                               onClick={() => updateProductPrice(p.productId, suggestedPrice)}
                               className="text-[11px] px-2 py-0.5 rounded shrink-0 disabled:opacity-60"
                               style={{ background: '#EF4444', color: '#fff' }}>
-                              {updateState === 'updating' ? '...' : `→ ${suggestedPrice.toLocaleString('vi-VN')}đ`}
+                              {updateState === 'updating' ? '...' : `→ ${fmtMoneyExact(suggestedPrice)}`}
                             </button>
                           )}
                         </div>

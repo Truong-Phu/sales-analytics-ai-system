@@ -11,8 +11,9 @@ import {
 import AiEmptyState from '../../components/ui/AiEmptyState'
 import { KPI_DEFINITIONS } from '../../utils/kpiDefinitions'
 import DateRangeFilter from '../../components/ui/DateRangeFilter'
+import { fmtMoneyExact } from '../../utils/format'
 
-function fmtM(v) {
+function fmtCompactMoney(v) {
   if (v == null) return '—'
   const n = Number(v)
   if (n >= 1_000_000_000) return (n / 1_000_000_000).toFixed(1) + ' tỷ'
@@ -22,6 +23,11 @@ function fmtM(v) {
 }
 function fmtPct(v) { return v == null ? '—' : Number(v).toFixed(1) + '%' }
 function fmtRate(v) { return v == null ? '' : (Number(v) * 100).toFixed(1) + '%' }
+function dateInputFromToday(offsetDays = 0) {
+  const date = new Date()
+  date.setDate(date.getDate() + offsetDays)
+  return date.toISOString().slice(0, 10)
+}
 
 const CHANNEL_LABELS = {
   shopee: 'Shopee', tiktok: 'TikTok', lazada: 'Lazada',
@@ -37,7 +43,7 @@ const KPI_KEY_MAP = {
   'Doanh thu':          'revenue',
   'Giá vốn (COGS)':     'cogs',
   'Lợi nhuận gộp':      'grossProfit',
-  'Phí vận hành':       'platformFee',
+  'Phí sàn & thanh toán': 'platformFee',
   'LN sau phí sàn':     'netAfterFees',
   'Chi phí QC':         'adSpend',
   'Lợi nhuận vận hành': 'operatingProfit',
@@ -171,11 +177,9 @@ function FeeConfigRow({ cfg, onSave }) {
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function ProfitPage() {
   const { t } = useTranslation()
-  const daysAgo30 = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10)
-  const tomorrow  = new Date(Date.now() + 86400000).toISOString().slice(0, 10)
 
-  const [from, setFrom] = useState(daysAgo30)
-  const [to,   setTo]   = useState(tomorrow)
+  const [from, setFrom] = useState(() => dateInputFromToday(-29))
+  const [to,   setTo]   = useState(() => dateInputFromToday(0))
   const [tab,  setTab]  = useState('overview')
 
   const [overview,  setOverview]  = useState(null)
@@ -209,7 +213,10 @@ export default function ProfitPage() {
     setLoading(false)
   }, [from, to, page])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => {
+    const timer = setTimeout(() => { load() }, 0)
+    return () => clearTimeout(timer)
+  }, [load])
 
   async function handleSaveConfig(id, dto) {
     try {
@@ -263,21 +270,21 @@ export default function ProfitPage() {
       {/* KPI Cards — 2 hàng: hàng 1 tuyệt đối, hàng 2 tỷ lệ */}
       {ov && (<>
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-        <KpiCard label="Doanh thu"           value={fmtM(ov.revenue)}            color="blue"   infoKey="Doanh thu" />
-        <KpiCard label="Giá vốn (COGS)"      value={fmtM(ov.cogs)}               color="orange" infoKey="Giá vốn (COGS)" />
-        <KpiCard label="Lợi nhuận gộp"       value={fmtM(ov.grossProfit)}        color="green"  infoKey="Lợi nhuận gộp" />
-        <KpiCard label="Phí vận hành"        value={fmtM(ov.estimatedFees)}      color="red"    estimated infoKey="Phí vận hành" />
-        <KpiCard label="LN sau phí sàn"      value={fmtM(ov.estimatedNetProfit)} color="teal"   estimated infoKey="LN sau phí sàn" />
+        <KpiCard label="Doanh thu"           value={fmtMoneyExact(ov.revenue)}            color="blue"   infoKey="Doanh thu" />
+        <KpiCard label="Giá vốn (COGS)"      value={fmtMoneyExact(ov.cogs)}               color="orange" infoKey="Giá vốn (COGS)" />
+        <KpiCard label="Lợi nhuận gộp"       value={fmtMoneyExact(ov.grossProfit)}        color="green"  infoKey="Lợi nhuận gộp" />
+        <KpiCard label="Phí sàn & thanh toán" value={fmtMoneyExact(ov.estimatedFees)}    color="red"    estimated infoKey="Phí sàn & thanh toán" />
+        <KpiCard label="LN sau phí sàn"      value={fmtMoneyExact(ov.estimatedNetProfit)} color="teal"   estimated infoKey="LN sau phí sàn" />
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-        <KpiCard label="Chi phí QC"          value={fmtM(ov.advertisingCost ?? 0)}   color="pink"   infoKey="Chi phí QC"
+        <KpiCard label="Chi phí QC"          value={fmtMoneyExact(ov.advertisingCost ?? 0)}   color="pink"   infoKey="Chi phí QC"
                  sub={ov.advertisingCost > 0 ? `ACOS: ${fmtPct(ov.acos)}` : 'Chưa nhập QC tháng này'} />
-        <KpiCard label="Lợi nhuận vận hành"  value={fmtM(ov.operatingProfit ?? 0)}   color="indigo" infoKey="Lợi nhuận vận hành"
+        <KpiCard label="Lợi nhuận vận hành"  value={fmtMoneyExact(ov.operatingProfit ?? 0)}   color="indigo" infoKey="Lợi nhuận vận hành"
                  sub={`Biên: ${fmtPct(ov.operatingMargin ?? 0)}`} />
         <KpiCard label="Biên lợi nhuận gộp"  value={fmtPct(ov.grossMargin)}          color="purple" infoKey="Biên lợi nhuận gộp" />
         <KpiCard label="Biên LN vận hành"    value={fmtPct(ov.operatingMargin ?? 0)} color="yellow" infoKey="Biên LN vận hành" />
         <KpiCard label="ACOS"                value={fmtPct(ov.acos ?? 0)}            color="red"    infoKey="ACOS"
-                 sub={`QC: ${fmtM(ov.advertisingCost ?? 0)}`} />
+                 sub={`QC: ${fmtMoneyExact(ov.advertisingCost ?? 0)}`} />
       </div>
       </>)}
 
@@ -310,9 +317,9 @@ export default function ProfitPage() {
                 <ComposedChart data={byDate} margin={{ top: 8, right: 20, left: 20, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
                   <XAxis dataKey="period" tick={{ fontSize: 11 }} />
-                  <YAxis tickFormatter={v => fmtM(v)} tick={{ fontSize: 11 }} width={64} />
+                  <YAxis tickFormatter={v => fmtCompactMoney(v)} tick={{ fontSize: 11 }} width={64} />
                   <Tooltip
-                    formatter={(v, name) => [fmtM(v), name]}
+                    formatter={(v, name) => [fmtMoneyExact(v), name]}
                     itemSorter={item => -item.value}
                   />
                   <Legend />
@@ -346,15 +353,15 @@ export default function ProfitPage() {
                 <tr key={i} className="border-b hover:bg-gray-50">
                   <td className="py-2 px-3 font-medium">{channelLabel(c.channel)}</td>
                   <td className="py-2 px-3">{c.orderCount?.toLocaleString()}</td>
-                  <td className="py-2 px-3 text-blue-700">{fmtM(c.revenue)}</td>
-                  <td className="py-2 px-3 text-orange-600">{fmtM(c.cogs)}</td>
-                  <td className="py-2 px-3 text-green-700">{fmtM(c.grossProfit)}</td>
+                  <td className="py-2 px-3 text-blue-700">{fmtMoneyExact(c.revenue)}</td>
+                  <td className="py-2 px-3 text-orange-600">{fmtMoneyExact(c.cogs)}</td>
+                  <td className="py-2 px-3 text-green-700">{fmtMoneyExact(c.grossProfit)}</td>
                   <td className="py-2 px-3">{fmtPct(c.grossMargin)}</td>
-                  <td className="py-2 px-3 text-red-600">{fmtM(c.estimatedFees)}</td>
-                  <td className="py-2 px-3 text-teal-700">{fmtM(c.estimatedNetProfit)}</td>
-                  <td className="py-2 px-3 text-pink-700">{fmtM(c.advertisingCost ?? 0)}</td>
+                  <td className="py-2 px-3 text-red-600">{fmtMoneyExact(c.estimatedFees)}</td>
+                  <td className="py-2 px-3 text-teal-700">{fmtMoneyExact(c.estimatedNetProfit)}</td>
+                  <td className="py-2 px-3 text-pink-700">{fmtMoneyExact(c.advertisingCost ?? 0)}</td>
                   <td className="py-2 px-3 text-red-500 text-xs">{fmtPct(c.acos ?? 0)}</td>
-                  <td className="py-2 px-3 text-indigo-700 font-semibold">{fmtM(c.operatingProfit ?? 0)}</td>
+                  <td className="py-2 px-3 text-indigo-700 font-semibold">{fmtMoneyExact(c.operatingProfit ?? 0)}</td>
                   <td className="py-2 px-3 text-xs">{fmtPct(c.operatingMargin ?? 0)}</td>
                 </tr>
               ))}
@@ -383,11 +390,11 @@ export default function ProfitPage() {
                   <td className="py-2 px-3 font-mono text-xs">{p.sku}</td>
                   <td className="py-2 px-3 max-w-[180px] truncate" title={p.productName}>{p.productName}</td>
                   <td className="py-2 px-3">{Number(p.totalQty).toLocaleString()}</td>
-                  <td className="py-2 px-3 text-blue-700">{fmtM(p.revenue)}</td>
-                  <td className="py-2 px-3 text-orange-600">{fmtM(p.cogs)}</td>
-                  <td className="py-2 px-3 text-green-700">{fmtM(p.grossProfit)}</td>
+                  <td className="py-2 px-3 text-blue-700">{fmtMoneyExact(p.revenue)}</td>
+                  <td className="py-2 px-3 text-orange-600">{fmtMoneyExact(p.cogs)}</td>
+                  <td className="py-2 px-3 text-green-700">{fmtMoneyExact(p.grossProfit)}</td>
                   <td className="py-2 px-3">{fmtPct(p.grossMargin)}</td>
-                  <td className="py-2 px-3 text-teal-700">{fmtM(p.estimatedNetProfit)}</td>
+                  <td className="py-2 px-3 text-teal-700">{fmtMoneyExact(p.estimatedNetProfit)}</td>
                   <td className="py-2 px-3">
                     {p.missingCost
                       ? <span className="text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded">Thiếu</span>
@@ -422,11 +429,11 @@ export default function ProfitPage() {
                   <td className="py-1.5 px-3 font-mono">{o.orderId}</td>
                   <td className="py-1.5 px-3">{channelLabel(o.channel)}</td>
                   <td className="py-1.5 px-3 text-gray-500">{o.date?.slice(0, 10)}</td>
-                  <td className="py-1.5 px-3 text-blue-700">{fmtM(o.revenue)}</td>
-                  <td className="py-1.5 px-3 text-orange-600">{fmtM(o.cogs)}</td>
-                  <td className="py-1.5 px-3 text-green-700">{fmtM(o.grossProfit)}</td>
-                  <td className="py-1.5 px-3 text-red-500">{fmtM(o.estimatedFees)}</td>
-                  <td className="py-1.5 px-3 text-teal-700 font-semibold">{fmtM(o.estimatedNetProfit)}</td>
+                  <td className="py-1.5 px-3 text-blue-700">{fmtMoneyExact(o.revenue)}</td>
+                  <td className="py-1.5 px-3 text-orange-600">{fmtMoneyExact(o.cogs)}</td>
+                  <td className="py-1.5 px-3 text-green-700">{fmtMoneyExact(o.grossProfit)}</td>
+                  <td className="py-1.5 px-3 text-red-500">{fmtMoneyExact(o.estimatedFees)}</td>
+                  <td className="py-1.5 px-3 text-teal-700 font-semibold">{fmtMoneyExact(o.estimatedNetProfit)}</td>
                   <td className="py-1.5 px-3">
                     {o.missingCost
                       ? <span className="bg-red-100 text-red-600 px-1 py-0.5 rounded text-[10px]">Thiếu</span>

@@ -2,11 +2,11 @@ import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import api from '../../api/axios'
 import PaymentStatusBadge from '../../components/payment/PaymentStatusBadge'
+import { fmtMoneyExact } from '../../utils/format'
 
 function fmtVND(v) {
   if (!v && v !== 0) return '–'
-  if (v >= 1_000_000) return `₫${(v / 1_000_000).toFixed(1)}M`
-  return `₫${Number(v).toLocaleString('vi-VN')}`
+  return fmtMoneyExact(v)
 }
 function fmtDate(d) {
   if (!d) return '–'

@@ -8,19 +8,7 @@ import api from '../api/axios'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
 import { radius } from '../components/theme'
-
-function formatMoney(value) {
-  if (value == null || isNaN(value)) return '0'
-  const n = Number(value)
-  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)} tỷ`
-  if (n >= 1_000_000)     return `${(n / 1_000_000).toFixed(1)}M`
-  if (n >= 1_000)         return `${(n / 1_000).toFixed(0)}K`
-  return n.toLocaleString('vi-VN')
-}
-function formatMoneyFull(v) {
-  if (!Number.isFinite(Number(v))) return '0'
-  return Number(v).toLocaleString('vi-VN')
-}
+import { formatMoney, formatMoney as formatMoneyFull } from '../utils/format'
 
 const MOCK_PRODUCTS = [
   { id: 1, name: 'Áo thun Unisex oversize',   price: 189_000, stock: 45, category: 'Áo'       },

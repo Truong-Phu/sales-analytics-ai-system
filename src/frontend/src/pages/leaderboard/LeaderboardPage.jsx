@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import AiEmptyState from '../../components/ui/AiEmptyState'
 import { getLeaderboard } from '../../api/aiApi'
+import { fmtMoneyExact } from '../../utils/format'
 
 const TREND_ICON  = { UP: '↑', DOWN: '↓', STABLE: '→' }
 const TREND_COLOR = { UP: '#22C55E', DOWN: '#EF4444', STABLE: 'var(--text-tertiary)' }
@@ -69,6 +70,7 @@ export default function LeaderboardPage() {
 
   const apiCategory = category === 'staff' ? staffTab : category
   const activeSubtab = STAFF_SUBTABS.find(s => s.value === staffTab) ?? STAFF_SUBTABS[0]
+  const isMoneyLeaderboard = ['product', 'customer', 'channel', 'staff_marketing'].includes(apiCategory)
 
   const load = async () => {
     if (timeMode === 'custom' && (!customStart || !customEnd)) return
@@ -193,7 +195,7 @@ export default function LeaderboardPage() {
             style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-elevated)' }}>
             <span className="text-sm" style={{ color: 'var(--text-tertiary)' }}>{data?.period_label}</span>
             <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-              {t('leaderboard.totalRevLabel', { value: ((data?.total_revenue ?? 0)/1e6).toFixed(1) })}
+              {t('leaderboard.totalRevLabel', { value: fmtMoneyExact(data?.total_revenue ?? 0) })}
             </span>
           </div>
 
@@ -235,7 +237,9 @@ export default function LeaderboardPage() {
 
                 {/* Value + Trend */}
                 <div className="text-right shrink-0">
-                  <div className="font-bold" style={{ color: 'var(--text-primary)' }}>{entry.value_label}</div>
+                  <div className="font-bold" style={{ color: 'var(--text-primary)' }}>
+                    {isMoneyLeaderboard ? fmtMoneyExact(entry.value ?? 0) : entry.value_label}
+                  </div>
                   <div className="text-xs" style={{ color: TREND_COLOR[entry.trend] }}>
                     {TREND_ICON[entry.trend]} {Math.abs(entry.change_pct).toFixed(1)}%
                     {' '}{entry.trend === 'UP' ? t('leaderboard.trendUp') : entry.trend === 'DOWN' ? t('leaderboard.trendDown') : t('leaderboard.trendStable')}

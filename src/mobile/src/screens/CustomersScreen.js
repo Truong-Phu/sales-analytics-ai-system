@@ -7,14 +7,7 @@ import api from '../api/axios'
 import { usePlan, usePermission } from '../hooks/usePermission'
 import { useTheme } from '../context/ThemeContext'
 import { radius } from '../components/theme'
-
-function formatMoney(v) {
-  if (v == null || !Number.isFinite(Number(v))) return '0'
-  const n = Number(v)
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
-  if (n >= 1_000) return `${(n / 1_000).toFixed(0)}K`
-  return n.toLocaleString('vi-VN')
-}
+import { formatMoney } from '../utils/format'
 
 // RFM segment config
 const SEGMENT_CONFIG = {

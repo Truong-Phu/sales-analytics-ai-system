@@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next'
 import api from '../api/axios'
 import { useTheme } from '../context/ThemeContext'
 import { radius } from '../components/theme'
+import { formatMoneyWithSymbol } from '../utils/format'
 
 function relativeTime(dateStr, t) {
   if (!dateStr) return ''
@@ -153,7 +154,7 @@ export default function AlertsScreen() {
           title: a.severity === 'high' ? 'Bất thường nghiêm trọng'
                : a.severity === 'medium' ? 'Bất thường trung bình'
                : 'Biến động nhỏ',
-          message: `${a.channel ?? 'Kênh không xác định'} — ₫${Number.isFinite(a.value) ? (a.value / 1_000_000).toFixed(2) : '—'}M (z-score=${a.zScore?.toFixed(2) ?? '—'}σ)`,
+          message: `${a.channel ?? 'Kênh không xác định'} — ${Number.isFinite(a.value) ? formatMoneyWithSymbol(a.value) : '—'} (z-score=${a.zScore?.toFixed(2) ?? '—'}σ)`,
           createdAt: a.date ? new Date(a.date).toISOString() : new Date().toISOString(),
         }))
         setAlerts(mapped.length ? mapped : MOCK_ALERTS)

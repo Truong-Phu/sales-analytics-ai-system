@@ -7,15 +7,7 @@ import api from '../api/axios'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
 import { radius } from '../components/theme'
-
-function formatMoney(v) {
-  if (v == null || !Number.isFinite(Number(v))) return '0'
-  const n = Number(v)
-  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)} tỷ`
-  if (n >= 1_000_000)     return `${(n / 1_000_000).toFixed(1)}M`
-  if (n >= 1_000)         return `${(n / 1_000).toFixed(0)}K`
-  return n.toLocaleString('vi-VN')
-}
+import { formatMoney, formatMoneyWithSymbol } from '../utils/format'
 
 // Sinh danh sách 12 tháng gần nhất (tháng hiện tại trở về trước)
 function buildMonthList() {
@@ -171,7 +163,7 @@ export default function KPINhanVienScreen() {
                 <>
                   <ProgressBar current={kpi.revenue} target={kpi.revenueTarget} color={overallColor} s={s} />
                   <Text style={s.overallDetail}>
-                    {revenueCompletion?.toFixed(0)}% / mục tiêu ₫{formatMoney(kpi.revenueTarget)}
+                    {revenueCompletion?.toFixed(0)}% / mục tiêu {formatMoneyWithSymbol(kpi.revenueTarget)}
                   </Text>
                 </>
               )}

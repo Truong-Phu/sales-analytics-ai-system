@@ -11,6 +11,7 @@ import AiEmptyState from '../../components/ui/AiEmptyState'
 import InfoTooltip from '../../components/ui/InfoTooltip'
 import { MT } from '../../constants/metricTooltips'
 import { getRfmSegments } from '../../api/aiApi'
+import { fmtMoneyExact } from '../../utils/format'
 
 const SEGMENT_CONFIG = {
   VIP:       { color: '#6366F1', icon: 'workspace_premium', action: 'Upsell sản phẩm cao cấp, ưu đãi exclusive' },
@@ -25,9 +26,7 @@ const SEGMENT_CONFIG = {
 const SCATTER_COLORS = ['#6366F1','#10B981','#3B82F6','#F59E0B','#EF4444','#6B7280','#A855F7']
 
 function fmtVND(v) {
-  if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M ₫`
-  if (v >= 1_000)     return `${(v / 1_000).toFixed(0)}K ₫`
-  return `${v} ₫`
+  return fmtMoneyExact(v || 0)
 }
 
 function SegmentCard({ name, data, onCreateCampaign }) {

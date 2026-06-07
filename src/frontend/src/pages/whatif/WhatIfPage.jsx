@@ -2,8 +2,9 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { simulateWhatIf } from '../../api/aiApi'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
+import { fmtMoneyExact } from '../../utils/format'
 
-const fmt = (v) => v >= 1e9 ? `${(v/1e9).toFixed(1)}B` : v >= 1e6 ? `${(v/1e6).toFixed(1)}M` : `${v.toLocaleString()}`
+const fmt = (v) => fmtMoneyExact(v)
 
 export default function WhatIfPage() {
   const { t } = useTranslation()
@@ -89,7 +90,7 @@ export default function WhatIfPage() {
             ].map(k => (
               <div key={k.label} className="lcard p-4">
                 <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{k.label}</div>
-                <div className="text-2xl font-bold mt-1" style={{ color: k.color }}>{k.value} VNĐ</div>
+                <div className="text-2xl font-bold mt-1" style={{ color: k.color }}>{k.value}</div>
               </div>
             ))}
           </div>
@@ -102,7 +103,7 @@ export default function WhatIfPage() {
                 <XAxis dataKey="date" tick={{ fill:'var(--text-tertiary)', fontSize:11 }} interval="preserveStartEnd" />
                 <YAxis tick={{ fill:'var(--text-tertiary)', fontSize:11 }} tickFormatter={v => `${(v/1e6).toFixed(1)}M`} />
                 <Tooltip
-                  formatter={v => `${(v/1e6).toFixed(2)}M VNĐ`}
+                  formatter={v => fmtMoneyExact(v)}
                   contentStyle={{ background:'var(--bg-surface)', border:'1px solid var(--border)', borderRadius:8 }}
                   labelStyle={{ color:'var(--text-secondary)' }}
                   itemStyle={{ color:'var(--text-primary)' }}

@@ -2,13 +2,11 @@ import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { getProfitOverview, getExpensesSummary } from '../../api/financeApi'
 import DateRangeFilter from '../../components/ui/DateRangeFilter'
+import { fmtMoneyExact } from '../../utils/format'
 
 function fmtVND(v) {
   if (v == null) return '—'
-  const n = Number(v)
-  if (n >= 1_000_000_000) return (n / 1_000_000_000).toFixed(2) + ' tỷ'
-  if (n >= 1_000_000)     return (n / 1_000_000).toFixed(2) + ' tr'
-  return n.toLocaleString('vi-VN') + ' ₫'
+  return fmtMoneyExact(v)
 }
 function fmtPct(num, denom) {
   if (!denom || denom === 0) return '—'
@@ -16,7 +14,11 @@ function fmtPct(num, denom) {
 }
 
 const today     = () => new Date().toISOString().slice(0, 10)
-const firstYear = () => `${new Date().getFullYear()}-01-01`
+const daysAgo30 = () => {
+  const date = new Date()
+  date.setDate(date.getDate() - 29)
+  return date.toISOString().slice(0, 10)
+}
 
 // Một dòng trong bảng P&L
 function PnLRow({ label, value, indent = 0, bold = false, negative = false, highlight, small = false, divider = false, helpText }) {
@@ -69,8 +71,8 @@ function PnLSection({ title, children }) {
 
 export default function PnLPage() {
   const { t } = useTranslation()
-  const [from, setFrom] = useState(firstYear())
-  const [to,   setTo]   = useState(today())
+  const [from, setFrom] = useState(() => daysAgo30())
+  const [to,   setTo]   = useState(() => today())
 
   const [profit,   setProfit]   = useState(null)
   const [expenses, setExpenses] = useState(null)
@@ -97,9 +99,12 @@ export default function PnLPage() {
         : t('pnl.errorOpex'))
     }
     setLoading(false)
-  }, [from, to])
+  }, [from, to, t])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => {
+    const timer = setTimeout(() => { load() }, 0)
+    return () => clearTimeout(timer)
+  }, [load])
 
   const p  = profit
   const ex = expenses

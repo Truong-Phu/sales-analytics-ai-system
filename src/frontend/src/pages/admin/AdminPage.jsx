@@ -10,6 +10,7 @@ import { useAuth } from '../../hooks/useAuth'
 import api from '../../api/axios'
 import DetailDrawer from '../../components/ui/DetailDrawer'
 import ConfirmDialog from '../../components/ui/ConfirmDialog'
+import { fmtMoneyExact } from '../../utils/format'
 
 const ROLE_CREATEABLE = ['Manager', 'Staff_Sales', 'Staff_Warehouse', 'Staff_Marketing', 'DataIT', 'Viewer']
 const ROLE_LABEL = {
@@ -470,7 +471,7 @@ function SetKpiDrawer({ open, staff, period, onClose, onSaved }) {
             <p className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>KPI thực tế tháng {month}/{year}</p>
             <div className="grid grid-cols-3 gap-3">
               {[
-                { label: 'Doanh thu', val: staff?.actualRevenue != null ? (staff.actualRevenue/1e6).toFixed(1)+'M' : '—' },
+                { label: 'Doanh thu', val: staff?.actualRevenue != null ? fmtMoneyExact(staff.actualRevenue) : '—' },
                 { label: 'Số đơn',   val: staff?.actualOrders  ?? '—' },
                 { label: 'KH mới',   val: staff?.actualCustomers ?? '—' },
               ].map(({ label, val }) => (
@@ -518,14 +519,8 @@ function SetKpiDrawer({ open, staff, period, onClose, onSaved }) {
 }
 
 // ─── Payroll helpers ──────────────────────────────────────────────────────────
-const fmtVND = v => (v == null ? '—' : Number(v).toLocaleString('vi-VN') + ' ₫')
-const fmtVNDShort = v => {
-  if (v == null) return '—'
-  const n = Number(v)
-  if (n >= 1_000_000_000) return (n / 1_000_000_000).toFixed(1) + ' tỷ'
-  if (n >= 1_000_000)     return (n / 1_000_000).toFixed(1) + ' tr'
-  return n.toLocaleString('vi-VN')
-}
+const fmtVND = v => (v == null ? '—' : fmtMoneyExact(v))
+const fmtVNDShort = fmtVND
 
 const PAYROLL_STATUS_CFG = {
   Draft:     { label: 'Nháp',       color: '#94A3B8', bg: 'rgba(148,163,184,0.1)' },

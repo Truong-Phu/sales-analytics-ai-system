@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { fmtM, tickFmt, tickFmtPreM, splitFmt } from '../../utils/format'
+import { fmtMoneyExact, tickFmt, tickFmtPreM, splitFmt } from '../../utils/format'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import {
@@ -127,6 +127,8 @@ const KpiTooltip = ({ def }) => <InfoTooltip def={def} />
 // compact=true khi dùng trong grid 8 cột — giảm padding, font-size, ẩn sparkline
 function KpiCard({ label, value, trend, trendLabel, icon, color = 'var(--primary-500)', valueColor, sparkData, sparkColor, helpDef, unavailable = false, placeholderText, compact = false }) {
   const up = trend > 0
+  const valueText = String(value ?? '')
+  const valueClass = compact && valueText.length > 10 ? 'text-[15px] mb-0.5' : (compact ? 'text-xl mb-0.5' : 'text-3xl mb-1')
   return (
     <div className={`lcard lcard-hover cursor-default w-full ${compact ? 'px-3 py-2' : 'px-4 py-3'}`}>
       <div className="flex items-center gap-1 mb-1.5">
@@ -146,7 +148,7 @@ function KpiCard({ label, value, trend, trendLabel, icon, color = 'var(--primary
         </div>
       ) : (
         <>
-          <div className={`font-bold font-mono leading-none ${compact ? 'text-xl mb-0.5' : 'text-3xl mb-1'}`} style={{ color: valueColor || 'var(--foreground)' }}>
+          <div className={`font-bold font-mono leading-none ${valueClass}`} style={{ color: valueColor || 'var(--foreground)' }}>
             {(() => {
               const { sym, num, unit } = splitFmt(value)
               return unit
@@ -192,7 +194,7 @@ function ChartTooltip({ active, payload, label }) {
           <span className="text-caption" style={{ color: 'var(--text-secondary)' }}>{p.name}:</span>
           <span className="font-mono text-caption font-medium" style={{ color: 'var(--text-primary)' }}>
             {typeof p.value === 'number' && p.value > 100_000
-              ? fmtM(p.value)
+              ? fmtMoneyExact(p.value)
               : p.value?.toLocaleString('vi-VN') ?? '—'}
           </span>
         </div>
@@ -632,7 +634,7 @@ function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd 
       <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-8 gap-2">
         <KpiCard compact
           label={t('dashboard.kpi.revenue')}
-          value={fmtM(kpi.totalRevenue)}
+          value={fmtMoneyExact(kpi.totalRevenue)}
           trend={kpi.revenueGrowthPct}
           trendLabel={t('dashboard.compare')}
           icon="payments"
@@ -649,7 +651,7 @@ function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd 
         />
         <KpiCard compact
           label={t('dashboard.kpi.aov')}
-          value={fmtM(kpi.avgOrderValue)}
+          value={fmtMoneyExact(kpi.avgOrderValue)}
           icon="receipt_long"
           color="var(--accent-500)"
           helpDef={KPI_DEFINITIONS.aov}
@@ -665,7 +667,7 @@ function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd 
         />
         <KpiCard compact
           label={t('dashboard.kpi.profit')}
-          value={fmtM(kpi.totalProfit)}
+          value={fmtMoneyExact(kpi.totalProfit)}
           trend={parseFloat(grossMarginPct)}
           trendLabel="biên LN"
           icon="percent"
@@ -675,7 +677,7 @@ function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd 
         />
         <KpiCard compact
           label="LN vận hành"
-          value={opProfit != null ? fmtM(opProfit) : (financeLoading ? '...' : '—')}
+          value={opProfit != null ? fmtMoneyExact(opProfit) : (financeLoading ? '...' : '—')}
           icon="account_balance_wallet"
           color="#6366F1"
           valueColor={opProfit != null ? (opProfit >= 0 ? 'var(--profit-positive)' : 'var(--profit-negative)') : undefined}
@@ -794,7 +796,7 @@ function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd 
               >
                 {data.revenueByChannel.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
               </Pie>
-              <Tooltip formatter={v => fmtM(v)} />
+              <Tooltip formatter={v => fmtMoneyExact(v)} />
             </PieChart>
           </ResponsiveContainer>
           <div className="space-y-1.5 mt-2">
@@ -829,7 +831,7 @@ function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd 
                   {p.product_name ?? p.name ?? p.channel ?? '—'}
                 </span>
                 <span className="text-sm font-semibold font-mono" style={{ color: 'var(--text-primary)' }}>
-                  {fmtM(p.revenue ?? p.total_revenue ?? 0)}
+                  {fmtMoneyExact(p.revenue ?? p.total_revenue ?? 0)}
                 </span>
               </div>
             ))}
@@ -1075,7 +1077,7 @@ function TabSales({ data, compareMode, prevData, from, to }) {
                   <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
                     <td className="py-2 px-1 max-w-[120px] truncate" style={{ color: 'var(--text-secondary)' }}
                       title={p.productName}>{p.productName}</td>
-                    <td className="py-2 px-1 text-right font-mono" style={{ color: 'var(--text-primary)' }}>{fmtM(p.revenue)}</td>
+                    <td className="py-2 px-1 text-right font-mono" style={{ color: 'var(--text-primary)' }}>{fmtMoneyExact(p.revenue)}</td>
                     <td className="py-2 px-1 text-right font-mono font-bold"
                       style={{ color: parseFloat(p.revContribPct) >= 10 ? 'var(--accent-500)' : 'var(--text-primary)' }}>
                       {p.revContribPct}%
@@ -1114,7 +1116,7 @@ function TabSales({ data, compareMode, prevData, from, to }) {
                       )}
                       <td className="py-2 px-2" style={{ color: 'var(--text-secondary)' }}>{p.productName}</td>
                       <td className="py-2 px-2 text-right font-mono" style={{ color: 'var(--text-primary)' }}>{p.orders.toLocaleString('vi-VN')}</td>
-                      <td className="py-2 px-2 text-right font-mono" style={{ color: 'var(--text-primary)' }}>{fmtM(p.revenue)}</td>
+                      <td className="py-2 px-2 text-right font-mono" style={{ color: 'var(--text-primary)' }}>{fmtMoneyExact(p.revenue)}</td>
                     </tr>
                   ))
                 )}
@@ -1384,7 +1386,7 @@ function TabMultiChannel({ data, wd = {}, wl = {} }) {
                 {channelTableData.map((ch, i) => (
                   <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
                     <td className="py-2 px-3 font-semibold" style={{ color: getChannelColor(ch.channelName) }}>{ch.channelName}</td>
-                    <td className="py-2 px-3 text-right font-mono" style={{ color: 'var(--text-primary)' }}>{fmtM(ch.revenue)}</td>
+                    <td className="py-2 px-3 text-right font-mono" style={{ color: 'var(--text-primary)' }}>{fmtMoneyExact(ch.revenue)}</td>
                     <td className="py-2 px-3 text-right font-mono"
                       style={{ color: parseFloat(ch.growth) >= 0 ? 'var(--accent-500)' : 'var(--color-error)' }}>
                       {parseFloat(ch.growth) >= 0 ? '+' : ''}{ch.growth}%
@@ -1563,7 +1565,7 @@ function TabCustomer({ data, wd = {}, wl = {} }) {
                 domain={clvScatter.length > 0 ? ['auto', 'auto'] : [0, 5]}
               />
               <YAxis dataKey="clv" name="CLV" tick={{ fontSize: 10, fill: 'var(--text-tertiary)' }} axisLine={false} tickLine={false} width={56}
-                tickFormatter={v => fmtM(v)}
+                tickFormatter={tickFmt}
                 domain={clvScatter.length > 0 ? ['auto', 'auto'] : [0, 1000000]}
               />
               <ZAxis dataKey="value" range={[40, 280]} name="Số KH" />
@@ -1646,7 +1648,7 @@ function TabCustomer({ data, wd = {}, wl = {} }) {
                   <div key={i}>
                     <div className="flex justify-between text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>
                       <span>{p.province ?? '—'}</span>
-                      <span className="font-mono">{fmtM(rev)}</span>
+                      <span className="font-mono">{fmtMoneyExact(rev)}</span>
                     </div>
                     <div className="h-1.5 rounded-full" style={{ background: 'var(--bg-elevated)' }}>
                       <div className="h-full rounded-full" style={{ width: `${maxR > 0 ? Math.min(rev / maxR * 100, 100) : 0}%`, background: '#6366F1' }} />
@@ -2747,8 +2749,8 @@ export default function DashboardPage() {
             {
               label:    t('dashboard.today.revenue'),
               type:     'revenue',
-              value:    fmtM(tvy.today.revenue),
-              prev:     fmtM(tvy.yesterday.revenue),
+              value:    fmtMoneyExact(tvy.today.revenue),
+              prev:     fmtMoneyExact(tvy.yesterday.revenue),
               pct:      tvy.revenuePct,
               pctLabel: t('dashboard.today.vsYesterday'),
               icon:     'payments',
@@ -2767,8 +2769,8 @@ export default function DashboardPage() {
             {
               label:    t('dashboard.today.profit'),
               type:     'profit',
-              value:    fmtM(tvy.today.profit),
-              prev:     fmtM(tvy.yesterday.profit),
+              value:    fmtMoneyExact(tvy.today.profit),
+              prev:     fmtMoneyExact(tvy.yesterday.profit),
               // profitPct vs hôm qua (từ backend); fallback sang gross margin % nếu API cũ
               pct:      tvy.profitPct != null
                           ? tvy.profitPct

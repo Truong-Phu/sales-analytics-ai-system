@@ -8,11 +8,12 @@ import AiEmptyState from '../../components/ui/AiEmptyState'
 import InfoTooltip from '../../components/ui/InfoTooltip'
 import { MT } from '../../constants/metricTooltips'
 import { getForecast, getTrend, getForecastMetrics, getModelComparison } from '../../api/aiApi'
+import { fmtMoneyExact } from '../../utils/format'
 
 const HORIZONS   = [7, 14, 30, 60, 90]
 const CHANNEL_KEYS = ['all', 'shopee', 'lazada', 'tiktok']
 
-function fmtM(v) {
+function fmtCompactMoney(v) {
   if (v >= 1_000_000) return `₫${(v / 1_000_000).toFixed(1)}M`
   if (v >= 1_000)     return `₫${(v / 1_000).toFixed(0)}K`
   return `₫${v}`
@@ -25,7 +26,7 @@ function CustomTooltip({ active, payload, label }) {
   return (
     <div className="lcard p-3 text-sm" style={{ boxShadow: 'var(--shadow-md)', minWidth: 160 }}>
       <div className="font-mono font-semibold" style={{ color: 'var(--text-primary)' }}>
-        {fmtM(p?.value ?? 0)}
+        {fmtMoneyExact(p?.value ?? 0)}
       </div>
       <div className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>{label}</div>
       {isForecast && (
@@ -169,7 +170,7 @@ export default function ForecastPage() {
                     axisLine={false} tickLine={false}
                   />
                   <YAxis
-                    tickFormatter={v => v >= 1e6 ? `${(v/1e6).toFixed(0)}M` : v}
+                    tickFormatter={fmtCompactMoney}
                     tick={{ fontSize: 11, fill: 'var(--text-tertiary)' }}
                     axisLine={false} tickLine={false} width={48}
                   />
@@ -328,7 +329,7 @@ export default function ForecastPage() {
                     Trung bình 7 ngày (MA7)
                   </p>
                   <div className="font-mono text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
-                    {fmtM(trend.ma7)}
+                    {fmtMoneyExact(trend.ma7)}
                   </div>
                 </div>
               )}
@@ -356,8 +357,8 @@ export default function ForecastPage() {
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
             {[
-              { label: 'MAE',  tooltip: MT.mae,  value: metrics.mae  != null ? `${(metrics.mae/1000).toFixed(1)}K ₫` : '–', sub: 'Sai số tuyệt đối TB',   color: 'var(--accent-500)' },
-              { label: 'RMSE', tooltip: MT.rmse, value: metrics.rmse != null ? `${(metrics.rmse/1000).toFixed(1)}K ₫` : '–', sub: 'Sai số có trọng số',    color: 'var(--color-warning)' },
+              { label: 'MAE',  tooltip: MT.mae,  value: metrics.mae  != null ? fmtMoneyExact(metrics.mae) : '–', sub: 'Sai số tuyệt đối TB',   color: 'var(--accent-500)' },
+              { label: 'RMSE', tooltip: MT.rmse, value: metrics.rmse != null ? fmtMoneyExact(metrics.rmse) : '–', sub: 'Sai số có trọng số',    color: 'var(--color-warning)' },
               { label: 'MAPE', tooltip: MT.mape, value: metrics.mape_pct != null ? `${metrics.mape_pct}%` : '–',             sub: 'Sai số phần trăm',      color: 'var(--color-error)' },
               { label: 'Kiểm tra', tooltip: null, value: `${metrics.n_test ?? '–'} ngày`, sub: `${metrics.test_from ?? ''} → ${metrics.test_to ?? ''}`, color: 'var(--text-tertiary)' },
             ].map(({ label, tooltip, value, sub, color }) => (
@@ -452,10 +453,10 @@ export default function ForecastPage() {
                         </td>
                         <td className="py-2.5 pr-4 text-xs" style={{ color: 'var(--text-tertiary)' }}>{type}</td>
                         <td className="py-2.5 pr-4 font-mono text-xs" style={{ color: 'var(--text-secondary)' }}>
-                          {m.mae != null ? (m.mae / 1_000_000).toFixed(2) + 'M' : '–'}
+                          {m.mae != null ? fmtMoneyExact(m.mae) : '–'}
                         </td>
                         <td className="py-2.5 pr-4 font-mono text-xs" style={{ color: 'var(--text-secondary)' }}>
-                          {m.rmse != null ? (m.rmse / 1_000_000).toFixed(2) + 'M' : '–'}
+                          {m.rmse != null ? fmtMoneyExact(m.rmse) : '–'}
                         </td>
                         <td className="py-2.5 pr-4 font-mono text-xs" style={{ color: 'var(--text-tertiary)' }}>
                           {m.mape_pct != null ? m.mape_pct + '%' : '–'}
@@ -496,10 +497,10 @@ export default function ForecastPage() {
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
                   <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'var(--text-tertiary)' }}
                          axisLine={false} tickLine={false} interval={19} />
-                  <YAxis tickFormatter={v => v >= 1e6 ? `${(v/1e6).toFixed(0)}M` : v}
+                  <YAxis tickFormatter={fmtCompactMoney}
                          tick={{ fontSize: 10, fill: 'var(--text-tertiary)' }}
                          axisLine={false} tickLine={false} width={44} />
-                  <Tooltip formatter={(v, n) => [fmtM(v), n]} />
+                  <Tooltip formatter={(v, n) => [fmtMoneyExact(v), n]} />
                   <Line type="monotone" dataKey="actual"      name="Actual"       stroke="#94a3b8" strokeWidth={1.5} dot={false} />
                   <Line type="monotone" dataKey="holtwinters" name="Holt-Winters" stroke="#f59e0b" strokeWidth={1.5} dot={false} strokeDasharray="4 2" />
                   <Line type="monotone" dataKey="lightgbm"    name="LightGBM"     stroke="#10b981" strokeWidth={1.5} dot={false} strokeDasharray="4 2" />

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { getExpenses, getExpensesSummary, createExpense, updateExpense, deleteExpense } from '../../api/financeApi'
 import { useAuth } from '../../hooks/useAuth'
 import DateRangeFilter from '../../components/ui/DateRangeFilter'
+import { fmtMoneyExact } from '../../utils/format'
 
 const EXPENSE_TYPES = ['Salary', 'Warehouse', 'Utilities', 'Internet', 'Office', 'Other']
 const TYPE_ICONS = {
@@ -20,15 +21,6 @@ const TYPE_COLORS = {
   Internet:  '#3B82F6',
   Office:    '#8B5CF6',
   Other:     '#94A3B8',
-}
-
-function fmtM(v) {
-  if (v == null || v === 0) return '0'
-  const n = Number(v)
-  if (n >= 1_000_000_000) return (n / 1_000_000_000).toFixed(1) + ' tỷ'
-  if (n >= 1_000_000)     return (n / 1_000_000).toFixed(1) + ' tr'
-  if (n >= 1_000)         return (n / 1_000).toFixed(0) + 'K'
-  return n.toLocaleString('vi-VN')
 }
 
 const today = () => new Date().toISOString().slice(0, 10)
@@ -285,7 +277,7 @@ export default function OperatingExpensesPage() {
                   </span>
                 </div>
                 <div className="text-xl font-bold font-mono" style={{ color: amt > 0 ? 'var(--text-primary)' : 'var(--text-tertiary)' }}>
-                  {fmtM(amt)}
+                  {fmtMoneyExact(amt)}
                 </div>
               </div>
             )
@@ -304,7 +296,7 @@ export default function OperatingExpensesPage() {
             </span>
           </div>
           <span className="text-xl font-bold font-mono" style={{ color: '#8B5CF6' }}>
-            ₫{Number(summary.total ?? 0).toLocaleString('vi-VN')}
+            {fmtMoneyExact(summary.total ?? 0)}
           </span>
         </div>
       )}
@@ -361,7 +353,7 @@ export default function OperatingExpensesPage() {
                     {item.description || <span style={{ color: 'var(--text-tertiary)' }}>—</span>}
                   </td>
                   <td className="px-4 py-2.5 font-mono font-semibold text-right" style={{ color: 'var(--text-primary)' }}>
-                    ₫{Number(item.amount).toLocaleString('vi-VN')}
+                    {fmtMoneyExact(item.amount)}
                   </td>
                   <td className="px-4 py-2.5">
                     {/* Salary từ payroll hệ thống → không cho sửa/xoá trực tiếp */}

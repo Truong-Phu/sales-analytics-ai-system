@@ -5,6 +5,7 @@ import api from '../../api/axios'
 import MockToast from '../../components/ui/MockToast'
 import DetailDrawer from '../../components/ui/DetailDrawer'
 import { useAuth } from '../../hooks/useAuth'
+import { fmtMoneyExact } from '../../utils/format'
 
 // ── Drawer tạo phiếu nhập kho ─────────────────────────────────────────────────
 function CreateReceiptDrawer({ open, onClose, onSaved, initialPoId = '', productId = '', productName = '', returnUrl = '' }) {
@@ -494,7 +495,7 @@ export default function GoodsReceiptsPage() {
                         {gr.totalQuantity}
                       </td>
                       <td className="px-4 py-3 tabular-nums text-sm" style={{ color: 'var(--text-secondary)' }}>
-                        {Number(gr.totalAmount).toLocaleString('vi-VN')}đ
+                        {fmtMoneyExact(gr.totalAmount)}
                       </td>
                       <td className="px-4 py-3 text-xs" style={{ color: 'var(--text-tertiary)' }}>
                         {fmtDate(gr.createdAt)}
@@ -544,7 +545,7 @@ export default function GoodsReceiptsPage() {
                                       +{it.receivedQuantity}
                                     </td>
                                     <td className="py-1.5 pr-4 tabular-nums" style={{ color: 'var(--text-secondary)' }}>
-                                      {Number(it.importPrice).toLocaleString('vi-VN')}đ
+                                      {fmtMoneyExact(it.importPrice)}
                                     </td>
                                     <td className="py-1.5 tabular-nums" style={{ color: 'var(--text-primary)' }}>
                                       {Number(it.totalPrice).toLocaleString('vi-VN')}đ

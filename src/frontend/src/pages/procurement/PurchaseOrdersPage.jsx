@@ -5,6 +5,7 @@ import api from '../../api/axios'
 import MockToast from '../../components/ui/MockToast'
 import DetailDrawer from '../../components/ui/DetailDrawer'
 import ConfirmDialog from '../../components/ui/ConfirmDialog'
+import { fmtMoneyExact } from '../../utils/format'
 
 const PLATFORMS = [
   { name: 'Shopee', rate: 0.040 },
@@ -241,7 +242,7 @@ function CreateDrawer({ open, onClose, onSaved, defaultProductId = '', defaultPr
         <div style={{ display: 'flex', alignItems: 'center', width: '100%', gap: 8 }}>
           <span style={{ flex: 1, fontSize: 14, fontWeight: 700, color: '#0f172a' }}>
             Tổng:{' '}
-            <span style={{ color: '#6366f1' }}>{total.toLocaleString('vi-VN')}đ</span>
+            <span style={{ color: '#6366f1' }}>{fmtMoneyExact(total)}</span>
           </span>
           <button onClick={onClose}
             style={{ padding: '8px 16px', borderRadius: 8, fontSize: 13, border: '1px solid #e5e7eb',
@@ -337,7 +338,7 @@ function CreateDrawer({ open, onClose, onSaved, defaultProductId = '', defaultPr
                   <div style={{ flex: '0 0 120px', textAlign: 'right' }}>
                     <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 4 }}>Thành tiền</div>
                     <div style={{ fontSize: 13, fontWeight: 600, color: '#6366f1', height: 33, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
-                      {((Number(it.quantity) || 0) * (Number(it.importPrice) || 0)).toLocaleString('vi-VN')}đ
+                      {fmtMoneyExact((Number(it.quantity) || 0) * (Number(it.importPrice) || 0))}
                     </div>
                   </div>
                   {items.length > 1 && (
@@ -355,7 +356,7 @@ function CreateDrawer({ open, onClose, onSaved, defaultProductId = '', defaultPr
                       <span key={pf.name} style={{ fontSize: 11, color: '#94a3b8' }}>
                         {pf.name} ≥{' '}
                         <span style={{ color: '#3B82F6', fontWeight: 600 }}>
-                          {calcMin(Number(it.importPrice), pf.rate).toLocaleString('vi-VN')}đ
+                          {fmtMoneyExact(calcMin(Number(it.importPrice), pf.rate))}
                         </span>
                       </span>
                     ))}
@@ -384,7 +385,7 @@ function CreateDrawer({ open, onClose, onSaved, defaultProductId = '', defaultPr
             <option value="">{loadingSupps ? 'Đang tải NCC...' : '-- Chọn nhà cung cấp --'}</option>
             {displaySuppliers.map(s => (
               <option key={s.supplierId} value={s.supplierId}>
-                {s.supplierName}{s.importPrice > 0 ? ` — ${s.importPrice.toLocaleString('vi-VN')}đ` : ''}
+                {s.supplierName}{s.importPrice > 0 ? ` — ${fmtMoneyExact(s.importPrice)}` : ''}
               </option>
             ))}
           </select>
@@ -602,7 +603,7 @@ export default function PurchaseOrdersPage() {
                         {po.supplierName}
                       </td>
                       <td className="px-4 py-3 tabular-nums text-sm" style={{ color: 'var(--text-secondary)' }}>
-                        {Number(po.totalAmount).toLocaleString('vi-VN')}đ
+                        {fmtMoneyExact(po.totalAmount)}
                       </td>
                       <td className="px-4 py-3"><StatusBadge status={po.status} /></td>
                       <td className="px-4 py-3 text-xs" style={{ color: 'var(--text-tertiary)' }}>
@@ -674,10 +675,10 @@ export default function PurchaseOrdersPage() {
                                         {remaining}
                                       </td>
                                       <td className="py-1.5 pr-4 tabular-nums" style={{ color: 'var(--text-secondary)' }}>
-                                        {Number(it.importPrice).toLocaleString('vi-VN')}đ
+                                        {fmtMoneyExact(it.importPrice)}
                                       </td>
                                       <td className="py-1.5 tabular-nums" style={{ color: 'var(--text-primary)' }}>
-                                        {Number(it.totalPrice).toLocaleString('vi-VN')}đ
+                                        {fmtMoneyExact(it.totalPrice)}
                                       </td>
                                     </tr>
                                   )

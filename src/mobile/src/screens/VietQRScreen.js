@@ -7,11 +7,11 @@ import { useTranslation } from 'react-i18next'
 import api from '../api/axios'
 import { useTheme } from '../context/ThemeContext'
 import { radius } from '../components/theme'
+import { formatMoneyWithSymbol } from '../utils/format'
 
 function fmtVND(v) {
   if (v == null) return '—'
-  if (v >= 1_000_000) return `₫${(v / 1_000_000).toFixed(1)}M`
-  return `₫${Number(v).toLocaleString('vi-VN')}`
+  return formatMoneyWithSymbol(v)
 }
 
 function fmtCountdown(seconds) {

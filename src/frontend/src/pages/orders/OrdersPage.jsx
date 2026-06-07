@@ -11,6 +11,7 @@ import PaymentSelectModal from '../../components/payment/PaymentSelectModal'
 import ManualConfirmModal from '../../components/payment/ManualConfirmModal'
 import MockPaymentModal from '../../components/payment/MockPaymentModal'
 import ConfirmDialog from '../../components/ui/ConfirmDialog'
+import { fmtMoneyExact } from '../../utils/format'
 
 const STATUS_COLOR = {
   pending:    { bg: 'rgba(100,116,139,0.10)', border: 'rgba(100,116,139,0.25)', text: '#64748B',              dot: '#64748B'  },
@@ -58,8 +59,7 @@ function StatusBadge({ status, label }) {
 
 function fmtVND(v) {
   if (!v && v !== 0) return '–'
-  if (v >= 1_000_000) return `₫${(v / 1_000_000).toFixed(1)}M`
-  return `₫${v.toLocaleString('vi-VN')}`
+  return fmtMoneyExact(v)
 }
 
 // Modal cập nhật trạng thái đơn hàng

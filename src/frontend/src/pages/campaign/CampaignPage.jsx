@@ -4,6 +4,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom'
 import MockToast from '../../components/ui/MockToast'
 import AiEmptyState from '../../components/ui/AiEmptyState'
 import { getCampaignPlan } from '../../api/aiApi'
+import { fmtMoneyExact } from '../../utils/format'
 
 // ── Hiển thị card gợi ý từ URL params (basket / rfm / churn) ─────────────────
 function ActionSuggestionBanner({ params, onDismiss }) {
@@ -188,7 +189,7 @@ export default function CampaignPage() {
               <div className="flex items-end gap-2 h-28">
                 {data.seasonal_insight.weekly_pattern.map(d => (
                   <div key={d.day} className="flex-1 flex flex-col items-center gap-1">
-                    <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{(d.avg/1e6).toFixed(1)}M</div>
+                    <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{fmtMoneyExact(d.avg)}</div>
                     <div className="w-full rounded-t transition-all"
                       style={{
                         height: `${Math.round(d.avg/maxDow*80)}px`,
@@ -222,7 +223,7 @@ export default function CampaignPage() {
                     <div className="text-sm font-bold" style={{ color: cfg.textColor }}>
                       {w.vs_overall_pct > 0 ? '+' : ''}{w.vs_overall_pct}% {t('campaign.vsAvg')}
                     </div>
-                    <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{(w.avg_revenue/1e6).toFixed(1)}M VNĐ/{t('campaign.perMonth')}</div>
+                    <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{fmtMoneyExact(w.avg_revenue)}/{t('campaign.perMonth')}</div>
                   </div>
                   <span className="text-xs font-medium px-2 py-1 rounded-full shrink-0"
                     style={{ color: cfg.textColor, border: `1px solid ${cfg.border}`, background: cfg.bg }}>

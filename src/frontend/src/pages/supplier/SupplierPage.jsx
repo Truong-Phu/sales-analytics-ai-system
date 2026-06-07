@@ -5,6 +5,7 @@ import AiEmptyState from '../../components/ui/AiEmptyState'
 import InfoTooltip from '../../components/ui/InfoTooltip'
 import { MT } from '../../constants/metricTooltips'
 import { getSupplierPerformance } from '../../api/aiApi'
+import { fmtMoneyExact } from '../../utils/format'
 
 function StatusBadge({ status }) {
   const { t } = useTranslation()
@@ -84,7 +85,7 @@ export default function SupplierPage() {
   const avgOnTime = suppliers.length ? suppliers.reduce((s, r) => s + r.on_time_rate, 0) / suppliers.length : 0
   const worst     = suppliers.reduce((w, s) => (!w || s.on_time_rate < w.on_time_rate) ? s : w, null)
 
-  const fmt = v => v >= 1e9 ? `${(v/1e9).toFixed(1)}B` : v >= 1e6 ? `${(v/1e6).toFixed(1)}M` : v.toLocaleString()
+  const fmt = v => fmtMoneyExact(v)
 
   return (
     <div className="space-y-5">
@@ -192,7 +193,7 @@ export default function SupplierPage() {
                     <td className="p-4 text-center" style={{ color: 'var(--text-secondary)' }}>{s.avg_lead_days.toFixed(1)} {t('supplierPerf.daysSuffix')}</td>
                     <td className="p-4 text-center" style={{ color: 'var(--text-secondary)' }}>{s.total_quantity.toLocaleString()}</td>
                     <td className="p-4 text-center"><QualityStars score={s.quality_score} /></td>
-                    <td className="p-4 text-right font-medium" style={{ color: 'var(--text-primary)' }}>{fmt(s.total_value)} VNĐ</td>
+                    <td className="p-4 text-right font-medium" style={{ color: 'var(--text-primary)' }}>{fmt(s.total_value)}</td>
                   </tr>
                 ))}
               </tbody>

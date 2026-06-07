@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import AiEmptyState from '../../components/ui/AiEmptyState'
 import { getChurnPrediction } from '../../api/aiApi'
+import { fmtMoneyExact } from '../../utils/format'
 
 const CHANNEL_CFG = {
   'SHOPEE':      { icon: '🛒', label: 'Shopee',    color: '#EE4D2D' },
@@ -14,9 +15,7 @@ const CHANNEL_CFG = {
 }
 
 function fmt(v) {
-  if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`
-  if (v >= 1_000)     return `${(v / 1_000).toFixed(0)}K`
-  return `${v}`
+  return fmtMoneyExact(v || 0)
 }
 
 const RISK_COLOR = {

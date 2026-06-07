@@ -9,7 +9,7 @@ import i18n from '../i18n'
 
 function isVi() { return i18n.language !== 'en' }
 
-/** Định dạng số tiền đầy đủ (có ký hiệu ₫), dùng cho card KPI & tooltip */
+/** Định dạng số tiền rút gọn, dùng cho biểu đồ và bảng phụ cần tiết kiệm không gian. */
 export function fmtM(v) {
   if (v == null || !Number.isFinite(Number(v))) return '₫0'
   const n = Number(v)
@@ -23,6 +23,13 @@ export function fmtM(v) {
   if (n >= 1_000_000)     return `₫${(n / 1_000_000).toFixed(1)}M`
   if (n >= 1_000)         return `₫${(n / 1_000).toFixed(0)}K`
   return `₫${n.toLocaleString('en-US')}`
+}
+
+/** Định dạng số tiền đầy đủ, dùng cho KPI kinh doanh cần đối chiếu chính xác. */
+export function fmtMoneyExact(v) {
+  if (v == null || !Number.isFinite(Number(v))) return '₫0'
+  const n = Math.round(Number(v))
+  return `₫${n.toLocaleString(isVi() ? 'vi-VN' : 'en-US')}`
 }
 
 /**
@@ -64,7 +71,7 @@ export function tickFmtPreM(v) {
 export function splitFmt(str) {
   const s = String(str ?? '').trim()
   // Tách ký hiệu tiền, số, đơn vị
-  const m = s.match(/^(₫?)([\d,\.]+)\s*(triệu|tỷ|nghìn|B|M|K|tr|ng)?$/)
+  const m = s.match(/^(₫?)([\d,.]+)\s*(triệu|tỷ|nghìn|B|M|K|tr|ng)?$/)
   if (!m) return { sym: '', num: s, unit: '' }
   return { sym: m[1], num: m[2], unit: m[3] ?? '' }
 }

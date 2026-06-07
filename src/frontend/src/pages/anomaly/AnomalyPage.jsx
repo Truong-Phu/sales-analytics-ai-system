@@ -4,6 +4,7 @@ import AiEmptyState from '../../components/ui/AiEmptyState'
 import InfoTooltip from '../../components/ui/InfoTooltip'
 import { MT } from '../../constants/metricTooltips'
 import { getAnomaly } from '../../api/aiApi'
+import { fmtMoneyExact } from '../../utils/format'
 
 const SEVERITY_COLOR = {
   high:   { bg: 'rgba(239,68,68,0.10)',   border: 'rgba(239,68,68,0.30)',   text: '#EF4444',  dot: '#EF4444'  },
@@ -242,7 +243,7 @@ export default function AnomalyPage() {
                           </span>
                         </td>
                         <td className="px-5 py-3 font-mono text-xs" style={{ color: 'var(--text-primary)' }}>
-                          ₫{((a.value ?? 0) / 1_000_000).toFixed(2)}M
+                          {fmtMoneyExact(a.value ?? 0)}
                         </td>
                         <td className="px-5 py-3" style={{ minWidth: 140 }}>
                           <ZBar z={a.zScore ?? 0} />

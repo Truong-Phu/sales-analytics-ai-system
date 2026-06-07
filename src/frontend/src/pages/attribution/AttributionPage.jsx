@@ -6,6 +6,7 @@ import InfoTooltip from '../../components/ui/InfoTooltip'
 import { MT } from '../../constants/metricTooltips'
 import { getChannelAttribution } from '../../api/aiApi'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
+import { fmtMoneyExact } from '../../utils/format'
 
 const COLORS = ['#6366F1','#22C55E','#F59E0B','#EF4444','#8B5CF6','#06B6D4']
 
@@ -30,7 +31,7 @@ export default function AttributionPage() {
   useEffect(() => { load() }, [days])
 
   const pieData  = (data?.channels ?? []).map(c => ({ name: c.channel, value: c.revenue }))
-  const fmt      = v => v >= 1e9 ? `${(v/1e9).toFixed(1)}B` : v >= 1e6 ? `${(v/1e6).toFixed(1)}M` : `${v.toLocaleString()}`
+  const fmt      = v => fmtMoneyExact(v || 0)
   const roiColor = roi => roi >= 500 ? '#22C55E' : roi >= 200 ? 'var(--primary-500)' : roi >= 50 ? '#F59E0B' : roi > 0 ? '#EF4444' : 'var(--text-tertiary)'
 
   return (
@@ -76,7 +77,7 @@ export default function AttributionPage() {
                     {pieData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                   </Pie>
                   <Tooltip
-                    formatter={v => `${fmt(v)} VNĐ`}
+                    formatter={v => fmt(v)}
                     contentStyle={{ background:'var(--bg-surface)', border:'1px solid var(--border)', borderRadius:8 }}
                   />
                 </PieChart>
@@ -87,7 +88,7 @@ export default function AttributionPage() {
             <div className="lcard p-4 space-y-2">
               <h3 className="text-sm font-semibold mb-2" style={{ color: 'var(--text-secondary)' }}>{t('attribution.overviewTitle')}</h3>
               {[
-                { label: t('attribution.totalRevenue'), tip: MT.totalRevenue,  value: `${fmt(data?.total_revenue ?? 0)} VNĐ`, color: 'var(--primary-500)' },
+                { label: t('attribution.totalRevenue'), tip: MT.totalRevenue,  value: fmt(data?.total_revenue ?? 0), color: 'var(--primary-500)' },
                 { label: t('attribution.totalOrders'),  tip: MT.orderCount,   value: `${(data?.total_orders ?? 0).toLocaleString()} ${t('attribution.orderCount', { n: '' }).trim()}`, color: '#22C55E' },
                 { label: t('attribution.bestChannel'),  tip: MT.salesChannel, value: data?.top_channel ?? '—', color: '#22C55E' },
                 { label: t('attribution.lowestRoi'),    tip: MT.roi,          value: data?.worst_roi_channel ?? '—', color: '#EF4444' },
@@ -138,13 +139,13 @@ export default function AttributionPage() {
                       onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                       <td className="p-3 font-medium" style={{ color: 'var(--text-primary)' }}>{c.channel}</td>
                       <td className="p-3">
-                        <div className="font-semibold" style={{ color: 'var(--text-primary)' }}>{fmt(c.revenue)} VNĐ</div>
+                        <div className="font-semibold" style={{ color: 'var(--text-primary)' }}>{fmt(c.revenue)}</div>
                         <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{c.attribution_pct}%</div>
                       </td>
                       <td className="p-3" style={{ color: 'var(--text-secondary)' }}>{c.orders}</td>
                       <td className="p-3 font-mono text-xs" style={{ color: 'var(--text-secondary)' }}>{fmt(c.avg_order_value)}</td>
                       <td className="p-3 text-xs" style={{ color: 'var(--text-secondary)' }}>
-                        {c.ad_spend > 0 ? `${fmt(c.ad_spend)} VNĐ` : '—'}
+                        {c.ad_spend > 0 ? fmt(c.ad_spend) : '—'}
                       </td>
                       <td className="p-3 font-bold" style={{ color: roiColor(c.roi_pct) }}>
                         {c.roi_pct > 0 ? `${c.roi_pct.toFixed(0)}%` : '—'}

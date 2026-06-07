@@ -5,7 +5,7 @@ import { getOltpProducts, createProduct, updateProduct, deleteProduct, getCatego
 import ConfirmDialog from '../../components/ui/ConfirmDialog'
 import { useAuth } from '../../hooks/useAuth'
 import { useDebounce } from '../../hooks/useDebounce'
-import { exportToCsv } from '../../utils/format'
+import { exportToCsv, fmtMoneyExact } from '../../utils/format'
 import api from '../../api/axios'
 
 const PAGE_SIZE = 10
@@ -334,8 +334,8 @@ function ProductDetailModal({ product, canEdit, onClose, onSaved }) {
               {/* Grid 2 cột thông số */}
               <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
                 {[
-                  ['Giá bán',     `${(product.unit_price ?? product.price ?? 0).toLocaleString('vi-VN')}₫`],
-                  ['Giá vốn',     `${(product.cost_price ?? product.costPrice ?? 0).toLocaleString('vi-VN')}₫`],
+                  ['Giá bán',     fmtMoneyExact(product.unit_price ?? product.price ?? 0)],
+                  ['Giá vốn',     fmtMoneyExact(product.cost_price ?? product.costPrice ?? 0)],
                   ['Tồn kho',     (product.stock ?? 0).toLocaleString()],
                   ['Danh mục',    product.category ?? product.categoryName ?? '—'],
                   ['Thương hiệu', product.brand ?? '—'],
@@ -366,7 +366,7 @@ function ProductDetailModal({ product, canEdit, onClose, onSaved }) {
                           )}
                         </span>
                         <span className="text-xs tabular-nums" style={{ color: 'var(--text-secondary)' }}>
-                          {s.importPrice > 0 ? `Giá nhập: ${s.importPrice.toLocaleString('vi-VN')}₫` : 'Chưa có giá'}
+                          {s.importPrice > 0 ? `Giá nhập: ${fmtMoneyExact(s.importPrice)}` : 'Chưa có giá'}
                         </span>
                       </div>
                     ))}
@@ -484,7 +484,7 @@ function ProductDetailModal({ product, canEdit, onClose, onSaved }) {
                           ) : '—'}
                         </td>
                         <td className="px-3 py-2 font-mono text-xs tabular-nums" style={{ color: 'var(--text-primary)' }}>
-                          {v.salePrice ? `${Number(v.salePrice).toLocaleString('vi-VN')}₫` : '—'}
+                          {v.salePrice ? fmtMoneyExact(v.salePrice) : '—'}
                         </td>
                         <td className="px-3 py-2 text-center font-semibold text-xs"
                             style={{ color: (v.stockQuantity ?? 0) === 0 ? '#EF4444' : '#22C55E' }}>
@@ -610,7 +610,7 @@ function ProductDetailModal({ product, canEdit, onClose, onSaved }) {
               <label className="block text-sm mb-1" style={{ color: 'var(--text-secondary)' }}>Giá vốn (₫)</label>
               <div className="linput text-sm flex items-center justify-between"
                    style={{ background: 'var(--bg-elevated)', cursor: 'not-allowed', opacity: 0.7 }}>
-                <span>{(editData.costPrice || 0).toLocaleString('vi-VN')}</span>
+                <span>{fmtMoneyExact(editData.costPrice || 0)}</span>
                 <span className="text-xs ml-2" style={{ color: 'var(--text-tertiary)' }}>
                   {suppliers.length > 0 ? 'Từ NCC (cập nhật tại trang NCC)' : 'Chỉ đọc'}
                 </span>
@@ -1127,7 +1127,7 @@ export default function ProductsPage() {
                 </div>
                 <div className="text-xs mb-2 truncate" style={{ color: 'var(--text-secondary)' }}>{p.category}</div>
                 <div className="font-mono text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
-                  {(p.unit_price ?? p.price ?? 0).toLocaleString('vi-VN')}₫
+                  {fmtMoneyExact(p.unit_price ?? p.price ?? 0)}
                 </div>
                 <div className="mt-2"><StockBadge p={p} t={t} /></div>
               </div>
@@ -1211,7 +1211,7 @@ export default function ProductsPage() {
                     <td className="px-4 py-3 text-sm" style={{ color: 'var(--text-secondary)' }}>{p.category}</td>
                     <td className="px-4 py-3 font-mono text-sm text-right" style={{ color: 'var(--text-primary)' }}>
                       <div className="flex items-center justify-end gap-1">
-                        {(p.unit_price ?? p.price ?? 0).toLocaleString('vi-VN')}₫
+                        {fmtMoneyExact(p.unit_price ?? p.price ?? 0)}
                         {!(p.cost_price ?? p.costPrice) && (
                           <span title="Thiếu giá vốn — lợi nhuận chưa chính xác"
                             className="icon" style={{ fontSize: 13, color: '#F59E0B' }}>

@@ -7,6 +7,7 @@ import {
 import api from '../api/axios'
 import { useTheme } from '../context/ThemeContext'
 import { radius } from '../components/theme'
+import { formatMoneyWithSymbol } from '../utils/format'
 
 const PAYMENT = ['COD', 'MoMo', 'VNPay', 'ZaloPay', 'Chuyển khoản']
 
@@ -224,7 +225,7 @@ export default function AddOrderScreen({ navigation }) {
                         <TouchableOpacity style={s.searchItem} onPress={() => selectProduct(item)}>
                           <Text style={s.searchItemName}>{item.productName ?? item.product_name ?? item.name}</Text>
                           <Text style={s.searchItemSub}>
-                            {item.sku ? `SKU: ${item.sku}` : ''}{item.basePrice ? ` · ₫${Number(item.basePrice).toLocaleString('vi-VN')}` : ''}
+                            {item.sku ? `SKU: ${item.sku}` : ''}{item.basePrice ? ` · ${formatMoneyWithSymbol(item.basePrice)}` : ''}
                           </Text>
                         </TouchableOpacity>
                       )}
@@ -259,7 +260,7 @@ export default function AddOrderScreen({ navigation }) {
             <View style={s.totalRow}>
               <Text style={s.totalLabel}>Tổng tiền:</Text>
               <Text style={s.totalValue}>
-                ₫{((parseInt(form.quantity) || 1) * (parseFloat(String(form.unitPrice).replace(/\D/g,'')) || 0)).toLocaleString('vi-VN')}
+                {formatMoneyWithSymbol((parseInt(form.quantity) || 1) * (parseFloat(String(form.unitPrice).replace(/\D/g,'')) || 0))}
               </Text>
             </View>
           ) : null}

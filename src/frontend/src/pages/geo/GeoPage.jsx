@@ -4,6 +4,7 @@ import MockToast from '../../components/ui/MockToast'
 import AiEmptyState from '../../components/ui/AiEmptyState'
 import { getGeoDistribution } from '../../api/aiApi'
 import DateRangeFilter from '../../components/ui/DateRangeFilter'
+import { fmtMoneyExact } from '../../utils/format'
 
 const VN_COORDS = {
   'Hà Nội':           [21.0285, 105.8542],
@@ -85,7 +86,7 @@ export default function GeoPage() {
           <div style="min-width:160px;font-family:sans-serif">
             <strong style="font-size:14px;color:#111827">${point.province}</strong><br>
             <span style="color:#6B7280;font-size:12px">${t('geo.popupCustomers')}: <strong style="color:#111827">${point.customer_count.toLocaleString()}</strong></span><br>
-            <span style="color:#6B7280;font-size:12px">${t('geo.popupRevenue')}: <strong style="color:#111827">${(point.revenue/1e6).toFixed(1)}M VNĐ</strong></span><br>
+            <span style="color:#6B7280;font-size:12px">${t('geo.popupRevenue')}: <strong style="color:#111827">${fmtMoneyExact(point.revenue)}</strong></span><br>
             <span style="color:#6B7280;font-size:12px">${t('geo.popupOrders')}: <strong style="color:#111827">${point.orders.toLocaleString()}</strong></span>
           </div>
         `)
@@ -119,7 +120,7 @@ export default function GeoPage() {
     revenue:   t('geo.metricRevenue'),
     orders:    t('geo.metricOrders'),
   }
-  const fmt = v => v >= 1e9 ? `${(v/1e9).toFixed(1)}B` : v >= 1e6 ? `${(v/1e6).toFixed(1)}M` : v.toLocaleString()
+  const fmt = v => fmtMoneyExact(v || 0)
 
   return (
     <div className="space-y-5">
@@ -213,7 +214,7 @@ export default function GeoPage() {
                       <div className="flex-1 min-w-0">
                         <div className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{pt.province}</div>
                         <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                          {pt.customer_count.toLocaleString()} KH · {fmt(pt.revenue)} VNĐ
+                          {pt.customer_count.toLocaleString()} KH · {fmt(pt.revenue)}
                         </div>
                       </div>
                       <div className="w-14 h-1.5 rounded-full shrink-0" style={{ background: 'var(--bg-elevated)' }}>
@@ -239,7 +240,7 @@ export default function GeoPage() {
           <div className="grid grid-cols-3 gap-4">
             {[
               { label: t('geo.popupCustomers'), value: selected.customer_count.toLocaleString(), color: '#3B82F6' },
-              { label: t('geo.popupRevenue'),   value: `${(selected.revenue/1e6).toFixed(1)}M VNĐ`, color: '#22C55E' },
+              { label: t('geo.popupRevenue'),   value: fmtMoneyExact(selected.revenue), color: '#22C55E' },
               { label: t('geo.popupOrders'),    value: selected.orders.toLocaleString(),             color: '#F59E0B' },
             ].map(k => (
               <div key={k.label}>
