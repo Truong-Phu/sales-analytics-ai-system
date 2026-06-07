@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import MockToast from '../../components/ui/MockToast'
@@ -13,7 +13,7 @@ export default function BasketPage() {
   const [data,    setData]    = useState(null)
   const [loading, setLoading] = useState(true)
   const [isMock,  setIsMock]  = useState(false)
-  const [minConf, setMinConf] = useState(0.3)
+  const [minConf, setMinConf] = useState(0.1)
   const [minLift, setMinLift] = useState(1.0)
   const fetchedRef = useRef(false)
 
@@ -28,18 +28,24 @@ export default function BasketPage() {
     navigate(`/campaign?${params}`)
   }
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await getBasketAnalysis({ min_confidence: minConf, min_lift: minLift, top_n: 30 })
+      const res = await getBasketAnalysis({
+        days: 180,
+        min_support: 0.001,
+        min_confidence: minConf,
+        min_lift: minLift,
+        top_n: 30,
+      })
       setData(res)
       setIsMock(res.is_mock ?? false)
     } catch {
       setData(null)
     } finally { setLoading(false) }
-  }
+  }, [minConf, minLift])
 
-  useEffect(() => { if (fetchedRef.current) return; fetchedRef.current = true; load() }, [])
+  useEffect(() => { if (fetchedRef.current) return; fetchedRef.current = true; load() }, [load])
 
   const liftColor = (lift) => lift >= 3 ? '#EF4444' : lift >= 2 ? '#F59E0B' : '#22C55E'
 

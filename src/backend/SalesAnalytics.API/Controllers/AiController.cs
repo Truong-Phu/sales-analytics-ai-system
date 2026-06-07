@@ -200,16 +200,23 @@ public class AiController(AiProxyService ai, ITenantContext tenant) : Controller
     [HttpGet("basket")]
     public async Task<IActionResult> BasketAnalysis(
         [FromQuery] int days = 180,
-        [FromQuery] double minSupport = 0.02,
-        [FromQuery] double minConfidence = 0.3,
-        [FromQuery] double minLift = 1.0,
-        [FromQuery] int topN = 20)
+        [FromQuery(Name = "min_support")] double? minSupport = null,
+        [FromQuery(Name = "min_confidence")] double? minConfidence = null,
+        [FromQuery(Name = "min_lift")] double? minLift = null,
+        [FromQuery(Name = "top_n")] int? topN = null,
+        [FromQuery(Name = "minSupport")] double? minSupportCamel = null,
+        [FromQuery(Name = "minConfidence")] double? minConfidenceCamel = null,
+        [FromQuery(Name = "minLift")] double? minLiftCamel = null,
+        [FromQuery(Name = "topN")] int? topNCamel = null)
     {
         days = Math.Clamp(days, 30, 365);
-        topN = Math.Clamp(topN, 1, 100);
+        var effectiveMinSupport = minSupport ?? minSupportCamel ?? 0.001;
+        var effectiveMinConfidence = minConfidence ?? minConfidenceCamel ?? 0.1;
+        var effectiveMinLift = minLift ?? minLiftCamel ?? 1.0;
+        var effectiveTopN = Math.Clamp(topN ?? topNCamel ?? 20, 1, 100);
         var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
         static string F(double v) => v.ToString("G", CultureInfo.InvariantCulture);
-        var qs = $"basket?days={days}&min_support={F(minSupport)}&min_confidence={F(minConfidence)}&min_lift={F(minLift)}&top_n={topN}"
+        var qs = $"basket?days={days}&min_support={F(effectiveMinSupport)}&min_confidence={F(effectiveMinConfidence)}&min_lift={F(effectiveMinLift)}&top_n={effectiveTopN}"
             + (companyId.HasValue ? $"&company_id={companyId}" : "");
         var result = await ai.ProxyGetAsync(qs);
         if (result is null) return StatusCode(503, new { message = "AI Service không khả dụng." });

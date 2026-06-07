@@ -76,7 +76,7 @@ function MiniWidget({ title, icon, href, loading, children }) {
 
 // generateMockData đã bị xóa — hệ thống chỉ dùng dữ liệu thực từ API/DB
 
-const CHANNEL_KEYS  = ['all', 'shopee', 'lazada', 'tiktok', 'facebook']
+const CHANNEL_KEYS  = ['all', 'shopee', 'lazada', 'tiktok', 'offline']
 const CHART_COLORS  = ['#6366F1', '#10B981', '#F59E0B', '#3B82F6', '#EC4899', '#8B5CF6', '#14B8A6', '#F97316']
 
 // Màu brand chuẩn theo từng kênh — dùng nhất quán cho badge, chart, table
@@ -576,8 +576,10 @@ function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd 
   const financeKpi   = wd.financeKpi  ?? null
   const financeLoading = wl.financeKpi ?? false
 
-  // ROAS & ACOS tính từ dữ liệu channel thực (khi đã nhập chi phí QC)
-  const totalAdSpend  = (data.revenueByChannel ?? []).reduce((s, ch) => s + Number(ch.adSpend ?? 0), 0)
+  // ROAS & ACOS dùng cùng advertisingCost đã lọc theo ngày/kênh từ Finance API.
+  const totalAdSpend  = financeKpi?.advertisingCost != null
+    ? Number(financeKpi.advertisingCost)
+    : (data.revenueByChannel ?? []).reduce((s, ch) => s + Number(ch.adSpend ?? 0), 0)
   const hasAdSpend    = totalAdSpend > 0
   const avgRoasVal    = hasAdSpend && kpi.totalRevenue > 0
     ? (kpi.totalRevenue / totalAdSpend).toFixed(1) : null
@@ -2653,9 +2655,14 @@ export default function DashboardPage() {
       loadWidget('leaderboard',  () => getLeaderboard({ limit: 5 }))
       loadWidget('insights',     () => getInsights())
       loadWidget('autoRecs',     () => getRecommendations())
-      // Fetch Operating Profit & ACOS từ FinanceController (Phase 1 đã xong)
+      // Finance KPI phụ thuộc bộ lọc ngày/kênh nên phải refetch khi filter thay đổi.
       const { from, to } = getRange()
-      loadWidget('financeKpi',  () => getProfitOverview({ from, to }))
+      const ch = channel === 'all' ? null : channel
+      setWidgetLoading(p => ({ ...p, financeKpi: true }))
+      getProfitOverview({ from, to, channel: ch })
+        .then(r => setWidgetData(p => ({ ...p, financeKpi: r })))
+        .catch(() => setWidgetData(p => ({ ...p, financeKpi: null })))
+        .finally(() => setWidgetLoading(p => ({ ...p, financeKpi: false })))
     }
     if (activeTab === 'multichannel')
       loadWidget('attribution', () => getChannelAttribution())
@@ -2667,7 +2674,7 @@ export default function DashboardPage() {
     if (activeTab === 'marketing')
       loadWidget('campaign',  () => getCampaignPlan())
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, loadWidget])
+  }, [activeTab, loadWidget, presetKey, customFrom, customTo, channel])
 
   return (
     <div className="space-y-4">

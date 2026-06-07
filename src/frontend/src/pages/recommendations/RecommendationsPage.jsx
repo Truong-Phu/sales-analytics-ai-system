@@ -19,9 +19,9 @@ const TABS = [
     badge:    '📊 Dữ liệu nội bộ',
     badgeColor: '#6366F1',
     samples: [
-      'Sản phẩm nào đang bán chạy nhất tháng này?',
-      'Kênh bán hàng nào hiệu quả nhất?',
-      'Doanh thu tuần này so với tuần trước thế nào?',
+      'Sản phẩm nào đang có doanh thu cao nhất trong tháng này?',
+      'Dự báo doanh thu tháng tới dựa trên dữ liệu lịch sử như thế nào?',
+      'Đề xuất chiến lược marketing cho nhóm khách hàng tiềm năng.',
     ],
   },
   {
@@ -136,7 +136,7 @@ function ChatTab({ tab }) {
   const [historyLoading,   setHistoryLoading]   = useState(true)
   const [history,          setHistory]          = useState([])   // [{question, answer}]
   const [error,            setError]            = useState('')
-  const [smartSuggestions, setSmartSuggestions] = useState(tab.samples)
+  const [smartSuggestions, setSmartSuggestions] = useState(tab.samples.slice(0, 3))
   const bottomRef = useRef(null)
 
   // Load lịch sử hội thoại từ DB khi mở tab
@@ -164,13 +164,13 @@ function ChatTab({ tab }) {
       })
       .catch(() => {}) // Giữ nguyên [] nếu lỗi
       .finally(() => setHistoryLoading(false))
-  }, [tab.id])
+  }, [tab.id, tab.context, tab.sources])
 
   // Load gợi ý câu hỏi từ backend theo tab
   useEffect(() => {
     api.get(`/api/chatbot/suggestions?tab=${tab.id}`)
       .then(res => {
-        if (res.data?.data?.length > 0) setSmartSuggestions(res.data.data)
+        if (res.data?.data?.length > 0) setSmartSuggestions(res.data.data.slice(0, 3))
       })
       .catch(() => {})
   }, [tab.id])
@@ -241,7 +241,11 @@ function ChatTab({ tab }) {
     } finally {
       setLoading(false)
     }
-  }, [question, loading, tab, history])
+  }, [question, loading, tab])
+
+  const visibleSuggestions = !historyLoading && history.length === 0
+    ? smartSuggestions.slice(0, 3)
+    : []
 
   return (
     <div className="space-y-4">
@@ -353,23 +357,25 @@ function ChatTab({ tab }) {
       </div>
 
       {/* Sample questions */}
-      <div>
-        <p className="text-sm mb-2" style={{ color: 'var(--text-secondary)' }}>Câu hỏi gợi ý:</p>
-        <div className="flex flex-col gap-1.5">
-          {smartSuggestions.map((s, i) => (
-            <button
-              key={i}
-              onClick={() => setQuestion(s)}
-              className="text-left px-3 py-2 rounded-lg text-xs border transition-all"
-              style={{ borderColor: 'var(--border)', background: 'var(--bg-elevated)', color: 'var(--text-secondary)' }}
-              onMouseEnter={e => { e.currentTarget.style.borderColor = tab.badgeColor; e.currentTarget.style.color = 'var(--text-primary)' }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-secondary)' }}
-            >
-              {s}
-            </button>
-          ))}
+      {visibleSuggestions.length > 0 && (
+        <div>
+          <p className="text-sm mb-2" style={{ color: 'var(--text-secondary)' }}>Câu hỏi gợi ý:</p>
+          <div className="flex flex-col gap-1.5">
+            {visibleSuggestions.map((s, i) => (
+              <button
+                key={i}
+                onClick={() => setQuestion(s)}
+                className="text-left px-3 py-2 rounded-lg text-xs border transition-all"
+                style={{ borderColor: 'var(--border)', background: 'var(--bg-elevated)', color: 'var(--text-secondary)' }}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = tab.badgeColor; e.currentTarget.style.color = 'var(--text-primary)' }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-secondary)' }}
+              >
+                {s}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Input box */}
       <div className="flex gap-2 items-end">

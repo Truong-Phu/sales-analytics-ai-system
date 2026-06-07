@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Npgsql;
+using NpgsqlTypes;
 using SalesAnalytics.API.Services;
 
 namespace SalesAnalytics.API.Controllers;
@@ -26,7 +27,8 @@ public class FinanceController(
     [HttpGet("profit/overview")]
     public async Task<IActionResult> ProfitOverview(
         [FromQuery] string? from,
-        [FromQuery] string? to)
+        [FromQuery] string? to,
+        [FromQuery] string? channel)
     {
         try
         {
@@ -54,17 +56,29 @@ public class FinanceController(
                     COALESCE((
                         SELECT SUM(asm.amount)
                         FROM public.ad_spend_monthly asm
+                        JOIN public.sales_channels sc ON sc.channel_id = asm.channel_id
                         WHERE asm.company_id = @cid::uuid
                           AND asm.year * 12 + asm.month BETWEEN @fromYM AND @toYM
+                          AND (
+                              @channel IS NULL
+                              OR sc.channel_name ILIKE '%' || @channel || '%'
+                              OR sc.channel_type ILIKE '%' || @channel || '%'
+                          )
                     ), 0)                                        AS advertising_cost
                 FROM dw.fact_sales fs
                 JOIN dw.dim_date  dd ON dd.date_key = fs.date_key
+                JOIN dw.dim_channel dc ON dc.channel_key = fs.channel_key
                 WHERE fs.company_id = @cid::uuid
+                  AND (@channel IS NULL OR dc.channel_name ILIKE '%' || @channel || '%')
                 {dateFilter}
                 """, conn);
             cmd.Parameters.AddWithValue("cid",    Cid);
             cmd.Parameters.AddWithValue("fromYM", fromYM);
             cmd.Parameters.AddWithValue("toYM",   toYM);
+            cmd.Parameters.Add(new NpgsqlParameter("channel", NpgsqlDbType.Text)
+            {
+                Value = (object?)NormalizeChannel(channel) ?? DBNull.Value
+            });
             AddDateParams(cmd, dateParams, from, to);
 
             await using var r = await cmd.ExecuteReaderAsync();
@@ -536,6 +550,13 @@ public class FinanceController(
         if (!hasParams) return;
         if (!string.IsNullOrWhiteSpace(from)) cmd.Parameters.AddWithValue("from", from);
         if (!string.IsNullOrWhiteSpace(to))   cmd.Parameters.AddWithValue("to",   to);
+    }
+
+    private static string? NormalizeChannel(string? channel)
+    {
+        return string.IsNullOrWhiteSpace(channel) || channel.Equals("all", StringComparison.OrdinalIgnoreCase)
+            ? null
+            : channel.Trim();
     }
 
     // Chuyển từ chuỗi ngày sang year*12+month để so sánh với ad_spend_monthly
