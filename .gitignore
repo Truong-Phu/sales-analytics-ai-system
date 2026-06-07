@@ -103,3 +103,7 @@ notebooks/output/
 
 # Scraper output — CSV tự sinh mỗi lần chạy, data đã vào DB
 notebooks/sample_data/*.csv
+
+# Không upload README nội bộ
+README.md
+README*.md
