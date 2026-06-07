@@ -5,9 +5,10 @@ import MockToast from '../../components/ui/MockToast'
 import AiEmptyState from '../../components/ui/AiEmptyState'
 import { getNarrative } from '../../api/aiApi'
 import DateRangeFilter from '../../components/ui/DateRangeFilter'
+import { fmtMoneyExact } from '../../utils/format'
 
 export default function NarrativePage() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const daysAgo30 = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10)
   const tomorrow  = new Date(Date.now() + 86400000).toISOString().slice(0, 10)
   const [data,   setData]   = useState(null)
@@ -15,7 +16,7 @@ export default function NarrativePage() {
   const [isMock, setIsMock] = useState(false)
   const [from,   setFrom]   = useState(daysAgo30)
   const [to,     setTo]     = useState(tomorrow)
-  const [lang,   setLang]   = useState('vi')
+  const lang = i18n.language?.startsWith('en') ? 'en' : 'vi'
 
   const computeDays = (f, t) => Math.max(1, Math.round((new Date(t) - new Date(f)) / 86400000))
 
@@ -44,14 +45,9 @@ export default function NarrativePage() {
     <div className="space-y-5">
       <MockToast show={isMock} />
       <div className="space-y-3">
-        <div className="flex items-center justify-between flex-wrap gap-2">
-          <div>
-            <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>{t('narrative.title')}</h1>
-            <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>{t('narrative.subtitle')}</p>
-          </div>
-          <button onClick={() => setLang(l => l === 'vi' ? 'en' : 'vi')} className="lbtn lbtn-secondary text-sm">
-            {lang === 'vi' ? t('narrative.langVi') : t('narrative.langEn')}
-          </button>
+        <div>
+          <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>{t('narrative.title')}</h1>
+          <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>{t('narrative.subtitle')}</p>
         </div>
         <DateRangeFilter from={from} to={to} onChange={(f, tVal) => { setFrom(f); setTo(tVal) }}
           presets={['all','today','days_7','days_30','days_90','custom']} />
@@ -82,7 +78,7 @@ export default function NarrativePage() {
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {[
-              { label: t('narrative.kpiRevenue'),    value: `${((data.key_metrics?.current_revenue??0)/1e6).toFixed(1)}M VNĐ`, color: 'var(--primary-500)' },
+              { label: t('narrative.kpiRevenue'),    value: fmtMoneyExact(data.key_metrics?.current_revenue ?? 0), color: 'var(--primary-500)' },
               { label: t('narrative.kpiGrowth'),     value: `${revChg>=0?'+':''}${revChg}%`, color: revColor },
               { label: t('narrative.kpiOrders'),     value: (data.key_metrics?.current_orders??0).toLocaleString(), color: '#22C55E' },
               { label: t('narrative.kpiOrderDelta'), value: `${(data.key_metrics?.orders_change??0)>=0?'+':''}${data.key_metrics?.orders_change??0}%`,

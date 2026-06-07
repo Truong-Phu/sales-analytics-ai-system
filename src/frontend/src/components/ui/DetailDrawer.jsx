@@ -57,9 +57,10 @@ export default function DetailDrawer({ open, onClose, title, subtitle, width = 5
           bottom: 0,
           zIndex: 1001,
           width: `min(${width}px, 100vw)`,
-          background: '#ffffff',
-          borderLeft: '1px solid #e5e7eb',
-          boxShadow: '-4px 0 32px rgba(15,23,42,0.15), -1px 0 8px rgba(15,23,42,0.08)',
+          background: 'var(--bg-surface)',
+          color: 'var(--text-primary)',
+          borderLeft: '1px solid var(--border)',
+          boxShadow: 'var(--shadow-lg)',
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
@@ -73,8 +74,8 @@ export default function DetailDrawer({ open, onClose, title, subtitle, width = 5
             gap: 12,
             padding: '16px 20px',
             flexShrink: 0,
-            background: '#ffffff',
-            borderBottom: '1px solid #e5e7eb',
+            background: 'var(--bg-surface)',
+            borderBottom: '1px solid var(--border)',
           }}
         >
           <div style={{ flex: 1, minWidth: 0 }}>
@@ -82,7 +83,7 @@ export default function DetailDrawer({ open, onClose, title, subtitle, width = 5
               fontWeight: 700,
               fontSize: 15,
               lineHeight: '1.3',
-              color: '#0f172a',
+              color: 'var(--text-primary)',
               margin: 0,
               overflow: 'hidden',
               textOverflow: 'ellipsis',
@@ -94,7 +95,7 @@ export default function DetailDrawer({ open, onClose, title, subtitle, width = 5
               <p style={{
                 fontSize: 12,
                 marginTop: 2,
-                color: '#64748b',
+                color: 'var(--text-tertiary)',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap',
@@ -117,10 +118,10 @@ export default function DetailDrawer({ open, onClose, title, subtitle, width = 5
               background: 'transparent',
               border: 'none',
               cursor: 'pointer',
-              color: '#64748b',
+              color: 'var(--text-tertiary)',
             }}
-            onMouseEnter={e => { e.currentTarget.style.background = '#f1f5f9'; e.currentTarget.style.color = '#0f172a' }}
-            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#64748b' }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg-elevated)'; e.currentTarget.style.color = 'var(--text-primary)' }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--text-tertiary)' }}
           >
             <span className="icon" style={{ fontSize: 20 }}>close</span>
           </button>
@@ -132,7 +133,8 @@ export default function DetailDrawer({ open, onClose, title, subtitle, width = 5
             flex: 1,
             minHeight: 0,
             overflowY: 'auto',
-            background: '#ffffff',
+            background: 'var(--bg-surface)',
+            color: 'var(--text-primary)',
           }}
         >
           {children}
@@ -146,8 +148,8 @@ export default function DetailDrawer({ open, onClose, title, subtitle, width = 5
               display: 'flex',
               gap: 8,
               padding: '12px 20px',
-              background: '#ffffff',
-              borderTop: '1px solid #e5e7eb',
+              background: 'var(--bg-surface)',
+              borderTop: '1px solid var(--border)',
             }}
           >
             {footer}

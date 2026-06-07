@@ -33,6 +33,18 @@ function QtyChange({ change }) {
   )
 }
 
+function resolveStockSnapshot(row) {
+  const before = Number(row.beforeStock ?? 0)
+  const after = Number(row.afterStock ?? before)
+  const change = Number(row.quantityChange ?? 0)
+
+  if (change !== 0 && before === after) {
+    return { before: after - change, after }
+  }
+
+  return { before, after }
+}
+
 export default function InventoryTransactionsPage() {
   const { t } = useTranslation()
   const [rows,      setRows]      = useState([])
@@ -177,7 +189,9 @@ export default function InventoryTransactionsPage() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((r, i) => (
+              {rows.map((r, i) => {
+                const stock = resolveStockSnapshot(r)
+                return (
                 <tr key={r.transactionId} className="transition-colors"
                     style={{ borderBottom: i < rows.length - 1 ? '1px solid var(--border)' : 'none' }}>
                   <td className="px-4 py-3 whitespace-nowrap text-xs" style={{ color: 'var(--text-tertiary)' }}>
@@ -193,9 +207,9 @@ export default function InventoryTransactionsPage() {
                     <QtyChange change={r.quantityChange} />
                   </td>
                   <td className="px-4 py-3 text-xs tabular-nums" style={{ color: 'var(--text-secondary)' }}>
-                    <span>{r.beforeStock}</span>
+                    <span>{stock.before}</span>
                     <span className="mx-1" style={{ color: 'var(--text-tertiary)' }}>→</span>
-                    <span className="font-medium" style={{ color: 'var(--text-primary)' }}>{r.afterStock}</span>
+                    <span className="font-medium" style={{ color: 'var(--text-primary)' }}>{stock.after}</span>
                   </td>
                   <td className="px-4 py-3 text-xs" style={{ color: 'var(--text-tertiary)' }}>
                     {r.referenceType && r.referenceId
@@ -206,7 +220,8 @@ export default function InventoryTransactionsPage() {
                     {r.createdBy ?? <span style={{ color: 'var(--text-tertiary)' }}>ETL</span>}
                   </td>
                 </tr>
-              ))}
+                )
+              })}
             </tbody>
           </table>
         )}

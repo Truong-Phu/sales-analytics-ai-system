@@ -16,7 +16,6 @@ const TABS = [
     sub:      'Phân tích từ đơn hàng, doanh thu, sản phẩm của doanh nghiệp',
     context:  'business_data',
     sources:  ['fact_sales', 'oltp'],
-    badge:    '📊 Dữ liệu nội bộ',
     badgeColor: '#6366F1',
     samples: [
       'Sản phẩm nào đang có doanh thu cao nhất trong tháng này?',
@@ -33,7 +32,6 @@ const TABS = [
     sub:      'Phân tích từ dữ liệu thu thập Google, tin tức thị trường',
     context:  'market_trends',
     sources:  ['google', 'external'],
-    badge:    '🌐 Xu hướng thị trường',
     badgeColor: '#10B981',
     samples: [
       'Sản phẩm nào đang trending trên thị trường?',
@@ -50,7 +48,6 @@ const TABS = [
     sub:      'Phân tích sentiment từ Facebook Page, bình luận khách hàng',
     context:  'customer_feedback',
     sources:  ['facebook'],
-    badge:    '💬 Phản hồi KH',
     badgeColor: '#F59E0B',
     samples: [
       'Khách hàng đang phàn nàn về vấn đề gì?',
@@ -65,22 +62,6 @@ const TYPE_ICON = {
   anomaly: 'warning',  general: 'lightbulb',
 }
 
-// Label hiển thị theo intent được backend phát hiện
-const INTENT_LABEL = {
-  top_product:             'Top sản phẩm',
-  declining_product:       'SP giảm doanh số',
-  trending_product:        'SP xu hướng tăng',
-  revenue_summary:         'Doanh thu',
-  order_summary:           'Đơn hàng',
-  top_channel:             'Kênh tốt nhất',
-  channel_comparison:      'So sánh kênh',
-  customer_overview:       'Khách hàng',
-  inventory_alert:         'Tồn kho',
-  business_recommendation: 'Gợi ý chiến lược',
-  performance_overview:    'Tổng quan KD',
-  customer_feedback:       'Phản hồi KH',
-  market:                  'Xu hướng thị trường',
-}
 const PRIORITY_DOT = { high: '#EF4444', medium: '#F59E0B', low: 'var(--primary-500)' }
 const TYPE_FILTER_KEYS = ['all', 'revenue', 'channel', 'product', 'anomaly', 'general']
 
@@ -100,24 +81,6 @@ const TYPE_LINK = {
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
-
-function ConfidenceBadge({ level }) {
-  const map = {
-    high:   { bg: 'rgba(16,185,129,0.10)', border: 'rgba(16,185,129,0.30)', color: 'var(--accent-500)', label: 'Cao' },
-    medium: { bg: 'rgba(245,158,11,0.10)', border: 'rgba(245,158,11,0.30)', color: '#F59E0B',            label: 'Trung bình' },
-    low:    { bg: 'rgba(239,68,68,0.10)',  border: 'rgba(239,68,68,0.30)',  color: '#EF4444',            label: 'Thấp' },
-  }
-  const c = map[(level ?? '').toLowerCase()] ?? map.low
-  return (
-    <span
-      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
-      style={{ background: c.bg, border: `1px solid ${c.border}`, color: c.color }}
-    >
-      <span className="w-1.5 h-1.5 rounded-full" style={{ background: c.color }} />
-      {c.label}
-    </span>
-  )
-}
 
 function LoadingSkeleton() {
   return (
@@ -297,34 +260,6 @@ function ChatTab({ tab }) {
                   <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed">
                     {item.answer.text ?? item.answer.recommendation}
                   </pre>
-                </div>
-                {/* Badges nguồn */}
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <span
-                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
-                    style={{
-                      background: `${tab.badgeColor}18`,
-                      border:     `1px solid ${tab.badgeColor}40`,
-                      color:       tab.badgeColor,
-                    }}
-                  >
-                    {tab.badge}
-                  </span>
-                  <ConfidenceBadge level={item.answer.confidence} />
-                  {item.answer.intent && INTENT_LABEL[item.answer.intent] && (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs"
-                      style={{ background: 'var(--bg-base)', border: '1px solid var(--border)', color: 'var(--text-tertiary)' }}>
-                      <span className="icon" style={{ fontSize: 11 }}>psychology</span>
-                      {INTENT_LABEL[item.answer.intent]}
-                    </span>
-                  )}
-                  {item.answer.fallbackUsed && (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs"
-                      style={{ background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.30)', color: '#F59E0B' }}>
-                      <span className="icon" style={{ fontSize: 11 }}>warning</span>
-                      AI dự phòng
-                    </span>
-                  )}
                 </div>
               </div>
             </div>

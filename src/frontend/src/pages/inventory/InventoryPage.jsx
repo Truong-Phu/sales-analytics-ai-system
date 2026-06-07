@@ -61,7 +61,8 @@ export default function InventoryPage() {
     }
   }
 
-  const filtered = (data?.items ?? []).filter(i => filter === 'ALL' || i.status === filter)
+  const visibleItems = (data?.items ?? []).filter(i => i.status !== 'NO_SALES')
+  const filtered = visibleItems.filter(i => filter === 'ALL' || i.status === filter)
 
   return (
     <div className="space-y-5">
@@ -222,7 +223,11 @@ export default function InventoryPage() {
         </div>
       )}
 
-      {data && <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{data.note}</div>}
+      {data && (
+        <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+          Phân tích {visibleItems.length} sản phẩm dựa trên tốc độ bán {data.analysis_days ?? 30} ngày gần nhất
+        </div>
+      )}
     </div>
   )
 }
