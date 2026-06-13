@@ -860,6 +860,25 @@ def _deduct_stock_for_new_orders(conn, company_id: str) -> int:
         if not item_rows:
             return 0
 
+        valid_item_rows = []
+        skipped_abnormal = 0
+        for row in item_rows:
+            order_id, product_id, quantity, current_stock = row
+            qty = int(quantity or 0)
+            if qty <= 0 or qty > 1000:
+                skipped_abnormal += 1
+                logger.warning(
+                    "deduct_stock: skip abnormal quantity order_id=%s product_id=%s quantity=%s",
+                    order_id, product_id, quantity,
+                )
+                continue
+            valid_item_rows.append((order_id, product_id, qty, current_stock))
+
+        if not valid_item_rows:
+            return 0
+
+        item_rows = valid_item_rows
+
         # Tính aggregate deduction per product và ghi nhớ before_stock tại thời điểm đọc.
         # before_stock = stock_quantity hiện tại trước khi bất kỳ item nào trong batch này được trừ.
         product_deduct: dict = {}  # product_id → (total_deduct, before_stock)
@@ -903,14 +922,15 @@ def _deduct_stock_for_new_orders(conn, company_id: str) -> int:
                 VALUES %s
             """, log_rows, template="(%s::uuid, %s, %s, %s, %s, %s, %s, %s, %s)")
 
-        # Đánh dấu tất cả đơn đã được xử lý kho
+        # Đánh dấu các đơn thực sự đã được xử lý kho.
+        processed_order_ids = sorted({order_id for order_id, _, _, _ in item_rows})
         cur.execute("""
             UPDATE public.orders
             SET is_stock_deducted = TRUE, updated_at = NOW()
             WHERE company_id        = %s::uuid
-              AND is_stock_deducted = FALSE
+              AND order_id = ANY(%s)
               AND status NOT IN ('CANCELLED', 'RETURNED')
-        """, (company_id,))
+        """, (company_id, processed_order_ids))
         n_orders = cur.rowcount
 
     conn.commit()
@@ -920,6 +940,8 @@ def _deduct_stock_for_new_orders(conn, company_id: str) -> int:
             "deduct_stock: %d products deducted across %d orders (%d tx logs)",
             n_products, n_orders, len(log_rows),
         )
+    if skipped_abnormal > 0:
+        logger.warning("deduct_stock: skipped %d abnormal order item rows", skipped_abnormal)
     return n_orders
 
 

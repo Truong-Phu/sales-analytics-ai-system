@@ -670,12 +670,77 @@ public class AdminController(
         await conn.OpenAsync();
 
         var sql = """
+            WITH warehouse_actuals AS (
+                SELECT user_id,
+                       COUNT(*)::bigint AS task_count,
+                       COALESCE(SUM(amount), 0) AS activity_value
+                FROM (
+                    SELECT created_by AS user_id, created_at, ABS(quantity_change)::numeric AS amount
+                    FROM public.inventory_transactions
+                    WHERE company_id = @cid::uuid AND created_by IS NOT NULL
+                    UNION ALL
+                    SELECT created_by AS user_id, created_at, total_quantity::numeric AS amount
+                    FROM public.goods_receipts
+                    WHERE company_id = @cid::uuid AND created_by IS NOT NULL
+                    UNION ALL
+                    SELECT created_by AS user_id, created_at, total_amount AS amount
+                    FROM public.purchase_orders
+                    WHERE company_id = @cid::uuid AND created_by IS NOT NULL
+                ) x
+                WHERE created_at BETWEEN @start AND @end
+                GROUP BY user_id
+            ),
+            marketing_actuals AS (
+                SELECT created_by AS user_id,
+                       COUNT(*)::bigint AS activity_count,
+                       COALESCE(SUM(amount), 0) AS spend_amount
+                FROM public.ad_spend_monthly
+                WHERE company_id = @cid::uuid
+                  AND created_by IS NOT NULL
+                  AND year = EXTRACT(YEAR FROM @start)::int
+                  AND month = EXTRACT(MONTH FROM @start)::int
+                GROUP BY created_by
+            )
             SELECT u.user_id, u.full_name, u.role,
-                   COUNT(DISTINCT o.order_id)   AS order_count,
-                   COALESCE(SUM(o.total_amount), 0) AS revenue,
-                   COUNT(DISTINCT CASE
-                       WHEN c.created_at BETWEEN @start AND @end THEN c.customer_id
-                   END) AS new_customers,
+                   CASE WHEN u.role = 'Manager'
+                        THEN (
+                            SELECT COUNT(DISTINCT mo.order_id)
+                            FROM public.orders mo
+                            WHERE mo.company_id = @cid::uuid
+                              AND mo.order_date BETWEEN @start AND @end
+                        )
+                        WHEN u.role = 'Staff_Warehouse'
+                        THEN COALESCE(MAX(wa.task_count), 0)
+                        ELSE COUNT(DISTINCT o.order_id)
+                   END AS order_count,
+                   CASE WHEN u.role = 'Manager'
+                        THEN (
+                            SELECT COALESCE(SUM(mo.total_amount), 0)
+                            FROM public.orders mo
+                            WHERE mo.company_id = @cid::uuid
+                              AND mo.order_date BETWEEN @start AND @end
+                        )
+                        WHEN u.role = 'Staff_Marketing'
+                        THEN COALESCE(MAX(ma.spend_amount), 0)
+                        WHEN u.role = 'Staff_Warehouse'
+                        THEN COALESCE(MAX(wa.activity_value), 0)
+                        ELSE COALESCE(SUM(o.total_amount), 0)
+                   END AS revenue,
+                   CASE WHEN u.role = 'Manager'
+                        THEN (
+                            SELECT COUNT(DISTINCT mc.customer_id)
+                            FROM public.customers mc
+                            WHERE mc.company_id = @cid::uuid
+                              AND COALESCE(mc.first_order_at, mc.created_at) BETWEEN @start AND @end
+                        )
+                        WHEN u.role = 'Staff_Marketing'
+                        THEN COALESCE(MAX(ma.activity_count), 0)
+                        WHEN u.role = 'Staff_Warehouse'
+                        THEN COALESCE(MAX(wa.task_count), 0)
+                        ELSE COUNT(DISTINCT CASE
+                            WHEN COALESCE(c.first_order_at, c.created_at) BETWEEN @start AND @end THEN c.customer_id
+                        END)
+                   END AS new_customers,
                    t.revenue_target,
                    t.order_count_target,
                    t.new_customer_target
@@ -685,17 +750,20 @@ public class AdminController(
                AND o.order_date BETWEEN @start AND @end
                AND o.company_id = @cid::uuid
             LEFT JOIN public.customers c
-                ON c.company_id = @cid::uuid
+                ON c.customer_id = o.customer_id
+               AND c.company_id = @cid::uuid
+            LEFT JOIN warehouse_actuals wa ON wa.user_id = u.user_id
+            LEFT JOIN marketing_actuals ma ON ma.user_id = u.user_id
             LEFT JOIN public.staff_kpi_targets t
                 ON t.user_id     = u.user_id
                AND t.period_type = 'MONTHLY'
                AND t.period_start = DATE_TRUNC('month', @start)
             WHERE u.company_id = @cid::uuid
               AND u.is_active   = TRUE
-              AND u.role NOT IN ('SuperAdmin')
+              AND u.role IN ('Manager','Staff','Staff_Sales','Staff_Warehouse','Staff_Marketing')
             GROUP BY u.user_id, u.full_name, u.role,
                      t.revenue_target, t.order_count_target, t.new_customer_target
-            ORDER BY revenue DESC
+            ORDER BY revenue DESC, order_count DESC
             """;
 
         await using var cmd = new NpgsqlCommand(sql, conn);
@@ -714,9 +782,13 @@ public class AdminController(
             var ordTarget    = r.IsDBNull(7) ? (int?)null    : r.GetInt32(7);
             var custTarget   = r.IsDBNull(8) ? (int?)null    : r.GetInt32(8);
 
-            double? kpiPct = null;
-            if (revTarget.HasValue && revTarget > 0)
-                kpiPct = (double)(revenue / revTarget.Value * 100);
+            double? revPct  = revTarget  is > 0 ? Math.Round((double)(revenue / revTarget.Value * 100), 1) : null;
+            double? ordPct  = ordTarget  is > 0 ? Math.Round((double)(orderCount / (double)ordTarget.Value * 100), 1) : null;
+            double? custPct = custTarget is > 0 ? Math.Round((double)(newCustomers / (double)custTarget.Value * 100), 1) : null;
+            var validPcts = new[] { revPct, ordPct, custPct }.Where(x => x.HasValue).Select(x => x!.Value).ToList();
+            double? overallPct = validPcts.Count > 0 ? Math.Round(validPcts.Average(), 1) : null;
+            bool hasAnyTarget = revTarget.HasValue || ordTarget.HasValue || custTarget.HasValue;
+            bool isKpiAchieved = hasAnyTarget && validPcts.Count > 0 && validPcts.All(p => p >= 100.0);
 
             list.Add(new
             {
@@ -729,7 +801,13 @@ public class AdminController(
                 revTarget,
                 ordTarget,
                 custTarget,
-                kpiPercent     = kpiPct.HasValue ? Math.Round(kpiPct.Value, 1) : (double?)null,
+                revenuePct     = revPct,
+                orderPct       = ordPct,
+                customerPct    = custPct,
+                overallPct,
+                kpiPercent     = overallPct,
+                hasAnyTarget,
+                isKpiAchieved,
             });
         }
 
@@ -793,7 +871,11 @@ public class AdminController(
     /// <summary>Lịch sử mua hàng KH (online + offline)</summary>
     [HttpGet("customers/{id}/history")]
     [Authorize(Roles = "Owner,Manager,Staff,Staff_Sales")]
-    public async Task<IActionResult> GetCustomerHistory(int id, [FromQuery] int page = 1)
+    public async Task<IActionResult> GetCustomerHistory(
+        int id,
+        [FromQuery] int page = 1,
+        [FromQuery] DateOnly? from = null,
+        [FromQuery] DateOnly? to = null)
     {
         await using var conn = new NpgsqlConnection(_connStr);
         await conn.OpenAsync();
@@ -806,6 +888,8 @@ public class AdminController(
             JOIN public.sales_channels sc ON sc.channel_id = o.channel_id
             WHERE o.customer_id  = @cid
               AND o.company_id   = @companyId::uuid
+              AND (@from IS NULL OR o.order_date::date >= @from::date)
+              AND (@to   IS NULL OR o.order_date::date <= @to::date)
             ORDER BY o.order_date DESC
             LIMIT 20 OFFSET @offset
             """;
@@ -813,6 +897,8 @@ public class AdminController(
         cmd.Parameters.AddWithValue("cid",       id);
         cmd.Parameters.AddWithValue("companyId", tenant.CompanyId!.Value.ToString());
         cmd.Parameters.AddWithValue("offset",    (page - 1) * 20);
+        cmd.Parameters.Add(new NpgsqlParameter("from", NpgsqlTypes.NpgsqlDbType.Text) { Value = from.HasValue ? from.Value.ToString("yyyy-MM-dd") : DBNull.Value });
+        cmd.Parameters.Add(new NpgsqlParameter("to",   NpgsqlTypes.NpgsqlDbType.Text) { Value = to.HasValue   ? to.Value.ToString("yyyy-MM-dd")   : DBNull.Value });
 
         await using var r = await cmd.ExecuteReaderAsync();
         var orders = new List<object>();

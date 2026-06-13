@@ -7,18 +7,29 @@ import { getNarrative } from '../../api/aiApi'
 import DateRangeFilter from '../../components/ui/DateRangeFilter'
 import { fmtMoneyExact } from '../../utils/format'
 
+const dateKey = (date) => {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+const todayKey = () => dateKey(new Date())
+const firstDayOfMonth = () => {
+  const d = new Date()
+  d.setDate(1)
+  return dateKey(d)
+}
+
 export default function NarrativePage() {
   const { t, i18n } = useTranslation()
-  const daysAgo30 = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10)
-  const tomorrow  = new Date(Date.now() + 86400000).toISOString().slice(0, 10)
   const [data,   setData]   = useState(null)
   const [loading,setLoading]= useState(true)
   const [isMock, setIsMock] = useState(false)
-  const [from,   setFrom]   = useState(daysAgo30)
-  const [to,     setTo]     = useState(tomorrow)
+  const [from,   setFrom]   = useState(() => firstDayOfMonth())
+  const [to,     setTo]     = useState(() => todayKey())
   const lang = i18n.language?.startsWith('en') ? 'en' : 'vi'
 
-  const computeDays = (f, t) => Math.max(1, Math.round((new Date(t) - new Date(f)) / 86400000))
+  const computeDays = (f, t) => Math.max(1, Math.round((new Date(t) - new Date(f)) / 86400000) + 1)
 
   const load = async () => {
     setLoading(true)
@@ -49,8 +60,7 @@ export default function NarrativePage() {
           <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>{t('narrative.title')}</h1>
           <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>{t('narrative.subtitle')}</p>
         </div>
-        <DateRangeFilter from={from} to={to} onChange={(f, tVal) => { setFrom(f); setTo(tVal) }}
-          presets={['all','today','days_7','days_30','days_90','custom']} />
+        <DateRangeFilter from={from} to={to} onChange={(f, tVal) => { setFrom(f); setTo(tVal) }} />
       </div>
 
       {!data && !loading && <AiEmptyState title={t('narrative.emptyState')} />}

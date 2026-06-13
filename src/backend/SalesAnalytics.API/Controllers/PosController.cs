@@ -86,14 +86,33 @@ public class PosController(IConfiguration cfg, ITenantContext tenant) : Controll
         await conn.OpenAsync();
 
         var sql = """
+            WITH product_stock AS (
+                SELECT
+                    p.product_id,
+                    CASE
+                        WHEN COALESCE(vs.variation_count, 0) > 0 THEN COALESCE(vs.variation_stock, 0)
+                        ELSE p.stock_quantity
+                    END AS stock_quantity
+                FROM public.products p
+                LEFT JOIN LATERAL (
+                    SELECT COUNT(*)::int AS variation_count,
+                           COALESCE(SUM(pv.stock_quantity), 0)::int AS variation_stock
+                    FROM public.product_variations pv
+                    WHERE pv.product_id = p.product_id
+                      AND pv.company_id = @cid::uuid
+                      AND pv.is_active = TRUE
+                ) vs ON TRUE
+                WHERE p.company_id = @cid::uuid
+            )
             SELECT p.product_id, p.product_name, p.sku,
-                   p.base_price, p.stock_quantity, p.image_url,
+                   p.base_price, ps.stock_quantity, p.image_url,
                    c.category_name
             FROM public.products p
+            JOIN product_stock ps ON ps.product_id = p.product_id
             LEFT JOIN public.categories c ON c.category_id = p.category_id
             WHERE p.company_id = @cid::uuid
               AND p.is_active   = TRUE
-              AND p.stock_quantity > 0
+              AND ps.stock_quantity > 0
               AND (p.product_name ILIKE @q OR p.sku ILIKE @q)
             ORDER BY p.product_name
             LIMIT 20

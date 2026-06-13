@@ -13,11 +13,17 @@ function fmtPct(num, denom) {
   return (Number(num) / Number(denom) * 100).toFixed(1) + '%'
 }
 
-const today     = () => new Date().toISOString().slice(0, 10)
-const daysAgo30 = () => {
+const dateKey = (date) => {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+const today = () => dateKey(new Date())
+const firstDayOfMonth = () => {
   const date = new Date()
-  date.setDate(date.getDate() - 29)
-  return date.toISOString().slice(0, 10)
+  date.setDate(1)
+  return dateKey(date)
 }
 
 // Một dòng trong bảng P&L
@@ -71,7 +77,7 @@ function PnLSection({ title, children }) {
 
 export default function PnLPage() {
   const { t } = useTranslation()
-  const [from, setFrom] = useState(() => daysAgo30())
+  const [from, setFrom] = useState(() => firstDayOfMonth())
   const [to,   setTo]   = useState(() => today())
 
   const [profit,   setProfit]   = useState(null)

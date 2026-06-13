@@ -11,6 +11,7 @@ import {
   getInventoryRecommendations,
 } from '../../api/inventoryApi'
 import AiEmptyState from '../../components/ui/AiEmptyState'
+import InfoTooltip from '../../components/ui/InfoTooltip'
 
 Chart.register(...registerables)
 
@@ -56,6 +57,61 @@ function ErrorState({ label }) {
 }
 
 // ── Stock Movement Chart ──────────────────────────────────────────────────────
+function VelocityCard({ title, color, items = [], emptyText, tooltip, renderValue, page, onPage }) {
+  const pageSize = 5
+  const totalPages = Math.max(1, Math.ceil(items.length / pageSize))
+  const safePage = Math.min(Math.max(page, 1), totalPages)
+  const visible = items.slice((safePage - 1) * pageSize, safePage * pageSize)
+
+  return (
+    <div className="lcard p-4 min-h-[132px] flex flex-col">
+      <div className="flex items-center gap-1 mb-2">
+        <div className="text-xs font-semibold" style={{ color }}>{title}</div>
+        <InfoTooltip {...tooltip} placement="top" />
+      </div>
+      {items.length === 0 ? (
+        <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{emptyText}</div>
+      ) : (
+        <div className="space-y-0.5">
+          {visible.map(p => (
+            <div key={p.productId} className="flex justify-between py-1 text-xs">
+              <span className="truncate mr-2" style={{ color: 'var(--text-secondary)' }}>{p.productName}</span>
+              <span className="font-bold shrink-0" style={{ color }}>{renderValue(p)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {items.length > pageSize && (
+        <div className="flex items-center justify-between mt-auto pt-3">
+          <button
+            type="button"
+            onClick={() => onPage(safePage - 1)}
+            disabled={safePage <= 1}
+            className="w-7 h-7 rounded-lg flex items-center justify-center disabled:opacity-40"
+            style={{ border: '1px solid var(--border)', color: 'var(--text-secondary)' }}
+            title="Trang trước"
+          >
+            <span className="icon text-sm">chevron_left</span>
+          </button>
+          <span className="text-xs font-mono" style={{ color: 'var(--text-tertiary)' }}>
+            {safePage}/{totalPages}
+          </span>
+          <button
+            type="button"
+            onClick={() => onPage(safePage + 1)}
+            disabled={safePage >= totalPages}
+            className="w-7 h-7 rounded-lg flex items-center justify-center disabled:opacity-40"
+            style={{ border: '1px solid var(--border)', color: 'var(--text-secondary)' }}
+            title="Trang sau"
+          >
+            <span className="icon text-sm">chevron_right</span>
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function StockMovementChart({ data }) {
   const canvasRef = useRef(null)
   const chartRef  = useRef(null)
@@ -119,6 +175,7 @@ export default function InventoryDashboardPage() {
   const [errors,      setErrors]      = useState({})
   const [loadingMain, setLoadingMain] = useState(true)
   const [movDays,     setMovDays]     = useState(30)
+  const [velocityPage, setVelocityPage] = useState({ fast: 1, slow: 1, dead: 1 })
 
   const setErr = (key) => setErrors(e => ({ ...e, [key]: true }))
 
@@ -145,6 +202,10 @@ export default function InventoryDashboardPage() {
       .then(setMovement)
       .catch(() => setErr('movement'))
   }, [movDays])
+
+  useEffect(() => {
+    setVelocityPage({ fast: 1, slow: 1, dead: 1 })
+  }, [velocity])
 
   const fmt = (n) => n == null ? '—' : n.toLocaleString('vi-VN')
   const fmtCur = (n) => n == null ? '—' : `${(+n).toLocaleString('vi-VN')}₫`
@@ -267,16 +328,11 @@ export default function InventoryDashboardPage() {
                   <td className="px-4 py-2">
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <button
-                        onClick={() => navigate(`/goods-receipts?action=create&productId=${item.productId}&productName=${encodeURIComponent(item.productName)}&returnUrl=${encodeURIComponent(location.pathname)}`)}
-                        className="text-xs px-3 py-1 rounded-lg font-semibold whitespace-nowrap flex items-center gap-1"
-                        style={{ background: 'rgba(34,197,94,0.12)', color: '#16A34A', border: '1px solid rgba(34,197,94,0.3)' }}>
-                        <span style={{ fontSize: 12 }}>↑</span> Nhập kho
-                      </button>
-                      <button
                         onClick={() => navigate(`/purchase-orders?productId=${item.productId}&productName=${encodeURIComponent(item.productName)}&returnUrl=${encodeURIComponent(location.pathname)}`)}
-                        className="text-xs px-2 py-1 rounded-lg whitespace-nowrap"
-                        style={{ background: 'transparent', color: 'var(--text-tertiary)', border: '1px solid var(--border)' }}
+                        className="text-xs px-3 py-1 rounded-lg font-semibold whitespace-nowrap flex items-center gap-1"
+                        style={{ background: 'rgba(99,102,241,0.12)', color: 'var(--primary-500)', border: '1px solid rgba(99,102,241,0.3)' }}
                         title="Tạo phiếu đặt hàng nhà cung cấp">
+                        <span className="icon" style={{ fontSize: 13 }}>shopping_cart</span>
                         Đặt hàng NCC
                       </button>
                     </div>
@@ -293,51 +349,45 @@ export default function InventoryDashboardPage() {
       <SectionTitle>Tốc độ bán hàng</SectionTitle>
       {errors.velocity ? <ErrorState label="phân tích tốc độ bán" /> : !velocity ? null : (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* Fast movers */}
-          <div className="lcard p-4">
-            <div className="text-xs font-semibold mb-2" style={{ color: '#22C55E' }}>
-              ⚡ Bán chạy nhất ({velocity.topFastMovingProducts?.length ?? 0})
-            </div>
-            {velocity.topFastMovingProducts?.length === 0
-              ? <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Chưa có dữ liệu</div>
-              : velocity.topFastMovingProducts?.slice(0, 5).map(p => (
-                <div key={p.productId} className="flex justify-between py-1 text-xs">
-                  <span className="truncate mr-2" style={{ color: 'var(--text-secondary)' }}>{p.productName}</span>
-                  <span className="font-bold shrink-0" style={{ color: '#22C55E' }}>{fmt(p.totalSold)}</span>
-                </div>
-              ))
-            }
-          </div>
-          {/* Slow movers */}
-          <div className="lcard p-4">
-            <div className="text-xs font-semibold mb-2" style={{ color: '#F59E0B' }}>
-              🐢 Bán chậm ({velocity.slowMovingProducts?.length ?? 0})
-            </div>
-            {velocity.slowMovingProducts?.length === 0
-              ? <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Không có</div>
-              : velocity.slowMovingProducts?.slice(0, 5).map(p => (
-                <div key={p.productId} className="flex justify-between py-1 text-xs">
-                  <span className="truncate mr-2" style={{ color: 'var(--text-secondary)' }}>{p.productName}</span>
-                  <span className="font-bold shrink-0" style={{ color: '#F59E0B' }}>{fmt(p.totalSold)}</span>
-                </div>
-              ))
-            }
-          </div>
-          {/* Dead stock */}
-          <div className="lcard p-4">
-            <div className="text-xs font-semibold mb-2" style={{ color: '#EF4444' }}>
-              💀 Không bán ({velocity.deadStockProducts?.length ?? 0})
-            </div>
-            {velocity.deadStockProducts?.length === 0
-              ? <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Không có</div>
-              : velocity.deadStockProducts?.slice(0, 5).map(p => (
-                <div key={p.productId} className="flex justify-between py-1 text-xs">
-                  <span className="truncate mr-2" style={{ color: 'var(--text-secondary)' }}>{p.productName}</span>
-                  <span className="font-bold shrink-0" style={{ color: '#EF4444' }}>Tồn: {fmt(p.stockQuantity)}</span>
-                </div>
-              ))
-            }
-          </div>
+          <VelocityCard
+            title={`⚡ Bán chạy nhất (${velocity.topFastMovingProducts?.length ?? 0})`}
+            color="#22C55E"
+            items={velocity.topFastMovingProducts ?? []}
+            emptyText="Chưa có dữ liệu"
+            page={velocityPage.fast}
+            onPage={p => setVelocityPage(v => ({ ...v, fast: p }))}
+            renderValue={p => fmt(p.totalSold)}
+            tooltip={{
+              title: 'Sản phẩm bán chạy',
+              description: `Top sản phẩm có số lượng bán cao nhất trong ${velocity.analysisDays ?? 30} ngày gần nhất. Chỉ tính đơn không bị hủy/hoàn.`,
+            }}
+          />
+          <VelocityCard
+            title={`🐢 Bán chậm (${velocity.slowMovingProducts?.length ?? 0})`}
+            color="#F59E0B"
+            items={velocity.slowMovingProducts ?? []}
+            emptyText="Không có"
+            page={velocityPage.slow}
+            onPage={p => setVelocityPage(v => ({ ...v, slow: p }))}
+            renderValue={p => fmt(p.totalSold)}
+            tooltip={{
+              title: 'Sản phẩm bán chậm',
+              description: `Sản phẩm vẫn có bán nhưng số lượng bán thấp, tối đa khoảng 30% mức bán trung bình trong ${velocity.analysisDays ?? 30} ngày gần nhất.`,
+            }}
+          />
+          <VelocityCard
+            title={`Không bán (${velocity.deadStockProducts?.length ?? 0})`}
+            color="#EF4444"
+            items={velocity.deadStockProducts ?? []}
+            emptyText="Không có"
+            page={velocityPage.dead}
+            onPage={p => setVelocityPage(v => ({ ...v, dead: p }))}
+            renderValue={p => `Tồn: ${fmt(p.stockQuantity)}`}
+            tooltip={{
+              title: 'Sản phẩm không bán',
+              description: `Sản phẩm còn tồn kho nhưng không phát sinh bán trong ${velocity.analysisDays ?? 30} ngày gần nhất. Dùng để xem xét khuyến mãi, xả tồn hoặc ngừng nhập.`,
+            }}
+          />
         </div>
       )}
 

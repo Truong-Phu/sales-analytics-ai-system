@@ -20,7 +20,13 @@ public interface IOrderRepository : IRepository<Order>
     /// </summary>
     Task<(IEnumerable<Order> Items, int Total)> GetFilteredAsync(
         string? search, string? status, int? channelId, int page, int pageSize,
-        Guid? companyId = null);
+        Guid? companyId = null,
+        string? channel = null,
+        DateOnly? from = null,
+        DateOnly? to = null,
+        decimal? minAmount = null,
+        decimal? maxAmount = null,
+        string? province = null);
 
     /// <summary>Lấy đơn hàng kèm chi tiết (OrderDetails + Products)</summary>
     Task<Order?> GetWithDetailsAsync(int orderId);

@@ -335,7 +335,12 @@
     },
     "preset": {
       "year2025": "2025",
+      "yesterday": "Yesterday",
       "today": "Today",
+      "last7days": "7 days",
+      "mtd": "This month",
+      "qtd": "This quarter",
+      "ytd": "This year",
       "week":  "7 days",
       "month": "30 days",
       "30d": "30 days",
@@ -397,7 +402,7 @@
       "prevProfit":   "Prev. Profit",
       "prevPeriod":   "prev.",
       "total":        "Total",
-      "roasNote":     "ROAS shown directly on revenue bars"
+      "roasNote":     "Ad cost in this chart is monthly ad spend prorated by the selected date range; ROAS is shown directly on revenue bars"
     },
     "fbKpi": {
       "totalSpend":  "Total Ad Spend",
@@ -560,6 +565,7 @@
     "totalCount": "Total: {{count}} orders",
     "status": {
       "pending": "Pending",
+      "processing": "Processing",
       "confirmed": "Confirmed",
       "shipping": "Shipping",
       "delivered": "Delivered",
@@ -1398,7 +1404,7 @@
     "itemSoldPerDay": "Sold/day",
     "itemDaysLeft": "Days left",
     "itemNeedOrder": "Need to order",
-    "reorderBtn": "Reorder",
+    "reorderBtn": "Order from Supplier",
     "varColSku": "SKU",
     "varColColor": "Color",
     "varColSize": "Size",
@@ -1439,7 +1445,7 @@
     "supplierLabel": "Supplier: {{name}}",
     "outOfStock": "Out of stock",
     "infinite": "∞",
-    "reorderBtn": "Reorder",
+    "reorderBtn": "Order from Supplier",
     "orderSupplierBtn": "Order from Supplier",
     "velocityFast": "⚡ Best Sellers ({{count}})",
     "velocitySlow": "🐢 Slow Movers ({{count}})",

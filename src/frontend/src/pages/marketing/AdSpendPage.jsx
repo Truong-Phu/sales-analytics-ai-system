@@ -23,6 +23,7 @@ export default function AdSpendPage() {
   const [saved,    setSaved]    = useState({})
   const [loading,  setLoading]  = useState(true)
   const [err,      setErr]      = useState('')
+  const [showGuide, setShowGuide] = useState(false)
 
   useEffect(() => {
     getAdSpendChannels()
@@ -87,6 +88,15 @@ export default function AdSpendPage() {
         </div>
 
         <div className="flex gap-2 items-center">
+          <button
+            type="button"
+            onClick={() => setShowGuide(v => !v)}
+            className="lbtn lbtn-secondary text-sm !h-9 !px-3"
+            title={t('adSpend.guideTitle')}
+          >
+            <span className="icon icon-sm">help_outline</span>
+            {t('adSpend.guideTitle')}
+          </button>
           <select value={month} onChange={e => setMonth(+e.target.value)} className="linput text-sm" style={{ width: 130 }}>
             {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
               <option key={m} value={m}>{getMonthName(m, locale)}</option>
@@ -182,14 +192,21 @@ export default function AdSpendPage() {
         </table>
       </div>
 
-      <div className="rounded-xl p-4 text-sm" style={{ background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.2)' }}>
-        <p className="font-semibold mb-2" style={{ color: 'var(--primary-500)' }}>{t('adSpend.guideTitle')}</p>
+      {showGuide && (
+      <div className="rounded-xl p-4 text-sm" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)' }}>
+        <div className="flex items-center justify-between gap-3 mb-2">
+          <p className="font-semibold" style={{ color: 'var(--text-primary)' }}>{t('adSpend.guideTitle')}</p>
+          <button type="button" onClick={() => setShowGuide(false)} className="w-7 h-7 rounded-lg hover:bg-[--bg-elevated]">
+            <span className="icon" style={{ fontSize: 16, color: 'var(--text-tertiary)' }}>close</span>
+          </button>
+        </div>
         <ul className="space-y-1" style={{ color: 'var(--text-secondary)' }}>
           {[1,2,3,4,5].map(i => (
             <li key={i}>• {t(`adSpend.guide${i}`)}</li>
           ))}
         </ul>
       </div>
+      )}
     </div>
   )
 }

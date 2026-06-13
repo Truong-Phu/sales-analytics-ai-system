@@ -41,6 +41,9 @@ public class CustomersController(
         [FromQuery] string?   segment = null,   // VIP | REGULAR | NEW | INACTIVE
         [FromQuery] DateOnly? from    = null,
         [FromQuery] DateOnly? to      = null,
+        [FromQuery] decimal? minSpent = null,
+        [FromQuery] decimal? maxSpent = null,
+        [FromQuery] string?   province = null,
         [FromQuery] int       page    = 1,
         [FromQuery] int       limit   = 20)
     {
@@ -66,7 +69,11 @@ public class CustomersController(
                     dc.effective_from,
                     COUNT(DISTINCT fs.external_order_id)  AS total_orders,
                     COALESCE(SUM(fs.net_revenue),      0) AS total_revenue,
-                    COALESCE(AVG(fs.net_revenue),      0) AS avg_order_value,
+                    CASE
+                        WHEN COUNT(DISTINCT fs.external_order_id) > 0
+                        THEN COALESCE(SUM(fs.net_revenue), 0) / COUNT(DISTINCT fs.external_order_id)
+                        ELSE 0
+                    END AS avg_order_value,
                     MAX(dd.full_date)                      AS last_order_date,
                     COALESCE(lp.loyalty_balance, 0)        AS loyalty_points,
                     dc.phone,
@@ -87,28 +94,38 @@ public class CustomersController(
                   AND (@search    IS NULL OR dc.full_name     ILIKE '%' || @search  || '%'
                                           OR dc.customer_code ILIKE '%' || @search  || '%')
                   AND (@segment   IS NULL OR dc.segment_label = @segment)
-                  AND (@from      IS NULL OR dd.full_date >= @from::date OR dd.full_date IS NULL)
-                  AND (@to        IS NULL OR dd.full_date <= @to::date   OR dd.full_date IS NULL)
+                  AND (@province  IS NULL OR dc.province ILIKE '%' || @province || '%' OR dc.region ILIKE '%' || @province || '%')
+                  AND (@from      IS NULL OR dd.full_date >= @from::date)
+                  AND (@to        IS NULL OR dd.full_date <= @to::date)
                   AND (@companyId IS NULL OR fs.company_id = @companyId::uuid OR fs.company_id IS NULL)
                 GROUP BY dc.customer_key, dc.customer_id, dc.customer_code, dc.full_name,
                          dc.email, dc.province, dc.region, dc.segment_label, dc.effective_from,
                          lp.loyalty_balance, dc.phone, dc.address, dc.district
+                HAVING (@minSpent IS NULL OR COALESCE(SUM(fs.net_revenue), 0) >= @minSpent)
+                   AND (@maxSpent IS NULL OR COALESCE(SUM(fs.net_revenue), 0) <= @maxSpent)
                 ORDER BY total_revenue DESC
                 LIMIT @limit OFFSET @offset
                 """;
 
             var countSql = """
-                SELECT COUNT(DISTINCT dc.customer_key)
-                FROM dw.dim_customer dc
-                LEFT JOIN dw.fact_sales fs ON fs.customer_key = dc.customer_key
-                LEFT JOIN dw.dim_date   dd ON fs.date_key     = dd.date_key
-                WHERE dc.is_current = TRUE
-                  AND (@search    IS NULL OR dc.full_name     ILIKE '%' || @search  || '%'
-                                          OR dc.customer_code ILIKE '%' || @search  || '%')
-                  AND (@segment   IS NULL OR dc.segment_label = @segment)
-                  AND (@from      IS NULL OR dd.full_date >= @from::date OR dd.full_date IS NULL)
-                  AND (@to        IS NULL OR dd.full_date <= @to::date   OR dd.full_date IS NULL)
-                  AND (@companyId IS NULL OR fs.company_id = @companyId::uuid OR fs.company_id IS NULL)
+                SELECT COUNT(*)
+                FROM (
+                    SELECT dc.customer_key
+                    FROM dw.dim_customer dc
+                    LEFT JOIN dw.fact_sales fs ON fs.customer_key = dc.customer_key
+                    LEFT JOIN dw.dim_date   dd ON fs.date_key     = dd.date_key
+                    WHERE dc.is_current = TRUE
+                      AND (@search    IS NULL OR dc.full_name     ILIKE '%' || @search  || '%'
+                                              OR dc.customer_code ILIKE '%' || @search  || '%')
+                      AND (@segment   IS NULL OR dc.segment_label = @segment)
+                      AND (@province  IS NULL OR dc.province ILIKE '%' || @province || '%' OR dc.region ILIKE '%' || @province || '%')
+                      AND (@from      IS NULL OR dd.full_date >= @from::date)
+                      AND (@to        IS NULL OR dd.full_date <= @to::date)
+                      AND (@companyId IS NULL OR fs.company_id = @companyId::uuid OR fs.company_id IS NULL)
+                    GROUP BY dc.customer_key
+                    HAVING (@minSpent IS NULL OR COALESCE(SUM(fs.net_revenue), 0) >= @minSpent)
+                       AND (@maxSpent IS NULL OR COALESCE(SUM(fs.net_revenue), 0) <= @maxSpent)
+                ) filtered
                 """;
 
             void BindParams(NpgsqlCommand c)
@@ -117,6 +134,9 @@ public class CustomersController(
                 c.Parameters.Add(new NpgsqlParameter("segment",   NpgsqlDbType.Text) { Value = (object?)segment   ?? DBNull.Value });
                 c.Parameters.Add(new NpgsqlParameter("from",      NpgsqlDbType.Text) { Value = from.HasValue ? (object)from.Value.ToString("yyyy-MM-dd") : DBNull.Value });
                 c.Parameters.Add(new NpgsqlParameter("to",        NpgsqlDbType.Text) { Value = to.HasValue   ? (object)to.Value.ToString("yyyy-MM-dd")   : DBNull.Value });
+                c.Parameters.Add(new NpgsqlParameter("province",  NpgsqlDbType.Text) { Value = (object?)province  ?? DBNull.Value });
+                c.Parameters.Add(new NpgsqlParameter("minSpent",  NpgsqlDbType.Numeric) { Value = (object?)minSpent ?? DBNull.Value });
+                c.Parameters.Add(new NpgsqlParameter("maxSpent",  NpgsqlDbType.Numeric) { Value = (object?)maxSpent ?? DBNull.Value });
                 c.Parameters.Add(new NpgsqlParameter("companyId", NpgsqlDbType.Text) { Value = (object?)companyId?.ToString() ?? DBNull.Value });
             }
 

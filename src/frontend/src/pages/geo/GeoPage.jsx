@@ -6,6 +6,19 @@ import { getGeoDistribution } from '../../api/aiApi'
 import DateRangeFilter from '../../components/ui/DateRangeFilter'
 import { fmtMoneyExact } from '../../utils/format'
 
+const dateKey = (date) => {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+const todayKey = () => dateKey(new Date())
+const firstDayOfMonth = () => {
+  const d = new Date()
+  d.setDate(1)
+  return dateKey(d)
+}
+
 const VN_COORDS = {
   'Hà Nội':           [21.0285, 105.8542],
   'TP. Hồ Chí Minh':  [10.7769, 106.7009],
@@ -36,16 +49,14 @@ export default function GeoPage() {
   const [loading,  setLoading]  = useState(true)
   const [isMock,   setIsMock]   = useState(false)
   const [metric,   setMetric]   = useState('customers')
-  const daysAgo30 = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10)
-  const tomorrow  = new Date(Date.now() + 86400000).toISOString().slice(0, 10)
-  const [from,     setFrom]     = useState(daysAgo30)
-  const [to,       setTo]       = useState(tomorrow)
+  const [from,     setFrom]     = useState(() => firstDayOfMonth())
+  const [to,       setTo]       = useState(() => todayKey())
   const [selected, setSelected] = useState(null)
   const mapRef     = useRef(null)
   const leafletRef = useRef(null)
 
   // Tính days từ from/to để truyền vào AI service
-  const computeDays = (f, t) => Math.max(1, Math.round((new Date(t) - new Date(f)) / 86400000))
+  const computeDays = (f, t) => Math.max(1, Math.round((new Date(t) - new Date(f)) / 86400000) + 1)
 
   const load = async () => {
     setLoading(true)
@@ -137,8 +148,7 @@ export default function GeoPage() {
             <option value="revenue">{t('geo.metricRevenue')}</option>
             <option value="orders">{t('geo.metricOrders')}</option>
           </select>
-          <DateRangeFilter from={from} to={to} onChange={(f, t) => { setFrom(f); setTo(t) }}
-            presets={['all','today','days_7','days_30','days_90','custom']} />
+          <DateRangeFilter from={from} to={to} onChange={(f, t) => { setFrom(f); setTo(t) }} />
         </div>
       </div>
 

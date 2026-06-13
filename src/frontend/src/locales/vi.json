@@ -335,7 +335,12 @@
     },
     "preset": {
       "year2025": "2025",
+      "yesterday": "Hôm qua",
       "today": "Hôm nay",
+      "last7days": "7 ngày",
+      "mtd": "Tháng này",
+      "qtd": "Quý này",
+      "ytd": "Năm nay",
       "week":  "7 ngày",
       "month": "30 ngày",
       "30d": "30 ngày",
@@ -397,7 +402,7 @@
       "prevProfit":   "LN kỳ trước",
       "prevPeriod":   "kỳ trước",
       "total":        "Tổng",
-      "roasNote":     "Số ROAS hiển thị trực tiếp trên cột doanh thu"
+      "roasNote":     "Chi phí QC trên biểu đồ là chi phí tháng đã phân bổ theo số ngày trong kỳ lọc; ROAS hiển thị trực tiếp trên cột doanh thu"
     },
     "fbKpi": {
       "totalSpend":  "Tổng chi phí",
@@ -560,6 +565,7 @@
     "totalCount": "Tổng: {{count}} đơn",
     "status": {
       "pending": "Chờ xử lý",
+      "processing": "Đang xử lý",
       "confirmed": "Đã xác nhận",
       "shipping": "Đang giao",
       "delivered": "Đã giao",
@@ -1398,7 +1404,7 @@
     "itemSoldPerDay": "Bán/ngày",
     "itemDaysLeft": "Còn lại",
     "itemNeedOrder": "Cần đặt",
-    "reorderBtn": "Nhập kho",
+    "reorderBtn": "Đặt hàng NCC",
     "varColSku": "SKU",
     "varColColor": "Màu",
     "varColSize": "Size",
@@ -1439,7 +1445,7 @@
     "supplierLabel": "NCC: {{name}}",
     "outOfStock": "Hết hàng",
     "infinite": "∞",
-    "reorderBtn": "Nhập kho",
+    "reorderBtn": "Đặt hàng NCC",
     "orderSupplierBtn": "Đặt hàng NCC",
     "velocityFast": "⚡ Bán chạy nhất ({{count}})",
     "velocitySlow": "🐢 Bán chậm ({{count}})",

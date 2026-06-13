@@ -25,6 +25,16 @@ public class PayrollController(
     private string Cid => tenant.CompanyId!.Value.ToString();
     private int CurrentUserId => int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "0");
 
+    private static bool IsKpiAchieved(decimal? revTarget, int? ordTarget, int? custTarget,
+        decimal actualRevenue, long actualOrders, long actualCustomers)
+    {
+        var pcts = new List<double>();
+        if (revTarget is > 0) pcts.Add((double)(actualRevenue / revTarget.Value * 100));
+        if (ordTarget is > 0) pcts.Add(actualOrders / (double)ordTarget.Value * 100);
+        if (custTarget is > 0) pcts.Add(actualCustomers / (double)custTarget.Value * 100);
+        return pcts.Count > 0 && pcts.All(p => p >= 100.0);
+    }
+
     // ── GET /api/payroll?year=2026&month=5 ────────────────────────────────────
     // Trả về danh sách payroll kèm KPI actuals tính query-time
     [HttpGet]
@@ -45,19 +55,82 @@ public class PayrollController(
 
             // Subquery cho new_customers tránh cartesian product (company-wide per period)
             const string sql = """
-                WITH new_cust AS (
-                    SELECT COUNT(DISTINCT customer_id) AS cnt
-                    FROM public.customers
+                WITH warehouse_actuals AS (
+                    SELECT user_id,
+                           COUNT(*)::bigint AS task_count,
+                           COALESCE(SUM(amount), 0) AS activity_value
+                    FROM (
+                        SELECT created_by AS user_id, created_at, ABS(quantity_change)::numeric AS amount
+                        FROM public.inventory_transactions
+                        WHERE company_id = @cid::uuid AND created_by IS NOT NULL
+                        UNION ALL
+                        SELECT created_by AS user_id, created_at, total_quantity::numeric AS amount
+                        FROM public.goods_receipts
+                        WHERE company_id = @cid::uuid AND created_by IS NOT NULL
+                        UNION ALL
+                        SELECT created_by AS user_id, created_at, total_amount AS amount
+                        FROM public.purchase_orders
+                        WHERE company_id = @cid::uuid AND created_by IS NOT NULL
+                    ) x
+                    WHERE created_at BETWEEN @start AND @end
+                    GROUP BY user_id
+                ),
+                marketing_actuals AS (
+                    SELECT created_by AS user_id,
+                           COUNT(*)::bigint AS activity_count,
+                           COALESCE(SUM(amount), 0) AS spend_amount
+                    FROM public.ad_spend_monthly
                     WHERE company_id = @cid::uuid
-                      AND created_at BETWEEN @start AND @end
+                      AND created_by IS NOT NULL
+                      AND year = @year
+                      AND month = @month
+                    GROUP BY created_by
                 )
                 SELECT
                     u.user_id, u.full_name, u.email, u.role,
-                    COUNT(DISTINCT o.order_id)           AS actual_orders,
-                    COALESCE(SUM(o.total_amount), 0)     AS actual_revenue,
-                    (SELECT cnt FROM new_cust)            AS actual_new_customers,
+                    CASE WHEN u.role = 'Manager'
+                         THEN (
+                             SELECT COUNT(DISTINCT mo.order_id)
+                             FROM public.orders mo
+                             WHERE mo.company_id = @cid::uuid
+                               AND mo.order_date BETWEEN @start AND @end
+                         )
+                         WHEN u.role = 'Staff_Warehouse'
+                         THEN COALESCE(MAX(wa.task_count), 0)
+                         ELSE COUNT(DISTINCT o.order_id)
+                    END AS actual_orders,
+                    CASE WHEN u.role = 'Manager'
+                         THEN (
+                             SELECT COALESCE(SUM(mo.total_amount), 0)
+                             FROM public.orders mo
+                             WHERE mo.company_id = @cid::uuid
+                               AND mo.order_date BETWEEN @start AND @end
+                         )
+                         WHEN u.role = 'Staff_Marketing'
+                         THEN COALESCE(MAX(ma.spend_amount), 0)
+                         WHEN u.role = 'Staff_Warehouse'
+                         THEN COALESCE(MAX(wa.activity_value), 0)
+                         ELSE COALESCE(SUM(o.total_amount), 0)
+                    END AS actual_revenue,
+                    CASE WHEN u.role = 'Manager'
+                         THEN (
+                             SELECT COUNT(DISTINCT mc.customer_id)
+                             FROM public.customers mc
+                             WHERE mc.company_id = @cid::uuid
+                               AND COALESCE(mc.first_order_at, mc.created_at) BETWEEN @start AND @end
+                         )
+                         WHEN u.role = 'Staff_Marketing'
+                         THEN COALESCE(MAX(ma.activity_count), 0)
+                         WHEN u.role = 'Staff_Warehouse'
+                         THEN COALESCE(MAX(wa.task_count), 0)
+                         ELSE COUNT(DISTINCT CASE
+                             WHEN COALESCE(c.first_order_at, c.created_at) BETWEEN @start AND @end THEN c.customer_id
+                         END)
+                    END AS actual_new_customers,
                     t.revenue_target, t.order_count_target, t.new_customer_target,
-                    p.payroll_id, p.base_salary, p.bonus_amount, p.penalty_amount,
+                    p.payroll_id,
+                    COALESCE(p.base_salary, last_payroll.base_salary, 0) AS base_salary,
+                    p.bonus_amount, p.penalty_amount,
                     p.note, p.status, p.approved_by, p.approved_at,
                     p.paid_at, p.email_sent_at,
                     ab.full_name AS approver_name
@@ -66,6 +139,11 @@ public class PayrollController(
                     ON  o.created_by_user_id = u.user_id
                     AND o.order_date BETWEEN @start AND @end
                     AND o.company_id = @cid::uuid
+                LEFT JOIN public.customers c
+                    ON c.customer_id = o.customer_id
+                   AND c.company_id = @cid::uuid
+                LEFT JOIN warehouse_actuals wa ON wa.user_id = u.user_id
+                LEFT JOIN marketing_actuals ma ON ma.user_id = u.user_id
                 LEFT JOIN public.staff_kpi_targets t
                     ON  t.user_id      = u.user_id
                     AND t.period_type  = 'MONTHLY'
@@ -74,14 +152,23 @@ public class PayrollController(
                     ON  p.user_id    = u.user_id
                     AND p.company_id = @cid::uuid
                     AND p.year = @year AND p.month = @month
+                LEFT JOIN LATERAL (
+                    SELECT lp.base_salary
+                    FROM public.employee_payroll lp
+                    WHERE lp.company_id = @cid::uuid
+                      AND lp.user_id = u.user_id
+                      AND (lp.year < @year OR (lp.year = @year AND lp.month < @month))
+                    ORDER BY lp.year DESC, lp.month DESC
+                    LIMIT 1
+                ) last_payroll ON TRUE
                 LEFT JOIN public.users ab ON ab.user_id = p.approved_by
                 WHERE u.company_id = @cid::uuid
                   AND u.is_active   = TRUE
-                  AND u.role NOT IN ('SuperAdmin')
+                  AND u.role IN ('Manager','Staff','Staff_Sales','Staff_Warehouse','Staff_Marketing')
                 GROUP BY
                     u.user_id, u.full_name, u.email, u.role,
                     t.revenue_target, t.order_count_target, t.new_customer_target,
-                    p.payroll_id, p.base_salary, p.bonus_amount, p.penalty_amount,
+                    p.payroll_id, p.base_salary, last_payroll.base_salary, p.bonus_amount, p.penalty_amount,
                     p.note, p.status, p.approved_by, p.approved_at,
                     p.paid_at, p.email_sent_at, ab.full_name
                 ORDER BY u.full_name
@@ -153,6 +240,7 @@ public class PayrollController(
                     hasAnyTarget,
                     payrollId,
                     baseSalary,
+                    baseSalaryInherited = !payrollId.HasValue && baseSalary > 0,
                     bonusAmount,
                     penaltyAmount,
                     totalSalary,
@@ -296,10 +384,93 @@ public class PayrollController(
             // Lấy thông tin payroll
             await using var fetchCmd = new NpgsqlCommand("""
                 SELECT p.user_id, p.year, p.month, p.base_salary, p.bonus_amount, p.penalty_amount,
-                       u.full_name,
+                       u.full_name, u.role,
                        t.revenue_target, t.order_count_target, t.new_customer_target,
-                       COALESCE(SUM(o.total_amount), 0)   AS actual_revenue,
-                       COUNT(DISTINCT o.order_id)         AS actual_orders
+                       CASE WHEN u.role = 'Manager' THEN (
+                                SELECT COALESCE(SUM(mo.total_amount), 0)
+                                FROM public.orders mo
+                                WHERE mo.company_id = @cid::uuid
+                                  AND EXTRACT(YEAR FROM mo.order_date) = p.year
+                                  AND EXTRACT(MONTH FROM mo.order_date) = p.month
+                            )
+                            WHEN u.role = 'Staff_Marketing' THEN (
+                                SELECT COALESCE(SUM(a.amount), 0)
+                                FROM public.ad_spend_monthly a
+                                WHERE a.company_id = @cid::uuid AND a.created_by = p.user_id
+                                  AND a.year = p.year AND a.month = p.month
+                            )
+                            WHEN u.role = 'Staff_Warehouse' THEN (
+                                SELECT COALESCE(SUM(x.amount), 0)
+                                FROM (
+                                    SELECT ABS(quantity_change)::numeric AS amount, created_by, created_at
+                                    FROM public.inventory_transactions WHERE company_id = @cid::uuid
+                                    UNION ALL
+                                    SELECT total_quantity::numeric AS amount, created_by, created_at
+                                    FROM public.goods_receipts WHERE company_id = @cid::uuid
+                                    UNION ALL
+                                    SELECT total_amount AS amount, created_by, created_at
+                                    FROM public.purchase_orders WHERE company_id = @cid::uuid
+                                ) x
+                                WHERE x.created_by = p.user_id
+                                  AND x.created_at >= MAKE_TIMESTAMPTZ(p.year, p.month, 1, 0, 0, 0, 'UTC')
+                                  AND x.created_at <  MAKE_TIMESTAMPTZ(p.year, p.month, 1, 0, 0, 0, 'UTC') + INTERVAL '1 month'
+                            )
+                            ELSE COALESCE(SUM(o.total_amount), 0)
+                       END AS actual_revenue,
+                       CASE WHEN u.role = 'Manager' THEN (
+                                SELECT COUNT(DISTINCT mo.order_id)
+                                FROM public.orders mo
+                                WHERE mo.company_id = @cid::uuid
+                                  AND EXTRACT(YEAR FROM mo.order_date) = p.year
+                                  AND EXTRACT(MONTH FROM mo.order_date) = p.month
+                            )
+                            WHEN u.role = 'Staff_Warehouse' THEN (
+                                SELECT COUNT(*)::bigint
+                                FROM (
+                                    SELECT created_by, created_at FROM public.inventory_transactions WHERE company_id = @cid::uuid
+                                    UNION ALL
+                                    SELECT created_by, created_at FROM public.goods_receipts WHERE company_id = @cid::uuid
+                                    UNION ALL
+                                    SELECT created_by, created_at FROM public.purchase_orders WHERE company_id = @cid::uuid
+                                ) x
+                                WHERE x.created_by = p.user_id
+                                  AND x.created_at >= MAKE_TIMESTAMPTZ(p.year, p.month, 1, 0, 0, 0, 'UTC')
+                                  AND x.created_at <  MAKE_TIMESTAMPTZ(p.year, p.month, 1, 0, 0, 0, 'UTC') + INTERVAL '1 month'
+                            )
+                            ELSE COUNT(DISTINCT o.order_id)
+                       END AS actual_orders,
+                       CASE WHEN u.role = 'Manager' THEN (
+                                SELECT COUNT(DISTINCT mc.customer_id)
+                                FROM public.customers mc
+                                WHERE mc.company_id = @cid::uuid
+                                  AND COALESCE(mc.first_order_at, mc.created_at) >= MAKE_TIMESTAMPTZ(p.year, p.month, 1, 0, 0, 0, 'UTC')
+                                  AND COALESCE(mc.first_order_at, mc.created_at) <  MAKE_TIMESTAMPTZ(p.year, p.month, 1, 0, 0, 0, 'UTC') + INTERVAL '1 month'
+                            )
+                            WHEN u.role = 'Staff_Marketing' THEN (
+                                SELECT COUNT(*)::bigint
+                                FROM public.ad_spend_monthly a
+                                WHERE a.company_id = @cid::uuid AND a.created_by = p.user_id
+                                  AND a.year = p.year AND a.month = p.month
+                            )
+                            WHEN u.role = 'Staff_Warehouse' THEN (
+                                SELECT COUNT(*)::bigint
+                                FROM (
+                                    SELECT created_by, created_at FROM public.inventory_transactions WHERE company_id = @cid::uuid
+                                    UNION ALL
+                                    SELECT created_by, created_at FROM public.goods_receipts WHERE company_id = @cid::uuid
+                                    UNION ALL
+                                    SELECT created_by, created_at FROM public.purchase_orders WHERE company_id = @cid::uuid
+                                ) x
+                                WHERE x.created_by = p.user_id
+                                  AND x.created_at >= MAKE_TIMESTAMPTZ(p.year, p.month, 1, 0, 0, 0, 'UTC')
+                                  AND x.created_at <  MAKE_TIMESTAMPTZ(p.year, p.month, 1, 0, 0, 0, 'UTC') + INTERVAL '1 month'
+                            )
+                            ELSE COUNT(DISTINCT CASE
+                                WHEN COALESCE(c.first_order_at, c.created_at) >= MAKE_TIMESTAMPTZ(p.year, p.month, 1, 0, 0, 0, 'UTC')
+                                 AND COALESCE(c.first_order_at, c.created_at) <  MAKE_TIMESTAMPTZ(p.year, p.month, 1, 0, 0, 0, 'UTC') + INTERVAL '1 month'
+                                THEN c.customer_id
+                            END)
+                       END AS actual_new_customers
                 FROM public.employee_payroll p
                 JOIN public.users u ON u.user_id = p.user_id
                 LEFT JOIN public.staff_kpi_targets t
@@ -311,9 +482,12 @@ public class PayrollController(
                     AND o.company_id = @cid::uuid
                     AND EXTRACT(YEAR FROM o.order_date) = p.year
                     AND EXTRACT(MONTH FROM o.order_date) = p.month
+                LEFT JOIN public.customers c
+                    ON c.customer_id = o.customer_id
+                   AND c.company_id = @cid::uuid
                 WHERE p.payroll_id = @id AND p.company_id = @cid::uuid AND p.status = 'Approved'
                 GROUP BY p.user_id, p.year, p.month, p.base_salary, p.bonus_amount, p.penalty_amount,
-                         u.full_name, t.revenue_target, t.order_count_target, t.new_customer_target
+                         u.full_name, u.role, t.revenue_target, t.order_count_target, t.new_customer_target
                 """, conn);
             fetchCmd.Parameters.AddWithValue("id",  id);
             fetchCmd.Parameters.AddWithValue("cid", Cid);
@@ -329,10 +503,15 @@ public class PayrollController(
             var bonusAmount   = fr.GetDecimal(4);
             var penaltyAmount = fr.GetDecimal(5);
             var fullName      = fr.GetString(6);
-            var revTarget     = fr.IsDBNull(7) ? (decimal?)null : fr.GetDecimal(7);
-            var actualRevenue = fr.GetDecimal(10);
+            var revTarget     = fr.IsDBNull(8)  ? (decimal?)null : fr.GetDecimal(8);
+            var ordTarget     = fr.IsDBNull(9)  ? (int?)null     : fr.GetInt32(9);
+            var custTarget    = fr.IsDBNull(10) ? (int?)null     : fr.GetInt32(10);
+            var actualRevenue = fr.GetDecimal(11);
+            var actualOrders  = fr.GetInt64(12);
+            var actualCust    = fr.GetInt64(13);
 
-            bool isKpiAchieved = revTarget is > 0 && actualRevenue >= revTarget.Value;
+            bool isKpiAchieved = IsKpiAchieved(revTarget, ordTarget, custTarget,
+                actualRevenue, actualOrders, actualCust);
             decimal totalSalary = Math.Max(0,
                 isKpiAchieved ? baseSalary + bonusAmount - penaltyAmount
                                : baseSalary - penaltyAmount);
@@ -351,8 +530,10 @@ public class PayrollController(
             // Tự ghi vào expenses (Salary) nếu totalSalary > 0
             if (totalSalary > 0)
             {
-                var expDate = new DateTime(pYear, pMonth,
-                    DateTime.DaysInMonth(pYear, pMonth));
+                var now = DateTime.UtcNow;
+                var expDate = (pYear == now.Year && pMonth == now.Month)
+                    ? DateOnly.FromDateTime(now)
+                    : new DateOnly(pYear, pMonth, DateTime.DaysInMonth(pYear, pMonth));
                 var desc = $"[Payroll] Lương {fullName} tháng {pMonth}/{pYear}";
 
                 await using var expCmd = new NpgsqlCommand("""
@@ -389,7 +570,12 @@ public class PayrollController(
                        u.full_name, u.email,
                        t.revenue_target, t.order_count_target, t.new_customer_target,
                        COALESCE(SUM(o.total_amount), 0) AS actual_revenue,
-                       COUNT(DISTINCT o.order_id)       AS actual_orders
+                       COUNT(DISTINCT o.order_id)       AS actual_orders,
+                       COUNT(DISTINCT CASE
+                           WHEN COALESCE(c.first_order_at, c.created_at) >= MAKE_TIMESTAMPTZ(p.year, p.month, 1, 0, 0, 0, 'UTC')
+                            AND COALESCE(c.first_order_at, c.created_at) <  MAKE_TIMESTAMPTZ(p.year, p.month, 1, 0, 0, 0, 'UTC') + INTERVAL '1 month'
+                           THEN c.customer_id
+                       END) AS actual_new_customers
                 FROM public.employee_payroll p
                 JOIN public.users u ON u.user_id = p.user_id
                 LEFT JOIN public.staff_kpi_targets t
@@ -401,6 +587,9 @@ public class PayrollController(
                     AND o.company_id = @cid::uuid
                     AND EXTRACT(YEAR FROM o.order_date) = p.year
                     AND EXTRACT(MONTH FROM o.order_date) = p.month
+                LEFT JOIN public.customers c
+                    ON c.customer_id = o.customer_id
+                   AND c.company_id = @cid::uuid
                 WHERE p.payroll_id = @id AND p.company_id = @cid::uuid
                 GROUP BY p.year, p.month, p.base_salary, p.bonus_amount, p.penalty_amount,
                          p.status, u.full_name, u.email,
@@ -423,10 +612,13 @@ public class PayrollController(
             var toEmail       = r.GetString(7);
             var revTarget     = r.IsDBNull(8) ? (decimal?)null : r.GetDecimal(8);
             var ordTarget     = r.IsDBNull(9) ? (int?)null     : r.GetInt32(9);
+            var custTarget    = r.IsDBNull(10) ? (int?)null    : r.GetInt32(10);
             var actualRevenue = r.GetDecimal(11);
             var actualOrders  = r.GetInt64(12);
+            var actualCust    = r.GetInt64(13);
 
-            bool isKpiAchieved = revTarget is > 0 && actualRevenue >= revTarget.Value;
+            bool isKpiAchieved = IsKpiAchieved(revTarget, ordTarget, custTarget,
+                actualRevenue, actualOrders, actualCust);
             decimal total = Math.Max(0,
                 isKpiAchieved ? baseSalary + bonusAmount - penaltyAmount
                                : baseSalary - penaltyAmount);
@@ -491,8 +683,10 @@ public class PayrollController(
                             THEN base_salary + bonus_amount - penalty_amount
                         END))                  AS total_salary
                 FROM public.employee_payroll
-                WHERE company_id = @cid::uuid AND year = @y AND month = @m
-                  AND status IN ('Approved','Paid')
+                JOIN public.users u ON u.user_id = employee_payroll.user_id
+                WHERE employee_payroll.company_id = @cid::uuid AND year = @y AND month = @m
+                  AND employee_payroll.status IN ('Approved','Paid')
+                  AND u.role IN ('Manager','Staff','Staff_Sales','Staff_Warehouse','Staff_Marketing')
                 """, conn);
             cmd.Parameters.AddWithValue("cid", Cid);
             cmd.Parameters.AddWithValue("y",   y);

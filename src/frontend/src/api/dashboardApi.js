@@ -56,8 +56,11 @@ const normalizeOrder = (o) => ({
 export const getOrders = async (params = {}, config = {}) => {
   // pageSize thay vì limit cho OLTP endpoint
   const { limit, ...rest } = params
+  const cleanParams = Object.fromEntries(
+    Object.entries(rest).filter(([, v]) => v !== '' && v != null)
+  )
   const res = await api.get('/api/orders/oltp', {
-    params: { ...rest, pageSize: limit ?? 20 },
+    params: { ...cleanParams, pageSize: limit ?? 20 },
     ...config, // forward signal để AbortController hoạt động
   }).then(r => r.data)
   return {
@@ -111,6 +114,7 @@ const normalizeCustomer = (c) => ({
   region:         c.region        ?? '',
   segment_label:  c.segmentLabel  ?? c.segment_label ?? 'NEW',
   total_orders:   Number(c.totalOrders   ?? c.total_orders   ?? 0),
+  total_spent:    Number(c.totalSpent    ?? c.total_spent    ?? c.totalRevenue ?? c.total_revenue ?? 0),
   total_revenue:  Number(c.totalRevenue  ?? c.total_revenue  ?? 0),
   avg_order_value:Number(c.avgOrderValue ?? c.avg_order_value ?? 0),
   last_order_date: c.lastOrderDate ?? c.last_order_date,
@@ -225,9 +229,13 @@ export const getTodayVsYesterday = () =>
   api.get('/api/dashboard/today-vs-yesterday').then(r => r.data)
 
 // ── Customer order history (5 đơn gần nhất) ──────────────────────────────────
-export const getCustomerOrderHistory = (customerId, limit = 5) =>
-  api.get(`/api/admin/customers/${customerId}/history`, { params: { page: 1 } })
+export const getCustomerOrderHistory = (customerId, limit = 5, filters = {}) => {
+  const cleanParams = Object.fromEntries(
+    Object.entries({ page: 1, ...filters }).filter(([, v]) => v !== '' && v != null)
+  )
+  return api.get(`/api/admin/customers/${customerId}/history`, { params: cleanParams })
     .then(r => (r.data.orders ?? []).slice(0, limit))
+}
 
 // ── Drill-down chung — hỗ trợ filter theo product / date / channel / status ───
 

@@ -23,15 +23,24 @@ function buildApiParams(mode, customStart, customEnd, category) {
       const firstLast = new Date(today.getFullYear(), today.getMonth() - 1, 1)
       return { ...base, start_date: firstLast.toISOString().split('T')[0], end_date: firstThis.toISOString().split('T')[0] }
     }
-    case 'days_90':
-      return { ...base, days: 90 }
+    case 'this_quarter': {
+      const qStartMonth = Math.floor(today.getMonth() / 3) * 3
+      const start = new Date(today.getFullYear(), qStartMonth, 1).toISOString().split('T')[0]
+      return { ...base, start_date: start, end_date: tomorrow }
+    }
+    case 'last_quarter': {
+      const qStartMonth = Math.floor(today.getMonth() / 3) * 3
+      const start = new Date(today.getFullYear(), qStartMonth - 3, 1).toISOString().split('T')[0]
+      const end = new Date(today.getFullYear(), qStartMonth, 1).toISOString().split('T')[0]
+      return { ...base, start_date: start, end_date: end }
+    }
     case 'custom': {
-      if (!customStart || !customEnd) return { ...base, days: 30 }
+      if (!customStart || !customEnd) return buildApiParams('this_month', customStart, customEnd, category)
       const endExcl = new Date(new Date(customEnd).getTime() + 86400000).toISOString().split('T')[0]
       return { ...base, start_date: customStart, end_date: endExcl }
     }
-    default: // days_30
-      return { ...base, days: 30 }
+    default:
+      return buildApiParams('this_month', customStart, customEnd, category)
   }
 }
 
@@ -41,7 +50,7 @@ export default function LeaderboardPage() {
   const [loading,     setLoading]     = useState(true)
   const [category,    setCategory]    = useState('product')
   const [staffTab,    setStaffTab]    = useState('staff')
-  const [timeMode,    setTimeMode]    = useState('days_30')
+  const [timeMode,    setTimeMode]    = useState('this_month')
   const [customStart, setCustomStart] = useState('')
   const [customEnd,   setCustomEnd]   = useState('')
   const [sortOrder,   setSortOrder]   = useState('desc') // 'desc' = cao→thấp, 'asc' = thấp→cao
@@ -63,8 +72,8 @@ export default function LeaderboardPage() {
     { value: 'all',        label: t('leaderboard.timeAll') },
     { value: 'this_month', label: t('leaderboard.timeThisMonth') },
     { value: 'last_month', label: t('leaderboard.timeLastMonth') },
-    { value: 'days_30',    label: t('leaderboard.time30d') },
-    { value: 'days_90',    label: t('leaderboard.time90d') },
+    { value: 'last_quarter', label: t('leaderboard.timeLastQuarter', 'Quý trước') },
+    { value: 'this_quarter', label: t('leaderboard.timeThisQuarter', 'Quý này') },
     { value: 'custom',     label: t('leaderboard.timeCustom') },
   ]
 

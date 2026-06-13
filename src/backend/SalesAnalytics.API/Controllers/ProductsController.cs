@@ -65,10 +65,20 @@ public class ProductsController(
                     COALESCE(SUM(fs.item_quantity), 0) AS total_qty_sold,
                     oltp.product_id  AS oltp_product_id,
                     oltp.category_id AS oltp_category_id,
-                    oltp.stock_quantity AS stock
+                    CASE
+                        WHEN COALESCE(vs.variation_count, 0) > 0 THEN COALESCE(vs.variation_stock, 0)
+                        ELSE oltp.stock_quantity
+                    END AS stock
                 FROM dw.dim_product dp
                 LEFT JOIN dw.fact_sales fs   ON fs.product_key = dp.product_key
                 LEFT JOIN public.products oltp ON oltp.sku = dp.sku AND oltp.is_active = TRUE
+                LEFT JOIN LATERAL (
+                    SELECT COUNT(*)::int AS variation_count,
+                           COALESCE(SUM(pv.stock_quantity), 0)::int AS variation_stock
+                    FROM public.product_variations pv
+                    WHERE pv.product_id = oltp.product_id
+                      AND pv.is_active = TRUE
+                ) vs ON TRUE
                 WHERE dp.is_current = TRUE
                   AND (@search     IS NULL OR dp.product_name ILIKE '%' || @search   || '%'
                                            OR dp.sku          ILIKE '%' || @search   || '%')
@@ -77,7 +87,8 @@ public class ProductsController(
                 GROUP BY dp.product_key, dp.product_id, dp.product_name, dp.sku,
                          dp.category_name, dp.brand, dp.base_price,
                          dp.cost_price, dp.is_current, dp.effective_from,
-                         oltp.product_id, oltp.category_id, oltp.stock_quantity
+                         oltp.product_id, oltp.category_id, oltp.stock_quantity,
+                         vs.variation_count, vs.variation_stock
                 ORDER BY total_qty_sold DESC, dp.product_name
                 LIMIT @limit OFFSET @offset
                 """;
@@ -313,6 +324,27 @@ public class ProductsController(
         decimal? OriginalPrice,
         int StockQuantity = 0);
 
+    private async Task<(int Count, int Stock)> GetActiveVariationSummaryAsync(int productId, Guid? companyId)
+    {
+        await using var conn = new NpgsqlConnection(_connStr);
+        await conn.OpenAsync();
+
+        await using var cmd = new NpgsqlCommand("""
+            SELECT COUNT(*)::int, COALESCE(SUM(stock_quantity), 0)::int
+            FROM public.product_variations
+            WHERE product_id = @pid
+              AND is_active = TRUE
+              AND (@cid = '' OR company_id = @cid::uuid)
+            """, conn);
+        cmd.Parameters.AddWithValue("pid", productId);
+        cmd.Parameters.AddWithValue("cid", companyId?.ToString() ?? "");
+
+        await using var r = await cmd.ExecuteReaderAsync();
+        return await r.ReadAsync()
+            ? (r.GetInt32(0), r.GetInt32(1))
+            : (0, 0);
+    }
+
     /// <summary>
     /// [OLTP] Xóa (soft-delete) biến thể.
     /// </summary>
@@ -370,15 +402,16 @@ public class ProductsController(
             var itemList   = items.ToList();
             var productIds = itemList.Select(p => p.ProductId).ToArray();
 
-            // Batch-query số biến thể đang active của từng sản phẩm
+            // Với sản phẩm có biến thể, tồn kho hiển thị phải lấy từ tổng SKU/variation active.
             var varCounts = new Dictionary<int, int>();
+            var varStocks = new Dictionary<int, int>();
             if (productIds.Length > 0)
             {
                 var cid = companyId?.ToString() ?? tenant.CompanyId?.ToString() ?? "";
                 await using var conn = new NpgsqlConnection(_connStr);
                 await conn.OpenAsync();
                 await using var vc = new NpgsqlCommand("""
-                    SELECT product_id, COUNT(*)::int
+                    SELECT product_id, COUNT(*)::int, COALESCE(SUM(stock_quantity), 0)::int
                     FROM public.product_variations
                     WHERE product_id = ANY(@ids) AND is_active = TRUE
                       AND (@cid = '' OR company_id = @cid::uuid)
@@ -388,7 +421,10 @@ public class ProductsController(
                 vc.Parameters.AddWithValue("cid", cid);
                 await using var vcr = await vc.ExecuteReaderAsync();
                 while (await vcr.ReadAsync())
+                {
                     varCounts[vcr.GetInt32(0)] = vcr.GetInt32(1);
+                    varStocks[vcr.GetInt32(0)] = vcr.GetInt32(2);
+                }
             }
 
             var dtos = itemList.Select(p => new ProductResponseDto
@@ -399,7 +435,9 @@ public class ProductsController(
                 Description    = p.Description,
                 BasePrice      = p.BasePrice,
                 CostPrice      = p.CostPrice,
-                StockQuantity  = p.StockQuantity,
+                StockQuantity  = varCounts.GetValueOrDefault(p.ProductId, 0) > 0
+                    ? varStocks.GetValueOrDefault(p.ProductId, 0)
+                    : p.StockQuantity,
                 CategoryId     = p.CategoryId,
                 CategoryName   = p.Category?.CategoryName,
                 ImageUrl       = p.ImageUrl,
@@ -431,6 +469,8 @@ public class ProductsController(
             if (!tenant.IsSuperAdmin && product.CompanyId != tenant.CompanyId)
                 return StatusCode(403, new { message = "Không có quyền truy cập sản phẩm này." });
 
+            var (variationCount, variationStock) = await GetActiveVariationSummaryAsync(product.ProductId, product.CompanyId);
+
             return Ok(new ProductResponseDto
             {
                 ProductId     = product.ProductId,
@@ -439,12 +479,14 @@ public class ProductsController(
                 Description   = product.Description,
                 BasePrice     = product.BasePrice,
                 CostPrice     = product.CostPrice,
-                StockQuantity = product.StockQuantity,
+                StockQuantity = variationCount > 0 ? variationStock : product.StockQuantity,
                 CategoryId    = product.CategoryId,
                 CategoryName  = product.Category?.CategoryName,
                 ImageUrl      = product.ImageUrl,
                 IsActive      = product.IsActive,
                 CreatedAt     = product.CreatedAt,
+                UpdatedAt     = product.UpdatedAt,
+                VariationCount= variationCount,
             });
         }
         catch (Exception ex)

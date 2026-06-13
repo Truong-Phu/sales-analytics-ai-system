@@ -37,6 +37,7 @@ public class FinanceController(
 
             var (dateFilter, dateParams) = BuildDateFilter(from, to);
             var (fromYM, toYM) = ComputeYearMonths(from, to);
+            var (adFrom, adTo) = ComputeDateRange(from, to);
 
             await using var cmd = new NpgsqlCommand($"""
                 SELECT
@@ -54,11 +55,21 @@ public class FinanceController(
                     COUNT(*) FILTER (WHERE fs.missing_cost = TRUE) AS missing_cost_orders,
                     BOOL_OR(fs.is_fee_estimated)                 AS is_estimated,
                     COALESCE((
-                        SELECT SUM(asm.amount)
+                        SELECT SUM(
+                            asm.amount
+                            / EXTRACT(DAY FROM (DATE_TRUNC('month', MAKE_DATE(asm.year, asm.month, 1)) + INTERVAL '1 month - 1 day'))
+                            * (
+                                LEAST(@adTo::date, (DATE_TRUNC('month', MAKE_DATE(asm.year, asm.month, 1)) + INTERVAL '1 month - 1 day')::date)
+                                - GREATEST(@adFrom::date, MAKE_DATE(asm.year, asm.month, 1))
+                                + 1
+                            )
+                        )
                         FROM public.ad_spend_monthly asm
                         JOIN public.sales_channels sc ON sc.channel_id = asm.channel_id
                         WHERE asm.company_id = @cid::uuid
                           AND asm.year * 12 + asm.month BETWEEN @fromYM AND @toYM
+                          AND MAKE_DATE(asm.year, asm.month, 1) <= @adTo::date
+                          AND (DATE_TRUNC('month', MAKE_DATE(asm.year, asm.month, 1)) + INTERVAL '1 month - 1 day')::date >= @adFrom::date
                           AND (
                               @channel IS NULL
                               OR sc.channel_name ILIKE '%' || @channel || '%'
@@ -75,6 +86,8 @@ public class FinanceController(
             cmd.Parameters.AddWithValue("cid",    Cid);
             cmd.Parameters.AddWithValue("fromYM", fromYM);
             cmd.Parameters.AddWithValue("toYM",   toYM);
+            cmd.Parameters.AddWithValue("adFrom", adFrom);
+            cmd.Parameters.AddWithValue("adTo",   adTo);
             cmd.Parameters.Add(new NpgsqlParameter("channel", NpgsqlDbType.Text)
             {
                 Value = (object?)NormalizeChannel(channel) ?? DBNull.Value
@@ -132,6 +145,7 @@ public class FinanceController(
 
             var (dateFilter, dateParams) = BuildDateFilter(from, to);
             var (fromYM, toYM) = ComputeYearMonths(from, to);
+            var (adFrom, adTo) = ComputeDateRange(from, to);
 
             await using var cmd = new NpgsqlCommand($"""
                 SELECT
@@ -154,13 +168,33 @@ public class FinanceController(
                 JOIN dw.dim_channel dc ON dc.channel_key = fs.channel_key
                 JOIN dw.dim_date    dd ON dd.date_key    = fs.date_key
                 LEFT JOIN (
-                    SELECT LOWER(sc.channel_name) AS ch_lower, SUM(asm.amount) AS ad_spend
+                    SELECT
+                        CASE
+                            WHEN UPPER(sc.channel_type) = 'OFFLINE' THEN 'offline'
+                            WHEN UPPER(sc.channel_type) = 'TIKTOK_SHOP' THEN 'tiktok'
+                            WHEN UPPER(sc.channel_type) = 'FACEBOOK_SHOP' THEN 'facebook'
+                            WHEN UPPER(sc.channel_type) IN ('SHOPEE', 'LAZADA', 'WEBSITE') THEN LOWER(sc.channel_type)
+                            ELSE LOWER(sc.channel_name)
+                        END AS channel_key,
+                        SUM(
+                            asm.amount
+                            / EXTRACT(DAY FROM (DATE_TRUNC('month', MAKE_DATE(asm.year, asm.month, 1)) + INTERVAL '1 month - 1 day'))
+                            * (
+                                LEAST(@adTo::date, (DATE_TRUNC('month', MAKE_DATE(asm.year, asm.month, 1)) + INTERVAL '1 month - 1 day')::date)
+                                - GREATEST(@adFrom::date, MAKE_DATE(asm.year, asm.month, 1))
+                                + 1
+                            )
+                        ) AS ad_spend
                     FROM public.ad_spend_monthly asm
                     JOIN public.sales_channels sc ON sc.channel_id = asm.channel_id
                     WHERE asm.company_id = @cid::uuid
                       AND asm.year * 12 + asm.month BETWEEN @fromYM AND @toYM
-                    GROUP BY LOWER(sc.channel_name)
-                ) ads ON ads.ch_lower LIKE '%' || LOWER(dc.channel_name) || '%'
+                      AND MAKE_DATE(asm.year, asm.month, 1) <= @adTo::date
+                      AND (DATE_TRUNC('month', MAKE_DATE(asm.year, asm.month, 1)) + INTERVAL '1 month - 1 day')::date >= @adFrom::date
+                    GROUP BY 1
+                ) ads ON ads.channel_key = LOWER(dc.channel_name)
+                      OR ads.channel_key = LOWER(COALESCE(dc.platform, ''))
+                      OR LOWER(dc.channel_name) LIKE '%' || ads.channel_key || '%'
                 WHERE fs.company_id = @cid::uuid
                 {dateFilter}
                 GROUP BY dc.channel_name, dc.platform, ads.ad_spend
@@ -169,6 +203,8 @@ public class FinanceController(
             cmd.Parameters.AddWithValue("cid",    Cid);
             cmd.Parameters.AddWithValue("fromYM", fromYM);
             cmd.Parameters.AddWithValue("toYM",   toYM);
+            cmd.Parameters.AddWithValue("adFrom", adFrom);
+            cmd.Parameters.AddWithValue("adTo",   adTo);
             AddDateParams(cmd, dateParams, from, to);
 
             var list = new List<object>();
@@ -289,11 +325,18 @@ public class FinanceController(
 
             var (dateFilter, dateParams) = BuildDateFilter(from, to);
             var (fromYM, toYM) = ComputeYearMonths(from, to);
+            var (adFrom, adTo) = ComputeDateRange(from, to);
             var truncExpr = granularity switch
             {
                 "day"   => "TO_CHAR(dd.full_date, 'YYYY-MM-DD')",
                 "week"  => "TO_CHAR(DATE_TRUNC('week', dd.full_date), 'YYYY-MM-DD')",
                 _       => "TO_CHAR(dd.full_date, 'YYYY-MM')",
+            };
+            var adTruncExpr = granularity switch
+            {
+                "day"   => "TO_CHAR(d::date, 'YYYY-MM-DD')",
+                "week"  => "TO_CHAR(DATE_TRUNC('week', d::date), 'YYYY-MM-DD')",
+                _       => "TO_CHAR(d::date, 'YYYY-MM')",
             };
 
             await using var cmd = new NpgsqlCommand($"""
@@ -315,23 +358,36 @@ public class FinanceController(
             cmd.Parameters.AddWithValue("cid", Cid);
             AddDateParams(cmd, dateParams, from, to);
 
-            // Ad spend theo tháng — dùng cho granularity=month; day/week sẽ phân bổ tương đối
-            await using var adCmd = new NpgsqlCommand("""
-                SELECT year, month, SUM(amount) AS ad_spend
-                FROM public.ad_spend_monthly
-                WHERE company_id = @cid::uuid
-                  AND year * 12 + month BETWEEN @fromYM AND @toYM
-                GROUP BY year, month
+            await using var adCmd = new NpgsqlCommand($"""
+                SELECT
+                    {adTruncExpr} AS period,
+                    SUM(
+                        asm.amount
+                        / EXTRACT(DAY FROM (DATE_TRUNC('month', MAKE_DATE(asm.year, asm.month, 1)) + INTERVAL '1 month - 1 day'))
+                    ) AS ad_spend
+                FROM public.ad_spend_monthly asm
+                JOIN LATERAL generate_series(
+                    GREATEST(@adFrom::date, MAKE_DATE(asm.year, asm.month, 1)),
+                    LEAST(@adTo::date, (DATE_TRUNC('month', MAKE_DATE(asm.year, asm.month, 1)) + INTERVAL '1 month - 1 day')::date),
+                    INTERVAL '1 day'
+                ) d ON TRUE
+                WHERE asm.company_id = @cid::uuid
+                  AND asm.year * 12 + asm.month BETWEEN @fromYM AND @toYM
+                  AND MAKE_DATE(asm.year, asm.month, 1) <= @adTo::date
+                  AND (DATE_TRUNC('month', MAKE_DATE(asm.year, asm.month, 1)) + INTERVAL '1 month - 1 day')::date >= @adFrom::date
+                GROUP BY 1
                 """, conn);
             adCmd.Parameters.AddWithValue("cid",    Cid);
             adCmd.Parameters.AddWithValue("fromYM", fromYM);
             adCmd.Parameters.AddWithValue("toYM",   toYM);
+            adCmd.Parameters.AddWithValue("adFrom", adFrom);
+            adCmd.Parameters.AddWithValue("adTo",   adTo);
             var adByMonth = new Dictionary<string, decimal>();
             // Đóng reader adR trước khi mở reader chính — Npgsql không cho 2 readers cùng lúc trên 1 connection
             {
                 await using var adR = await adCmd.ExecuteReaderAsync();
                 while (await adR.ReadAsync())
-                    adByMonth[$"{adR.GetInt32(0):D4}-{adR.GetInt32(1):D2}"] = adR.GetDecimal(2);
+                    adByMonth[adR.GetString(0)] = adR.GetDecimal(1);
             } // adR disposed here
 
             var list = new List<object>();
@@ -341,9 +397,7 @@ public class FinanceController(
                 var period             = r.GetString(0);
                 var revenue            = r.GetDecimal(1);
                 var estimatedNetProfit = r.GetDecimal(5);
-                // Lấy ad_spend cho tháng tương ứng (period dạng YYYY-MM hoặc YYYY-MM-DD)
-                var monthKey = period.Length >= 7 ? period[..7] : period;
-                var advertisingCost = adByMonth.GetValueOrDefault(monthKey, 0m);
+                var advertisingCost = adByMonth.GetValueOrDefault(period, 0m);
                 var (opProfit, opMargin, acos) =
                     ComputeOperatingMetrics(revenue, estimatedNetProfit, advertisingCost);
                 list.Add(new
@@ -565,7 +619,18 @@ public class FinanceController(
         var now = DateTime.UtcNow;
         var f = string.IsNullOrWhiteSpace(from) ? now.AddMonths(-12) : DateTime.Parse(from);
         var t = string.IsNullOrWhiteSpace(to)   ? now               : DateTime.Parse(to);
-        return (f.Year * 12 + f.Month, t.Year * 12 + t.Month);
+        var fromYm = f.Year * 12 + f.Month;
+        var toYm = t.Year * 12 + t.Month;
+        return fromYm <= toYm ? (fromYm, toYm) : (toYm, fromYm);
+    }
+
+    // Chuẩn hóa khoảng ngày inclusive để phân bổ chi phí tháng theo số ngày thực tế.
+    private static (DateOnly from, DateOnly to) ComputeDateRange(string? from, string? to)
+    {
+        var now = DateOnly.FromDateTime(DateTime.UtcNow);
+        var f = string.IsNullOrWhiteSpace(from) ? now.AddMonths(-12) : DateOnly.Parse(from);
+        var t = string.IsNullOrWhiteSpace(to) ? now : DateOnly.Parse(to);
+        return f <= t ? (f, t) : (t, f);
     }
 
     // Tính operating profit và ACOS từ estimated_net_profit và advertising_cost

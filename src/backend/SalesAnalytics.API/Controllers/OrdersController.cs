@@ -167,6 +167,12 @@ public class OrdersController(
         [FromQuery] string? search    = null,
         [FromQuery] string? status    = null,
         [FromQuery] int?    channelId = null,
+        [FromQuery] string? channel   = null,
+        [FromQuery] DateOnly? from    = null,
+        [FromQuery] DateOnly? to      = null,
+        [FromQuery] decimal? minAmount = null,
+        [FromQuery] decimal? maxAmount = null,
+        [FromQuery] string? province  = null,
         [FromQuery] int     page      = 1,
         [FromQuery] int     pageSize  = 20)
     {
@@ -174,7 +180,8 @@ public class OrdersController(
         try
         {
             var (items, total) = await orderRepo.GetFilteredAsync(
-                search, status, channelId, page, pageSize, companyId);
+                search, status, channelId, page, pageSize, companyId,
+                channel, from, to, minAmount, maxAmount, province);
             var dtos = items.Select(o => new OrderResponseDto
             {
                 OrderId              = o.OrderId,

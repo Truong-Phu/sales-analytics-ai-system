@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import api from '../../api/axios'
@@ -12,6 +12,24 @@ const PLATFORMS = [
   { name: 'TikTok', rate: 0.025 },
   { name: 'Lazada', rate: 0.040 },
 ]
+
+const parsePrefillItems = (raw) => {
+  if (!raw) return []
+  try {
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed
+      .map(it => ({
+        productId:   it.productId ? String(it.productId) : '',
+        variationId: it.variationId ? String(it.variationId) : '',
+        quantity:    Number(it.quantity ?? it.reorderQty),
+        importPrice: Number(it.importPrice ?? 0) || 0,
+      }))
+      .filter(it => it.productId && it.quantity > 0)
+  } catch {
+    return []
+  }
+}
 const calcMin = (ip, rate) => ip > 0 ? Math.ceil(ip / (1 - rate) / 1000) * 1000 : 0
 
 const STATUS_CFG = {
@@ -107,7 +125,7 @@ function ProductSearch({ allProducts, value, onSelect, style = {} }) {
   )
 }
 
-function CreateDrawer({ open, onClose, onSaved, defaultProductId = '', defaultProductName = '' }) {
+function CreateDrawer({ open, onClose, onSaved, defaultProductId = '', defaultProductName = '', defaultItems = [] }) {
   const [allProducts,   setAllProducts]   = useState([])
   const [allSuppliers,  setAllSuppliers]  = useState([])
   const [filteredSupps, setFilteredSupps] = useState(null)
@@ -131,12 +149,14 @@ function CreateDrawer({ open, onClose, onSaved, defaultProductId = '', defaultPr
   useEffect(() => {
     if (!open) return
     const pid = defaultProductId ? String(defaultProductId) : ''
-    setItems([{ productId: pid, quantity: 1, importPrice: 0 }])
+    setItems(defaultItems.length > 0
+      ? defaultItems
+      : [{ productId: pid, variationId: '', quantity: 1, importPrice: 0 }])
     setSuppId('')
     setNote('')
     setErr('')
     setFilteredSupps(null)
-  }, [open, defaultProductId])
+  }, [open, defaultProductId, defaultItems])
 
   // Sau khi allProducts load, auto-fill giá cho defaultProductId
   useEffect(() => {
@@ -150,6 +170,17 @@ function CreateDrawer({ open, onClose, onSaved, defaultProductId = '', defaultPr
         ? { ...it, importPrice: autoPrice } : it
     ))
   }, [allProducts, defaultProductId])
+
+  useEffect(() => {
+    if (!open || defaultItems.length === 0) return
+    const productIds = [...new Set(defaultItems.map(it => it.productId).filter(Boolean))]
+    productIds.forEach(pid => {
+      if (variationsMap[pid]) return
+      api.get(`/api/products/${pid}/variations`)
+         .then(r => setVariationsMap(m => ({ ...m, [pid]: r.data.data ?? [] })))
+         .catch(() => setVariationsMap(m => ({ ...m, [pid]: [] })))
+    })
+  }, [open, defaultItems, variationsMap])
 
   // Khi sản phẩm đầu tiên thay đổi → fetch NCC cung cấp sản phẩm đó
   const leadProductId = items[0]?.productId || ''
@@ -410,6 +441,8 @@ export default function PurchaseOrdersPage() {
   const navigate       = useNavigate()
   const urlProductId   = searchParams.get('productId')   || ''
   const urlProductName = searchParams.get('productName') || ''
+  const rawItems       = searchParams.get('items') || ''
+  const urlItems       = useMemo(() => parsePrefillItems(rawItems), [rawItems])
   const returnUrl      = searchParams.get('returnUrl')   || ''
 
   const [rows,          setRows]          = useState([])
@@ -421,7 +454,7 @@ export default function PurchaseOrdersPage() {
   const [filterStatus,  setFilterStatus]  = useState('')
   const [search,        setSearch]        = useState('')
   // Tự mở drawer nếu URL có productId (navigate từ nút "Nhập hàng")
-  const [showCreate,    setShowCreate]    = useState(!!urlProductId)
+  const [showCreate,    setShowCreate]    = useState(!!urlProductId || urlItems.length > 0)
   const [actionLoading, setActionLoading] = useState(null)
   const [confirmDlg, setConfirmDlg] = useState(null)
   const [expandedId,    setExpandedId]    = useState(null)
@@ -503,6 +536,7 @@ export default function PurchaseOrdersPage() {
         onSaved={() => { setShowCreate(false); load(1); if (returnUrl) navigate(returnUrl) }}
         defaultProductId={urlProductId}
         defaultProductName={urlProductName}
+        defaultItems={urlItems}
       />
 
       {/* Header */}

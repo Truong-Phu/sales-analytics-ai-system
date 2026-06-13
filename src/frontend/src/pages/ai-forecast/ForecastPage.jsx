@@ -13,10 +13,53 @@ import { fmtMoneyExact } from '../../utils/format'
 const HORIZONS   = [7, 14, 30, 60, 90]
 const CHANNEL_KEYS = ['all', 'shopee', 'lazada', 'tiktok']
 
+function formatPercent(value) {
+  if (value == null || Number.isNaN(Number(value))) return '–'
+  return `${Number(value).toFixed(1)}%`
+}
+
 function fmtCompactMoney(v) {
   if (v >= 1_000_000) return `₫${(v / 1_000_000).toFixed(1)}M`
   if (v >= 1_000)     return `₫${(v / 1_000).toFixed(0)}K`
   return `₫${v}`
+}
+
+function getReliability(mape) {
+  const value = Number(mape)
+  if (!Number.isFinite(value)) {
+    return {
+      label: 'Chưa đánh giá',
+      tone: 'neutral',
+      color: 'var(--text-tertiary)',
+      bg: 'var(--bg-elevated)',
+      note: 'Chưa có đủ chỉ số kiểm định để kết luận độ tin cậy.',
+    }
+  }
+  if (value <= 15) {
+    return {
+      label: 'Cao',
+      tone: 'good',
+      color: 'var(--accent-600)',
+      bg: 'rgba(16,185,129,0.12)',
+      note: 'Có thể dùng để lập kế hoạch doanh thu ngắn hạn.',
+    }
+  }
+  if (value <= 35) {
+    return {
+      label: 'Trung bình',
+      tone: 'warn',
+      color: 'var(--color-warning)',
+      bg: 'rgba(245,158,11,0.12)',
+      note: 'Nên dùng kèm kiểm tra tồn kho, marketing và biến động đơn hàng.',
+    }
+  }
+  return {
+    label: 'Thấp',
+    tone: 'risk',
+    color: 'var(--color-error)',
+    bg: 'rgba(239,68,68,0.12)',
+    note: 'Chỉ nên xem như tín hiệu tham khảo, cần thêm dữ liệu hoặc retrain.',
+  }
 }
 
 function CustomTooltip({ active, payload, label }) {
@@ -51,6 +94,7 @@ export default function ForecastPage() {
   const [comparison,      setComparison]      = useState(null)
   const [retraining,      setRetraining]      = useState(false)
   const [retrainMsg,      setRetrainMsg]      = useState(null)
+  const [showTechnicalDetails, setShowTechnicalDetails] = useState(false)
 
   const handleRetrain = async () => {
     setRetraining(true)
@@ -72,7 +116,7 @@ export default function ForecastPage() {
       let metricsFallback = false
       const [fc, tr, mt, cmp] = await Promise.all([
         getForecast(horizon, channel),
-        getTrend(30, channel),
+        getTrend(horizon, channel),
         getForecastMetrics().catch(() => { metricsFallback = true; return null }),
         getModelComparison().catch(() => null),
       ])
@@ -81,6 +125,7 @@ export default function ForecastPage() {
       setMetrics(mt)
       setMetricsIsMock(metricsFallback)
       setComparison(cmp)
+      setShowTechnicalDetails(false)
     } catch {
       setResult(null)
       setTrend(null)
@@ -112,6 +157,16 @@ export default function ForecastPage() {
   const direction = trend?.direction ?? 'STABLE'
   const growthPct = ((trend?.growthRate ?? 0) * 100).toFixed(1)
   const isUp      = direction === 'UP' || parseFloat(growthPct) > 0
+  const forecastRows = result?.forecast ?? []
+  const forecastTotal = forecastRows.reduce((sum, f) => sum + Number(f.forecast ?? f.yhat ?? 0), 0)
+  const forecastAverage = forecastRows.length ? forecastTotal / forecastRows.length : 0
+  const lowerAverage = forecastRows.length
+    ? forecastRows.reduce((sum, f) => sum + Number(f.lower ?? f.yhat_lower ?? f.forecast ?? f.yhat ?? 0), 0) / forecastRows.length
+    : 0
+  const upperAverage = forecastRows.length
+    ? forecastRows.reduce((sum, f) => sum + Number(f.upper ?? f.yhat_upper ?? f.forecast ?? f.yhat ?? 0), 0) / forecastRows.length
+    : 0
+  const reliability = getReliability(metrics?.mape_pct ?? modelInfo.mape_pct)
 
   return (
     <div className="space-y-4">
@@ -127,9 +182,9 @@ export default function ForecastPage() {
             </h1>
             <div className="flex items-center gap-2 mt-1 flex-wrap">
               <span className="text-sm" style={{ color: 'var(--text-tertiary)' }}>{t('forecast.subtitle')}</span>
-              {modelInfo.mape_pct && (
-                <span className="lbadge lbadge-primary text-xs">
-                  MAPE {modelInfo.mape_pct}%
+              {(metrics?.mape_pct || modelInfo.mape_pct) && (
+                <span className="lbadge text-xs" style={{ color: reliability.color, background: reliability.bg }}>
+                  Độ tin cậy {reliability.label}
                 </span>
               )}
               {modelInfo.trained_until && (
@@ -195,6 +250,60 @@ export default function ForecastPage() {
               </ResponsiveContainer>
             )}
           </div>
+
+          {result && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+              <div className="lcard p-4">
+                <p className="text-xs font-semibold uppercase" style={{ color: 'var(--text-tertiary)' }}>
+                  Tổng doanh thu dự báo
+                </p>
+                <p className="font-mono text-xl font-bold mt-1" style={{ color: 'var(--text-primary)' }}>
+                  {fmtMoneyExact(forecastTotal)}
+                </p>
+                <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
+                  Trong {forecastRows.length || horizon} ngày tới
+                </p>
+              </div>
+
+              <div className="lcard p-4">
+                <p className="text-xs font-semibold uppercase" style={{ color: 'var(--text-tertiary)' }}>
+                  Trung bình mỗi ngày
+                </p>
+                <p className="font-mono text-xl font-bold mt-1" style={{ color: 'var(--accent-600)' }}>
+                  {fmtMoneyExact(forecastAverage)}
+                </p>
+                <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
+                  Mức doanh thu kỳ vọng/ngày
+                </p>
+              </div>
+
+              <div className="lcard p-4">
+                <p className="text-xs font-semibold uppercase" style={{ color: 'var(--text-tertiary)' }}>
+                  Dải dao động/ngày
+                </p>
+                <p className="font-mono text-base font-bold mt-1" style={{ color: 'var(--text-primary)' }}>
+                  {fmtMoneyExact(lowerAverage)} → {fmtMoneyExact(upperAverage)}
+                </p>
+                <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
+                  Khoảng thấp/cao mô hình ước lượng
+                </p>
+              </div>
+
+              <div className="lcard p-4" style={{ background: reliability.bg }}>
+                <p className="text-xs font-semibold uppercase" style={{ color: 'var(--text-tertiary)' }}>
+                  Độ tin cậy dự báo
+                </p>
+                <p className="text-xl font-bold mt-1" style={{ color: reliability.color }}>
+                  {reliability.label}
+                </p>
+                <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
+                  {metrics?.mae != null
+                    ? `Sai số trung bình khoảng ${fmtMoneyExact(metrics.mae)}/ngày`
+                    : reliability.note}
+                </p>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* ── RIGHT: Controls + Insights ── */}
@@ -297,7 +406,9 @@ export default function ForecastPage() {
             <div className="space-y-3">
               {/* Trend */}
               <div className="lcard p-4">
-                <p className="text-sm mb-1.5" style={{ color: 'var(--text-secondary)' }}>Xu hướng</p>
+                <p className="text-sm mb-1.5" style={{ color: 'var(--text-secondary)' }}>
+                  Xu hướng {horizon} ngày gần nhất
+                </p>
                 <div className="flex items-center gap-2">
                   <span className="icon" style={{ fontSize: 20, color: isUp ? 'var(--accent-500)' : 'var(--color-error)' }}>
                     {isUp ? 'trending_up' : 'trending_down'}
@@ -326,11 +437,14 @@ export default function ForecastPage() {
               {trend.ma7 > 0 && (
                 <div className="lcard p-4">
                   <p className="text-sm mb-1" style={{ color: 'var(--text-secondary)' }}>
-                    Trung bình 7 ngày (MA7)
+                    MA7 hiện tại
                   </p>
                   <div className="font-mono text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
                     {fmtMoneyExact(trend.ma7)}
                   </div>
+                  <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
+                    Trung bình doanh thu 7 ngày gần nhất
+                  </p>
                 </div>
               )}
             </div>
@@ -338,53 +452,119 @@ export default function ForecastPage() {
         </div>
       </div>
 
-      {/* ── Metrics bảng đánh giá độ chính xác ── */}
+      {/* ── Business confidence + technical details ── */}
       {metrics && (
         <div className="lcard p-5">
-          <div className="flex items-center gap-2 mb-4">
-            <span className="icon text-base" style={{ color: 'var(--primary-500)' }}>analytics</span>
-            <h2 className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
-              Đánh giá độ chính xác mô hình Prophet
-            </h2>
+          <div className="flex items-start md:items-center gap-3 mb-4 flex-col md:flex-row">
+            <div className="flex items-center gap-2">
+              <span className="icon text-base" style={{ color: 'var(--primary-500)' }}>verified</span>
+              <h2 className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
+                Độ tin cậy dự báo
+              </h2>
+            </div>
             {metricsIsMock && (
               <span className="lbadge text-xs ml-1"
                 style={{ background: 'rgba(234,179,8,0.12)', color: '#92400e', border: '1px solid rgba(234,179,8,0.3)' }}>
                 Dữ liệu mẫu
               </span>
             )}
-            <span className="lbadge lbadge-neutral text-xs ml-auto">{metrics.eval_method}</span>
+            <button
+              type="button"
+              onClick={() => setShowTechnicalDetails(v => !v)}
+              className="lbtn lbtn-ghost ml-auto text-xs"
+              style={{ height: 32 }}
+            >
+              <span className="icon" style={{ fontSize: 15 }}>
+                {showTechnicalDetails ? 'expand_less' : 'analytics'}
+              </span>
+              {showTechnicalDetails ? 'Ẩn chi tiết kỹ thuật' : 'Xem chi tiết kỹ thuật'}
+            </button>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-            {[
-              { label: 'MAE',  tooltip: MT.mae,  value: metrics.mae  != null ? fmtMoneyExact(metrics.mae) : '–', sub: 'Sai số tuyệt đối TB',   color: 'var(--accent-500)' },
-              { label: 'RMSE', tooltip: MT.rmse, value: metrics.rmse != null ? fmtMoneyExact(metrics.rmse) : '–', sub: 'Sai số có trọng số',    color: 'var(--color-warning)' },
-              { label: 'MAPE', tooltip: MT.mape, value: metrics.mape_pct != null ? `${metrics.mape_pct}%` : '–',             sub: 'Sai số phần trăm',      color: 'var(--color-error)' },
-              { label: 'Kiểm tra', tooltip: null, value: `${metrics.n_test ?? '–'} ngày`, sub: `${metrics.test_from ?? ''} → ${metrics.test_to ?? ''}`, color: 'var(--text-tertiary)' },
-            ].map(({ label, tooltip, value, sub, color }) => (
-              <div key={label} className="p-3 rounded-xl" style={{ background: 'var(--bg-elevated)' }}>
-                <div className="flex items-center gap-0.5 mb-1">
-                  <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{label}</p>
-                  {tooltip && <InfoTooltip {...tooltip} placement="top" />}
-                </div>
-                <p className="font-mono text-lg font-bold" style={{ color }}>{value}</p>
-                <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>{sub}</p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="p-4 rounded-xl" style={{ background: reliability.bg }}>
+              <p className="text-xs font-semibold uppercase" style={{ color: 'var(--text-tertiary)' }}>
+                Mức sử dụng
+              </p>
+              <p className="text-2xl font-bold mt-1" style={{ color: reliability.color }}>
+                {reliability.label}
+              </p>
+              <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
+                {reliability.note}
+              </p>
+            </div>
+
+            <div className="p-4 rounded-xl" style={{ background: 'var(--bg-elevated)' }}>
+              <p className="text-xs font-semibold uppercase" style={{ color: 'var(--text-tertiary)' }}>
+                Sai số trung bình
+              </p>
+              <p className="font-mono text-2xl font-bold mt-1" style={{ color: 'var(--text-primary)' }}>
+                {metrics.mae != null ? fmtMoneyExact(metrics.mae) : '–'}
+              </p>
+              <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
+                Chênh lệch bình quân giữa dự báo và thực tế mỗi ngày
+              </p>
+            </div>
+
+            <div className="p-4 rounded-xl" style={{ background: 'var(--bg-elevated)' }}>
+              <p className="text-xs font-semibold uppercase" style={{ color: 'var(--text-tertiary)' }}>
+                Khuyến nghị sử dụng
+              </p>
+              <p className="text-sm font-semibold mt-1" style={{ color: 'var(--text-primary)' }}>
+                {reliability.tone === 'good'
+                  ? 'Dùng cho kế hoạch bán hàng'
+                  : reliability.tone === 'warn'
+                    ? 'Dùng kèm kiểm tra thủ công'
+                    : 'Chỉ dùng để tham khảo'}
+              </p>
+              <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
+                Luôn đối chiếu với chiến dịch, ngày lễ và tình trạng tồn kho trước khi ra quyết định lớn.
+              </p>
+            </div>
+          </div>
+
+          {showTechnicalDetails && (
+            <div className="mt-5 pt-5" style={{ borderTop: '1px solid var(--border)' }}>
+              <div className="flex items-center gap-2 mb-4">
+                <span className="icon text-base" style={{ color: 'var(--primary-500)' }}>analytics</span>
+                <h3 className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
+                  Đánh giá độ chính xác mô hình Prophet
+                </h3>
+                <span className="lbadge lbadge-neutral text-xs ml-auto">{metrics.eval_method}</span>
               </div>
-            ))}
-          </div>
 
-          <div className="text-xs p-3 rounded-xl" style={{ background: 'var(--bg-elevated)', color: 'var(--text-tertiary)' }}>
-            <strong style={{ color: 'var(--text-secondary)' }}>Phân chia đánh giá:</strong>{' '}
-            {metrics.n_train} ngày huấn luyện / {metrics.n_test} ngày kiểm tra (tỷ lệ 80/20)
-            {' · '}
-            <strong style={{ color: 'var(--text-secondary)' }}>Dữ liệu kiểm tra:</strong>{' '}
-            {metrics.test_from} → {metrics.test_to}
-          </div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                {[
+                  { label: 'MAE',  tooltip: MT.mae,  value: metrics.mae  != null ? fmtMoneyExact(metrics.mae) : '–', sub: 'Sai số tuyệt đối TB',   color: 'var(--accent-500)' },
+                  { label: 'RMSE', tooltip: MT.rmse, value: metrics.rmse != null ? fmtMoneyExact(metrics.rmse) : '–', sub: 'Sai số có trọng số',    color: 'var(--color-warning)' },
+                  { label: 'MAPE', tooltip: MT.mape, value: metrics.mape_pct != null ? formatPercent(metrics.mape_pct) : '–', sub: 'Sai số phần trăm', color: 'var(--color-error)' },
+                  { label: 'Kiểm tra', tooltip: null, value: `${metrics.n_test ?? '–'} ngày`, sub: `${metrics.test_from ?? ''} → ${metrics.test_to ?? ''}`, color: 'var(--text-tertiary)' },
+                ].map(({ label, tooltip, value, sub, color }) => (
+                  <div key={label} className="p-3 rounded-xl" style={{ background: 'var(--bg-elevated)' }}>
+                    <div className="flex items-center gap-0.5 mb-1">
+                      <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{label}</p>
+                      {tooltip && <InfoTooltip {...tooltip} placement="top" />}
+                    </div>
+                    <p className="font-mono text-lg font-bold" style={{ color }}>{value}</p>
+                    <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>{sub}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="text-xs p-3 rounded-xl" style={{ background: 'var(--bg-elevated)', color: 'var(--text-tertiary)' }}>
+                <strong style={{ color: 'var(--text-secondary)' }}>Phân chia đánh giá:</strong>{' '}
+                {metrics.n_train} ngày huấn luyện / {metrics.n_test} ngày kiểm tra (tỷ lệ 80/20)
+                {' · '}
+                <strong style={{ color: 'var(--text-secondary)' }}>Dữ liệu kiểm tra:</strong>{' '}
+                {metrics.test_from} → {metrics.test_to}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
       {/* ── Bảng so sánh + chart + feature importance ── */}
-      {comparison?.models && (
+      {comparison?.models && showTechnicalDetails && (
         <div className="lcard p-5 space-y-6">
           {/* Header */}
           <div>

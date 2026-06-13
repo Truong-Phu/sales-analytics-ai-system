@@ -434,6 +434,150 @@ public class IntegrationsController(
     }
 
     /// <summary>
+    /// Lấy danh sách URL Google Search đã scrape để audit nguồn dữ liệu thị trường.
+    /// Frontend chỉ mở URL gốc ở tab mới, không nhúng website ngoài vào hệ thống.
+    /// </summary>
+    [HttpGet("google/results")]
+    [Authorize(Roles = "Owner,Manager,DataIT,SuperAdmin")]
+    public async Task<IActionResult> GetGoogleResults(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 10,
+        [FromQuery] string? keyword = null,
+        [FromQuery] string? domain = null,
+        [FromQuery] bool? processed = null)
+    {
+        var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
+        pageSize = Math.Clamp(pageSize, 1, 50);
+        page = Math.Max(1, page);
+        var offset = (page - 1) * pageSize;
+        var connStr = db.Database.GetConnectionString()!;
+
+        var where = """
+            WHERE (@companyId IS NULL OR company_id = @companyId::uuid)
+              AND (@keyword IS NULL OR keyword ILIKE '%' || @keyword || '%')
+              AND (@domain IS NULL OR COALESCE(source_domain, url, '') ILIKE '%' || @domain || '%')
+              AND (@processed IS NULL OR is_processed = @processed)
+            """;
+
+        var countSql = $"SELECT COUNT(*) FROM public.raw_google_data {where}";
+        var statsSql = $"""
+            SELECT COUNT(*) AS total,
+                   COUNT(DISTINCT NULLIF(COALESCE(source_domain, ''), '')) AS domains,
+                   SUM(CASE WHEN is_processed THEN 1 ELSE 0 END) AS processed_count,
+                   SUM(CASE WHEN expires_at IS NOT NULL AND expires_at < NOW() THEN 1 ELSE 0 END) AS expired_count
+            FROM public.raw_google_data
+            {where}
+            """;
+        var dataSql = $"""
+            SELECT id, keyword, title, snippet, url, position, scraped_at,
+                   is_processed, content_hash, is_valid, relevance_score,
+                   product_name, category, price, sales_count, trend_description,
+                   source_domain, expires_at
+            FROM public.raw_google_data
+            {where}
+            ORDER BY scraped_at DESC, id DESC
+            LIMIT @limit OFFSET @offset
+            """;
+
+        static void BindCommon(Npgsql.NpgsqlCommand cmd, Guid? companyId, string? keyword, string? domain, bool? processed)
+        {
+            cmd.Parameters.Add(new Npgsql.NpgsqlParameter("@companyId", NpgsqlTypes.NpgsqlDbType.Text)
+            {
+                Value = companyId.HasValue ? companyId.Value.ToString() : DBNull.Value
+            });
+            cmd.Parameters.Add(new Npgsql.NpgsqlParameter("@keyword", NpgsqlTypes.NpgsqlDbType.Text)
+            {
+                Value = string.IsNullOrWhiteSpace(keyword) ? DBNull.Value : keyword.Trim()
+            });
+            cmd.Parameters.Add(new Npgsql.NpgsqlParameter("@domain", NpgsqlTypes.NpgsqlDbType.Text)
+            {
+                Value = string.IsNullOrWhiteSpace(domain) ? DBNull.Value : domain.Trim()
+            });
+            cmd.Parameters.Add(new Npgsql.NpgsqlParameter("@processed", NpgsqlTypes.NpgsqlDbType.Boolean)
+            {
+                Value = processed.HasValue ? processed.Value : DBNull.Value
+            });
+        }
+
+        try
+        {
+            await using var conn = new Npgsql.NpgsqlConnection(connStr);
+            await conn.OpenAsync();
+
+            long total;
+            await using (var cmd = new Npgsql.NpgsqlCommand(countSql, conn))
+            {
+                BindCommon(cmd, companyId, keyword, domain, processed);
+                total = Convert.ToInt64(await cmd.ExecuteScalarAsync() ?? 0L);
+            }
+
+            object stats;
+            await using (var cmd = new Npgsql.NpgsqlCommand(statsSql, conn))
+            {
+                BindCommon(cmd, companyId, keyword, domain, processed);
+                await using var r = await cmd.ExecuteReaderAsync();
+                await r.ReadAsync();
+                stats = new
+                {
+                    total = r.IsDBNull(0) ? 0 : Convert.ToInt64(r.GetValue(0)),
+                    domains = r.IsDBNull(1) ? 0 : Convert.ToInt32(r.GetValue(1)),
+                    processed = r.IsDBNull(2) ? 0 : Convert.ToInt32(r.GetValue(2)),
+                    expired = r.IsDBNull(3) ? 0 : Convert.ToInt32(r.GetValue(3)),
+                };
+            }
+
+            var results = new List<object>();
+            await using (var cmd = new Npgsql.NpgsqlCommand(dataSql, conn))
+            {
+                BindCommon(cmd, companyId, keyword, domain, processed);
+                cmd.Parameters.AddWithValue("@limit", pageSize);
+                cmd.Parameters.AddWithValue("@offset", offset);
+
+                await using var r = await cmd.ExecuteReaderAsync();
+                while (await r.ReadAsync())
+                {
+                    results.Add(new
+                    {
+                        id = r.GetInt32(0),
+                        keyword = r.GetString(1),
+                        title = r.IsDBNull(2) ? null : r.GetString(2),
+                        snippet = r.IsDBNull(3) ? null : r.GetString(3),
+                        url = r.IsDBNull(4) ? null : r.GetString(4),
+                        position = r.IsDBNull(5) ? (int?)null : r.GetInt32(5),
+                        scrapedAt = r.GetDateTime(6),
+                        isProcessed = r.GetBoolean(7),
+                        contentHash = r.IsDBNull(8) ? null : r.GetString(8),
+                        isValid = r.IsDBNull(9) ? (bool?)null : r.GetBoolean(9),
+                        relevanceScore = r.IsDBNull(10) ? 0 : r.GetInt32(10),
+                        productName = r.IsDBNull(11) ? null : r.GetString(11),
+                        category = r.IsDBNull(12) ? null : r.GetString(12),
+                        price = r.IsDBNull(13) ? (long?)null : r.GetInt64(13),
+                        salesCount = r.IsDBNull(14) ? (int?)null : r.GetInt32(14),
+                        trendDescription = r.IsDBNull(15) ? null : r.GetString(15),
+                        sourceDomain = r.IsDBNull(16) ? null : r.GetString(16),
+                        expiresAt = r.IsDBNull(17) ? (DateTime?)null : r.GetDateTime(17),
+                    });
+                }
+            }
+
+            return Ok(new
+            {
+                results,
+                total,
+                page,
+                pageSize,
+                totalPages = (int)Math.Ceiling(total / (double)pageSize),
+                stats,
+            });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Lỗi đọc Google scraper results: company={CompanyId}", companyId);
+            return StatusCode(503, new { message = "Không thể tải danh sách URL Google đã thu thập." });
+        }
+    }
+
+    /// <summary>
     /// Kích hoạt scrape Google Search thủ công (gọi Python AI Service).
     /// Không cần credentials — chỉ cần có keywords trong bảng scraper_keywords.
     /// </summary>

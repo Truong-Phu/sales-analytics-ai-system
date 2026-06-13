@@ -1,52 +1,92 @@
 import { useState, useEffect } from 'react'
 
 /**
- * DateRangeFilter — bộ lọc ngày chuẩn dùng chung toàn hệ thống.
+ * DateRangeFilter - bo loc ngay chuan dung chung cho cac man BI.
  *
  * Props:
- *   from      — string YYYY-MM-DD (controlled)
- *   to        — string YYYY-MM-DD (controlled)
- *   onChange  — (from, to) => void  — gọi ngay khi chọn preset; gọi khi Apply với custom
- *   presets   — array of preset keys (default: tất cả)
- *   className — extra className cho wrapper
+ *   from      - string YYYY-MM-DD (controlled)
+ *   to        - string YYYY-MM-DD (controlled, inclusive)
+ *   onChange  - (from, to) => void
+ *   presets   - array preset keys
+ *   className - extra className cho wrapper
  *
- * Preset keys: 'all' | 'today' | 'days_7' | 'days_30' | 'days_90' | 'custom'
+ * Preset keys: 'yesterday' | 'today' | 'last7days' | 'mtd' | 'qtd' | 'ytd' | 'custom'
+ * Backward-compatible aliases: 'all' -> 'ytd', 'days_7' -> 'last7days',
+ * 'days_30' -> 'mtd', 'days_90' -> 'qtd'.
  */
 
-const today    = () => new Date().toISOString().split('T')[0]
-const tomorrow = () => new Date(Date.now() + 86400000).toISOString().split('T')[0]
-const daysAgo  = (n) => new Date(Date.now() - n * 86400000).toISOString().split('T')[0]
+const toDateKey = (date) => {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+const addDays = (date, n) => {
+  const d = new Date(date)
+  d.setDate(d.getDate() + n)
+  return d
+}
+
+const today = () => toDateKey(new Date())
+const daysAgo = (n) => toDateKey(addDays(new Date(), -n))
+
+const startOfMonth = () => {
+  const d = new Date()
+  d.setDate(1)
+  return toDateKey(d)
+}
+
+const startOfQuarter = () => {
+  const d = new Date()
+  d.setMonth(Math.floor(d.getMonth() / 3) * 3, 1)
+  return toDateKey(d)
+}
+
+const startOfYear = () => `${new Date().getFullYear()}-01-01`
+
+const PRESET_ALIASES = {
+  all: 'ytd',
+  week: 'last7days',
+  month: 'mtd',
+  '90d': 'qtd',
+  days_7: 'last7days',
+  days_30: 'mtd',
+  days_90: 'qtd',
+}
+
+const normalizePresetKey = (key) => PRESET_ALIASES[key] ?? key
 
 const PRESETS = [
-  { key: 'all',     label: 'Tất cả'    },
-  { key: 'today',   label: 'Hôm nay'   },
-  { key: 'days_7',  label: '7 ngày'    },
-  { key: 'days_30', label: '30 ngày'   },
-  { key: 'days_90', label: '90 ngày'   },
-  { key: 'custom',  label: 'Tùy chỉnh' },
+  { key: 'yesterday', label: 'Hôm qua' },
+  { key: 'today',     label: 'Hôm nay' },
+  { key: 'last7days', label: '7 ngày' },
+  { key: 'mtd',       label: 'Tháng này' },
+  { key: 'qtd',       label: 'Quý này' },
+  { key: 'ytd',       label: 'Năm nay' },
+  { key: 'custom',    label: 'Tùy chọn' },
 ]
 
 function resolvePreset(key) {
+  const normalized = normalizePresetKey(key)
   const t = today()
-  const tm = tomorrow()
-  switch (key) {
-    case 'all':     return { from: '2020-01-01', to: tm }
-    case 'today':   return { from: t, to: tm }
-    case 'days_7':  return { from: daysAgo(7),  to: tm }
-    case 'days_30': return { from: daysAgo(30), to: tm }
-    case 'days_90': return { from: daysAgo(90), to: tm }
-    default:        return null   // custom — caller provides
+
+  switch (normalized) {
+    case 'yesterday': return { from: daysAgo(1), to: daysAgo(1) }
+    case 'today':     return { from: t, to: t }
+    case 'last7days': return { from: daysAgo(6), to: t }
+    case 'mtd':       return { from: startOfMonth(), to: t }
+    case 'qtd':       return { from: startOfQuarter(), to: t }
+    case 'ytd':       return { from: startOfYear(), to: t }
+    default:          return null
   }
 }
 
 function detectPreset(from, to) {
-  const t  = today()
-  const tm = tomorrow()
-  if (from === '2020-01-01' && to === tm)        return 'all'
-  if (from === t && to === tm)                   return 'today'
-  if (from === daysAgo(7)  && to === tm)         return 'days_7'
-  if (from === daysAgo(30) && to === tm)         return 'days_30'
-  if (from === daysAgo(90) && to === tm)         return 'days_90'
+  for (const preset of PRESETS.filter(p => p.key !== 'custom')) {
+    const range = resolvePreset(preset.key)
+    if (range?.from === from && range?.to === to) return preset.key
+  }
   return 'custom'
 }
 
@@ -54,14 +94,13 @@ export default function DateRangeFilter({
   from,
   to,
   onChange,
-  presets = ['all', 'today', 'days_7', 'days_30', 'days_90', 'custom'],
+  presets = ['yesterday', 'today', 'last7days', 'mtd', 'qtd', 'ytd', 'custom'],
   className = '',
 }) {
-  const [active,      setActive]      = useState(() => detectPreset(from, to))
-  const [customFrom,  setCustomFrom]  = useState(from)
-  const [customTo,    setCustomTo]    = useState(to)
+  const [active, setActive] = useState(() => detectPreset(from, to))
+  const [customFrom, setCustomFrom] = useState(from)
+  const [customTo, setCustomTo] = useState(to)
 
-  // Sync khi from/to thay đổi từ ngoài
   useEffect(() => {
     setActive(detectPreset(from, to))
     setCustomFrom(from)
@@ -69,9 +108,10 @@ export default function DateRangeFilter({
   }, [from, to])
 
   const handlePreset = (key) => {
-    setActive(key)
-    if (key !== 'custom') {
-      const range = resolvePreset(key)
+    const normalized = normalizePresetKey(key)
+    setActive(normalized)
+    if (normalized !== 'custom') {
+      const range = resolvePreset(normalized)
       onChange(range.from, range.to)
     }
   }
@@ -82,11 +122,11 @@ export default function DateRangeFilter({
     }
   }
 
-  const shownPresets = PRESETS.filter(p => presets.includes(p.key))
+  const normalizedPresets = [...new Set(presets.map(normalizePresetKey))]
+  const shownPresets = PRESETS.filter(p => normalizedPresets.includes(p.key))
 
   return (
     <div className={`flex flex-wrap items-center gap-1.5 ${className}`}>
-      {/* Preset buttons */}
       {shownPresets.map(p => (
         <button
           key={p.key}
@@ -99,8 +139,7 @@ export default function DateRangeFilter({
         </button>
       ))}
 
-      {/* Custom date inputs — chỉ hiện khi chọn Tùy chỉnh */}
-      {active === 'custom' && presets.includes('custom') && (
+      {active === 'custom' && normalizedPresets.includes('custom') && (
         <div className="flex items-center gap-1.5 flex-wrap">
           <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Từ</span>
           <input
@@ -116,7 +155,7 @@ export default function DateRangeFilter({
             type="date"
             value={customTo}
             min={customFrom}
-            max={tomorrow()}
+            max={today()}
             onChange={e => setCustomTo(e.target.value)}
             className="linput text-xs"
             style={{ width: 130, height: 30 }}

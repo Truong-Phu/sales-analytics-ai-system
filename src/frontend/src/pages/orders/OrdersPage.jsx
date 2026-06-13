@@ -46,6 +46,30 @@ function ChannelBadge({ name }) {
 const STATUSES = ['pending', 'processing', 'shipping', 'delivered', 'cancelled', 'returned']
 const CHANNELS = ['shopee', 'tiktok', 'lazada', 'offline', 'facebook', 'website']
 
+const dateKey = (date) => {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+const todayKey = () => dateKey(new Date())
+const daysAgoKey = (days) => {
+  const date = new Date()
+  date.setDate(date.getDate() - days)
+  return dateKey(date)
+}
+const firstDayOfMonthKey = () => {
+  const date = new Date()
+  date.setDate(1)
+  return dateKey(date)
+}
+const ORDER_TIME_OPTIONS = [
+  { value: 'all', label: 'Tất cả thời gian' },
+  { value: 'last7days', label: '7 ngày' },
+  { value: 'mtd', label: 'Tháng này' },
+  { value: 'custom', label: 'Tùy chỉnh' },
+]
+
 function StatusBadge({ status, label }) {
   const c = STATUS_COLOR[status] ?? STATUS_COLOR.confirmed
   return (
@@ -389,6 +413,12 @@ export default function OrdersPage() {
   const [search,  setSearch]  = useState('')
   const [status,  setStatus]  = useState('all')
   const [channel, setChannel] = useState('all')
+  const [timeMode, setTimeMode] = useState('all')
+  const [from, setFrom] = useState('')
+  const [to, setTo] = useState('')
+  const [minAmount, setMinAmount] = useState('')
+  const [maxAmount, setMaxAmount] = useState('')
+  const [province, setProvince] = useState('')
   const [page,    setPage]    = useState(1)
   const [expanded, setExpanded] = useState(null)
   const [editOrder,  setEditOrder]  = useState(null)
@@ -405,6 +435,24 @@ export default function OrdersPage() {
   const abortRef = useRef(null)
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 3000) }
+
+  const handleTimeMode = (mode) => {
+    setTimeMode(mode)
+    setPage(1)
+    if (mode === 'last7days') {
+      setFrom(daysAgoKey(6))
+      setTo(todayKey())
+    } else if (mode === 'mtd') {
+      setFrom(firstDayOfMonthKey())
+      setTo(todayKey())
+    } else if (mode === 'all') {
+      setFrom('')
+      setTo('')
+    } else if (!from && !to) {
+      setFrom(firstDayOfMonthKey())
+      setTo(todayKey())
+    }
+  }
 
   // Lấy transaction hiện tại của một order (dùng cache)
   const fetchOrderTx = useCallback(async orderId => {
@@ -444,7 +492,18 @@ export default function OrdersPage() {
     setLoading(true)
     try {
       const res = await getOrders(
-        { search, status: status === 'all' ? '' : status, page, limit: 20 },
+        {
+          search,
+          status: status === 'all' ? '' : status,
+          channel: channel === 'all' ? '' : channel,
+          page,
+          limit: 20,
+          from,
+          to,
+          minAmount,
+          maxAmount,
+          province,
+        },
         { signal: abortRef.current.signal }
       )
       setData(res)
@@ -454,7 +513,7 @@ export default function OrdersPage() {
     } finally {
       if (!abortRef.current?.signal.aborted) setLoading(false)
     }
-  }, [search, status, page])
+  }, [search, status, channel, page, from, to, minAmount, maxAmount, province])
 
   const handleCancel = (order, e) => {
     e.stopPropagation()
@@ -480,10 +539,7 @@ export default function OrdersPage() {
 
   const items = data?.items ?? []
   // useMemo: chỉ tính lại khi items hoặc channel thay đổi, tránh filter mỗi render
-  const filtered = useMemo(
-    () => channel === 'all' ? items : items.filter(o => o.channel === channel),
-    [items, channel]
-  )
+  const filtered = useMemo(() => items, [items])
 
   return (
     <>
@@ -579,6 +635,54 @@ export default function OrdersPage() {
         </div>
         <FilterPill label="Trạng thái" options={statusOpts}  value={status}  onChange={v => { setStatus(v);  setPage(1) }} icon="local_shipping" />
         <FilterPill label="Kênh"       options={channelOpts} value={channel} onChange={v => { setChannel(v); setPage(1) }} icon="store" />
+        <FilterPill label="Thời gian" options={ORDER_TIME_OPTIONS} value={timeMode} onChange={handleTimeMode} icon="calendar_month" />
+        {timeMode === 'custom' && (
+          <>
+            <input
+              type="date"
+              value={from}
+              max={to || todayKey()}
+              onChange={e => { setFrom(e.target.value); setPage(1) }}
+              className="linput text-sm"
+              style={{ width: 140, height: 36 }}
+            />
+            <input
+              type="date"
+              value={to}
+              min={from}
+              max={todayKey()}
+              onChange={e => { setTo(e.target.value); setPage(1) }}
+              className="linput text-sm"
+              style={{ width: 140, height: 36 }}
+            />
+          </>
+        )}
+        <input
+          type="number"
+          min="0"
+          value={minAmount}
+          onChange={e => { setMinAmount(e.target.value); setPage(1) }}
+          placeholder="Từ ₫"
+          className="linput text-sm"
+          style={{ width: 110, height: 36 }}
+        />
+        <input
+          type="number"
+          min="0"
+          value={maxAmount}
+          onChange={e => { setMaxAmount(e.target.value); setPage(1) }}
+          placeholder="Đến ₫"
+          className="linput text-sm"
+          style={{ width: 110, height: 36 }}
+        />
+        <input
+          type="text"
+          value={province}
+          onChange={e => { setProvince(e.target.value); setPage(1) }}
+          placeholder="Khu vực"
+          className="linput text-sm"
+          style={{ width: 140, height: 36 }}
+        />
       </div>
 
       {/* Table */}

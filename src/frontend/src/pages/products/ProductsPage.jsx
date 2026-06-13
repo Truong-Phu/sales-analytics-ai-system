@@ -7,6 +7,7 @@ import { useAuth } from '../../hooks/useAuth'
 import { useDebounce } from '../../hooks/useDebounce'
 import { exportToCsv, fmtMoneyExact } from '../../utils/format'
 import api from '../../api/axios'
+import { useNavigate } from 'react-router-dom'
 
 const PAGE_SIZE = 10
 
@@ -787,6 +788,7 @@ function ProductFormModal({ initial, mode, onClose, onSaved }) {
 export default function ProductsPage() {
   const { t } = useTranslation()
   const { user } = useAuth()
+  const navigate = useNavigate()
   const [data,              setData]              = useState(null)
   const [loading,           setLoading]           = useState(true)
   const [search,            setSearch]            = useState('')
@@ -799,8 +801,8 @@ export default function ProductsPage() {
   const [toast,             setToast]             = useState('')
   const [checkedIds,        setCheckedIds]        = useState(new Set())
   const [confirmDlg, setConfirmDlg] = useState(null)
-  const [catalogOnly,       setCatalogOnly]       = useState(true) // mặc định: chỉ catalog chuẩn
   const [activeStatus,      setActiveStatus]      = useState('all') // 'all' | 'active' | 'inactive'
+  const [reorderPlan,       setReorderPlan]       = useState([])
 
   const debouncedSearch = useDebounce(search, 350)
 
@@ -842,20 +844,27 @@ export default function ProductsPage() {
   const fetchData = useCallback(async () => {
     setLoading(true)
     try {
-      setData(await getOltpProducts({
-        search:        debouncedSearch || undefined,
-        categoryId:    categoryId      ? Number(categoryId) : undefined,
-        page,
-        limit:         PAGE_SIZE,
-        hasVariations: catalogOnly ? true : null,
-        isActive:      activeStatus === 'active' ? true : activeStatus === 'inactive' ? false : null,
-      }))
+      const [products, plan] = await Promise.all([
+        getOltpProducts({
+          search:        debouncedSearch || undefined,
+          categoryId:    categoryId      ? Number(categoryId) : undefined,
+          page,
+          limit:         PAGE_SIZE,
+          isActive:      activeStatus === 'active' ? true : activeStatus === 'inactive' ? false : null,
+        }),
+        api.get('/api/inventory/reorder-plan', { params: { days: 30, targetDays: 30 } })
+          .then(r => r.data?.items ?? [])
+          .catch(() => []),
+      ])
+      setData(products)
+      setReorderPlan(plan)
     } catch {
       setData(null)
+      setReorderPlan([])
     } finally {
       setLoading(false)
     }
-  }, [debouncedSearch, categoryId, page, catalogOnly, activeStatus])
+  }, [debouncedSearch, categoryId, page, activeStatus])
 
   const openCreate = () => setFormMode('create')
 
@@ -940,6 +949,31 @@ export default function ProductsPage() {
 
   const items      = data?.items ?? []
   const totalPages = data?.totalPages ?? 1
+  const reorderByProduct = useMemo(() => {
+    const map = new Map()
+    reorderPlan.forEach(it => {
+      const key = String(it.productId)
+      const arr = map.get(key) ?? []
+      arr.push(it)
+      map.set(key, arr)
+    })
+    return map
+  }, [reorderPlan])
+
+  const buildPurchaseUrl = (p) => {
+    const productId = p.product_id ?? p.productId
+    const planItems = reorderByProduct.get(String(productId)) ?? []
+    const payload = planItems
+      .map(it => ({
+        productId:   it.productId ?? productId,
+        productName: it.productName ?? p.product_name ?? p.productName ?? p.name,
+        variationId: it.variationId ?? null,
+        quantity:    it.reorderQty ?? it.quantity,
+        importPrice: it.importPrice ?? p.cost_price ?? p.costPrice ?? 0,
+      }))
+      .filter(it => Number(it.quantity) > 0)
+    return `/purchase-orders?items=${encodeURIComponent(JSON.stringify(payload))}&returnUrl=${encodeURIComponent('/products')}`
+  }
 
   return (
     <>
@@ -1047,25 +1081,6 @@ export default function ProductsPage() {
           ))}
         </div>
 
-        <button onClick={() => { setSearch(''); setCategoryId(''); setActiveStatus('all'); setPage(1) }}
-                className="lbtn lbtn-secondary !h-9">
-          <span className="icon text-base">refresh</span>
-        </button>
-
-        {/* Toggle catalog / tất cả */}
-        <div className="flex items-center gap-1 px-3 rounded-xl text-xs font-medium h-9 border transition-colors"
-             style={{
-               background: catalogOnly ? 'rgba(99,102,241,0.08)' : 'var(--bg-elevated)',
-               borderColor: catalogOnly ? 'rgba(99,102,241,0.4)' : 'var(--border)',
-               color: catalogOnly ? '#6366F1' : 'var(--text-secondary)',
-               cursor: 'pointer',
-             }}
-             onClick={() => { setCatalogOnly(v => !v); setPage(1) }}>
-          <span className="icon" style={{ fontSize: 14 }}>
-            {catalogOnly ? 'style' : 'apps'}
-          </span>
-          {catalogOnly ? 'Catalog (có biến thể)' : 'Tất cả sản phẩm'}
-        </div>
       </div>
 
       {/* Bulk action bar */}
@@ -1245,6 +1260,16 @@ export default function ProductsPage() {
                                 onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                           <span className="icon text-base">visibility</span>
                         </button>
+                        {((reorderByProduct.get(String(p.product_id ?? p.productId))?.length ?? 0) > 0) && (
+                          <button onClick={e => { e.stopPropagation(); navigate(buildPurchaseUrl(p)) }}
+                                  className="w-8 h-8 flex items-center justify-center rounded-lg transition-colors"
+                                  title="Đặt hàng NCC"
+                                  style={{ color: '#6366F1' }}
+                                  onMouseEnter={e => e.currentTarget.style.background = 'rgba(99,102,241,0.08)'}
+                                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                            <span className="icon text-base">shopping_cart</span>
+                          </button>
+                        )}
                         {canEdit && (
                           <button onClick={e => handleDelete(p, e)}
                                   className="w-8 h-8 flex items-center justify-center rounded-lg transition-colors"

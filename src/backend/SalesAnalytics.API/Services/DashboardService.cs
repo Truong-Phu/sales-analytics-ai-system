@@ -240,17 +240,43 @@ public class DashboardService
             -- LIKE matching vì dim_channel dùng tên ngắn ("shopee") còn sales_channels
             -- dùng tên đầy đủ ("Shopee Phú Thịnh")
             LEFT JOIN (
-                SELECT LOWER(sc.channel_name) AS ch_lower, SUM(asm.amount) AS total_spend
+                SELECT
+                    CASE
+                        WHEN UPPER(sc.channel_type) = 'OFFLINE' THEN 'offline'
+                        WHEN UPPER(sc.channel_type) = 'TIKTOK_SHOP' THEN 'tiktok'
+                        WHEN UPPER(sc.channel_type) = 'FACEBOOK_SHOP' THEN 'facebook'
+                        WHEN UPPER(sc.channel_type) IN ('SHOPEE', 'LAZADA', 'WEBSITE') THEN LOWER(sc.channel_type)
+                        ELSE LOWER(sc.channel_name)
+                    END AS channel_key,
+                    SUM(
+                        asm.amount
+                        / EXTRACT(DAY FROM (DATE_TRUNC('month', MAKE_DATE(asm.year, asm.month, 1)) + INTERVAL '1 month - 1 day'))
+                        * (
+                            LEAST(@to::date, (DATE_TRUNC('month', MAKE_DATE(asm.year, asm.month, 1)) + INTERVAL '1 month - 1 day')::date)
+                            - GREATEST(@from::date, MAKE_DATE(asm.year, asm.month, 1))
+                            + 1
+                        )
+                    ) AS total_spend
                 FROM public.ad_spend_monthly asm
                 JOIN public.sales_channels sc ON sc.channel_id = asm.channel_id
                 WHERE (@companyId IS NULL OR asm.company_id = @companyId::uuid)
                   AND (asm.year * 12 + asm.month) BETWEEN @fromYM AND @toYM
-                GROUP BY LOWER(sc.channel_name)
-            ) ad ON ad.ch_lower LIKE '%' || LOWER(dc.channel_name) || '%'
+                  AND MAKE_DATE(asm.year, asm.month, 1) <= @to::date
+                  AND (DATE_TRUNC('month', MAKE_DATE(asm.year, asm.month, 1)) + INTERVAL '1 month - 1 day')::date >= @from::date
+                GROUP BY 1
+            ) ad ON ad.channel_key = LOWER(dc.channel_name)
+                 OR ad.channel_key = LOWER(COALESCE(dc.platform, ''))
+                 OR LOWER(dc.channel_name) LIKE '%' || ad.channel_key || '%'
             -- LEFT JOIN tỷ lệ hoàn/huỷ thực từ OLTP orders
             LEFT JOIN (
                 SELECT
-                    LOWER(sc2.channel_name) AS ch_lower,
+                    CASE
+                        WHEN UPPER(sc2.channel_type) = 'OFFLINE' THEN 'offline'
+                        WHEN UPPER(sc2.channel_type) = 'TIKTOK_SHOP' THEN 'tiktok'
+                        WHEN UPPER(sc2.channel_type) = 'FACEBOOK_SHOP' THEN 'facebook'
+                        WHEN UPPER(sc2.channel_type) IN ('SHOPEE', 'LAZADA', 'WEBSITE') THEN LOWER(sc2.channel_type)
+                        ELSE LOWER(sc2.channel_name)
+                    END AS channel_key,
                     COUNT(*) FILTER (WHERE o.status = 'RETURNED')  AS return_count,
                     COUNT(*) FILTER (WHERE o.status = 'CANCELLED') AS cancel_count,
                     COUNT(*)                                        AS total_count
@@ -258,8 +284,10 @@ public class DashboardService
                 JOIN public.sales_channels sc2 ON o.channel_id = sc2.channel_id
                 WHERE o.order_date BETWEEN @from AND @to
                   AND (@companyId IS NULL OR o.company_id = @companyId::uuid)
-                GROUP BY LOWER(sc2.channel_name)
-            ) ret ON ret.ch_lower LIKE '%' || LOWER(dc.channel_name) || '%'
+                GROUP BY 1
+            ) ret ON ret.channel_key = LOWER(dc.channel_name)
+                  OR ret.channel_key = LOWER(COALESCE(dc.platform, ''))
+                  OR LOWER(dc.channel_name) LIKE '%' || ret.channel_key || '%'
             WHERE dd.full_date BETWEEN @from AND @to
               AND (@companyId IS NULL OR fs.company_id = @companyId::uuid)
             GROUP BY dc.channel_name, ad.total_spend, ret.return_count, ret.cancel_count, ret.total_count
@@ -502,6 +530,26 @@ public class DashboardService
         int days = Math.Max(1, to.DayNumber - from.DayNumber + 1);
 
         var sql = """
+            WITH product_stock AS (
+                SELECT
+                    p.product_id,
+                    p.product_name,
+                    CASE
+                        WHEN COALESCE(vs.variation_count, 0) > 0 THEN COALESCE(vs.variation_stock, 0)
+                        ELSE p.stock_quantity
+                    END AS stock_quantity
+                FROM public.products p
+                LEFT JOIN LATERAL (
+                    SELECT COUNT(*)::int AS variation_count,
+                           COALESCE(SUM(pv.stock_quantity), 0)::int AS variation_stock
+                    FROM public.product_variations pv
+                    WHERE pv.product_id = p.product_id
+                      AND pv.is_active = TRUE
+                      AND (@companyId IS NULL OR pv.company_id = @companyId::uuid)
+                ) vs ON TRUE
+                WHERE p.is_active = TRUE
+                  AND (@companyId IS NULL OR p.company_id = @companyId::uuid)
+            )
             SELECT
                 p.product_id,
                 p.product_name,
@@ -509,14 +557,12 @@ public class DashboardService
                 COALESCE(SUM(oi.quantity) FILTER (WHERE o.status NOT IN ('CANCELLED')), 0)::float   AS qty_sold,
                 COALESCE(COUNT(DISTINCT o.order_id) FILTER (WHERE o.status = 'RETURNED'), 0)::float AS returned_cnt,
                 COALESCE(COUNT(DISTINCT o.order_id) FILTER (WHERE o.status NOT IN ('CANCELLED')), 0)::float AS order_cnt
-            FROM public.products p
+            FROM product_stock p
             LEFT JOIN public.order_items oi ON p.product_id = oi.product_id
             LEFT JOIN public.orders o       ON oi.order_id  = o.order_id
                 AND o.order_date >= @from
                 AND o.order_date <  @to
                 AND (@companyId IS NULL OR o.company_id = @companyId::uuid)
-            WHERE p.is_active = TRUE
-              AND (@companyId IS NULL OR p.company_id = @companyId::uuid)
             GROUP BY p.product_id, p.product_name, p.stock_quantity
             ORDER BY qty_sold DESC
             LIMIT 30

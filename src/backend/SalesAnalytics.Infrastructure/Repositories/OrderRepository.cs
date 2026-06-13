@@ -42,7 +42,13 @@ public class OrderRepository(AppDbContext db)
     /// <inheritdoc/>
     public async Task<(IEnumerable<Order> Items, int Total)> GetFilteredAsync(
         string? search, string? status, int? channelId, int page, int pageSize,
-        Guid? companyId = null)
+        Guid? companyId = null,
+        string? channel = null,
+        DateOnly? from = null,
+        DateOnly? to = null,
+        decimal? minAmount = null,
+        decimal? maxAmount = null,
+        string? province = null)
     {
         if (page < 1) page = 1;
         if (pageSize < 1 || pageSize > 200) pageSize = 20;
@@ -72,6 +78,30 @@ public class OrderRepository(AppDbContext db)
         // Lọc theo kênh
         if (channelId.HasValue)
             query = query.Where(o => o.ChannelId == channelId.Value);
+        else if (!string.IsNullOrWhiteSpace(channel))
+            query = query.Where(o => o.Channel != null &&
+                (EF.Functions.ILike(o.Channel.ChannelName, $"%{channel}%") ||
+                 EF.Functions.ILike(o.Channel.ChannelType, $"%{channel}%")));
+
+        // Lọc theo thời gian đặt hàng, khoảng tiền và khu vực giao hàng
+        if (from.HasValue)
+        {
+            var fromDate = from.Value.ToDateTime(TimeOnly.MinValue);
+            query = query.Where(o => o.OrderDate >= fromDate);
+        }
+        if (to.HasValue)
+        {
+            var toDate = to.Value.ToDateTime(TimeOnly.MaxValue);
+            query = query.Where(o => o.OrderDate <= toDate);
+        }
+        if (minAmount.HasValue)
+            query = query.Where(o => o.TotalAmount >= minAmount.Value);
+        if (maxAmount.HasValue)
+            query = query.Where(o => o.TotalAmount <= maxAmount.Value);
+        if (!string.IsNullOrWhiteSpace(province))
+            query = query.Where(o =>
+                (o.ShippingProvince != null && EF.Functions.ILike(o.ShippingProvince, $"%{province}%")) ||
+                (o.Customer != null && o.Customer.Province != null && EF.Functions.ILike(o.Customer.Province, $"%{province}%")));
 
         // Tìm kiếm theo mã đơn, tên khách hoặc external ID
         if (!string.IsNullOrWhiteSpace(search))

@@ -9,11 +9,15 @@ namespace SalesAnalytics.Infrastructure.Repositories;
 public class ProductRepository(AppDbContext db)
     : GenericRepository<Product>(db), IProductRepository
 {
+    private static IQueryable<Product> ExcludePlaceholderProducts(IQueryable<Product> query)
+        => query.Where(p => !(p.ProductName.Length == 14 &&
+                              EF.Functions.ILike(p.ProductName, "ITEM__________")));
+
     /// <inheritdoc/>
     public async Task<IEnumerable<Product>> SearchByNameAsync(string keyword)
-        => await _set
+        => await ExcludePlaceholderProducts(_set
             .AsNoTracking()
-            .Include(p => p.Category)
+            .Include(p => p.Category))
             .Where(p => p.IsActive &&
                         (EF.Functions.ILike(p.ProductName, $"%{keyword}%") ||
                          EF.Functions.ILike(p.Sku, $"%{keyword}%")))
@@ -22,9 +26,9 @@ public class ProductRepository(AppDbContext db)
 
     /// <inheritdoc/>
     public async Task<IEnumerable<Product>> GetByCategoryAsync(int categoryId)
-        => await _set
+        => await ExcludePlaceholderProducts(_set
             .AsNoTracking()
-            .Include(p => p.Category)
+            .Include(p => p.Category))
             .Where(p => p.CategoryId == categoryId && p.IsActive)
             .OrderBy(p => p.ProductName)
             .ToListAsync();
@@ -41,6 +45,8 @@ public class ProductRepository(AppDbContext db)
             .AsNoTracking()
             .Include(p => p.Category)
             .AsQueryable();
+
+        query = ExcludePlaceholderProducts(query);
 
         // Lọc theo company (null = SuperAdmin xem tất cả)
         if (companyId.HasValue)

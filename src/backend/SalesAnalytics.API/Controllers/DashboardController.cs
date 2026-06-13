@@ -9,6 +9,8 @@ namespace SalesAnalytics.API.Controllers;
 [Authorize]
 public class DashboardController(DashboardService service, ITenantContext tenant) : ControllerBase
 {
+    private static readonly TimeZoneInfo VietnamTimeZone = ResolveVietnamTimeZone();
+
     /// <summary>Lấy dữ liệu Dashboard (KPI, doanh thu, kênh, sản phẩm)</summary>
     [HttpGet]
     [Authorize(Roles = "Owner,Manager,DataIT,Staff,Staff_Sales,Staff_Marketing,Viewer,SuperAdmin")]
@@ -17,8 +19,9 @@ public class DashboardController(DashboardService service, ITenantContext tenant
         [FromQuery] DateOnly? to      = null,
         [FromQuery] string?   channel = null)
     {
-        var dateFrom  = from ?? DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-30));
-        var dateTo    = to   ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = VietnamToday();
+        var dateFrom  = from ?? today.AddDays(-30);
+        var dateTo    = to   ?? today;
         var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
 
         var data = await service.GetDashboardAsync(dateFrom, dateTo, channel, companyId);
@@ -102,8 +105,9 @@ public class DashboardController(DashboardService service, ITenantContext tenant
         [FromQuery] DateOnly? from = null,
         [FromQuery] DateOnly? to   = null)
     {
-        var dateFrom  = from ?? DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-180));
-        var dateTo    = to   ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = VietnamToday();
+        var dateFrom  = from ?? today.AddDays(-180);
+        var dateTo    = to   ?? today;
         var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
         try
         {
@@ -124,8 +128,9 @@ public class DashboardController(DashboardService service, ITenantContext tenant
         [FromQuery] DateOnly? to      = null,
         [FromQuery] string?   channel = null)
     {
-        var dateFrom  = from ?? DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-30));
-        var dateTo    = to   ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = VietnamToday();
+        var dateFrom  = from ?? today.AddDays(-30);
+        var dateTo    = to   ?? today;
         var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
         try
         {
@@ -146,8 +151,9 @@ public class DashboardController(DashboardService service, ITenantContext tenant
         [FromQuery] DateOnly? to      = null,
         [FromQuery] string?   channel = null)
     {
-        var dateFrom  = from ?? DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-30));
-        var dateTo    = to   ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = VietnamToday();
+        var dateFrom  = from ?? today.AddDays(-30);
+        var dateTo    = to   ?? today;
         var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
         try
         {
@@ -168,8 +174,9 @@ public class DashboardController(DashboardService service, ITenantContext tenant
         [FromQuery] DateOnly? to      = null,
         [FromQuery] string?   channel = null)
     {
-        var dateFrom  = from ?? DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-30));
-        var dateTo    = to   ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = VietnamToday();
+        var dateFrom  = from ?? today.AddDays(-30);
+        var dateTo    = to   ?? today;
         var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
         try
         {
@@ -189,8 +196,9 @@ public class DashboardController(DashboardService service, ITenantContext tenant
         [FromQuery] DateOnly? from = null,
         [FromQuery] DateOnly? to   = null)
     {
-        var dateFrom  = from ?? DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-30));
-        var dateTo    = to   ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = VietnamToday();
+        var dateFrom  = from ?? today.AddDays(-30);
+        var dateTo    = to   ?? today;
         var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
         try
         {
@@ -208,7 +216,7 @@ public class DashboardController(DashboardService service, ITenantContext tenant
     [Authorize(Roles = "Owner,Manager,DataIT,Staff,Staff_Sales,Staff_Marketing,Viewer,SuperAdmin")]
     public async Task<IActionResult> GetTodayVsYesterday()
     {
-        var today     = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today     = VietnamToday();
         var yesterday = today.AddDays(-1);
         var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
 
@@ -248,8 +256,9 @@ public class DashboardController(DashboardService service, ITenantContext tenant
         [FromQuery] DateOnly? to    = null,
         [FromQuery] int       limit = 3)
     {
-        var dateFrom  = from ?? DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-30));
-        var dateTo    = to   ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = VietnamToday();
+        var dateFrom  = from ?? today.AddDays(-30);
+        var dateTo    = to   ?? today;
         var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
 
         if (limit < 1 || limit > 10) limit = 3;
@@ -263,5 +272,25 @@ public class DashboardController(DashboardService service, ITenantContext tenant
         {
             return StatusCode(503, new { message = "Lỗi kết nối database.", detail = ex.Message });
         }
+    }
+
+    private static DateOnly VietnamToday()
+    {
+        var localNow = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, VietnamTimeZone);
+        return DateOnly.FromDateTime(localNow);
+    }
+
+    private static TimeZoneInfo ResolveVietnamTimeZone()
+    {
+        foreach (var timeZoneId in new[] { "Asia/Ho_Chi_Minh", "SE Asia Standard Time" })
+        {
+            try
+            {
+                return TimeZoneInfo.FindSystemTimeZoneById(timeZoneId);
+            }
+            catch (TimeZoneNotFoundException) { }
+            catch (InvalidTimeZoneException) { }
+        }
+        return TimeZoneInfo.Local;
     }
 }

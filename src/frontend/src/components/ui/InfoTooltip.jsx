@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 
 /**
  * InfoTooltip — icon ⓘ nhỏ, click để hiện popup giải thích KPI/thuật ngữ.
@@ -13,6 +14,7 @@ import { useState, useRef, useEffect } from 'react'
  */
 export default function InfoTooltip({ title, description, formula, source, placement = 'top', def, className = '' }) {
   const [open, setOpen] = useState(false)
+  const [pos, setPos] = useState(null)
   const ref = useRef(null)
 
   // Hỗ trợ cả cách gọi mới (props trực tiếp) và cũ (def object)
@@ -28,13 +30,23 @@ export default function InfoTooltip({ title, description, formula, source, place
     return () => document.removeEventListener('mousedown', handler)
   }, [open])
 
-  if (!_title) return null
+  useEffect(() => {
+    if (!open || !ref.current) return
+    const rect = ref.current.getBoundingClientRect()
+    const width = 270
+    const preferredTop = placement !== 'bottom'
+    const hasTopSpace = rect.top >= 160
+    const top = preferredTop && hasTopSpace
+      ? rect.top - 8
+      : rect.bottom + 8
+    setPos({
+      top,
+      left: Math.min(Math.max(rect.left + rect.width / 2 - width / 2, 12), window.innerWidth - width - 12),
+      transform: preferredTop && hasTopSpace ? 'translateY(-100%)' : 'none',
+    })
+  }, [open, placement])
 
-  const popupStyle = placement === 'bottom'
-    ? { top: 'calc(100% + 6px)', left: '50%', transform: 'translateX(-50%)' }
-    : placement === 'top-left'
-    ? { bottom: 'calc(100% + 6px)', right: 0 }
-    : { bottom: 'calc(100% + 6px)', left: '50%', transform: 'translateX(-50%)' }
+  if (!_title) return null
 
   return (
     <div ref={ref} className={`relative inline-flex shrink-0 ${className}`}>
@@ -56,15 +68,19 @@ export default function InfoTooltip({ title, description, formula, source, place
         ⓘ
       </button>
 
-      {open && (
+      {open && pos && createPortal(
         <div
-          className="lcard scale-in absolute z-[400] p-3"
+          className="lcard scale-in fixed p-3"
           style={{
-            ...popupStyle,
+            top:       pos.top,
+            left:      pos.left,
+            transform: pos.transform,
             width:     270,
+            zIndex:    10000,
             boxShadow: 'var(--shadow-lg)',
             fontSize:  12,
           }}
+          onMouseDown={(e) => e.stopPropagation()}
           onClick={(e) => e.stopPropagation()}
         >
           <p className="font-bold mb-2" style={{ color: 'var(--text-primary)', fontSize: 13 }}>
@@ -90,7 +106,8 @@ export default function InfoTooltip({ title, description, formula, source, place
               </div>
             )}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   )

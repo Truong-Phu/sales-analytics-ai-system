@@ -1,404 +1,374 @@
-Bạn là Senior Fullstack Developer + Data Scientist + BI Architect với 10+ năm kinh nghiệm, chuyên hướng dẫn đồ án tốt nghiệp CNTT tại Việt Nam.
+# AGENTS.md — AI Operating Guide for MSAS Project
+
+## CURRENT WORKING MODE — FRONTEND LOGIC FIX ONLY
+
+Dự án hiện tại đã gần hoàn thiện và đã khóa nội dung báo cáo, tài liệu, SRS, UML và các file documentation.
+Từ thời điểm này, chỉ tập trung sửa lỗi logic frontend tối thiểu để hệ thống chạy đúng, hiển thị đúng dữ liệu API hiện tại và demo ổn định.
+
+Không được mở rộng phạm vi sửa nếu chưa có yêu cầu rõ ràng.
 
 ---
 
-## 1. PROJECT IDENTITY
+## 1. Mục tiêu làm việc hiện tại
 
-Đề tài khóa luận: **"Xây dựng hệ thống phân tích dữ liệu bán hàng đa kênh tích hợp AI hỗ trợ ra quyết định"**
+Mục tiêu hiện tại là:
 
-Mục tiêu: Thu thập dữ liệu bán hàng thực tế từ nhiều kênh, hợp nhất vào Data Warehouse, áp dụng AI để dự báo và hỗ trợ ra quyết định cho doanh nghiệp SME. Giải quyết vấn đề dữ liệu phân tán.
+* Fix lỗi logic frontend.
+* Sửa dashboard, finance, filter hoặc các màn hình demo nếu hiển thị sai.
+* Đảm bảo frontend dùng đúng dữ liệu API hiện tại.
+* Giữ hệ thống ổn định để demo và bảo vệ khóa luận.
+* Không làm rối hệ thống bằng việc sửa lan sang backend, database, docs hoặc kiến trúc.
 
----
+Nguyên tắc ưu tiên:
 
-## 2. TECH STACK (CỐ ĐỊNH — KHÔNG THAY ĐỔI)
-
-| Layer | Technology |
-|---|---|
-| Frontend | React 18 + Chart.js + Tailwind CSS |
-| Backend | ASP.NET Core 9 (MVC + REST API) |
-| Database | PostgreSQL 17 |
-| AI/ML Service | Python + FastAPI + Prophet + scikit-learn |
-| Auth | JWT |
-| Model Training | Google Colab |
-| Mobile | React Native (Expo) |
-
----
-
-## 3. HIGH-LEVEL ARCHITECTURE
-
-```
-[Multi-source APIs / CSV Import]
-        ↓
-[API Integration Layer – Python]
-        ↓
-[ETL Pipeline → Data Warehouse (Star Schema)]
-        ↓
-[ASP.NET Core Backend (MVC + API)]
-        ↓
-[AI/ML Service – FastAPI]   [React Frontend]   [React Native Mobile]
+```text
+Sửa đúng bug → Sửa nhỏ nhất có thể → Không đổi cấu trúc → Không ảnh hưởng phần đã ổn định
 ```
 
-Các layer chính:
-- **API Integration Layer** — thu thập dữ liệu từ tất cả nguồn API và import file
-- **Data Warehouse Layer** — Star Schema (FactSales, FactAdPerformance, FactShipping, FactPayment + Dimension tables)
-- **AI/ML Service** — Python FastAPI (Prophet forecast, anomaly detection, RFM, recommendations)
-- **ASP.NET Core Backend** — MVC + REST API, JWT auth, RBAC
-- **React Frontend** — BI dashboard, báo cáo, export PDF
-- **React Native Mobile** — Quick access, nhập liệu (Staff/Owner/Manager)
+---
 
-Nguyên tắc: Đơn giản – chạy được – dễ demo – dễ bảo vệ. Không dùng microservices lớn, Kubernetes.
+## 2. Phạm vi được phép sửa
+
+Chỉ được phép làm các việc sau:
+
+* Đọc và kiểm tra file frontend liên quan đến bug được yêu cầu.
+* Sửa logic trong frontend.
+* Sửa cách truyền filter ngày, filter kênh, query params hoặc state nếu bị sai.
+* Sửa logic tính toán hiển thị ở frontend nếu frontend đang xử lý sai dữ liệu API.
+* Sửa mapping dữ liệu API sang UI nếu mapping sai.
+* Sửa lỗi render biểu đồ, bảng, KPI, empty state nếu cần.
+* Sửa lỗi gọi API sai endpoint, sai params hoặc sai dependency trong `useEffect`.
+* Sửa lỗi format số, format ngày, format tiền tệ nếu đang gây hiểu sai.
+* Sửa lỗi UI nhỏ phục vụ demo nếu không làm thay đổi layout lớn.
+* Chạy build/test frontend để kiểm tra nếu có thể.
+
+Các thư mục/file có thể kiểm tra tùy bug:
+
+```text
+src/frontend/
+src/frontend/src/
+src/frontend/src/pages/
+src/frontend/src/components/
+src/frontend/src/services/
+src/frontend/src/api/
+src/frontend/src/hooks/
+src/frontend/src/utils/
+```
+
+Chỉ sửa file thật sự liên quan đến lỗi.
 
 ---
 
-## 4. SOURCE OF TRUTH POLICY (RẤT QUAN TRỌNG)
+## 3. Những việc tuyệt đối không được làm
 
-Thứ tự ưu tiên khi có mâu thuẫn:
+Không được thực hiện các việc sau nếu chưa có yêu cầu rõ ràng từ tôi:
 
-1. **Source code hiện tại** (codebase)
-2. **PostgreSQL schema hiện tại**
-3. **Các file tài liệu trong `docs/`** (module docs, sync files, technical notes)
-4. **`CLAUDE.md`**
+* Không cập nhật `docs/`.
+* Không sửa `Report.docx`.
+* Không sửa `SRS.docx`.
+* Không sửa UML.
+* Không sửa file báo cáo học thuật.
+* Không tạo thêm file tài liệu mới.
+* Không sửa backend nếu chưa chứng minh được lỗi gốc nằm ở backend/API và chưa liệt kê rõ phạm vi sửa tối thiểu.
+* Không sửa database schema.
+* Không tạo migration mới.
+* Không đổi kiến trúc hệ thống.
+* Không đổi cấu trúc thư mục.
+* Không refactor lớn.
+* Không đổi UI layout lớn.
+* Không thêm module mới.
+* Không thêm feature mới.
+* Không xóa chức năng đang có.
+* Không đổi route hiện tại nếu không bắt buộc.
+* Không đổi API contract hiện tại.
+* Không đổi tên endpoint.
+* Không đổi tên props, state, component nếu không cần thiết.
+* Không đổi RBAC/phân quyền.
+* Không đổi authentication/JWT.
+* Không sửa AI service/FastAPI.
+* Không sửa ETL pipeline.
+* Không sửa model training.
+* Không hardcode số liệu kinh doanh.
+* Không dùng mock data nếu API thật đã có.
+* Không push GitHub.
+* Không commit nếu tôi chưa yêu cầu.
 
-> Nếu CLAUDE.md mâu thuẫn với codebase hoặc database schema thực tế → luôn tin vào implementation hiện tại.
->
-> CLAUDE.md chỉ định nghĩa: architecture constraints, workflow rules, documentation policies, stable conventions, AI operating instructions — **KHÔNG phải runtime snapshot**.
+## Quy tắc phạm vi sửa hiện tại
 
-Khi cần biết trạng thái hiện tại của hệ thống: đọc source code, chạy `git log`, đọc file module trong `docs/modules/`, `docs/inventory/`, `docs/finance/`.
+Mặc định chỉ sửa logic frontend tối thiểu.
 
----
+Tuy nhiên, nếu sau khi kiểm tra frontend xác định rõ lỗi gốc nằm ở backend/API và frontend không thể sửa đúng nếu không chỉnh backend, thì được phép sửa backend ở phạm vi tối thiểu.
 
-## 5. DEVELOPMENT WORKFLOW (BẮT BUỘC TUÂN THỦ)
+Điều kiện được sửa backend:
 
-### Thứ tự phát triển tổng thể
-1. Báo cáo phân tích thiết kế trước (thu thập thông tin → SRS → đề cương → Chương 3 → Chương 4)
-2. Code chỉ bắt đầu sau khi hoàn thiện thiết kế CSDL và được duyệt
-3. Code theo thứ tự: API Integration → ETL → AI Service → Backend → Frontend
-4. AI model: EDA + train trên Google Colab → export `.pkl` → load vào FastAPI
-5. UI/UX polish sau khi core logic và AI chạy được
-6. Tích hợp toàn hệ thống + tối ưu cuối cùng
+1. Phải chứng minh được frontend đã gọi đúng API.
+2. Phải chỉ ra API trả sai dữ liệu, thiếu field, sai filter, sai query hoặc sai business logic.
+3. Phải liệt kê rõ file backend dự kiến sửa trước khi sửa.
+4. Chỉ sửa đúng endpoint/service liên quan đến bug.
+5. Không đổi API contract nếu không bắt buộc.
+6. Không đổi database schema.
+7. Không tạo migration mới.
+8. Không đổi kiến trúc.
+9. Không refactor backend lớn.
+10. Không cập nhật docs/report/SRS/UML.
 
-### Nguồn dữ liệu (3 mức ưu tiên)
-- **Mức 1 (hiện tại):** Web scraping, import CSV/Excel, dữ liệu giả lập
-- **Mức 2:** ETL pipeline (deduplication, normalize)
-- **Mức 3:** API thật (Shopee, Lazada, TikTok...) + offline data
-Khi thêm connector mới → luôn thêm fallback CSV tương ứng. Chưa dùng OAuth API thật trong giai đoạn phát triển.
+Nếu lỗi có thể sửa an toàn ở frontend thì không sửa backend.
 
----
-
-## 6. THESIS STRUCTURE (CẤU TRÚC LUẬN VĂN)
-
-- **Chương 1:** Giới thiệu
-- **Chương 2:** Cơ sở lý thuyết và phương pháp nghiên cứu
-- **Chương 3:** Phân tích thiết kế hệ thống (OOA&D với UML đầy đủ)
-- **Chương 4:** Phân tích thiết kế cơ sở dữ liệu (CDM → LDM → PDM)
-- **Chương 5:** Thực hiện hệ thống, kết quả thử nghiệm và đánh giá
-- **Chương 6:** Kết luận và hướng phát triển
-
-Tài liệu báo cáo xuất file `.docx`. Chi tiết yêu cầu từng chương: xem `docs/Report.docx` và `docs/SRS.docx`.
-
----
-
-## 7. DOCUMENTATION WORKFLOW POLICY
-### SOURCE OF TRUTH ENFORCEMENT
-
-Khi có mâu thuẫn giữa các nguồn tài liệu, luôn ưu tiên:
-1. Source code hiện tại
-2. PostgreSQL schema hiện tại
-3. Documentation hiện tại trong `docs/`
-4. CLAUDE.md
-
-Không được regenerate hoặc khôi phục feature cũ chỉ vì thông tin cũ còn tồn tại trong tài liệu.
-
-Luôn scan codebase hiện tại trước khi:
-- sửa chức năng
-- sửa database
-- cập nhật UML
-- cập nhật report/SRS
-- regenerate tài liệu
-
-Nếu feature/module/API/table không còn tồn tại trong source code hoặc database schema hiện tại:
-- xem như đã bị loại bỏ
-- không tự động recreate lại
-- chỉ cập nhật tài liệu theo implementation hiện tại
-
-CLAUDE.md không phải runtime snapshot của hệ thống.
-CLAUDE.md chỉ chứa:
-- architecture constraints
-- workflow rules
-- documentation policies
-- stable conventions
-- AI operating instructions
-
-### Quy trình chuẩn khi thay đổi hệ thống
-
-**KHÔNG còn dùng `docs/CHANGE_TRACKING.md`.** Thay vào đó, cập nhật trực tiếp vào file tài liệu chuyên biệt tương ứng:
-
-1. Cập nhật source code trước
-2. Cập nhật file tài liệu phù hợp theo loại thay đổi:
-
-| Loại thay đổi | File đích |
-|---|---|
-| Chức năng mới / use case / RBAC | `docs/sync/SRS_SYNC.md` |
-| Nội dung cần vào Report | `docs/sync/REPORT_SYNC.md` |
-| UML cần thêm/sửa | `docs/sync/UML_SYNC.md` |
-| Luồng hoạt động mới | `docs/system-flows/SYSTEM_FLOWS.md` |
-| Module Tồn kho | `docs/modules/INVENTORY.md` |
-| Module Tài chính | `docs/modules/FINANCE.md` |
-| Module Mua hàng & NCC | `docs/modules/PURCHASE_SUPPLIER.md` |
-| Module AI Service | `docs/modules/AI_SERVICE.md` |
-| Module ETL & DW | `docs/modules/ETL_DW.md` |
-| Module Admin & RBAC | `docs/modules/ADMIN_RBAC.md` |
-| Module Marketing ROI | `docs/modules/MARKETING_ROI.md` |
-| Module Dashboard | `docs/modules/DASHBOARD_ANALYTICS.md` |
-| Module Import dữ liệu | `docs/modules/IMPORT_DATA.md` |
-| Module Lương & KPI | `docs/modules/PAYROLL_KPI.md` |
-| Module Thanh toán | `docs/modules/SUBSCRIPTION_PAYMENT.md` |
-
-3. KHÔNG đồng bộ Report.docx / SRS.docx ngay lập tức
-4. Đồng bộ tập trung ở giai đoạn cuối dựa trên `docs/sync/REPORT_SYNC.md` và `docs/sync/SRS_SYNC.md`
-
-### Không được tạo lại CHANGE_TRACKING.md
-Hệ thống đã chuyển sang tài liệu phân tán theo module từ 2026-06-02. Xem `docs/DOCUMENTATION_POLICY.md`.
-
-### Tài liệu cần đồng bộ hóa (cuối dự án)
-`SRS.docx`, `Report.docx`, SQL schema, UML diagrams (`.puml`), ERD/LDM/CDM, `RBAC_Matrix.md`, `Platform_Field_Mapping.md`, `AI_Training_Report.md`, API docs, User Manual.
-
-## CURRENT SYSTEM STATE POLICY
-
-Không sử dụng CLAUDE.md để xác định:
-- danh sách controller hiện tại
-- danh sách API hiện tại
-- danh sách screen/page hiện tại
-- trạng thái AI model hiện tại
-- database schema hiện tại
-- runtime implementation hiện tại
-
-Những thông tin này phải được đọc trực tiếp từ:
-- source code
-- PostgreSQL schema
-- `docs/modules/`
-- `docs/sql/`
-- `docs/diagrams/`
-
-### DOCUMENTATION REGENERATION RULE
-
-Khi đồng bộ tài liệu:
-- luôn đọc source code hiện tại trước
-- luôn đọc PostgreSQL schema hiện tại trước
-- luôn đọc file module docs tương ứng trước trong `docs/modules/`
-
-Không regenerate tài liệu chỉ dựa trên:
-- CLAUDE.md
-- snapshot cũ
-- nội dung cũ trong report
-- UML cũ
-- API docs cũ
-
-Mọi tài liệu regenerated phải phản ánh implementation hiện tại của hệ thống.
-
-### IMPLEMENTATION-FIRST WORKFLOW
-
-Mọi thay đổi phải tuân theo workflow sau:
-
-1. Cập nhật implementation thực tế trước:
-   - source code
-   - PostgreSQL schema
-   - frontend/mobile
-   - ETL
-   - AI modules
-
-2. Cập nhật trực tiếp vào file tài liệu chuyên biệt tương ứng (xem bảng phân loại ở mục 7)
-
-3. KHÔNG cập nhật ngay:
-   - Report
-   - SRS
-   - UML
-   - SQL docs
-   - RBAC docs
-   - API docs
-
-4. Chỉ thực hiện đồng bộ Report/SRS tập trung ở giai đoạn cuối hoặc khi được yêu cầu rõ ràng.
-
-Workflow chuẩn:
-Implementation → Cập nhật file module/sync tương ứng → Final Documentation Synchronization
+Nếu lỗi nằm ở backend nhưng cần đổi schema/database thì dừng lại và hỏi tôi trước.
 
 ---
 
-## 8. UML & DIAGRAM STANDARDS (BẮT BUỘC)
+## 4. Quy trình bắt buộc trước khi sửa
 
-### Quy tắc chung
-- Ngôn ngữ: Tiếng Việt chuyên ngành. Font: Times New Roman 13pt.
-- Bố cục: Trái→Phải hoặc Trên→Dưới, hạn chế đường cắt chéo.
-- Màu sắc pastel phân biệt layer: Frontend cam nhạt, Backend xanh dương nhạt, Database vàng nhạt, AI Service tím nhạt.
-- Bắt buộc cung cấp PlantUML source (.puml) cho từng sơ đồ.
-- PlantUML source chỉ dùng để mô tả sơ đồ UML và workflow hệ thống.
-- KHÔNG đưa implementation source code (C#, Python, SQL query, JSX/React code...) vào nội dung UML. → lưu trong file `.puml` riêng trong `docs/diagrams/`.
-- Actor phải vẽ đúng dạng **stickman** chuẩn UML (keyword `actor` trong PlantUML).
+Trước khi sửa bất kỳ lỗi nào, phải làm đúng quy trình sau:
 
-### Quy tắc từng loại sơ đồ
-- **Use Case:** System Boundary, Actor stickman, đúng `<<include>>` / `<<extend>>`.
-- **Activity:** Swimlanes, thanh đậm cho Fork/Join.
-- **Class:** 3 ngăn, Access Modifiers (+/-/#), kiểu dữ liệu, cardinality.
-- **Sequence:** Lifelines, Activation Bars, return nét đứt, Fragment (alt/loop).
-- **Component:** Interface dùng Lollipop.
-- **Deployment:** Node dạng khối 3D, ghi giao thức kết nối.
-- **Star Schema:** Phân biệt rõ Fact và Dimension tables.
-- **Activity cho ETL/AI:** Thể hiện rõ luồng Raw → Staging → Data Warehouse.
+1. Đọc đúng file frontend liên quan đến bug.
+2. Xác định lỗi nằm ở đâu.
+3. Giải thích ngắn gọn nguyên nhân lỗi.
+4. Liệt kê danh sách file dự kiến sửa.
+5. Chỉ sửa đúng các file đã liệt kê.
+6. Không sửa lan sang file khác nếu chưa cần.
+7. Nếu phát hiện lỗi nằm ở backend/API, phải chứng minh bằng request/response cụ thể và liệt kê file backend dự kiến sửa. Chỉ được sửa backend tối thiểu nếu frontend không thể xử lý đúng nếu không chỉnh backend. Nếu lỗi cần sửa database/schema/migration thì dừng lại và hỏi tôi trước.
+8. Sau khi sửa, chạy build/test frontend nếu có thể.
+9. Báo cáo kết quả sau khi sửa.
 
-Mọi sơ đồ phải chuyên nghiệp, phù hợp in trực tiếp vào báo cáo khóa luận.
+Báo cáo kết quả phải có format:
 
----
+```text
+Đã kiểm tra:
+- ...
 
-## 9. DATABASE DESIGN RULES
+File đã sửa:
+- ...
 
-### Chương 4 — Thứ tự bắt buộc
-CDM (Conceptual) → Chuẩn hóa 1NF–3NF → LDM (Logical) → PDM (Physical) → Ràng buộc & Index → Database Diagram → SQL Script.
+Logic đã sửa:
+- ...
 
-### Quy tắc naming
-- **SQL/code:** Tiếng Anh chuẩn, `snake_case` (ví dụ: `order_id`, `customer_name`).
-- **Giao diện người dùng:** Tiếng Việt có ý nghĩa. Không dùng prefix `ID_` → dùng `Mã_`. Hiển thị Tên thay vì Mã trong bảng quan hệ. Ngày tháng dạng ShortDate.
+Không đụng đến:
+- Backend
+- Database
+- Docs/Report/SRS/UML
+- Kiến trúc hệ thống
 
-### SQL schema management
-- Bảng mới / `ALTER TABLE` → thêm vào cuối `docs/sql/schema/01_create_tables.sql`.
-- Không tạo file migration riêng trừ khi là script chạy 1 lần trên production.
+Kết quả build/test:
+- ...
+```
 
 ---
 
-## 10. CODING RULES
+## 5. Nguyên tắc sửa frontend
 
-### Chung
-- Ưu tiên giải pháp đơn giản, dễ bảo trì, dễ demo.
-- Không thêm abstraction, feature flag, backward-compatibility shim không cần thiết.
-- Không thêm error handling cho tình huống không thể xảy ra.
-- Không comment giải thích WHAT — chỉ comment WHY khi không hiển nhiên.
-- Code comment bằng tiếng Việt (theo quy định báo cáo).
+Khi sửa frontend, phải tuân thủ:
 
-### Frontend (React)
-- Mọi API call phải có `try-catch` + fallback mock data.
-- Mock data đặt tại `src/frontend/src/mockData/` (mỗi entity 1 file).
-- Khi chạy mock → hiển thị banner "Đang dùng dữ liệu mẫu" màu vàng.
-- Dùng Chart.js (ưu tiên) để đảm bảo tính tương tác và responsive.
-
-### Backend (ASP.NET Core)
-- Dùng `[Authorize(Roles = "...")]` hoặc policy-based cho RBAC.
-- Nếu DB lỗi → trả về `503` với message rõ ràng, KHÔNG trả `500` chung chung.
-
-### AI Service (FastAPI)
-- Nếu không có model `.pkl` → dùng sample prediction cố định (không crash).
-- Chatbot endpoint: `POST /recommendation` với body `{question: string, context: object}`, ngôn ngữ theo `Accept-Language` header.
+* Sửa tối thiểu đúng bug.
+* Không refactor nếu không cần.
+* Không thay đổi component structure nếu logic hiện tại vẫn dùng được.
+* Không đổi UI layout lớn nếu tôi chưa yêu cầu.
+* Không thêm thư viện mới.
+* Không hardcode dữ liệu kinh doanh.
+* Không hardcode KPI.
+* Không hardcode doanh thu, lợi nhuận, chi phí, đơn hàng.
+* Không dùng mock data nếu API thật đã có.
+* Nếu API trả rỗng thì hiển thị empty state rõ ràng.
+* Nếu API lỗi thì hiển thị lỗi thân thiện, không làm crash page.
+* Giữ nguyên style hiện tại nếu không có yêu cầu chỉnh giao diện.
+* Giữ nguyên route hiện tại.
+* Giữ nguyên API contract hiện tại.
+* Giữ nguyên phân quyền hiện tại.
+* Giữ nguyên i18n hiện tại nếu có.
 
 ---
 
-## 11. ERROR HANDLING RULES (TỰ XỬ LÝ)
+## 6. Quy tắc xử lý Dashboard, Finance và Filter
 
-Khi gặp lỗi, KHÔNG dừng lại hỏi — tự phân tích và fix:
+Các màn hình dashboard, finance và filter là khu vực ưu tiên cần ổn định để demo.
 
-1. Thử fix trực tiếp
-2. Nếu không được, thử cách khác
-3. Tiếp tục cho đến khi xong
+Khi sửa các phần này, cần chú ý:
 
-Lỗi thường gặp — tự xử lý:
-- `ModuleNotFoundError` → `pip install` vào `.venv`
-- `UnicodeEncodeError` → thêm `PYTHONUTF8=1` hoặc `encoding='utf-8'`
-- `Connection error` → chuyển sang dữ liệu mẫu thay thế
-- `JsonDocument (EF InMemory)` → dùng `ValueConverter<JsonDocument, string>` + `_ParseJson()`
-- `FileNotFoundError` với `.docx` → kiểm tra đường dẫn `docs/`, dùng `os.path.abspath()`
-
-Chỉ dừng báo cáo khi KHÔNG THỂ tự fix: cần API key thật, cần file bên ngoài, cần quyền admin.
-Ghi lỗi đã gặp và cách fix vào `docs/GhiChu_BaoVe.md`.
-
----
-
-## 12. GIT RULES (BẮT BUỘC)
-
-- **KHÔNG push lên GitHub** trong quá trình phát triển — chỉ commit local.
-- Khi hoàn thiện, push thủ công bằng terminal với tên `Truong-Phu`.
-- **KHÔNG để Claude Code chạy `git push`**.
-- Commit message ngắn gọn, không đề cập Prompt/Claude. Ví dụ: `feat: add shopee connector`, `fix: parse error in etl`.
-- **KHÔNG commit:** `docs/`, `CLAUDE.md`, `PROMPTS.md`, `.claude/`, `.venv/`, `docs/backups/`, `.env`.
-- Dùng `appsettings.Development.example.json` làm template, KHÔNG commit `appsettings.Development.json`.
+* Filter ngày phải gửi đúng `startDate`, `endDate` hoặc params hiện tại mà API đang dùng.
+* Filter kênh phải gửi đúng channel hiện tại.
+* Không trộn dữ liệu đã lọc theo kênh với dữ liệu toàn hệ thống.
+* Không lấy chi phí quảng cáo toàn tháng để trừ cho doanh thu của một ngày nếu filter đang chọn “Hôm nay”, trừ khi API/business rule đã quy định như vậy.
+* Không tự tính lại KPI ở frontend nếu backend/API đã trả sẵn số liệu chuẩn.
+* Nếu frontend bắt buộc phải tính, phải tính theo dữ liệu API trả về, không hardcode.
+* Khi đổi filter, các KPI, biểu đồ và bảng liên quan phải refetch hoặc cập nhật đúng.
+* Tránh lỗi `useEffect` thiếu dependency làm dữ liệu không refresh.
+* Tránh lỗi gọi API nhiều lần không cần thiết gây chậm dashboard.
+* Empty state phải rõ ràng khi không có dữ liệu.
+* Không dùng số liệu mẫu để lấp giao diện khi API đã có dữ liệu thật.
 
 ---
 
-## 13. RBAC PRINCIPLES
+## 7. Quy tắc với Backend/API
 
-Chi tiết đầy đủ: `docs/RBAC_Matrix.md`. Tóm tắt:
+Mặc định không sửa backend.
 
-| Role | Mô tả |
-|---|---|
-| Owner/Business Owner | Xem dashboard KPI, báo cáo chi tiết, dự báo AI, full BI (Web + Mobile) |
-| Manager | Phân tích sâu, export báo cáo, xem recommendations |
-| Staff/Employee | Nhập dữ liệu chính (đơn hàng, khách hàng, sản phẩm) — chủ yếu Mobile |
-| Data/IT | Quản lý ETL, AI model, log, Data Warehouse — chủ yếu Web |
-| SuperAdmin | Platform-level, quản lý tất cả công ty — KHÔNG thuộc công ty nào |
+Chỉ được đọc backend để hiểu API contract, DTO, endpoint và dữ liệu trả về.
 
-- Role `Admin` (tầng doanh nghiệp) đã xóa bỏ (2026-05-15) → quyền Admin chuyển về Owner.
-- Nguyên tắc: Least privilege, role theo business function.
-- Backend: `[Authorize(Roles = "...")]`. Frontend: `usePermission` hook từ JWT.
-- Mobile: Tập trung responsive/quick view, tránh heavy charts/complex AI UI.
+Chỉ được sửa backend khi có đủ bằng chứng rằng lỗi gốc nằm ở backend/API và frontend không thể xử lý đúng nếu không sửa backend.
 
----
+Ví dụ được phép sửa backend tối thiểu:
 
-## 14. AI/ML & ETL RULES
+API không nhận filter ngày/kênh dù frontend đã gửi đúng.
+API nhận params đúng nhưng query không áp dụng filter.
+API trả sai field khiến frontend không thể mapping đúng.
+API trả dữ liệu tổng toàn hệ thống trong khi endpoint được thiết kế để trả dữ liệu theo filter.
+Backend tính KPI sai business rule hiện tại.
+Backend trả lỗi do thiếu xử lý trường hợp dữ liệu rỗng.
 
-- Train model Prophet trên Google Colab, export `.pkl`, load vào FastAPI real-time.
-- Models lưu tại `src/ai-service/models/`. Chi tiết: `docs/AI_Training_Report.md`.
-- ETL pipeline: Raw → Staging → Data Warehouse (Star Schema). Không duplicate dữ liệu thô.
-- Incremental sync, rate limiting, error handling cho mọi API connector.
-- Platform field mapping chuẩn hóa: `docs/Platform_Field_Mapping.md`.
+Không được sửa backend trong các trường hợp:
 
----
+Chỉ để refactor code cho đẹp hơn.
+Chỉ để đổi kiến trúc.
+Chỉ để đổi naming.
+Chỉ để thêm feature mới.
+Chỉ để đồng bộ docs.
+Chỉ để tạo API mới khi API hiện tại vẫn dùng được.
+Cần đổi database schema hoặc migration mới nhưng chưa được tôi duyệt.
 
-## 15. FILE DOCX HANDLING
+Trước khi sửa backend, phải báo rõ:
 
-Khi cần đọc/sửa file `.docx`:
-- Dùng `python-docx` (`pip install python-docx` vào `.venv`).
-- **Luôn backup trước khi sửa:** `Report_backup_YYYYMMDD.docx` → lưu tại `docs/backups/` (không push).
-- Sau khi sửa, mở file kiểm tra format không bị vỡ.
-- Mọi thay đổi liên quan đến chức năng, kiến trúc, CSDL hoặc yêu cầu hệ thống phải được cập nhật vào file tài liệu module tương ứng trong `docs/modules/` hoặc `docs/sync/`. Không cập nhật trực tiếp Report.docx hoặc SRS.docx ngay sau mỗi thay đổi, trừ khi người dùng yêu cầu rõ ràng. Việc đồng bộ Report/SRS sẽ được thực hiện tập trung ở giai đoạn cuối dựa trên `docs/sync/REPORT_SYNC_FROM_CHANGE_TRACKING.md` và `docs/sync/SRS_SYNC_FROM_CHANGE_TRACKING.md`.
+Lỗi gốc nằm ở backend/API.
 
----
+Bằng chứng:
+- Frontend gửi request: ...
+- API response hiện tại: ...
+- Kết quả mong muốn: ...
+- Nguyên nhân trong backend: ...
 
-## 16. ACADEMIC WRITING RULES
+File backend dự kiến sửa:
+- ...
 
-### Trích dẫn tài liệu (BẮT BUỘC)
-- Tác giả Việt Nam: Họ và tên đầy đủ — ví dụ: `Nguyễn Văn A (2009, trang 25)`.
-- Tác giả nước ngoài: Họ — ví dụ: `Smith (2018, p.45)`.
-- Hai tác giả: nối bằng "và" (VI) hoặc "and" (EN).
-- Nhiều hơn hai: tên thứ nhất + "và cộng sự" / "et al."
-- Nhiều tài liệu cùng năm: thêm `a, b, c` — ví dụ: `2005a, 2005b`.
-- Cuối luận văn: mục "Tài liệu tham khảo" đầy đủ, alphabet, đúng chuẩn.
-- **Không được tự bịa đặt tài liệu tham khảo.**
+Phạm vi sửa:
+- Sửa tối thiểu endpoint/service liên quan.
+- Không đổi schema.
+- Không đổi kiến trúc.
+- Không cập nhật docs.
 
-### Tính chính xác học thuật
-- Không bịa đặt, đoán mò, ghi thông tin đại khái.
-- Nghiêm ngặt với: bối cảnh thực tế, lịch sử nghiên cứu, tài liệu tham khảo, số liệu thống kê.
-- Khi không có thông tin chính xác: ghi rõ "Cần thu thập thêm dữ liệu thực tế".
-
-### Output format khi trả lời
-- Câu hỏi triển khai (code, pipeline, setup): liệt kê **Step 1, Step 2, Step 3...** chi tiết từng bước, không bỏ sót, có thể thực hiện ngay.
-- Code mẫu: có comment tiếng Việt giải thích.
-- Kết thúc bằng bước test/debug.
-- Sơ đồ: bắt buộc cung cấp code PlantUML đầy đủ, lưu file `.puml` vào `docs/diagrams/`.
+Sau khi sửa backend, phải chạy build/test backend nếu có thể và báo cáo rõ.
 
 ---
 
-## 17. I18N RULES
+## 8. Quy tắc với Documentation
 
-- Ngôn ngữ mặc định: Tiếng Việt (`vi`). Hỗ trợ: `vi` + `en`.
-- Chỉ dịch static UI strings, labels, buttons, messages, errors — KHÔNG dịch dữ liệu động từ DB.
-- Backend: `AddLocalization()`, `RequestLocalizationMiddleware`, resource files `.resx`.
-- Frontend/Mobile: language switcher ở header hoặc profile.
+Hiện tại documentation đã khóa.
+
+Không cập nhật:
+
+```text
+docs/
+Report.docx
+SRS.docx
+UML
+README
+CHANGE_TRACKING
+AI_Training_Report
+Recommendation docs
+Module docs
+```
+
+Nếu thay đổi frontend có liên quan đến tài liệu, vẫn không cập nhật docs trong giai đoạn này.
+
+Chỉ báo cáo ngắn gọn trong kết quả sửa code, không tạo file tài liệu mới.
 
 ---
 
-## 18. AI OPERATING INSTRUCTIONS
+## 9. Quy tắc với Git
 
-CLAUDE.md là hướng dẫn vận hành AI dài hạn, không phải snapshot trạng thái dự án. Khi làm việc:
+Không push GitHub.
 
-1. **Đọc source code** để biết trạng thái hiện tại — đừng giả định từ CLAUDE.md.
-2. **Cập nhật file tài liệu module tương ứng** sau mọi thay đổi có ý nghĩa (không dùng CHANGE_TRACKING.md).
-3. **Không tự thay đổi kiến trúc, schema, RBAC** mà không có yêu cầu rõ ràng.
-4. **Ưu tiên tính khả thi và đơn giản** phù hợp demo khóa luận.
-5. **Không push GitHub**, không skip git hooks, không amend commit không cần thiết.
-6. Trạng thái runtime (controllers, endpoints, AI metrics, screen list) → đọc từ codebase, không từ CLAUDE.md.
+Không commit nếu tôi chưa yêu cầu.
+
+Nếu tôi yêu cầu commit, commit message phải ngắn gọn, không nhắc đến prompt, Claude, ChatGPT hoặc AI agent.
+
+Ví dụ commit message hợp lệ:
+
+```text
+fix: update dashboard date filter logic
+fix: refresh finance kpi on channel change
+fix: correct chart data mapping
+```
+
+Không commit các file sau:
+
+```text
+docs/
+Report.docx
+SRS.docx
+CLAUDE.md
+PROMPTS.md
+.env
+.venv/
+node_modules/
+appsettings.Development.json
+```
+
+---
+
+## 10. Cách phản hồi khi làm việc
+
+Khi tôi yêu cầu sửa lỗi, không được sửa ngay theo suy đoán.
+
+Phải phản hồi hoặc thực hiện theo hướng:
+
+```text
+Tôi sẽ kiểm tra đúng phần frontend liên quan, xác định lỗi logic, liệt kê file cần sửa rồi mới chỉnh tối thiểu. Tôi sẽ không sửa backend nếu chưa chứng minh được lỗi gốc nằm ở backend/API. Tôi sẽ không sửa database, docs hoặc cấu trúc hệ thống.
+```
+
+Sau khi kiểm tra, phải nêu rõ:
+
+```text
+Nguyên nhân:
+- ...
+
+File cần sửa:
+- ...
+
+Phạm vi sửa:
+- ...
+
+Không sửa:
+- Backend
+- Database
+- Docs
+- Kiến trúc
+```
+
+Sau khi sửa xong, phải báo cáo:
+
+```text
+Đã sửa:
+- ...
+
+File đã sửa:
+- ...
+
+Kết quả:
+- ...
+
+Không đụng đến:
+- Backend, trừ khi có ghi rõ lỗi gốc nằm ở backend/API và đã sửa tối thiểu
+- Database/schema/migration
+- Docs/Report/SRS/UML
+- Kiến trúc hệ thống
+```
+
+---
+
+## 11. Nguyên tắc cuối cùng
+
+Dự án hiện tại ưu tiên ổn định hơn mở rộng.
+
+Không cố làm hệ thống “tốt hơn” bằng cách thêm chức năng mới, đổi kiến trúc hoặc refactor lớn.
+
+Chỉ làm đúng việc được yêu cầu:
+
+```text
+Fix logic frontend tối thiểu để hệ thống chạy đúng, hiển thị đúng và demo ổn định.
+```
+
+Nếu không chắc có nên sửa hay không, phải dừng lại và hỏi trước.
+
+Nếu lỗi nằm ngoài frontend:
+- Backend/API: chỉ được sửa tối thiểu khi có bằng chứng rõ ràng và không cần đổi schema.
+- Database/schema/migration/AI service/ETL/docs: không tự sửa, phải báo cáo và hỏi tôi trước.

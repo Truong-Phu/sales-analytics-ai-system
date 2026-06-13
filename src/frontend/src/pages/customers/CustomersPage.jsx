@@ -17,6 +17,29 @@ function resolveSegment(seg) {
 }
 
 const EMPTY_CUST = { fullName: '', email: '', phoneNumber: '', address: '', province: '', district: '', ward: '' }
+const dateKey = (date) => {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+const todayKey = () => dateKey(new Date())
+const daysAgoKey = (days) => {
+  const date = new Date()
+  date.setDate(date.getDate() - days)
+  return dateKey(date)
+}
+const firstDayOfMonthKey = () => {
+  const date = new Date()
+  date.setDate(1)
+  return dateKey(date)
+}
+const CUSTOMER_TIME_OPTIONS = [
+  { value: 'all', label: 'Tất cả thời gian' },
+  { value: 'last7days', label: '7 ngày' },
+  { value: 'mtd', label: 'Tháng này' },
+  { value: 'custom', label: 'Tùy chỉnh' },
+]
 
 function CustomerFormModal({ initial, mode, onClose, onSaved }) {
   const [form,   setForm]   = useState(initial ?? EMPTY_CUST)
@@ -115,6 +138,23 @@ const LOYALTY_TIER = {
 }
 const PAGE_SIZE = 10
 
+const parseDateOnly = (value) => {
+  if (!value) return ''
+  return String(value).slice(0, 10)
+}
+
+const isWithinRange = (value, from, to) => {
+  const key = parseDateOnly(value)
+  if (!key) return false
+  return (!from || key >= from) && (!to || key <= to)
+}
+
+const fmtCurrency = (value) => {
+  const n = Number(value ?? 0)
+  if (!Number.isFinite(n)) return '0₫'
+  return `${Math.round(n).toLocaleString('vi-VN')}₫`
+}
+
 function SegmentBadge({ seg, label }) {
   const c = SEGMENT_CFG[seg] ?? SEGMENT_CFG.REGULAR
   return (
@@ -144,6 +184,12 @@ export default function CustomersPage() {
   const [loading, setLoading] = useState(true)
   const [search,        setSearch]        = useState('')
   const [segment,       setSegment]       = useState('all')
+  const [timeMode,      setTimeMode]      = useState('all')
+  const [from,          setFrom]          = useState('')
+  const [to,            setTo]            = useState('')
+  const [minSpent,      setMinSpent]      = useState('')
+  const [maxSpent,      setMaxSpent]      = useState('')
+  const [province,      setProvince]      = useState('')
   const [page,          setPage]          = useState(1)
   const [selected,      setSelected]      = useState(null)
   const [formMode,      setFormMode]      = useState(null)   // 'create' | 'edit'
@@ -159,28 +205,61 @@ export default function CustomersPage() {
   const canEdit = ['Owner', 'Manager', 'Staff'].includes(user?.role)
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 3000) }
 
+  const handleTimeMode = (mode) => {
+    setTimeMode(mode)
+    setPage(1)
+    if (mode === 'last7days') {
+      setFrom(daysAgoKey(6))
+      setTo(todayKey())
+    } else if (mode === 'mtd') {
+      setFrom(firstDayOfMonthKey())
+      setTo(todayKey())
+    } else if (mode === 'all') {
+      setFrom('')
+      setTo('')
+    } else if (!from && !to) {
+      setFrom(firstDayOfMonthKey())
+      setTo(todayKey())
+    }
+  }
+
   // Fetch lịch sử đơn hàng khi chọn KH
   useEffect(() => {
     if (!selected) { setSelOrders(null); return }
     const cid = selected.customer_id ?? selected.customerId
     if (!cid) return
     setSelOrdersLoad(true)
-    getCustomerOrderHistory(cid, 5)
-      .then(orders => setSelOrders(orders))
+    getCustomerOrderHistory(cid, 20, { from, to })
+      .then(orders => {
+        const scoped = (from || to)
+          ? orders.filter(o => isWithinRange(o.orderDate ?? o.order_date ?? o.date, from, to))
+          : orders
+        setSelOrders(scoped.slice(0, 5))
+      })
       .catch(() => setSelOrders([]))
       .finally(() => setSelOrdersLoad(false))
-  }, [selected])
+  }, [selected, from, to])
 
   const fetchData = useCallback(async () => {
     setLoading(true)
     try {
-      setData(await getCustomers({ search: debouncedSearch, segment: segment === 'all' ? '' : segment, page, limit: PAGE_SIZE }))
+      setData(await getCustomers({
+        search: debouncedSearch,
+        segment: segment === 'all' ? '' : segment,
+        from,
+        to,
+        minSpent,
+        maxSpent,
+        province,
+        page,
+        limit: PAGE_SIZE,
+      }))
     } catch {
       setData(null)
     } finally {
       setLoading(false)
     }
-  }, [debouncedSearch, segment, page])
+  }, [debouncedSearch, segment, from, to, minSpent, maxSpent, province, page])
 
   const openCreate = () => { setFormInit(null); setFormMode('create') }
 
@@ -365,6 +444,63 @@ export default function CustomersPage() {
             )
           })}
         </select>
+        <select
+          value={timeMode}
+          onChange={e => handleTimeMode(e.target.value)}
+          className="linput text-sm"
+          style={{ width: 160 }}
+        >
+          {CUSTOMER_TIME_OPTIONS.map(opt => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
+        </select>
+        {timeMode === 'custom' && (
+          <>
+            <input
+              type="date"
+              value={from}
+              max={to || todayKey()}
+              onChange={e => { setFrom(e.target.value); setPage(1) }}
+              className="linput text-sm"
+              style={{ width: 140 }}
+            />
+            <input
+              type="date"
+              value={to}
+              min={from}
+              max={todayKey()}
+              onChange={e => { setTo(e.target.value); setPage(1) }}
+              className="linput text-sm"
+              style={{ width: 140 }}
+            />
+          </>
+        )}
+        <input
+          type="number"
+          min="0"
+          value={minSpent}
+          onChange={e => { setMinSpent(e.target.value); setPage(1) }}
+          placeholder="Chi tiêu từ ₫"
+          className="linput text-sm"
+          style={{ width: 130 }}
+        />
+        <input
+          type="number"
+          min="0"
+          value={maxSpent}
+          onChange={e => { setMaxSpent(e.target.value); setPage(1) }}
+          placeholder="Chi tiêu đến ₫"
+          className="linput text-sm"
+          style={{ width: 140 }}
+        />
+        <input
+          type="text"
+          value={province}
+          onChange={e => { setProvince(e.target.value); setPage(1) }}
+          placeholder="Khu vực"
+          className="linput text-sm"
+          style={{ width: 140 }}
+        />
       </div>
 
       {/* Table */}
@@ -427,10 +563,10 @@ export default function CustomersPage() {
                       {fmt(c.total_orders ?? c.totalOrders)}
                     </td>
                     <td className="px-4 py-3 text-right font-mono tabular-nums font-medium" style={{ color: 'var(--text-primary)' }}>
-                      {fmt(c.total_spent ?? c.total_revenue ?? c.totalSpent)}₫
+                      {fmtCurrency(c.total_spent ?? c.total_revenue ?? c.totalSpent)}
                     </td>
                     <td className="px-4 py-3 text-right font-mono tabular-nums text-xs" style={{ color: 'var(--text-secondary)' }}>
-                      {c.avg_order_value ?? c.avgOrderValue ? `${fmt(c.avg_order_value ?? c.avgOrderValue)}₫` : '—'}
+                      {c.avg_order_value ?? c.avgOrderValue ? fmtCurrency(c.avg_order_value ?? c.avgOrderValue) : '—'}
                     </td>
                     <td className="px-4 py-3 text-right font-mono tabular-nums" style={{ color: c.loyalty_points > 0 ? 'var(--primary-500)' : 'var(--text-tertiary)' }}>
                       {c.loyalty_points != null ? fmt(c.loyalty_points) : '—'}
@@ -574,12 +710,12 @@ export default function CustomersPage() {
               {/* Số liệu mua hàng */}
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wider mb-3"
-                   style={{ color: 'var(--text-tertiary)' }}>Số liệu mua hàng</p>
+                   style={{ color: 'var(--text-tertiary)' }}>Số liệu mua hàng{from || to ? ' trong kỳ lọc' : ''}</p>
                 <div className="grid grid-cols-2 gap-3">
                   {[
                     ['Tổng đơn hàng',  fmt(selected.total_orders ?? selected.totalOrders),                               'shopping_cart'],
-                    ['Tổng chi tiêu',  `${fmt(selected.total_spent ?? selected.total_revenue ?? selected.totalSpent)}₫`, 'payments'],
-                    ['TB mỗi đơn',     `${fmt(selected.avg_order_value ?? selected.avgOrderValue)}₫`,                   'receipt'],
+                    ['Tổng chi tiêu',  fmtCurrency(selected.total_spent ?? selected.total_revenue ?? selected.totalSpent), 'payments'],
+                    ['TB mỗi đơn',     fmtCurrency(selected.avg_order_value ?? selected.avgOrderValue),                   'receipt'],
                     ['Điểm tích lũy',  (selected.loyalty_points ?? selected.loyaltyPoints) != null ? `${fmt(selected.loyalty_points ?? selected.loyaltyPoints)} đ` : '—', 'star'],
                   ].map(([label, value, icon]) => (
                     <div key={label} className="rounded-xl px-4 py-3"
@@ -624,7 +760,7 @@ export default function CustomersPage() {
               {/* Lịch sử đơn hàng */}
               <div>
                   <p className="text-xs font-semibold uppercase tracking-wider mb-3"
-                     style={{ color: 'var(--text-tertiary)' }}>5 đơn hàng gần nhất</p>
+                     style={{ color: 'var(--text-tertiary)' }}>{from || to ? '5 đơn hàng gần nhất trong kỳ lọc' : '5 đơn hàng gần nhất'}</p>
                   {selOrdersLoad ? (
                     <div className="flex items-center justify-center py-6">
                       <span className="w-5 h-5 border-2 rounded-full"
@@ -656,7 +792,7 @@ export default function CustomersPage() {
                                 {o.channelName ?? '—'}
                               </td>
                               <td className="px-3 py-2 font-medium whitespace-nowrap" style={{ color: 'var(--text-primary)' }}>
-                                {fmt(o.totalAmount)}₫
+                                {fmtCurrency(o.totalAmount)}
                               </td>
                               <td className="px-3 py-2">
                                 <span className="px-1.5 py-0.5 rounded"

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import MockToast from '../../components/ui/MockToast'
@@ -27,15 +27,23 @@ export default function InventoryPage() {
   const [expandedIds, setExpandedIds]= useState(new Set())
   const [varCache,    setVarCache]   = useState({})
   const [varLoading,  setVarLoading] = useState(new Set())
+  const [reorderPlan, setReorderPlan]= useState([])
 
   const load = async () => {
     setLoading(true)
     try {
-      const res = await getInventoryIntelligence({ days: 30 })
+      const [res, planRes] = await Promise.all([
+        getInventoryIntelligence({ days: 30 }),
+        api.get('/api/inventory/reorder-plan', { params: { days: 30, targetDays: 30 } })
+          .then(r => r.data)
+          .catch(() => ({ items: [] })),
+      ])
       setData(res)
+      setReorderPlan(planRes.items ?? [])
       setIsMock(res.is_mock ?? false)
     } catch {
       setData(null)
+      setReorderPlan([])
       setIsMock(false)
     } finally { setLoading(false) }
   }
@@ -63,6 +71,37 @@ export default function InventoryPage() {
 
   const visibleItems = (data?.items ?? []).filter(i => i.status !== 'NO_SALES')
   const filtered = visibleItems.filter(i => filter === 'ALL' || i.status === filter)
+  const reorderByProduct = useMemo(() => {
+    const map = new Map()
+    reorderPlan.forEach(it => {
+      const key = String(it.productId)
+      const arr = map.get(key) ?? []
+      arr.push(it)
+      map.set(key, arr)
+    })
+    return map
+  }, [reorderPlan])
+
+  const buildPurchaseUrl = (product, planItems) => {
+    const sourceItems = planItems?.length
+      ? planItems
+      : [{
+          productId: product.product_id,
+          productName: product.product_name,
+          quantity: product.reorder_qty,
+          importPrice: 0,
+        }]
+    const items = sourceItems
+      .map(it => ({
+        productId:   it.productId ?? product.product_id,
+        productName: it.productName ?? product.product_name,
+        variationId: it.variationId ?? null,
+        quantity:    it.reorderQty ?? it.reorder_qty ?? it.quantity,
+        importPrice: it.importPrice ?? 0,
+      }))
+      .filter(it => Number(it.quantity) > 0)
+    return `/purchase-orders?items=${encodeURIComponent(JSON.stringify(items))}&returnUrl=${encodeURIComponent(location.pathname)}`
+  }
 
   return (
     <div className="space-y-5">
@@ -132,6 +171,10 @@ export default function InventoryPage() {
             const isExpanded = expandedIds.has(item.product_id)
             const vars       = varCache[item.product_id]
             const isVarLoading = varLoading.has(item.product_id)
+            const planItems  = reorderByProduct.get(String(item.product_id)) ?? []
+            const reorderQty = planItems.length > 0
+              ? planItems.reduce((s, x) => s + Number(x.reorderQty ?? 0), 0)
+              : item.reorder_qty
             return (
               <div key={item.product_id} className="rounded-xl overflow-hidden"
                 style={{ border: `1px solid ${cfg.border}` }}>
@@ -150,7 +193,7 @@ export default function InventoryPage() {
                         { label: t('inventory.itemStock'),      tip: MT.currentStock,   value: item.current_stock, colored: true },
                         { label: t('inventory.itemSoldPerDay'), tip: MT.avgDailySales, value: item.avg_daily_sales > 0 ? Number(item.avg_daily_sales).toFixed(1) : '—' },
                         { label: t('inventory.itemDaysLeft'),   tip: MT.daysOfStock,   value: item.current_stock === 0 ? t('inventory.outOfStock') : item.days_until_stockout >= 999 ? t('inventory.infinite') : `${Math.round(item.days_until_stockout)}d`, colored: true },
-                        ...(item.reorder_qty > 0 ? [{ label: t('inventory.itemNeedOrder'), tip: MT.reorderPoint, value: item.reorder_qty, special: '#F97316' }] : []),
+                        ...(reorderQty > 0 ? [{ label: t('inventory.itemNeedOrder'), tip: MT.reorderPoint, value: reorderQty, special: '#F97316' }] : []),
                       ].map((col, ci) => (
                         <div key={ci}>
                           <div className="inline-flex items-center gap-0.5 text-xs" style={{ color: 'var(--text-tertiary)' }}>
@@ -161,12 +204,23 @@ export default function InventoryPage() {
                           </div>
                         </div>
                       ))}
-                      {item.reorder_qty > 0 && (
+                      {planItems.length > 0 && (
+                        <div className="text-xs text-left max-w-[180px]" style={{ color: 'var(--text-secondary)' }}>
+                          <div className="font-semibold" style={{ color: '#F97316' }}>
+                            {planItems.length} biến thể cần nhập
+                          </div>
+                          <div className="truncate">
+                            {planItems.slice(0, 2).map(v => [v.color, v.size].filter(Boolean).join('/') || v.variationName || v.variationSku || 'Biến thể').join(', ')}
+                            {planItems.length > 2 ? '...' : ''}
+                          </div>
+                        </div>
+                      )}
+                      {reorderQty > 0 && (
                         <button
-                          onClick={() => navigate(`/goods-receipts?action=create&productId=${item.product_id}&productName=${encodeURIComponent(item.product_name)}&returnUrl=${encodeURIComponent(location.pathname)}`)}
+                          onClick={() => navigate(buildPurchaseUrl(item, planItems))}
                           className="text-xs px-3 py-1.5 rounded-lg font-semibold whitespace-nowrap flex items-center gap-1"
-                          style={{ background: 'rgba(34,197,94,0.12)', color: '#16A34A', border: '1px solid rgba(34,197,94,0.3)' }}>
-                          <span style={{ fontSize: 12 }}>↑</span> {t('inventory.reorderBtn')}
+                          style={{ background: 'rgba(99,102,241,0.12)', color: 'var(--primary-500)', border: '1px solid rgba(99,102,241,0.3)' }}>
+                          <span className="icon" style={{ fontSize: 13 }}>shopping_cart</span> {t('inventory.reorderBtn')}
                         </button>
                       )}
                       {!isMock && (

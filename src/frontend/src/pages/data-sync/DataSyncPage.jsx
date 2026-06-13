@@ -403,13 +403,12 @@ function EtlPipelineCard({ t }) {
           {isRunning ? 'hourglass_empty' : 'storage'}
         </span>
         <h2 className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>
-          ETL Pipeline – OLTP → Data Warehouse
+          Cập nhật dữ liệu báo cáo
         </h2>
       </div>
 
       <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-        Chuyển toàn bộ đơn hàng từ database OLTP lên Data Warehouse (fact_sales + dim tables)
-        để Dashboard và AI có dữ liệu mới nhất.
+        Làm mới số liệu bán hàng để Dashboard, báo cáo và AI dùng dữ liệu mới nhất sau khi nhập hoặc đồng bộ dữ liệu.
       </p>
 
       {/* Progress bar */}
@@ -1040,7 +1039,7 @@ function ImportTab() {
               )}
               {result.errors?.length > 0 && (
                 <p className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
-                  ETL pipeline đang đồng bộ lên Data Warehouse...
+                  Đang cập nhật dữ liệu báo cáo...
                 </p>
               )}
               {result.errors?.slice(0, 5).map((e, i) => (
@@ -1841,10 +1840,270 @@ function FacebookFeed() {
   )
 }
 
+// ── Google scraped URLs drawer ────────────────────────────────────────────────
+function GoogleResultsModal({ onClose }) {
+  const [items, setItems] = useState([])
+  const [stats, setStats] = useState(null)
+  const [total, setTotal] = useState(0)
+  const [page, setPage] = useState(1)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [keyword, setKeyword] = useState('')
+  const [domain, setDomain] = useState('')
+  const [processed, setProcessed] = useState('all')
+  const PAGE_SIZE = 8
+
+  const load = async (pg = 1) => {
+    setLoading(true); setError('')
+    try {
+      const params = { page: pg, pageSize: PAGE_SIZE }
+      if (keyword.trim()) params.keyword = keyword.trim()
+      if (domain.trim()) params.domain = domain.trim()
+      if (processed !== 'all') params.processed = processed === 'processed'
+      const r = await api.get('/api/integrations/google/results', { params })
+      setItems(r.data.results ?? [])
+      setStats(r.data.stats ?? null)
+      setTotal(r.data.total ?? 0)
+      setPage(pg)
+    } catch (e) {
+      setError(e.response?.data?.message ?? 'Không thể tải URL Google đã thu thập')
+    } finally { setLoading(false) }
+  }
+
+  useEffect(() => { load(1) }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const totalPages = Math.ceil(total / PAGE_SIZE)
+  const fmtDate = iso => iso ? new Date(iso).toLocaleString('vi-VN', {
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+  }) : '—'
+  const fmtMoney = n => n == null ? null : `${Math.round(Number(n)).toLocaleString('vi-VN')}₫`
+  const getDomain = item => {
+    if (item.sourceDomain) return item.sourceDomain
+    try { return new URL(item.url).hostname.replace(/^www\./, '') } catch { return '—' }
+  }
+  const openSource = url => {
+    if (!url) return
+    window.open(url, '_blank', 'noopener,noreferrer')
+  }
+
+  const footer = totalPages > 1 ? (
+    <div className="flex items-center justify-between w-full">
+      <button onClick={() => load(page - 1)} disabled={page <= 1 || loading}
+              className="lbtn !h-8 !px-3 text-xs disabled:opacity-40">
+        <span className="icon text-sm">chevron_left</span> Trước
+      </button>
+      <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>{page} / {totalPages}</span>
+      <button onClick={() => load(page + 1)} disabled={page >= totalPages || loading}
+              className="lbtn !h-8 !px-3 text-xs disabled:opacity-40">
+        Sau <span className="icon text-sm">chevron_right</span>
+      </button>
+    </div>
+  ) : null
+
+  return (
+    <DetailDrawer
+      open={true}
+      onClose={onClose}
+      title="URL Google đã thu thập"
+      subtitle={total > 0 ? `${total} URL trong kho dữ liệu thị trường` : undefined}
+      width={680}
+      footer={footer}
+    >
+      <div className="flex items-center justify-between px-5 py-3 shrink-0"
+           style={{ borderBottom: '1px solid var(--border-default)', background: 'var(--bg-elevated)' }}>
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
+               style={{ background: 'rgba(66,133,244,0.14)' }}>
+            <span className="icon text-sm" style={{ color: '#4285F4' }}>travel_explore</span>
+          </div>
+          <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
+            Google Search · Audit nguồn
+          </span>
+        </div>
+        <button onClick={() => load(page)}
+                className="lbtn !h-7 !px-2.5 text-xs gap-1"
+                style={{ color: 'var(--text-secondary)', border: '1px solid var(--border-default)' }}>
+          <span className="icon text-sm">refresh</span>
+          Làm mới
+        </button>
+      </div>
+
+      <div className="p-4 space-y-4">
+        {stats && (
+          <div className="grid grid-cols-4 gap-2">
+            {[
+              ['URL', stats.total ?? 0, 'link'],
+              ['Domain', stats.domains ?? 0, 'public'],
+              ['Đã xử lý', stats.processed ?? 0, 'task_alt'],
+              ['Hết hạn', stats.expired ?? 0, 'event_busy'],
+            ].map(([label, value, icon]) => (
+              <div key={label} className="rounded-xl px-3 py-2"
+                   style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)' }}>
+                <div className="flex items-center gap-1 text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                  <span className="icon" style={{ fontSize: 13 }}>{icon}</span>
+                  {label}
+                </div>
+                <div className="font-bold text-sm mt-0.5" style={{ color: 'var(--text-primary)' }}>{value}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_150px_auto] gap-2">
+          <input value={keyword} onChange={e => setKeyword(e.target.value)}
+                 className="linput text-sm" placeholder="Lọc theo từ khóa" />
+          <input value={domain} onChange={e => setDomain(e.target.value)}
+                 className="linput text-sm" placeholder="Lọc theo domain" />
+          <select value={processed} onChange={e => setProcessed(e.target.value)}
+                  className="linput text-sm">
+            <option value="all">Tất cả trạng thái</option>
+            <option value="processed">Đã xử lý</option>
+            <option value="raw">Chưa xử lý</option>
+          </select>
+          <button onClick={() => load(1)} className="lbtn lbtn-primary !h-10 !px-4 text-sm">
+            <span className="icon text-base">filter_alt</span>
+            Lọc
+          </button>
+        </div>
+
+        {loading ? (
+          <div className="py-12 flex justify-center">
+            <span className="w-7 h-7 border-2 rounded-full"
+                  style={{ borderColor: 'var(--border-strong)', borderTopColor: '#4285F4', animation: 'spin 0.8s linear infinite' }} />
+          </div>
+        ) : error ? (
+          <div className="rounded-xl px-4 py-3 text-sm"
+               style={{ background: 'rgba(239,68,68,0.08)', color: '#EF4444', border: '1px solid rgba(239,68,68,0.25)' }}>
+            {error}
+          </div>
+        ) : items.length === 0 ? (
+          <div className="py-12 text-center" style={{ color: 'var(--text-tertiary)' }}>
+            <span className="icon block mb-2" style={{ fontSize: 36, opacity: 0.45 }}>travel_explore</span>
+            <p className="text-sm">Chưa có URL Google phù hợp bộ lọc.</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {items.map(item => {
+              const expired = item.expiresAt && new Date(item.expiresAt) < new Date()
+              const domainName = getDomain(item)
+              const price = fmtMoney(item.price)
+              return (
+                <div key={item.id} className="rounded-xl p-4 space-y-3"
+                     style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)' }}>
+                  <div className="flex items-start gap-3">
+                    <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
+                         style={{ background: 'rgba(66,133,244,0.12)' }}>
+                      <span className="icon text-base" style={{ color: '#4285F4' }}>link</span>
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-1.5 mb-1">
+                        <span className="px-2 py-0.5 rounded-full text-xs font-medium"
+                              style={{ background: 'rgba(66,133,244,0.10)', color: '#4285F4' }}>
+                          {item.keyword}
+                        </span>
+                        {item.position && (
+                          <span className="px-2 py-0.5 rounded-full text-xs"
+                                style={{ background: 'var(--bg-card)', color: 'var(--text-secondary)' }}>
+                            #{item.position}
+                          </span>
+                        )}
+                        <span className="px-2 py-0.5 rounded-full text-xs"
+                              style={{ background: item.isProcessed ? 'rgba(16,185,129,0.10)' : 'rgba(245,158,11,0.10)', color: item.isProcessed ? '#10B981' : '#F59E0B' }}>
+                          {item.isProcessed ? 'Đã xử lý' : 'Chưa xử lý'}
+                        </span>
+                        {expired && (
+                          <span className="px-2 py-0.5 rounded-full text-xs"
+                                style={{ background: 'rgba(239,68,68,0.10)', color: '#EF4444' }}>
+                            Hết hạn
+                          </span>
+                        )}
+                      </div>
+                      <h3 className="font-semibold text-sm line-clamp-2" style={{ color: 'var(--text-primary)' }}>
+                        {item.title || item.url || 'Không có tiêu đề'}
+                      </h3>
+                      <p className="text-xs mt-1 break-all" style={{ color: 'var(--text-tertiary)' }}>
+                        {domainName}{item.url ? ` · ${item.url}` : ''}
+                      </p>
+                    </div>
+                    <button onClick={() => openSource(item.url)}
+                            disabled={!item.url}
+                            title="Mở link gốc"
+                            className="lbtn !h-8 !px-2.5 text-xs disabled:opacity-40"
+                            style={{ color: '#4285F4', border: '1px solid rgba(66,133,244,0.25)' }}>
+                      <span className="icon text-sm">open_in_new</span>
+                    </button>
+                  </div>
+
+                  {(item.snippet || item.trendDescription) && (
+                    <p className="text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+                      {item.snippet || item.trendDescription}
+                    </p>
+                  )}
+
+                  <div className="flex flex-wrap items-center gap-3 text-xs pt-2"
+                       style={{ color: 'var(--text-tertiary)', borderTop: '1px solid var(--border-default)' }}>
+                    <span className="flex items-center gap-1">
+                      <span className="icon text-sm">schedule</span>
+                      {fmtDate(item.scrapedAt)}
+                    </span>
+                    {item.productName && <span>Sản phẩm: {item.productName}</span>}
+                    {item.category && <span>Danh mục: {item.category}</span>}
+                    {price && <span>Giá: {price}</span>}
+                    {(item.salesCount ?? 0) > 0 && <span>Đã bán: {item.salesCount}</span>}
+                    {(item.relevanceScore ?? 0) > 0 && <span>Điểm liên quan: {item.relevanceScore}</span>}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    </DetailDrawer>
+  )
+}
+
+function GoogleResultsFeed({ refreshKey = 0 }) {
+  const [open, setOpen] = useState(false)
+  const [count, setCount] = useState(null)
+
+  useEffect(() => {
+    api.get('/api/integrations/google/results?page=1&pageSize=1')
+      .then(r => setCount(r.data.total ?? 0))
+      .catch(() => setCount(0))
+  }, [refreshKey])
+
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        className="lbtn w-full justify-center gap-2"
+        style={{
+          height: 38,
+          border: '1px solid rgba(66,133,244,0.35)',
+          color: '#4285F4',
+          background: 'rgba(66,133,244,0.06)',
+        }}
+      >
+        <span className="icon text-base">manage_search</span>
+        Xem URL đã thu thập
+        {count !== null && count > 0 && (
+          <span className="px-1.5 py-0.5 rounded-full text-xs font-semibold"
+                style={{ background: '#4285F4', color: '#fff' }}>
+            {count}
+          </span>
+        )}
+      </button>
+      {open && <GoogleResultsModal onClose={() => setOpen(false)} />}
+    </>
+  )
+}
+
 // ── Google Scraper Card ───────────────────────────────────────────────────────
 function GoogleScraperCard() {
   const [scraping, setScraping] = useState(false)
   const [result,   setResult]   = useState(null)
+  const [resultsRefreshKey, setResultsRefreshKey] = useState(0)
 
   const handleScrape = async () => {
     setScraping(true); setResult(null)
@@ -1852,6 +2111,7 @@ function GoogleScraperCard() {
       // Scrape Google có thể mất 60-120s tùy số keywords và rate limit
       const r = await api.post('/api/sync/scrape-google', {}, { timeout: 120_000 })
       setResult(r.data)
+      setResultsRefreshKey(k => k + 1)
     } catch (e) {
       setResult({ success: false, message: e.response?.data?.message ?? 'Lỗi không xác định' })
     } finally {
@@ -1880,24 +2140,6 @@ function GoogleScraperCard() {
           <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--accent-500)' }} />
           Sẵn sàng
         </span>
-      </div>
-
-      {/* Hướng dẫn */}
-      <div className="rounded-xl px-4 py-3 text-xs space-y-1"
-           style={{ background: 'rgba(66,133,244,0.07)', border: '1px solid rgba(66,133,244,0.20)', color: '#4285F4' }}>
-        <div className="font-semibold flex items-center gap-1.5 mb-1">
-          <span className="icon" style={{ fontSize: 14 }}>info</span>
-          Cách hoạt động
-        </div>
-        <ol className="space-y-0.5 list-decimal list-inside" style={{ color: 'var(--text-secondary)', lineHeight: 1.7 }}>
-          <li>Đọc danh sách từ khóa bên dưới (source: Google)</li>
-          <li>Tìm kiếm Google với từng từ khóa (20 URL/keyword, tối đa 80 URL)</li>
-          <li>Crawl nội dung: tên sản phẩm, giá, xu hướng, domain nguồn</li>
-          <li>Lưu vào <code style={{ background: 'var(--bg-elevated)', padding: '0 3px', borderRadius: 3 }}>raw_google_data</code> — bỏ qua bản ghi trùng</li>
-        </ol>
-        <div className="mt-2 pt-2" style={{ borderTop: '1px solid rgba(66,133,244,0.20)', color: 'var(--text-tertiary)' }}>
-          Nếu Google giới hạn (429): thêm thêm từ khóa bên dưới và thử lại sau vài phút.
-        </div>
       </div>
 
       {/* Quản lý từ khóa — nhúng trực tiếp vào card */}
@@ -1953,6 +2195,8 @@ function GoogleScraperCard() {
           </>
         )}
       </button>
+
+      <GoogleResultsFeed refreshKey={resultsRefreshKey} />
     </div>
   )
 }
