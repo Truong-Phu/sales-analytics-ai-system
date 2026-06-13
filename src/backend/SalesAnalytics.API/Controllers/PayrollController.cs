@@ -58,19 +58,22 @@ public class PayrollController(
                 WITH warehouse_actuals AS (
                     SELECT user_id,
                            COUNT(*)::bigint AS task_count,
-                           COALESCE(SUM(amount), 0) AS activity_value
+                           COALESCE(SUM(quantity_amount), 0) AS activity_value,
+                           COALESCE(SUM(document_count), 0)::bigint AS document_count
                     FROM (
-                        SELECT created_by AS user_id, created_at, ABS(quantity_change)::numeric AS amount
+                        SELECT created_by AS user_id, created_at, ABS(quantity_change)::numeric AS quantity_amount, 0::bigint AS document_count
                         FROM public.inventory_transactions
                         WHERE company_id = @cid::uuid AND created_by IS NOT NULL
                         UNION ALL
-                        SELECT created_by AS user_id, created_at, total_quantity::numeric AS amount
+                        SELECT created_by AS user_id, created_at, total_quantity::numeric AS quantity_amount, 1::bigint AS document_count
                         FROM public.goods_receipts
                         WHERE company_id = @cid::uuid AND created_by IS NOT NULL
                         UNION ALL
-                        SELECT created_by AS user_id, created_at, total_amount AS amount
-                        FROM public.purchase_orders
-                        WHERE company_id = @cid::uuid AND created_by IS NOT NULL
+                        SELECT po.created_by AS user_id, po.created_at, COALESCE(SUM(poi.quantity), 0)::numeric AS quantity_amount, 1::bigint AS document_count
+                        FROM public.purchase_orders po
+                        LEFT JOIN public.purchase_order_items poi ON poi.purchase_order_id = po.purchase_order_id
+                        WHERE po.company_id = @cid::uuid AND po.created_by IS NOT NULL
+                        GROUP BY po.purchase_order_id, po.created_by, po.created_at
                     ) x
                     WHERE created_at BETWEEN @start AND @end
                     GROUP BY user_id
@@ -78,6 +81,7 @@ public class PayrollController(
                 marketing_actuals AS (
                     SELECT created_by AS user_id,
                            COUNT(*)::bigint AS activity_count,
+                           COUNT(DISTINCT channel_id)::bigint AS channel_count,
                            COALESCE(SUM(amount), 0) AS spend_amount
                     FROM public.ad_spend_monthly
                     WHERE company_id = @cid::uuid
@@ -97,6 +101,8 @@ public class PayrollController(
                          )
                          WHEN u.role = 'Staff_Warehouse'
                          THEN COALESCE(MAX(wa.task_count), 0)
+                         WHEN u.role = 'Staff_Marketing'
+                         THEN COALESCE(MAX(ma.activity_count), 0)
                          ELSE COUNT(DISTINCT o.order_id)
                     END AS actual_orders,
                     CASE WHEN u.role = 'Manager'
@@ -120,9 +126,9 @@ public class PayrollController(
                                AND COALESCE(mc.first_order_at, mc.created_at) BETWEEN @start AND @end
                          )
                          WHEN u.role = 'Staff_Marketing'
-                         THEN COALESCE(MAX(ma.activity_count), 0)
+                         THEN COALESCE(MAX(ma.channel_count), 0)
                          WHEN u.role = 'Staff_Warehouse'
-                         THEN COALESCE(MAX(wa.task_count), 0)
+                         THEN COALESCE(MAX(wa.document_count), 0)
                          ELSE COUNT(DISTINCT CASE
                              WHEN COALESCE(c.first_order_at, c.created_at) BETWEEN @start AND @end THEN c.customer_id
                          END)
@@ -408,8 +414,11 @@ public class PayrollController(
                                     SELECT total_quantity::numeric AS amount, created_by, created_at
                                     FROM public.goods_receipts WHERE company_id = @cid::uuid
                                     UNION ALL
-                                    SELECT total_amount AS amount, created_by, created_at
-                                    FROM public.purchase_orders WHERE company_id = @cid::uuid
+                                    SELECT COALESCE(SUM(poi.quantity), 0)::numeric AS amount, po.created_by, po.created_at
+                                    FROM public.purchase_orders po
+                                    LEFT JOIN public.purchase_order_items poi ON poi.purchase_order_id = po.purchase_order_id
+                                    WHERE po.company_id = @cid::uuid
+                                    GROUP BY po.purchase_order_id, po.created_by, po.created_at
                                 ) x
                                 WHERE x.created_by = p.user_id
                                   AND x.created_at >= MAKE_TIMESTAMPTZ(p.year, p.month, 1, 0, 0, 0, 'UTC')
@@ -437,6 +446,12 @@ public class PayrollController(
                                   AND x.created_at >= MAKE_TIMESTAMPTZ(p.year, p.month, 1, 0, 0, 0, 'UTC')
                                   AND x.created_at <  MAKE_TIMESTAMPTZ(p.year, p.month, 1, 0, 0, 0, 'UTC') + INTERVAL '1 month'
                             )
+                            WHEN u.role = 'Staff_Marketing' THEN (
+                                SELECT COUNT(*)::bigint
+                                FROM public.ad_spend_monthly a
+                                WHERE a.company_id = @cid::uuid AND a.created_by = p.user_id
+                                  AND a.year = p.year AND a.month = p.month
+                            )
                             ELSE COUNT(DISTINCT o.order_id)
                        END AS actual_orders,
                        CASE WHEN u.role = 'Manager' THEN (
@@ -447,7 +462,7 @@ public class PayrollController(
                                   AND COALESCE(mc.first_order_at, mc.created_at) <  MAKE_TIMESTAMPTZ(p.year, p.month, 1, 0, 0, 0, 'UTC') + INTERVAL '1 month'
                             )
                             WHEN u.role = 'Staff_Marketing' THEN (
-                                SELECT COUNT(*)::bigint
+                                SELECT COUNT(DISTINCT a.channel_id)::bigint
                                 FROM public.ad_spend_monthly a
                                 WHERE a.company_id = @cid::uuid AND a.created_by = p.user_id
                                   AND a.year = p.year AND a.month = p.month
@@ -455,8 +470,6 @@ public class PayrollController(
                             WHEN u.role = 'Staff_Warehouse' THEN (
                                 SELECT COUNT(*)::bigint
                                 FROM (
-                                    SELECT created_by, created_at FROM public.inventory_transactions WHERE company_id = @cid::uuid
-                                    UNION ALL
                                     SELECT created_by, created_at FROM public.goods_receipts WHERE company_id = @cid::uuid
                                     UNION ALL
                                     SELECT created_by, created_at FROM public.purchase_orders WHERE company_id = @cid::uuid
@@ -569,13 +582,98 @@ public class PayrollController(
                        p.status,
                        u.full_name, u.email,
                        t.revenue_target, t.order_count_target, t.new_customer_target,
-                       COALESCE(SUM(o.total_amount), 0) AS actual_revenue,
-                       COUNT(DISTINCT o.order_id)       AS actual_orders,
-                       COUNT(DISTINCT CASE
-                           WHEN COALESCE(c.first_order_at, c.created_at) >= MAKE_TIMESTAMPTZ(p.year, p.month, 1, 0, 0, 0, 'UTC')
-                            AND COALESCE(c.first_order_at, c.created_at) <  MAKE_TIMESTAMPTZ(p.year, p.month, 1, 0, 0, 0, 'UTC') + INTERVAL '1 month'
-                           THEN c.customer_id
-                       END) AS actual_new_customers
+                       CASE WHEN u.role = 'Manager' THEN (
+                                SELECT COALESCE(SUM(mo.total_amount), 0)
+                                FROM public.orders mo
+                                WHERE mo.company_id = @cid::uuid
+                                  AND EXTRACT(YEAR FROM mo.order_date) = p.year
+                                  AND EXTRACT(MONTH FROM mo.order_date) = p.month
+                            )
+                            WHEN u.role = 'Staff_Marketing' THEN (
+                                SELECT COALESCE(SUM(a.amount), 0)
+                                FROM public.ad_spend_monthly a
+                                WHERE a.company_id = @cid::uuid AND a.created_by = p.user_id
+                                  AND a.year = p.year AND a.month = p.month
+                            )
+                            WHEN u.role = 'Staff_Warehouse' THEN (
+                                SELECT COALESCE(SUM(x.amount), 0)
+                                FROM (
+                                    SELECT ABS(quantity_change)::numeric AS amount, created_by, created_at
+                                    FROM public.inventory_transactions WHERE company_id = @cid::uuid
+                                    UNION ALL
+                                    SELECT total_quantity::numeric AS amount, created_by, created_at
+                                    FROM public.goods_receipts WHERE company_id = @cid::uuid
+                                    UNION ALL
+                                    SELECT COALESCE(SUM(poi.quantity), 0)::numeric AS amount, po.created_by, po.created_at
+                                    FROM public.purchase_orders po
+                                    LEFT JOIN public.purchase_order_items poi ON poi.purchase_order_id = po.purchase_order_id
+                                    WHERE po.company_id = @cid::uuid
+                                    GROUP BY po.purchase_order_id, po.created_by, po.created_at
+                                ) x
+                                WHERE x.created_by = p.user_id
+                                  AND x.created_at >= MAKE_TIMESTAMPTZ(p.year, p.month, 1, 0, 0, 0, 'UTC')
+                                  AND x.created_at <  MAKE_TIMESTAMPTZ(p.year, p.month, 1, 0, 0, 0, 'UTC') + INTERVAL '1 month'
+                            )
+                            ELSE COALESCE(SUM(o.total_amount), 0)
+                       END AS actual_revenue,
+                       CASE WHEN u.role = 'Manager' THEN (
+                                SELECT COUNT(DISTINCT mo.order_id)
+                                FROM public.orders mo
+                                WHERE mo.company_id = @cid::uuid
+                                  AND EXTRACT(YEAR FROM mo.order_date) = p.year
+                                  AND EXTRACT(MONTH FROM mo.order_date) = p.month
+                            )
+                            WHEN u.role = 'Staff_Marketing' THEN (
+                                SELECT COUNT(*)::bigint
+                                FROM public.ad_spend_monthly a
+                                WHERE a.company_id = @cid::uuid AND a.created_by = p.user_id
+                                  AND a.year = p.year AND a.month = p.month
+                            )
+                            WHEN u.role = 'Staff_Warehouse' THEN (
+                                SELECT COUNT(*)::bigint
+                                FROM (
+                                    SELECT created_by, created_at FROM public.inventory_transactions WHERE company_id = @cid::uuid
+                                    UNION ALL
+                                    SELECT created_by, created_at FROM public.goods_receipts WHERE company_id = @cid::uuid
+                                    UNION ALL
+                                    SELECT created_by, created_at FROM public.purchase_orders WHERE company_id = @cid::uuid
+                                ) x
+                                WHERE x.created_by = p.user_id
+                                  AND x.created_at >= MAKE_TIMESTAMPTZ(p.year, p.month, 1, 0, 0, 0, 'UTC')
+                                  AND x.created_at <  MAKE_TIMESTAMPTZ(p.year, p.month, 1, 0, 0, 0, 'UTC') + INTERVAL '1 month'
+                            )
+                            ELSE COUNT(DISTINCT o.order_id)
+                       END AS actual_orders,
+                       CASE WHEN u.role = 'Manager' THEN (
+                                SELECT COUNT(DISTINCT mc.customer_id)
+                                FROM public.customers mc
+                                WHERE mc.company_id = @cid::uuid
+                                  AND COALESCE(mc.first_order_at, mc.created_at) >= MAKE_TIMESTAMPTZ(p.year, p.month, 1, 0, 0, 0, 'UTC')
+                                  AND COALESCE(mc.first_order_at, mc.created_at) <  MAKE_TIMESTAMPTZ(p.year, p.month, 1, 0, 0, 0, 'UTC') + INTERVAL '1 month'
+                            )
+                            WHEN u.role = 'Staff_Marketing' THEN (
+                                SELECT COUNT(DISTINCT a.channel_id)::bigint
+                                FROM public.ad_spend_monthly a
+                                WHERE a.company_id = @cid::uuid AND a.created_by = p.user_id
+                                  AND a.year = p.year AND a.month = p.month
+                            )
+                            WHEN u.role = 'Staff_Warehouse' THEN (
+                                SELECT COUNT(*)::bigint
+                                FROM (
+                                    SELECT created_by, created_at FROM public.goods_receipts WHERE company_id = @cid::uuid
+                                    UNION ALL
+                                    SELECT created_by, created_at FROM public.purchase_orders WHERE company_id = @cid::uuid
+                                ) x
+                                WHERE x.created_by = p.user_id
+                                  AND x.created_at >= MAKE_TIMESTAMPTZ(p.year, p.month, 1, 0, 0, 0, 'UTC')
+                                  AND x.created_at <  MAKE_TIMESTAMPTZ(p.year, p.month, 1, 0, 0, 0, 'UTC') + INTERVAL '1 month'
+                            )
+                            ELSE COUNT(DISTINCT CASE
+                                WHEN COALESCE(c.first_order_at, c.created_at) >= MAKE_TIMESTAMPTZ(p.year, p.month, 1, 0, 0, 0, 'UTC')
+                                 AND COALESCE(c.first_order_at, c.created_at) <  MAKE_TIMESTAMPTZ(p.year, p.month, 1, 0, 0, 0, 'UTC') + INTERVAL '1 month'
+                                THEN c.customer_id
+                            END)
+                       END AS actual_new_customers
                 FROM public.employee_payroll p
                 JOIN public.users u ON u.user_id = p.user_id
                 LEFT JOIN public.staff_kpi_targets t
@@ -592,7 +690,7 @@ public class PayrollController(
                    AND c.company_id = @cid::uuid
                 WHERE p.payroll_id = @id AND p.company_id = @cid::uuid
                 GROUP BY p.year, p.month, p.base_salary, p.bonus_amount, p.penalty_amount,
-                         p.status, u.full_name, u.email,
+                         p.status, p.user_id, u.role, u.full_name, u.email,
                          t.revenue_target, t.order_count_target, t.new_customer_target
                 """, conn);
             cmd.Parameters.AddWithValue("id",  id);

@@ -448,6 +448,7 @@ public class InventoryDashboardController(
     {
         if (days < 1 || days > 365) days = 30;
         if (targetDays < 7 || targetDays > 120) targetDays = 30;
+        const int minSafeStock = 30;
 
         try
         {
@@ -483,7 +484,16 @@ public class InventoryDashboardController(
                      AND pv.is_active = TRUE
                     LEFT JOIN public.order_items oi
                       ON oi.product_id = p.product_id
-                     AND oi.variation_id = pv.id
+                     AND (
+                            oi.variation_id = pv.id
+                            OR (
+                                oi.variation_id IS NULL
+                                AND (
+                                    BTRIM(COALESCE(oi.sku, '')) = BTRIM(pv.sku)
+                                    OR BTRIM(COALESCE(oi.variation_name, '')) = BTRIM(pv.sku)
+                                )
+                            )
+                         )
                     LEFT JOIN public.orders o
                       ON o.order_id = oi.order_id
                      AND o.company_id = @cid::uuid
@@ -546,6 +556,14 @@ public class InventoryDashboardController(
                           AND (
                                 (b.variation_id IS NULL AND oi2.variation_id IS NULL)
                                 OR oi2.variation_id = b.variation_id
+                                OR (
+                                    b.variation_id IS NOT NULL
+                                    AND oi2.variation_id IS NULL
+                                    AND (
+                                        BTRIM(COALESCE(oi2.sku, '')) = BTRIM(b.variation_sku)
+                                        OR BTRIM(COALESCE(oi2.variation_name, '')) = BTRIM(b.variation_sku)
+                                    )
+                                )
                               )
                     ) hist ON TRUE
                     LEFT JOIN LATERAL (
@@ -603,35 +621,35 @@ public class InventoryDashboardController(
                         ELSE 9999
                     END AS days_left,
                     CASE
-                        WHEN effective_avg_daily_sales > 0 THEN GREATEST(0, CEIL(effective_avg_daily_sales * @targetDays - stock_quantity))::int
-                        WHEN stock_quantity = 0 AND reference_qty IS NOT NULL THEN reference_qty
-                        ELSE 0
+                        WHEN effective_avg_daily_sales > 0 THEN CEIL(effective_avg_daily_sales * @targetDays)::int
+                        ELSE @minSafeStock
+                    END AS safe_stock,
+                    CASE
+                        WHEN effective_avg_daily_sales > 0 THEN GREATEST(0, CEIL(effective_avg_daily_sales * @targetDays) - stock_quantity)::int
+                        ELSE GREATEST(0, @minSafeStock - stock_quantity)::int
                     END AS reorder_qty,
                     CASE
                         WHEN avg_daily_sales > 0 THEN 'sales_recent'
                         WHEN historical_avg_daily_sales > 0 THEN 'sales_history'
                         WHEN last_order_qty IS NOT NULL THEN 'last_purchase_order'
                         WHEN last_receipt_qty IS NOT NULL THEN 'last_goods_receipt'
-                        ELSE 'none'
+                        ELSE 'min_safe_stock'
                     END AS reorder_source,
                     reference_qty
                 FROM calculated
-                WHERE
-                    (effective_avg_daily_sales > 0 AND stock_quantity / effective_avg_daily_sales <= 14)
-                    OR (stock_quantity = 0 AND reference_qty IS NOT NULL)
                 ORDER BY product_name, variation_id NULLS FIRST
                 """, conn);
             cmd.Parameters.AddWithValue("cid", Cid);
             cmd.Parameters.AddWithValue("pid", productId ?? 0);
             cmd.Parameters.AddWithValue("days", days);
             cmd.Parameters.AddWithValue("targetDays", targetDays);
+            cmd.Parameters.AddWithValue("minSafeStock", minSafeStock);
 
             var items = new List<object>();
             await using var r = await cmd.ExecuteReaderAsync();
             while (await r.ReadAsync())
             {
-                var reorderQty = r.GetInt32(12);
-                if (reorderQty <= 0) continue;
+                var reorderQty = r.GetInt32(13);
 
                 items.Add(new
                 {
@@ -647,9 +665,10 @@ public class InventoryDashboardController(
                     importPrice  = r.GetDecimal(9),
                     avgDailySales= Math.Round((double)r.GetDecimal(10), 2),
                     daysLeft     = Math.Round((double)r.GetDecimal(11), 1),
+                    safeStock    = r.GetInt32(12),
                     reorderQty,
-                    reorderSource= r.IsDBNull(13) ? null : r.GetString(13),
-                    referenceQty = r.IsDBNull(14) ? (int?)null : r.GetInt32(14),
+                    reorderSource= r.IsDBNull(14) ? null : r.GetString(14),
+                    referenceQty = r.IsDBNull(15) ? (int?)null : r.GetInt32(15),
                 });
             }
 

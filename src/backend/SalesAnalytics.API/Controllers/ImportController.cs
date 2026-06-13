@@ -243,20 +243,24 @@ public class ImportController(
                 }
             }
 
-            // Lấy sản phẩm còn hàng (tối đa 15, ưu tiên nhiều tồn kho)
+            // Lấy biến thể còn hàng từ catalog thật trong DB.
             await using var varCmd = new NpgsqlCommand("""
-                SELECT DISTINCT ON (pv.product_id)
+                SELECT
                     p.product_id, p.product_name, p.sku,
                     pv.sku, pv.variation_name,
                     COALESCE(pv.attribute_color,'') , COALESCE(pv.attribute_size,''),
                     pv.sale_price, COALESCE(pv.original_price, pv.sale_price),
-                    COALESCE(pv.stock_quantity, 99)
-                FROM product_variations pv
-                JOIN products p ON pv.product_id = p.product_id
+                    pv.stock_quantity
+                FROM public.product_variations pv
+                JOIN public.products p
+                  ON pv.product_id = p.product_id
+                 AND pv.company_id = p.company_id
                 WHERE pv.is_active = TRUE AND p.is_active = TRUE
                   AND pv.company_id = @cid::uuid
-                  AND COALESCE(pv.stock_quantity, 99) > 0
-                ORDER BY pv.product_id, pv.stock_quantity DESC NULLS LAST LIMIT 15
+                  AND pv.stock_quantity > 0
+                  AND NULLIF(BTRIM(pv.sku), '') IS NOT NULL
+                ORDER BY p.product_id, pv.stock_quantity DESC NULLS LAST, pv.id
+                LIMIT 40
                 """, conn);
             varCmd.Parameters.AddWithValue("cid", companyId.ToString());
             await using (var vr = await varCmd.ExecuteReaderAsync())
@@ -289,11 +293,10 @@ public class ImportController(
                 }
             }
         }
-        catch { /* fallback */ }
+        catch { return []; }
 
         if (vars.Count == 0) return [];
-        if (buyers.Count == 0)
-            buyers.Add(("Nguyễn Văn An", "0901234567", "Phường 1", "Quận 1", "Hồ Chí Minh"));
+        if (buyers.Count == 0) return [];
 
         // ── 2. Xác định ngày cần tạo ─────────────────────────────────────────
         var startDate = lastOrderDate.HasValue ? lastOrderDate.Value.AddDays(1).Date : today.AddDays(-6);
@@ -1009,14 +1012,20 @@ public class ImportController(
         int productId;
         int? variationId = null;
         var importSku = o.Sku.Length > 0 ? o.Sku : "";
+        var importVariationSku = o.VariationName.Length > 0 ? o.VariationName : "";
+        var itemSku = importSku;
+        var itemVariationName = o.VariationName;
 
         await using var varChk = new NpgsqlCommand("""
-            SELECT product_id, id
+            SELECT product_id, id, sku, variation_name
             FROM public.product_variations
-            WHERE sku = @sku AND company_id = @cid::uuid AND is_active = TRUE
+            WHERE company_id = @cid::uuid
+              AND is_active = TRUE
+              AND (sku = @sku OR sku = @variationSku)
             LIMIT 1
             """, conn);
         varChk.Parameters.AddWithValue("sku", importSku);
+        varChk.Parameters.AddWithValue("variationSku", importVariationSku);
         varChk.Parameters.AddWithValue("cid", tenant.CompanyId!.Value.ToString());
         await using (var varR = await varChk.ExecuteReaderAsync())
         {
@@ -1024,6 +1033,8 @@ public class ImportController(
             {
                 productId  = varR.GetInt32(0);
                 variationId = varR.GetInt32(1);
+                itemSku = varR.GetString(2);
+                itemVariationName = varR.IsDBNull(3) ? itemVariationName : varR.GetString(3);
             }
             else
             {
@@ -1157,7 +1168,7 @@ public class ImportController(
             chkItemCmd.Parameters.AddWithValue("oid", orderId);
             chkItemCmd.Parameters.AddWithValue("pid", productId);
             chkItemCmd.Parameters.AddWithValue("sku",
-                (object?)(!string.IsNullOrEmpty(o.Sku) ? o.Sku : null) ?? DBNull.Value);
+                (object?)(!string.IsNullOrEmpty(itemSku) ? itemSku : null) ?? DBNull.Value);
             var itemExists = await chkItemCmd.ExecuteScalarAsync();
 
             if (itemExists is null)
@@ -1188,11 +1199,53 @@ public class ImportController(
                 itmCmd.Parameters.AddWithValue("origP",    o.OriginalPrice > 0 ? o.OriginalPrice : effectiveSale);
                 itmCmd.Parameters.AddWithValue("sub",      effectiveSale * o.Quantity);
                 itmCmd.Parameters.AddWithValue("pname",    (object?)(!string.IsNullOrEmpty(o.ProductName) ? o.ProductName : null) ?? DBNull.Value);
-                itmCmd.Parameters.AddWithValue("sku",      (object?)(!string.IsNullOrEmpty(o.Sku) ? o.Sku : null) ?? DBNull.Value);
-                itmCmd.Parameters.AddWithValue("vname",    (object?)(!string.IsNullOrEmpty(o.VariationName) ? o.VariationName : null) ?? DBNull.Value);
+                itmCmd.Parameters.AddWithValue("sku",      (object?)(!string.IsNullOrEmpty(itemSku) ? itemSku : null) ?? DBNull.Value);
+                itmCmd.Parameters.AddWithValue("vname",    (object?)(!string.IsNullOrEmpty(itemVariationName) ? itemVariationName : null) ?? DBNull.Value);
                 itmCmd.Parameters.AddWithValue("sellDisc", o.SellerDiscount);
                 itmCmd.Parameters.AddWithValue("platDisc", o.PlatformDiscount);
                 await itmCmd.ExecuteNonQueryAsync();
+
+                if (o.Status is "CONFIRMED" or "SHIPPING" or "DELIVERED")
+                {
+                    if (variationId.HasValue)
+                    {
+                        await using var stockCmd = new NpgsqlCommand("""
+                            UPDATE public.product_variations
+                            SET stock_quantity = GREATEST(0, stock_quantity - @qty),
+                                updated_at = NOW()
+                            WHERE id = @vid
+                              AND company_id = @cid::uuid
+                            """, conn);
+                        stockCmd.Parameters.AddWithValue("qty", o.Quantity);
+                        stockCmd.Parameters.AddWithValue("vid", variationId.Value);
+                        stockCmd.Parameters.AddWithValue("cid", tenant.CompanyId!.Value.ToString());
+                        await stockCmd.ExecuteNonQueryAsync();
+                    }
+
+                    await using var productStockCmd = new NpgsqlCommand("""
+                        UPDATE public.products
+                        SET stock_quantity = GREATEST(0, stock_quantity - @qty),
+                            updated_at = NOW()
+                        WHERE product_id = @pid
+                          AND company_id = @cid::uuid
+                        """, conn);
+                    productStockCmd.Parameters.AddWithValue("qty", o.Quantity);
+                    productStockCmd.Parameters.AddWithValue("pid", productId);
+                    productStockCmd.Parameters.AddWithValue("cid", tenant.CompanyId!.Value.ToString());
+                    await productStockCmd.ExecuteNonQueryAsync();
+
+                    await using var markDeductedCmd = new NpgsqlCommand("""
+                        UPDATE public.orders
+                        SET is_stock_deducted = TRUE,
+                            updated_at = NOW()
+                        WHERE order_id = @oid
+                          AND company_id = @cid::uuid
+                        """, conn);
+                    markDeductedCmd.Parameters.AddWithValue("oid", orderId);
+                    markDeductedCmd.Parameters.AddWithValue("cid", tenant.CompanyId!.Value.ToString());
+                    await markDeductedCmd.ExecuteNonQueryAsync();
+                }
+
                 return 1; // item mới được thêm (kể cả vào order đã tồn tại)
             }
             // Item đã tồn tại → bỏ qua (idempotent re-import)
@@ -1717,7 +1770,8 @@ public class ImportController(
     [AllowAnonymous]
     public async Task<IActionResult> DownloadTemplate(
         [FromQuery] string platform = "shopee",
-        [FromQuery] string type     = "orders")
+        [FromQuery] string type     = "orders",
+        [FromQuery] bool includeSample = true)
     {
         var plt = platform.ToLower();
         var typ = type.ToLower();
@@ -1788,7 +1842,7 @@ public class ImportController(
 
         sb.AppendLine(header);
         // Nếu user đã đăng nhập và có company → lấy sample từ DB thực tế
-        if (typ == "orders" && plt is "shopee" or "tiktok" or "lazada" && tenant.CompanyId.HasValue)
+        if (includeSample && typ == "orders" && (plt is "shopee" or "tiktok" or "lazada") && tenant.CompanyId.HasValue)
         {
             var sampleRows = await BuildSampleRowsFromDb(plt, tenant.CompanyId.Value);
             foreach (var row in sampleRows)

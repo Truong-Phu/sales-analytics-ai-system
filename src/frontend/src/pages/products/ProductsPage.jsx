@@ -853,7 +853,7 @@ export default function ProductsPage() {
           isActive:      activeStatus === 'active' ? true : activeStatus === 'inactive' ? false : null,
         }),
         api.get('/api/inventory/reorder-plan', { params: { days: 30, targetDays: 30 } })
-          .then(r => r.data?.items ?? [])
+          .then(r => (r.data?.items ?? []).filter(it => Number(it.reorderQty ?? 0) > 0))
           .catch(() => []),
       ])
       setData(products)

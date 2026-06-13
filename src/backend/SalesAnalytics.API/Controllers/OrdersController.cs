@@ -287,6 +287,77 @@ public class OrdersController(
     }
 
     /// <summary>
+    /// [OLTP] Demo reconciliation while marketplace APIs are not connected.
+    /// Orders older than 3 days are marked delivered and paid together.
+    /// Cancelled, returned, and refunded orders are not changed. Stock is not deducted again.
+    /// </summary>
+    [HttpPost("oltp/reconcile-demo")]
+    [Authorize(Roles = "Owner,Manager,SuperAdmin")]
+    public async Task<IActionResult> ReconcileDemoOrders()
+    {
+        var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
+
+        try
+        {
+            await using var conn = new NpgsqlConnection(_connStr);
+            await conn.OpenAsync();
+
+            await using var cmd = new NpgsqlCommand("""
+                WITH changed AS (
+                    UPDATE public.orders
+                    SET status          = 'DELIVERED',
+                        shipping_status = 'DELIVERED',
+                        payment_status  = 'PAID',
+                        delivered_at    = COALESCE(delivered_at, (order_date::date + INTERVAL '3 days')),
+                        paid_at         = COALESCE(paid_at, (order_date::date + INTERVAL '3 days')),
+                        updated_at      = NOW()
+                    WHERE (@companyId IS NULL OR company_id = @companyId::uuid)
+                      AND order_date::date <= CURRENT_DATE - 3
+                      AND status NOT IN ('CANCELLED', 'RETURNED')
+                      AND payment_status <> 'REFUNDED'
+                      AND (
+                          status <> 'DELIVERED'
+                          OR shipping_status <> 'DELIVERED'
+                          OR payment_status <> 'PAID'
+                          OR delivered_at IS NULL
+                          OR paid_at IS NULL
+                      )
+                    RETURNING order_id
+                )
+                SELECT COUNT(*) FROM changed
+                """, conn);
+            cmd.Parameters.Add(new NpgsqlParameter("companyId", NpgsqlDbType.Text)
+            {
+                Value = (object?)companyId?.ToString() ?? DBNull.Value
+            });
+
+            var updated = Convert.ToInt32(await cmd.ExecuteScalarAsync());
+
+            await audit.LogAsync(
+                userId:     int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var uid) ? (int?)uid : null,
+                username:   User.FindFirstValue(ClaimTypes.Name) ?? "",
+                action:     "RECONCILE_DEMO_ORDERS",
+                entityType: "Order",
+                entityId:   companyId?.ToString() ?? "all",
+                newValue:   $"{{\"updatedOrders\":{updated},\"rule\":\"older_than_3_days_delivered_paid\"}}",
+                ipAddress:  HttpContext.Connection.RemoteIpAddress?.ToString(),
+                userAgent:  HttpContext.Request.Headers["User-Agent"].ToString());
+
+            return Ok(new
+            {
+                updatedOrders = updated,
+                message = updated == 0
+                    ? "Không có đơn hàng nào cần đối soát."
+                    : $"Đã đối soát {updated} đơn hàng."
+            });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(503, new { message = "Lỗi đối soát đơn hàng.", detail = ex.Message });
+        }
+    }
+
+    /// <summary>
     /// [OLTP] Tạo đơn hàng mới kèm chi tiết sản phẩm.
     /// Roles: Owner, Manager, Staff
     /// </summary>

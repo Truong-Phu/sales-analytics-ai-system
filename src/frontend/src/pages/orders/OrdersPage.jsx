@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { SkeletonTableBody } from '../../components/ui/Skeleton'
 import FilterPill from '../../components/ui/FilterPill'
-import { getOrders, updateOrderStatus, cancelOrder, getOrderNotes, addOrderNote, deleteOrderNote } from '../../api/dashboardApi'
+import { getOrders, updateOrderStatus, reconcileDemoOrders, cancelOrder, getOrderNotes, addOrderNote, deleteOrderNote } from '../../api/dashboardApi'
 import api from '../../api/axios'
 import { useAuth } from '../../hooks/useAuth'
 import PaymentStatusBadge from '../../components/payment/PaymentStatusBadge'
@@ -423,6 +423,7 @@ export default function OrdersPage() {
   const [expanded, setExpanded] = useState(null)
   const [editOrder,  setEditOrder]  = useState(null)
   const [toast,      setToast]      = useState('')
+  const [reconciling, setReconciling] = useState(false)
   const [cancelConfirmDlg, setCancelConfirmDlg] = useState(null)
 
   // Payment modals
@@ -530,6 +531,19 @@ export default function OrdersPage() {
     }
   }
 
+  const handleReconcileDemo = async () => {
+    setReconciling(true)
+    try {
+      const res = await reconcileDemoOrders()
+      showToast(res.message ?? `Đã đối soát ${res.updatedOrders ?? 0} đơn hàng`)
+      fetchData()
+    } catch (err) {
+      showToast(err.response?.data?.message ?? 'Lỗi đối soát đơn hàng')
+    } finally {
+      setReconciling(false)
+    }
+  }
+
   useEffect(() => { fetchData() }, [fetchData])
 
   const statusOpts = [{ value: 'all', label: t('orders.allStatuses') },
@@ -615,9 +629,17 @@ export default function OrdersPage() {
             </p>
           )}
         </div>
-        <button onClick={fetchData} className="lbtn lbtn-secondary !h-9" disabled={loading}>
-          <span className="icon text-base" style={{ ...(loading && { animation: 'spin 1s linear infinite' }) }}>refresh</span>
-        </button>
+        <div className="flex items-center gap-2">
+          {isAdminDemo && (
+            <button onClick={handleReconcileDemo} className="lbtn lbtn-secondary !h-9" disabled={reconciling || loading}>
+              <span className="icon text-base" style={{ ...(reconciling && { animation: 'spin 1s linear infinite' }) }}>sync</span>
+              Đối soát demo
+            </button>
+          )}
+          <button onClick={fetchData} className="lbtn lbtn-secondary !h-9" disabled={loading}>
+            <span className="icon text-base" style={{ ...(loading && { animation: 'spin 1s linear infinite' }) }}>refresh</span>
+          </button>
+        </div>
       </div>
 
       {/* Filters row */}

@@ -9,15 +9,30 @@ namespace SalesAnalytics.Infrastructure.Repositories;
 public class OrderRepository(AppDbContext db)
     : GenericRepository<Order>(db), IOrderRepository
 {
+    private static DateTime AsUtc(DateTime value) => value.Kind switch
+    {
+        DateTimeKind.Utc => value,
+        DateTimeKind.Local => value.ToUniversalTime(),
+        _ => DateTime.SpecifyKind(value, DateTimeKind.Utc),
+    };
+
+    private static DateTime DateOnlyAsUtc(DateOnly value, TimeOnly time)
+        => DateTime.SpecifyKind(value.ToDateTime(time), DateTimeKind.Utc);
+
     /// <inheritdoc/>
     public async Task<IEnumerable<Order>> GetByDateRangeAsync(DateTime from, DateTime to)
-        => await _set
+    {
+        var fromUtc = AsUtc(from);
+        var toUtc = AsUtc(to);
+
+        return await _set
             .AsNoTracking()
             .Include(o => o.Customer)
             .Include(o => o.Channel)
-            .Where(o => o.OrderDate >= from && o.OrderDate <= to)
+            .Where(o => o.OrderDate >= fromUtc && o.OrderDate <= toUtc)
             .OrderByDescending(o => o.OrderDate)
             .ToListAsync();
+    }
 
     /// <inheritdoc/>
     public async Task<IEnumerable<Order>> GetByStatusAsync(string status)
@@ -86,12 +101,12 @@ public class OrderRepository(AppDbContext db)
         // Lọc theo thời gian đặt hàng, khoảng tiền và khu vực giao hàng
         if (from.HasValue)
         {
-            var fromDate = from.Value.ToDateTime(TimeOnly.MinValue);
+            var fromDate = DateOnlyAsUtc(from.Value, TimeOnly.MinValue);
             query = query.Where(o => o.OrderDate >= fromDate);
         }
         if (to.HasValue)
         {
-            var toDate = to.Value.ToDateTime(TimeOnly.MaxValue);
+            var toDate = DateOnlyAsUtc(to.Value, TimeOnly.MaxValue);
             query = query.Where(o => o.OrderDate <= toDate);
         }
         if (minAmount.HasValue)

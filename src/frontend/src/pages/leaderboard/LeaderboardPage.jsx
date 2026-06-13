@@ -7,36 +7,54 @@ import { fmtMoneyExact } from '../../utils/format'
 const TREND_ICON  = { UP: '↑', DOWN: '↓', STABLE: '→' }
 const TREND_COLOR = { UP: '#22C55E', DOWN: '#EF4444', STABLE: 'var(--text-tertiary)' }
 
+const dateKey = (date) => {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+const addDays = (date, days) => {
+  const next = new Date(date)
+  next.setDate(next.getDate() + days)
+  return next
+}
+
+const fmtProgressPct = value => {
+  if (value == null) return ''
+  return `${Math.min(100, Number(value)).toLocaleString('vi-VN')}%`
+}
+
 function buildApiParams(mode, customStart, customEnd, category) {
   const today    = new Date()
-  const tomorrow = new Date(today.getTime() + 86400000).toISOString().split('T')[0]
+  const tomorrow = dateKey(addDays(today, 1))
   const base     = { category, top_n: 10 }
   switch (mode) {
     case 'all':
       return { ...base, start_date: '2020-01-01', end_date: tomorrow }
     case 'this_month': {
-      const start = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0]
+      const start = dateKey(new Date(today.getFullYear(), today.getMonth(), 1))
       return { ...base, start_date: start, end_date: tomorrow }
     }
     case 'last_month': {
       const firstThis = new Date(today.getFullYear(), today.getMonth(), 1)
       const firstLast = new Date(today.getFullYear(), today.getMonth() - 1, 1)
-      return { ...base, start_date: firstLast.toISOString().split('T')[0], end_date: firstThis.toISOString().split('T')[0] }
+      return { ...base, start_date: dateKey(firstLast), end_date: dateKey(firstThis) }
     }
     case 'this_quarter': {
       const qStartMonth = Math.floor(today.getMonth() / 3) * 3
-      const start = new Date(today.getFullYear(), qStartMonth, 1).toISOString().split('T')[0]
+      const start = dateKey(new Date(today.getFullYear(), qStartMonth, 1))
       return { ...base, start_date: start, end_date: tomorrow }
     }
     case 'last_quarter': {
       const qStartMonth = Math.floor(today.getMonth() / 3) * 3
-      const start = new Date(today.getFullYear(), qStartMonth - 3, 1).toISOString().split('T')[0]
-      const end = new Date(today.getFullYear(), qStartMonth, 1).toISOString().split('T')[0]
+      const start = dateKey(new Date(today.getFullYear(), qStartMonth - 3, 1))
+      const end = dateKey(new Date(today.getFullYear(), qStartMonth, 1))
       return { ...base, start_date: start, end_date: end }
     }
     case 'custom': {
       if (!customStart || !customEnd) return buildApiParams('this_month', customStart, customEnd, category)
-      const endExcl = new Date(new Date(customEnd).getTime() + 86400000).toISOString().split('T')[0]
+      const endExcl = dateKey(addDays(new Date(`${customEnd}T00:00:00`), 1))
       return { ...base, start_date: customStart, end_date: endExcl }
     }
     default:
@@ -68,6 +86,27 @@ export default function LeaderboardPage() {
     { value: 'staff_marketing', label: t('leaderboard.staffMarketing'), icon: 'campaign',   unit: t('leaderboard.unitMonthlyBudget') },
   ]
 
+  const STAFF_KPI_LABELS = {
+    staff: {
+      primary: 'DT',
+      secondary: 'Đơn',
+      tertiary: 'KH',
+      primaryMoney: true,
+    },
+    staff_warehouse: {
+      primary: 'SL xử lý',
+      secondary: 'Thao tác',
+      tertiary: 'Phiếu',
+      primaryMoney: false,
+    },
+    staff_marketing: {
+      primary: 'QC',
+      secondary: 'Dòng QC',
+      tertiary: 'Kênh QC',
+      primaryMoney: true,
+    },
+  }
+
   const TIME_FILTERS = [
     { value: 'all',        label: t('leaderboard.timeAll') },
     { value: 'this_month', label: t('leaderboard.timeThisMonth') },
@@ -79,7 +118,9 @@ export default function LeaderboardPage() {
 
   const apiCategory = category === 'staff' ? staffTab : category
   const activeSubtab = STAFF_SUBTABS.find(s => s.value === staffTab) ?? STAFF_SUBTABS[0]
+  const staffKpiLabels = STAFF_KPI_LABELS[staffTab] ?? STAFF_KPI_LABELS.staff
   const isMoneyLeaderboard = ['product', 'customer', 'channel', 'staff_marketing'].includes(apiCategory)
+  const isStaffLeaderboard = category === 'staff'
 
   const load = async () => {
     if (timeMode === 'custom' && (!customStart || !customEnd)) return
@@ -153,7 +194,7 @@ export default function LeaderboardPage() {
             className="linput text-sm" style={{ width: 150 }} />
           <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>{t('leaderboard.dateTo')}</span>
           <input type="date" value={customEnd} onChange={e => setCustomEnd(e.target.value)}
-            max={new Date().toISOString().split('T')[0]}
+            max={dateKey(new Date())}
             className="linput text-sm" style={{ width: 150 }} />
         </div>
       )}
@@ -242,6 +283,37 @@ export default function LeaderboardPage() {
                       {entry.orders} {orderUnit}
                     </span>
                   </div>
+                  {isStaffLeaderboard && (
+                    <div className="mt-1 text-xs flex flex-wrap items-center gap-x-3 gap-y-1" style={{ color: 'var(--text-tertiary)' }}>
+                      {data?.kpi_period_match ? (
+                        entry.hasAnyTarget ? (
+                          <>
+                            <span>KPI tháng {data?.kpi_period}: <strong style={{ color: entry.isKpiAchieved ? '#10B981' : '#F59E0B' }}>
+                              {entry.isKpiAchieved ? 'Đạt' : 'Chưa đạt'}{entry.overallPct != null ? ` · ${fmtProgressPct(entry.overallPct)}` : ''}
+                            </strong></span>
+                            {entry.revTarget > 0 && (
+                              <span>
+                                {staffKpiLabels.primary}{' '}
+                                {staffKpiLabels.primaryMoney
+                                  ? fmtMoneyExact(entry.actualRevenue ?? 0)
+                                  : Number(entry.actualRevenue ?? 0).toLocaleString('vi-VN')}
+                                {' / '}
+                                {staffKpiLabels.primaryMoney
+                                  ? fmtMoneyExact(entry.revTarget)
+                                  : Number(entry.revTarget).toLocaleString('vi-VN')}
+                              </span>
+                            )}
+                            {entry.ordTarget > 0 && <span>{staffKpiLabels.secondary} {Number(entry.actualOrders ?? 0).toLocaleString('vi-VN')} / {Number(entry.ordTarget).toLocaleString('vi-VN')}</span>}
+                            {entry.custTarget > 0 && <span>{staffKpiLabels.tertiary} {Number(entry.actualNewCustomers ?? 0).toLocaleString('vi-VN')} / {Number(entry.custTarget).toLocaleString('vi-VN')}</span>}
+                          </>
+                        ) : (
+                          <span>Chưa đặt KPI tháng {data?.kpi_period}</span>
+                        )
+                      ) : (
+                        <span>Chỉ đối chiếu KPI khi bộ lọc nằm trong một tháng</span>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* Value + Trend */}

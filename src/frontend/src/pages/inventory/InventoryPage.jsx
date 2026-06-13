@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
-import MockToast from '../../components/ui/MockToast'
 import InfoTooltip from '../../components/ui/InfoTooltip'
 import { MT } from '../../constants/metricTooltips'
 import { getInventoryIntelligence } from '../../api/aiApi'
@@ -22,7 +21,6 @@ export default function InventoryPage() {
   }
   const [data,        setData]       = useState(null)
   const [loading,     setLoading]    = useState(true)
-  const [isMock,      setIsMock]     = useState(false)
   const [filter,      setFilter]     = useState('ALL')
   const [expandedIds, setExpandedIds]= useState(new Set())
   const [varCache,    setVarCache]   = useState({})
@@ -40,11 +38,9 @@ export default function InventoryPage() {
       ])
       setData(res)
       setReorderPlan(planRes.items ?? [])
-      setIsMock(res.is_mock ?? false)
     } catch {
       setData(null)
       setReorderPlan([])
-      setIsMock(false)
     } finally { setLoading(false) }
   }
 
@@ -69,8 +65,6 @@ export default function InventoryPage() {
     }
   }
 
-  const visibleItems = (data?.items ?? []).filter(i => i.status !== 'NO_SALES')
-  const filtered = visibleItems.filter(i => filter === 'ALL' || i.status === filter)
   const reorderByProduct = useMemo(() => {
     const map = new Map()
     reorderPlan.forEach(it => {
@@ -82,16 +76,70 @@ export default function InventoryPage() {
     return map
   }, [reorderPlan])
 
-  const buildPurchaseUrl = (product, planItems) => {
-    const sourceItems = planItems?.length
-      ? planItems
-      : [{
-          productId: product.product_id,
-          productName: product.product_name,
-          quantity: product.reorder_qty,
-          importPrice: 0,
-        }]
-    const items = sourceItems
+  const sourceLabel = (source) => ({
+    sales_recent: t('inventory.reorderSourceRecent'),
+    sales_history: t('inventory.reorderSourceHistory'),
+    last_purchase_order: t('inventory.reorderSourceLastPo'),
+    last_goods_receipt: t('inventory.reorderSourceLastReceipt'),
+    min_safe_stock: t('inventory.reorderSourceMinSafe'),
+  }[source] ?? t('inventory.reorderSourceSafeStock'))
+
+  const formatDaysLeft = (value) => {
+    if (value == null) return '—'
+    const n = Number(value)
+    if (!Number.isFinite(n) || n >= 9999) return '—'
+    if (n <= 0) return t('inventory.outOfStock')
+    return `${Math.round(n)}d`
+  }
+
+  const formatAvgDailySales = (value) => {
+    if (value == null) return '—'
+    const n = Number(value)
+    return Number.isFinite(n) ? n.toFixed(1) : '—'
+  }
+
+  const buildSummaryFromPlan = (item, planItems) => {
+    const stock = planItems.reduce((sum, x) => sum + Number(x.stockQuantity ?? 0), 0)
+    const avgDailySales = planItems.reduce((sum, x) => sum + Number(x.avgDailySales ?? 0), 0)
+    const variantDaysLeft = planItems
+      .map(x => Number(x.daysLeft))
+      .filter(x => Number.isFinite(x) && x >= 0)
+    return {
+      stock,
+      avgDailySales,
+      daysLeft: variantDaysLeft.length ? Math.min(...variantDaysLeft) : 9999,
+    }
+  }
+
+  const getDerivedStatus = (item) => {
+    const planItems = reorderByProduct.get(String(item.product_id)) ?? []
+    if (!planItems.length) return 'NO_SALES'
+    const summary = buildSummaryFromPlan(item, planItems)
+    const daysLeft = Number(summary.daysLeft)
+    if (Number(summary.stock) <= 0) return 'OUT_OF_STOCK'
+    if (!Number.isFinite(daysLeft) || daysLeft >= 9999) return 'OK'
+    if (daysLeft <= 7) return 'CRITICAL'
+    if (daysLeft <= 14) return 'WARNING'
+    if (daysLeft > 60) return 'OVERSTOCK'
+    return 'OK'
+  }
+
+  const visibleItems = useMemo(() => (data?.items ?? [])
+    .map(item => ({ ...item, derivedStatus: getDerivedStatus(item) }))
+    .filter(i => i.derivedStatus !== 'NO_SALES'), [data, reorderByProduct])
+
+  const filtered = visibleItems.filter(i =>
+    filter === 'ALL'
+    || i.derivedStatus === filter
+    || (filter === 'CRITICAL' && i.derivedStatus === 'OUT_OF_STOCK'))
+
+  const inventoryCounts = useMemo(() => visibleItems.reduce((acc, item) => {
+    acc[item.derivedStatus] = (acc[item.derivedStatus] ?? 0) + 1
+    return acc
+  }, { CRITICAL: 0, WARNING: 0, OK: 0, OVERSTOCK: 0, OUT_OF_STOCK: 0 }), [visibleItems])
+
+  const buildPurchaseUrl = (product, neededPlanItems) => {
+    const items = (neededPlanItems ?? [])
       .map(it => ({
         productId:   it.productId ?? product.product_id,
         productName: it.productName ?? product.product_name,
@@ -105,8 +153,6 @@ export default function InventoryPage() {
 
   return (
     <div className="space-y-5">
-      {isMock && <MockToast />}
-
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
@@ -130,10 +176,10 @@ export default function InventoryPage() {
       {data && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {[
-            { label: t('inventory.kpiUrgent'),    value: data.critical_count,  color: '#EF4444', tip: MT.stockCritical  },
-            { label: t('inventory.kpiLow'),       value: data.warning_count,   color: '#F59E0B', tip: MT.stockWarning   },
-            { label: t('inventory.kpiNormal'),    value: data.ok_count,        color: '#22C55E', tip: MT.stockOk        },
-            { label: t('inventory.kpiOverstock'), value: data.overstock_count, color: '#3B82F6', tip: MT.stockOverstock },
+            { label: t('inventory.kpiUrgent'),    value: inventoryCounts.CRITICAL + inventoryCounts.OUT_OF_STOCK, color: '#EF4444', tip: MT.stockCritical  },
+            { label: t('inventory.kpiLow'),       value: inventoryCounts.WARNING, color: '#F59E0B', tip: MT.stockWarning   },
+            { label: t('inventory.kpiNormal'),    value: inventoryCounts.OK, color: '#22C55E', tip: MT.stockOk        },
+            { label: t('inventory.kpiOverstock'), value: inventoryCounts.OVERSTOCK, color: '#3B82F6', tip: MT.stockOverstock },
           ].map(k => (
             <div key={k.label} className="lcard p-4">
               <div className="inline-flex items-center gap-0.5 text-xs" style={{ color: 'var(--text-tertiary)' }}>
@@ -167,14 +213,18 @@ export default function InventoryPage() {
       ) : (
         <div className="space-y-3">
           {filtered.map(item => {
-            const cfg        = STATUS_CONFIG[item.status] ?? STATUS_CONFIG.OK
+            const status     = item.derivedStatus ?? item.status
+            const cfg        = STATUS_CONFIG[status] ?? STATUS_CONFIG.OK
             const isExpanded = expandedIds.has(item.product_id)
             const vars       = varCache[item.product_id]
             const isVarLoading = varLoading.has(item.product_id)
             const planItems  = reorderByProduct.get(String(item.product_id)) ?? []
-            const reorderQty = planItems.length > 0
-              ? planItems.reduce((s, x) => s + Number(x.reorderQty ?? 0), 0)
-              : item.reorder_qty
+            const neededPlanItems = planItems.filter(x => Number(x.reorderQty ?? 0) > 0)
+            const summary = buildSummaryFromPlan(item, planItems)
+            const reorderQty = planItems.reduce((s, x) => s + Number(x.reorderQty ?? 0), 0)
+            const message = reorderQty > 0
+              ? `${item.product_name}: ${Math.round(summary.daysLeft)} ngày hết hàng – Lên kế hoạch đặt thêm ${reorderQty} đơn vị`
+              : `${item.product_name}: dự kiến còn ${formatDaysLeft(summary.daysLeft)} – Chưa cần đặt thêm`
             return (
               <div key={item.product_id} className="rounded-xl overflow-hidden"
                 style={{ border: `1px solid ${cfg.border}` }}>
@@ -186,13 +236,13 @@ export default function InventoryPage() {
                         <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>{item.product_name}</span>
                         <span className="text-xs font-medium" style={{ color: cfg.textColor }}>{cfg.label}</span>
                       </div>
-                      <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>{item.message}</p>
+                      <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>{message}</p>
                     </div>
                     <div className="flex items-center gap-4 text-right text-sm shrink-0">
                       {[
-                        { label: t('inventory.itemStock'),      tip: MT.currentStock,   value: item.current_stock, colored: true },
-                        { label: t('inventory.itemSoldPerDay'), tip: MT.avgDailySales, value: item.avg_daily_sales > 0 ? Number(item.avg_daily_sales).toFixed(1) : '—' },
-                        { label: t('inventory.itemDaysLeft'),   tip: MT.daysOfStock,   value: item.current_stock === 0 ? t('inventory.outOfStock') : item.days_until_stockout >= 999 ? t('inventory.infinite') : `${Math.round(item.days_until_stockout)}d`, colored: true },
+                        { label: t('inventory.itemStock'),      tip: MT.currentStock,   value: summary.stock, colored: true },
+                        { label: t('inventory.itemSoldPerDay'), tip: MT.avgDailySales, value: summary.avgDailySales > 0 ? Number(summary.avgDailySales).toFixed(1) : '—' },
+                        { label: t('inventory.itemDaysLeft'),   tip: MT.daysOfStock,   value: summary.stock === 0 ? t('inventory.outOfStock') : summary.daysLeft >= 999 ? t('inventory.infinite') : `${Math.round(summary.daysLeft)}d`, colored: true },
                         ...(reorderQty > 0 ? [{ label: t('inventory.itemNeedOrder'), tip: MT.reorderPoint, value: reorderQty, special: '#F97316' }] : []),
                       ].map((col, ci) => (
                         <div key={ci}>
@@ -204,42 +254,36 @@ export default function InventoryPage() {
                           </div>
                         </div>
                       ))}
-                      {planItems.length > 0 && (
+                      {neededPlanItems.length > 0 && (
                         <div className="text-xs text-left max-w-[180px]" style={{ color: 'var(--text-secondary)' }}>
                           <div className="font-semibold" style={{ color: '#F97316' }}>
-                            {planItems.length} biến thể cần nhập
-                          </div>
-                          <div className="truncate">
-                            {planItems.slice(0, 2).map(v => [v.color, v.size].filter(Boolean).join('/') || v.variationName || v.variationSku || 'Biến thể').join(', ')}
-                            {planItems.length > 2 ? '...' : ''}
+                            {neededPlanItems.length} biến thể cần nhập
                           </div>
                         </div>
                       )}
                       {reorderQty > 0 && (
                         <button
-                          onClick={() => navigate(buildPurchaseUrl(item, planItems))}
+                          onClick={() => navigate(buildPurchaseUrl(item, neededPlanItems))}
                           className="text-xs px-3 py-1.5 rounded-lg font-semibold whitespace-nowrap flex items-center gap-1"
                           style={{ background: 'rgba(99,102,241,0.12)', color: 'var(--primary-500)', border: '1px solid rgba(99,102,241,0.3)' }}>
                           <span className="icon" style={{ fontSize: 13 }}>shopping_cart</span> {t('inventory.reorderBtn')}
                         </button>
                       )}
-                      {!isMock && (
-                        <button
-                          onClick={() => toggleVariations(item.product_id)}
-                          className="text-xs px-2 py-1.5 rounded-lg font-medium"
-                          style={{ background: 'rgba(100,116,139,0.12)', color: 'var(--text-secondary)', border: '1px solid rgba(100,116,139,0.2)' }}>
-                          <span className="icon text-sm" style={{ display: 'block', transition: 'transform 0.2s', transform: isExpanded ? 'rotate(90deg)' : 'none' }}>
-                            chevron_right
-                          </span>
-                        </button>
-                      )}
+                      <button
+                        onClick={() => toggleVariations(item.product_id)}
+                        className="text-xs px-2 py-1.5 rounded-lg font-medium"
+                        style={{ background: 'rgba(100,116,139,0.12)', color: 'var(--text-secondary)', border: '1px solid rgba(100,116,139,0.2)' }}>
+                        <span className="icon text-sm" style={{ display: 'block', transition: 'transform 0.2s', transform: isExpanded ? 'rotate(90deg)' : 'none' }}>
+                          chevron_right
+                        </span>
+                      </button>
                     </div>
                   </div>
                 </div>
 
                 {/* Sub-rows biến thể */}
                 {isExpanded && (
-                  <div style={{ background: 'var(--bg-elevated)', borderTop: `1px solid ${cfg.border}` }}>
+                  <div className="overflow-x-auto" style={{ background: 'var(--bg-elevated)', borderTop: `1px solid ${cfg.border}` }}>
                     {isVarLoading ? (
                       <div className="px-6 py-3 text-xs" style={{ color: 'var(--text-tertiary)' }}>{t('inventory.varLoading')}</div>
                     ) : !vars || vars.length === 0 ? (
@@ -248,24 +292,61 @@ export default function InventoryPage() {
                       <table className="w-full text-xs">
                         <thead>
                           <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                            {[t('inventory.varColSku'), t('inventory.varColColor'), t('inventory.varColSize'), t('inventory.varColStock')].map(h => (
-                              <th key={h} className="px-6 py-2 text-left font-medium"
-                                  style={{ color: 'var(--text-tertiary)' }}>{h}</th>
+                            {[
+                              { label: t('inventory.varColSku') },
+                              { label: t('inventory.varColColor') },
+                              { label: t('inventory.varColSize') },
+                              { label: t('inventory.varColStock') },
+                              { label: t('inventory.varColSoldPerDay'), tip: MT.avgDailySales },
+                              { label: t('inventory.varColDaysLeft'), tip: MT.daysOfStock },
+                              { label: t('inventory.varColSafeStock'), tip: MT.safeStock },
+                              { label: t('inventory.varColNeedOrder'), tip: MT.reorderPoint },
+                              { label: t('inventory.varColReason') },
+                            ].map(h => (
+                              <th key={h.label} className="px-6 py-2 text-left font-medium"
+                                  style={{ color: 'var(--text-tertiary)' }}>
+                                <span className="inline-flex items-center gap-0.5">
+                                  {h.label}{h.tip && <InfoTooltip {...h.tip} placement="bottom" />}
+                                </span>
+                              </th>
                             ))}
                           </tr>
                         </thead>
                         <tbody>
-                          {vars.map(v => (
-                            <tr key={v.variationId} style={{ borderBottom: '1px solid var(--border)' }}>
-                              <td className="px-6 py-2 font-mono" style={{ color: 'var(--text-secondary)' }}>{v.sku ?? '—'}</td>
-                              <td className="px-6 py-2" style={{ color: 'var(--text-primary)' }}>{v.color ?? '—'}</td>
-                              <td className="px-6 py-2" style={{ color: 'var(--text-primary)' }}>{v.size ?? '—'}</td>
-                              <td className="px-6 py-2 font-semibold"
-                                  style={{ color: (v.stockQuantity ?? 0) === 0 ? '#EF4444' : 'var(--text-primary)' }}>
-                                {v.stockQuantity ?? 0}
-                              </td>
-                            </tr>
-                          ))}
+                          {vars.map(v => {
+                            const plan = planItems.find(p => String(p.variationId) === String(v.variationId))
+                            const needQty = Number(plan?.reorderQty ?? 0)
+                            return (
+                              <tr key={v.variationId}
+                                  style={{
+                                    borderBottom: '1px solid var(--border)',
+                                    background: needQty > 0 ? 'rgba(249,115,22,0.06)' : 'transparent',
+                                  }}>
+                                <td className="px-6 py-2 font-mono" style={{ color: 'var(--text-secondary)' }}>{v.sku ?? plan?.variationSku ?? '—'}</td>
+                                <td className="px-6 py-2" style={{ color: 'var(--text-primary)' }}>{v.color ?? plan?.color ?? '—'}</td>
+                                <td className="px-6 py-2" style={{ color: 'var(--text-primary)' }}>{v.size ?? plan?.size ?? '—'}</td>
+                                <td className="px-6 py-2 font-semibold"
+                                    style={{ color: (v.stockQuantity ?? 0) === 0 ? '#EF4444' : 'var(--text-primary)' }}>
+                                  {v.stockQuantity ?? 0}
+                                </td>
+                                <td className="px-6 py-2 tabular-nums" style={{ color: 'var(--text-secondary)' }}>
+                                  {formatAvgDailySales(plan?.avgDailySales)}
+                                </td>
+                                <td className="px-6 py-2 tabular-nums" style={{ color: needQty > 0 ? '#F97316' : 'var(--text-secondary)' }}>
+                                  {formatDaysLeft(plan?.daysLeft)}
+                                </td>
+                                <td className="px-6 py-2 tabular-nums" style={{ color: 'var(--text-secondary)' }}>
+                                  {plan?.safeStock ?? '—'}
+                                </td>
+                                <td className="px-6 py-2 tabular-nums font-bold" style={{ color: needQty > 0 ? '#F97316' : 'var(--text-tertiary)' }}>
+                                  {needQty > 0 ? needQty : '—'}
+                                </td>
+                                <td className="px-6 py-2" style={{ color: 'var(--text-tertiary)' }}>
+                                  {plan ? sourceLabel(plan.reorderSource) : '—'}
+                                </td>
+                              </tr>
+                            )
+                          })}
                         </tbody>
                       </table>
                     )}

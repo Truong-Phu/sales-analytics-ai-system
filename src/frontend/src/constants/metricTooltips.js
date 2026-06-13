@@ -200,10 +200,16 @@ export const MT = {
     source: 'Tồn kho + lịch sử bán hàng 30 ngày gần nhất',
   },
   reorderPoint: {
-    title: 'Điểm cần đặt hàng lại',
-    description: 'Mức tồn kho tối thiểu cần nhập thêm để không bị đứt hàng trong thời gian chờ nhà cung cấp giao.',
-    formula: 'Số lượng bán mỗi ngày × Số ngày giao hàng dự kiến của nhà cung cấp',
-    source: 'Tốc độ bán + thời gian giao hàng của nhà cung cấp',
+    title: 'Số lượng cần đặt thêm',
+    description: 'Số lượng nên nhập thêm để đưa tồn kho của biến thể lên mức tồn an toàn trong kỳ mục tiêu.',
+    formula: 'Cần đặt = max(0, Tồn an toàn − Tồn kho hiện tại)',
+    source: 'Tồn kho biến thể + mức tồn an toàn theo tốc độ bán',
+  },
+  safeStock: {
+    title: 'Tồn an toàn',
+    description: 'Mức tồn mục tiêu để biến thể đủ bán trong kỳ kế hoạch hiện tại. Biến thể chưa có tốc độ bán dùng mức tối thiểu để vẫn có hàng demo/bán thử.',
+    formula: 'Có tốc độ bán: làm tròn lên (Bán/ngày × 30 ngày). Chưa có tốc độ bán: 30 sản phẩm.',
+    source: 'Tốc độ bán 30 ngày gần nhất + tồn kho biến thể hiện tại',
   },
   stockCritical: {
     title: 'Tồn kho KHẨN CẤP',

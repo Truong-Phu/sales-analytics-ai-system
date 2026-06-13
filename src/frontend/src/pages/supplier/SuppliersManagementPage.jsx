@@ -4,36 +4,8 @@ import api from '../../api/axios'
 import { useAuth } from '../../hooks/useAuth'
 import DetailDrawer from '../../components/ui/DetailDrawer'
 import ConfirmDialog from '../../components/ui/ConfirmDialog'
-import { exportToCsv, fmtMoneyExact } from '../../utils/format'
+import { exportToCsv } from '../../utils/format'
 import { useDebounce } from '../../hooks/useDebounce'
-
-// Phí sàn thương mại điện tử Việt Nam (tỷ lệ phổ biến)
-const PLATFORM_FEES = [
-  { name: 'Shopee',  icon: '🛒', rate: 0.025 + 0.015 }, // 2.5% platform + 1.5% payment
-  { name: 'TikTok',  icon: '📱', rate: 0.015 + 0.010 }, // 1.5% + 1%
-  { name: 'Lazada',  icon: '📦', rate: 0.030 + 0.010 }, // 3% + 1%
-  { name: 'Tự kinh doanh', icon: '🏪', rate: 0.010 },   // chi phí tối thiểu ~1%
-]
-
-function calcMinPrice(importPrice, feeRate) {
-  if (!importPrice || importPrice <= 0) return 0
-  return Math.ceil(importPrice / (1 - feeRate) / 1000) * 1000
-}
-
-function PriceAdvisor({ importPrice }) {
-  if (!importPrice || importPrice <= 0) return null
-  return (
-    <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
-      {PLATFORM_FEES.map(pf => (
-        <span key={pf.name} className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
-          {pf.icon} {pf.name} ≥ <strong style={{ color: 'var(--text-secondary)' }}>
-            {fmtMoneyExact(calcMinPrice(importPrice, pf.rate))}
-          </strong>
-        </span>
-      ))}
-    </div>
-  )
-}
 
 function SupplierModal({ supplier, onClose, onSaved }) {
   const [form, setForm] = useState(supplier ?? {
@@ -46,8 +18,6 @@ function SupplierModal({ supplier, onClose, onSaved }) {
   const [prodSearch,    setProdSearch]    = useState('')
   const [loading,       setLoading]       = useState(false)
   const [err,           setErr]           = useState('')
-  // Map: productId → 'updating' | 'done' | 'error'
-  const [priceUpdating, setPriceUpdating] = useState(new Map())
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
@@ -68,9 +38,6 @@ function SupplierModal({ supplier, onClose, onSaved }) {
     }
   }, [supplierId])
 
-  // Lookup basePrice/costPrice từ allProducts
-  const productMap = Object.fromEntries(allProducts.map(p => [p.productId, p]))
-
   const filteredProducts = allProducts.filter(p =>
     p.productName.toLowerCase().includes(prodSearch.toLowerCase())
   )
@@ -86,24 +53,6 @@ function SupplierModal({ supplier, onClose, onSaved }) {
     next.set(pid, Number(val) || 0)
     return next
   })
-
-  // Cập nhật base_price và cost_price của sản phẩm khi giá nhập tăng
-  const updateProductPrice = async (pid, newBasePrice) => {
-    setPriceUpdating(prev => new Map(prev).set(pid, 'updating'))
-    try {
-      await api.put(`/api/products/oltp/${pid}`, {
-        basePrice: newBasePrice,
-        costPrice: selectedProds.get(pid) ?? 0,
-      })
-      // Cập nhật allProducts trong state để badge sáng lên
-      setAllProducts(prev => prev.map(p =>
-        p.productId === pid ? { ...p, basePrice: newBasePrice, costPrice: selectedProds.get(pid) ?? 0 } : p
-      ))
-      setPriceUpdating(prev => new Map(prev).set(pid, 'done'))
-    } catch {
-      setPriceUpdating(prev => new Map(prev).set(pid, 'error'))
-    }
-  }
 
   const save = async () => {
     if (!form.supplierName?.trim()) { setErr('Tên nhà cung cấp không được để trống.'); return }
@@ -206,7 +155,7 @@ function SupplierModal({ supplier, onClose, onSaved }) {
                 </span>
               </p>
               <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
-                Nhập giá nhập → hệ thống tự tính giá bán tối thiểu theo từng sàn
+                Chọn sản phẩm và nhập giá nhập từ nhà cung cấp
               </p>
             </div>
             {selectedCount > 0 && (
@@ -226,7 +175,7 @@ function SupplierModal({ supplier, onClose, onSaved }) {
             <div className="grid grid-cols-[auto_1fr_160px] gap-2 px-3 py-2 text-[11px] font-medium sticky top-0"
                  style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-elevated)', color: 'var(--text-tertiary)' }}>
               <span />
-              <span>Sản phẩm (giá bán hiện tại)</span>
+              <span>Sản phẩm</span>
               <span className="text-right">Giá nhập NCC (đ)</span>
             </div>
 
@@ -237,16 +186,12 @@ function SupplierModal({ supplier, onClose, onSaved }) {
             ) : filteredProducts.map(p => {
               const isChecked    = selectedProds.has(p.productId)
               const importPrice  = selectedProds.get(p.productId) ?? 0
-              const currentBase  = productMap[p.productId]?.basePrice ?? p.basePrice ?? 0
-              const isLossRisk   = isChecked && importPrice > 0 && importPrice >= currentBase
-              const suggestedPrice = calcMinPrice(importPrice, 0.04)
-              const updateState  = priceUpdating.get(p.productId)
 
               return (
                 <div key={p.productId}
                      style={{
                        borderBottom: '1px solid var(--border)',
-                       background: isLossRisk ? 'rgba(239,68,68,0.04)' : isChecked ? 'rgba(59,130,246,0.04)' : 'transparent'
+                       background: isChecked ? 'rgba(59,130,246,0.04)' : 'transparent'
                      }}>
                   <div className="grid grid-cols-[auto_1fr_160px] gap-2 items-center px-3 py-2">
                     <input type="checkbox" checked={isChecked} onChange={() => toggleProduct(p.productId)}
@@ -257,11 +202,6 @@ function SupplierModal({ supplier, onClose, onSaved }) {
                         {p.productName}
                         {p.sku && <span className="ml-1 text-[10px]" style={{ color: 'var(--text-tertiary)' }}>{p.sku}</span>}
                       </span>
-                      {currentBase > 0 && (
-                        <span className="ml-2 text-[11px]" style={{ color: isLossRisk ? '#EF4444' : 'var(--text-tertiary)' }}>
-                          Giá bán: {fmtMoneyExact(currentBase)}
-                        </span>
-                      )}
                     </div>
                     <input
                       type="number" min="0" step="1000"
@@ -272,37 +212,11 @@ function SupplierModal({ supplier, onClose, onSaved }) {
                       className="w-full text-xs rounded border px-2 py-1 text-right disabled:opacity-40"
                       style={{
                         background: 'var(--bg-card)',
-                        borderColor: isLossRisk ? '#EF4444' : 'var(--border)',
+                        borderColor: 'var(--border)',
                         color: 'var(--text-primary)'
                       }}
                     />
                   </div>
-
-                  {isChecked && importPrice > 0 && (
-                    <div className="px-3 pb-2 space-y-1">
-                      {isLossRisk && (
-                        <div className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg"
-                             style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)' }}>
-                          <span className="text-[11px]" style={{ color: '#EF4444' }}>
-                            ⚠ Giá nhập ({fmtMoneyExact(importPrice)}) ≥ giá bán ({fmtMoneyExact(currentBase)}) — sẽ lỗ!
-                            &nbsp;Đề xuất: <strong>{fmtMoneyExact(suggestedPrice)}</strong>
-                          </span>
-                          {updateState === 'done' ? (
-                            <span className="text-[11px] shrink-0" style={{ color: '#22C55E' }}>✓ Đã cập nhật</span>
-                          ) : (
-                            <button
-                              disabled={updateState === 'updating'}
-                              onClick={() => updateProductPrice(p.productId, suggestedPrice)}
-                              className="text-[11px] px-2 py-0.5 rounded shrink-0 disabled:opacity-60"
-                              style={{ background: '#EF4444', color: '#fff' }}>
-                              {updateState === 'updating' ? '...' : `→ ${fmtMoneyExact(suggestedPrice)}`}
-                            </button>
-                          )}
-                        </div>
-                      )}
-                      <PriceAdvisor importPrice={importPrice} />
-                    </div>
-                  )}
                 </div>
               )
             })}
@@ -425,20 +339,22 @@ export default function SuppliersManagementPage() {
             {t('supplierMgmt.subtitle', { count: total })}
           </p>
         </div>
-        <button onClick={handleExport}
-          className="px-3 py-2 rounded-lg text-sm border flex items-center gap-1.5"
-          style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
-          title={t('common.export_csv')}>
-          <span className="icon text-base">download</span>
-          <span className="hidden sm:inline">{t('common.export_csv')}</span>
-        </button>
-        {canEdit && (
-          <button onClick={() => setModal('create')}
-            className="px-4 py-2 rounded-lg text-sm text-white font-medium"
-            style={{ background: 'var(--primary-500)' }}>
-            {t('supplierMgmt.addBtn')}
+        <div className="flex items-center gap-2">
+          <button onClick={handleExport}
+            className="px-3 py-2 rounded-lg text-sm border flex items-center gap-1.5"
+            style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
+            title={t('common.export_csv')}>
+            <span className="icon text-base">download</span>
+            <span className="hidden sm:inline">{t('common.export_csv')}</span>
           </button>
-        )}
+          {canEdit && (
+            <button onClick={() => setModal('create')}
+              className="px-4 py-2 rounded-lg text-sm text-white font-medium"
+              style={{ background: 'var(--primary-500)' }}>
+              {t('supplierMgmt.addBtn')}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Search + filter */}

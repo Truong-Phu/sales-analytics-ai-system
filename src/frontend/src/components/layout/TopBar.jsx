@@ -92,7 +92,6 @@ function UserAvatar() {
     .toUpperCase()
 
   const menuItems = [
-    { label: t('auth.changePassword'), icon: 'lock',     href: '/change-password' },
     { label: t('nav.settings'),        icon: 'settings', href: '/settings' },
   ]
 

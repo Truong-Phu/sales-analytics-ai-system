@@ -1,6 +1,7 @@
 using System.Globalization;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Npgsql;
 using SalesAnalytics.API.Attributes;
 using SalesAnalytics.API.Services;
 
@@ -11,8 +12,10 @@ namespace SalesAnalytics.API.Controllers;
 [Route("api/ai")]
 [Authorize(Roles = "Owner,Manager,DataIT,SuperAdmin")]
 [RequirePlan("pro")]
-public class AiController(AiProxyService ai, ITenantContext tenant) : ControllerBase
+public class AiController(AiProxyService ai, ITenantContext tenant, IConfiguration cfg) : ControllerBase
 {
+    private readonly string _connStr = cfg.GetConnectionString("Default")!;
+
     /// <summary>Dự báo doanh thu N ngày tiếp theo</summary>
     [HttpGet("forecast")]
     public async Task<IActionResult> Forecast(
@@ -303,6 +306,9 @@ public class AiController(AiProxyService ai, ITenantContext tenant) : Controller
         days = Math.Clamp(days, 1, 3650);
         topN = Math.Clamp(topN, 3, 50);
         var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
+        if (category is "staff" or "staff_warehouse" or "staff_marketing")
+            return await BuildStaffLeaderboardAsync(category, days, topN, startDate, endDate, companyId);
+
         var qs = $"leaderboard?category={category}&days={days}&top_n={topN}"
             + (companyId.HasValue ? $"&company_id={companyId}" : "")
             + (!string.IsNullOrEmpty(startDate) ? $"&start_date={startDate}" : "")
@@ -310,6 +316,289 @@ public class AiController(AiProxyService ai, ITenantContext tenant) : Controller
         var result = await ai.ProxyGetAsync(qs);
         if (result is null) return StatusCode(503, new { message = "AI Service không khả dụng." });
         return Ok(result);
+    }
+
+    private async Task<IActionResult> BuildStaffLeaderboardAsync(
+        string category,
+        int days,
+        int topN,
+        string? startDate,
+        string? endDate,
+        Guid? companyId)
+    {
+        if (!companyId.HasValue)
+            return BadRequest(new { message = "Không xác định được công ty." });
+
+        var today = DateTime.UtcNow.Date;
+        var start = DateOnly.TryParse(startDate, out var sd)
+            ? DateTime.SpecifyKind(sd.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc)
+            : today.AddDays(-days + 1);
+        var endExclusive = DateOnly.TryParse(endDate, out var ed)
+            ? DateTime.SpecifyKind(ed.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc)
+            : today.AddDays(1);
+        if (endExclusive <= start) endExclusive = start.AddDays(1);
+
+        var span = endExclusive - start;
+        var prevStart = start - span;
+        var prevEnd = start;
+        var lastIncludedDate = endExclusive.AddDays(-1);
+        var kpiMonthMatch = start.Day == 1
+            && lastIncludedDate.Year == start.Year
+            && lastIncludedDate.Month == start.Month;
+
+        var roleFilter = category switch
+        {
+            "staff_warehouse" => "u.role = 'Staff_Warehouse'",
+            "staff_marketing" => "u.role = 'Staff_Marketing'",
+            _ => "u.role IN ('Staff','Staff_Sales')"
+        };
+
+        var metricExpr = category switch
+        {
+            "staff_warehouse" => "COALESCE(curr.warehouse_value, 0)",
+            "staff_marketing" => "COALESCE(curr.marketing_spend, 0)",
+            _ => "COALESCE(curr.sales_revenue, 0)"
+        };
+        var prevMetricExpr = category switch
+        {
+            "staff_warehouse" => "COALESCE(prev.warehouse_value, 0)",
+            "staff_marketing" => "COALESCE(prev.marketing_spend, 0)",
+            _ => "COALESCE(prev.sales_revenue, 0)"
+        };
+        var activityExpr = category switch
+        {
+            "staff_warehouse" => "COALESCE(curr.warehouse_tasks, 0)",
+            "staff_marketing" => "COALESCE(curr.marketing_activities, 0)",
+            _ => "COALESCE(curr.sales_orders, 0)"
+        };
+        var actualRevenueExpr = category switch
+        {
+            "staff_warehouse" => "COALESCE(curr.warehouse_value, 0)",
+            "staff_marketing" => "COALESCE(curr.marketing_spend, 0)",
+            _ => "COALESCE(curr.sales_revenue, 0)"
+        };
+        var actualOrdersExpr = category switch
+        {
+            "staff_warehouse" => "COALESCE(curr.warehouse_tasks, 0)",
+            "staff_marketing" => "COALESCE(curr.marketing_activities, 0)",
+            _ => "COALESCE(curr.sales_orders, 0)"
+        };
+        var actualTertiaryExpr = category switch
+        {
+            "staff_warehouse" => "COALESCE(curr.warehouse_documents, 0)",
+            "staff_marketing" => "COALESCE(curr.marketing_channels, 0)",
+            _ => "COALESCE(curr.new_customers, 0)"
+        };
+
+        var sql = $$"""
+            WITH sales_curr AS (
+                SELECT o.created_by_user_id AS user_id,
+                       COUNT(DISTINCT o.order_id)::bigint AS sales_orders,
+                       COALESCE(SUM(o.total_amount), 0) AS sales_revenue,
+                       COUNT(DISTINCT CASE
+                           WHEN COALESCE(c.first_order_at, c.created_at) >= @start
+                            AND COALESCE(c.first_order_at, c.created_at) < @end THEN c.customer_id
+                       END)::bigint AS new_customers
+                FROM public.orders o
+                LEFT JOIN public.customers c ON c.customer_id = o.customer_id AND c.company_id = @cid::uuid
+                WHERE o.company_id = @cid::uuid
+                  AND o.created_by_user_id IS NOT NULL
+                  AND o.order_date >= @start AND o.order_date < @end
+                GROUP BY o.created_by_user_id
+            ),
+            sales_prev AS (
+                SELECT o.created_by_user_id AS user_id,
+                       COALESCE(SUM(o.total_amount), 0) AS sales_revenue
+                FROM public.orders o
+                WHERE o.company_id = @cid::uuid
+                  AND o.created_by_user_id IS NOT NULL
+                  AND o.order_date >= @prevStart AND o.order_date < @prevEnd
+                GROUP BY o.created_by_user_id
+            ),
+            warehouse_curr AS (
+                SELECT user_id,
+                       COUNT(*)::bigint AS warehouse_tasks,
+                       COALESCE(SUM(quantity_amount), 0) AS warehouse_value,
+                       COALESCE(SUM(document_count), 0)::bigint AS warehouse_documents
+                FROM (
+                    SELECT created_by AS user_id, created_at, ABS(quantity_change)::numeric AS quantity_amount, 0::bigint AS document_count
+                    FROM public.inventory_transactions
+                    WHERE company_id = @cid::uuid AND created_by IS NOT NULL
+                    UNION ALL
+                    SELECT created_by AS user_id, created_at, total_quantity::numeric AS quantity_amount, 1::bigint AS document_count
+                    FROM public.goods_receipts
+                    WHERE company_id = @cid::uuid AND created_by IS NOT NULL
+                    UNION ALL
+                    SELECT po.created_by AS user_id, po.created_at, COALESCE(SUM(poi.quantity), 0)::numeric AS quantity_amount, 1::bigint AS document_count
+                    FROM public.purchase_orders po
+                    LEFT JOIN public.purchase_order_items poi ON poi.purchase_order_id = po.purchase_order_id
+                    WHERE po.company_id = @cid::uuid AND po.created_by IS NOT NULL
+                    GROUP BY po.purchase_order_id, po.created_by, po.created_at
+                ) x
+                WHERE created_at >= @start AND created_at < @end
+                GROUP BY user_id
+            ),
+            warehouse_prev AS (
+                SELECT user_id,
+                       COALESCE(SUM(quantity_amount), 0) AS warehouse_value
+                FROM (
+                    SELECT created_by AS user_id, created_at, ABS(quantity_change)::numeric AS quantity_amount
+                    FROM public.inventory_transactions
+                    WHERE company_id = @cid::uuid AND created_by IS NOT NULL
+                    UNION ALL
+                    SELECT created_by AS user_id, created_at, total_quantity::numeric AS quantity_amount
+                    FROM public.goods_receipts
+                    WHERE company_id = @cid::uuid AND created_by IS NOT NULL
+                    UNION ALL
+                    SELECT po.created_by AS user_id, po.created_at, COALESCE(SUM(poi.quantity), 0)::numeric AS quantity_amount
+                    FROM public.purchase_orders po
+                    LEFT JOIN public.purchase_order_items poi ON poi.purchase_order_id = po.purchase_order_id
+                    WHERE po.company_id = @cid::uuid AND po.created_by IS NOT NULL
+                    GROUP BY po.purchase_order_id, po.created_by, po.created_at
+                ) x
+                WHERE created_at >= @prevStart AND created_at < @prevEnd
+                GROUP BY user_id
+            ),
+            marketing_curr AS (
+                SELECT created_by AS user_id,
+                       COUNT(*)::bigint AS marketing_activities,
+                       COUNT(DISTINCT channel_id)::bigint AS marketing_channels,
+                       COALESCE(SUM(amount), 0) AS marketing_spend
+                FROM public.ad_spend_monthly
+                WHERE company_id = @cid::uuid
+                  AND created_by IS NOT NULL
+                  AND (year * 12 + month) BETWEEN
+                      (EXTRACT(YEAR FROM @start)::int * 12 + EXTRACT(MONTH FROM @start)::int)
+                      AND (EXTRACT(YEAR FROM (@end - INTERVAL '1 day'))::int * 12 + EXTRACT(MONTH FROM (@end - INTERVAL '1 day'))::int)
+                GROUP BY created_by
+            ),
+            marketing_prev AS (
+                SELECT created_by AS user_id,
+                       COALESCE(SUM(amount), 0) AS marketing_spend
+                FROM public.ad_spend_monthly
+                WHERE company_id = @cid::uuid
+                  AND created_by IS NOT NULL
+                  AND (year * 12 + month) BETWEEN
+                      (EXTRACT(YEAR FROM @prevStart)::int * 12 + EXTRACT(MONTH FROM @prevStart)::int)
+                      AND (EXTRACT(YEAR FROM (@prevEnd - INTERVAL '1 day'))::int * 12 + EXTRACT(MONTH FROM (@prevEnd - INTERVAL '1 day'))::int)
+                GROUP BY created_by
+            ),
+            curr AS (
+                SELECT u.user_id,
+                       sc.sales_orders, sc.sales_revenue, sc.new_customers,
+                       wc.warehouse_tasks, wc.warehouse_value, wc.warehouse_documents,
+                       mc.marketing_activities, mc.marketing_channels, mc.marketing_spend
+                FROM public.users u
+                LEFT JOIN sales_curr sc ON sc.user_id = u.user_id
+                LEFT JOIN warehouse_curr wc ON wc.user_id = u.user_id
+                LEFT JOIN marketing_curr mc ON mc.user_id = u.user_id
+                WHERE u.company_id = @cid::uuid
+            ),
+            prev AS (
+                SELECT u.user_id,
+                       sp.sales_revenue,
+                       wp.warehouse_value,
+                       mp.marketing_spend
+                FROM public.users u
+                LEFT JOIN sales_prev sp ON sp.user_id = u.user_id
+                LEFT JOIN warehouse_prev wp ON wp.user_id = u.user_id
+                LEFT JOIN marketing_prev mp ON mp.user_id = u.user_id
+                WHERE u.company_id = @cid::uuid
+            )
+            SELECT u.user_id, u.full_name, u.role,
+                   {{metricExpr}} AS metric_value,
+                   {{activityExpr}} AS activity_count,
+                   {{prevMetricExpr}} AS prev_metric_value,
+                   {{actualRevenueExpr}} AS actual_revenue,
+                   {{actualOrdersExpr}} AS actual_orders,
+                   {{actualTertiaryExpr}} AS actual_new_customers,
+                   t.revenue_target,
+                   t.order_count_target,
+                   t.new_customer_target
+            FROM public.users u
+            LEFT JOIN curr ON curr.user_id = u.user_id
+            LEFT JOIN prev ON prev.user_id = u.user_id
+            LEFT JOIN public.staff_kpi_targets t
+                ON t.user_id = u.user_id
+               AND t.period_type = 'MONTHLY'
+               AND t.period_start = DATE_TRUNC('month', @start)
+            WHERE u.company_id = @cid::uuid
+              AND u.is_active = TRUE
+              AND {{roleFilter}}
+            ORDER BY metric_value DESC, activity_count DESC, u.full_name
+            LIMIT @topN
+            """;
+
+        await using var conn = new NpgsqlConnection(_connStr);
+        await conn.OpenAsync();
+        await using var cmd = new NpgsqlCommand(sql, conn);
+        cmd.Parameters.AddWithValue("cid", companyId.Value.ToString());
+        cmd.Parameters.AddWithValue("start", start);
+        cmd.Parameters.AddWithValue("end", endExclusive);
+        cmd.Parameters.AddWithValue("prevStart", prevStart);
+        cmd.Parameters.AddWithValue("prevEnd", prevEnd);
+        cmd.Parameters.AddWithValue("topN", topN);
+
+        var entries = new List<object>();
+        decimal totalValue = 0;
+        await using var r = await cmd.ExecuteReaderAsync();
+        var rank = 1;
+        while (await r.ReadAsync())
+        {
+            var value = r.GetDecimal(3);
+            var activity = r.GetInt64(4);
+            var prevValue = r.GetDecimal(5);
+            var changePct = prevValue > 0 ? Math.Round((double)((value - prevValue) / prevValue * 100), 1) : (value > 0 ? 100.0 : 0.0);
+            var trend = changePct > 0 ? "UP" : changePct < 0 ? "DOWN" : "STABLE";
+            var actualRevenue = r.GetDecimal(6);
+            var actualOrders = r.GetInt64(7);
+            var actualNewCustomers = r.GetInt64(8);
+            var revTarget = r.IsDBNull(9) ? (decimal?)null : r.GetDecimal(9);
+            var ordTarget = r.IsDBNull(10) ? (int?)null : r.GetInt32(10);
+            var custTarget = r.IsDBNull(11) ? (int?)null : r.GetInt32(11);
+            double? revPct = revTarget is > 0 ? Math.Round((double)(actualRevenue / revTarget.Value * 100), 1) : null;
+            double? ordPct = ordTarget is > 0 ? Math.Round(actualOrders / (double)ordTarget.Value * 100, 1) : null;
+            double? custPct = custTarget is > 0 ? Math.Round(actualNewCustomers / (double)custTarget.Value * 100, 1) : null;
+            var validPcts = new[] { revPct, ordPct, custPct }.Where(x => x.HasValue).Select(x => x!.Value).ToList();
+            double? overallPct = validPcts.Count > 0 ? Math.Round(validPcts.Average(), 1) : null;
+            var hasAnyTarget = revTarget.HasValue || ordTarget.HasValue || custTarget.HasValue;
+
+            totalValue += value;
+            entries.Add(new
+            {
+                rank,
+                name = r.GetString(1),
+                role = r.GetString(2),
+                value,
+                value_label = category == "staff_warehouse" ? value.ToString("N0", CultureInfo.InvariantCulture) : null,
+                orders = activity,
+                trend,
+                change_pct = changePct,
+                actualRevenue,
+                actualOrders,
+                actualNewCustomers,
+                revTarget,
+                ordTarget,
+                custTarget,
+                revenuePct = revPct,
+                orderPct = ordPct,
+                customerPct = custPct,
+                overallPct,
+                hasAnyTarget,
+                isKpiAchieved = hasAnyTarget && validPcts.Count > 0 && validPcts.All(p => p >= 100.0),
+            });
+            rank++;
+        }
+
+        return Ok(new
+        {
+            category,
+            period_label = $"{start:dd/MM/yyyy} – {endExclusive.AddDays(-1):dd/MM/yyyy}",
+            total_revenue = totalValue,
+            kpi_period_match = kpiMonthMatch,
+            kpi_period = start.ToString("yyyy-MM"),
+            entries
+        });
     }
 
     /// <summary>Sinh nhận xét doanh thu tự động bằng ngôn ngữ tự nhiên (Smart Narrative)</summary>

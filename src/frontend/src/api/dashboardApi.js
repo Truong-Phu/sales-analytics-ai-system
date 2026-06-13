@@ -157,6 +157,9 @@ export const toggleCategory = (id) =>
 export const updateOrderStatus = (id, dto) =>
   api.put(`/api/orders/oltp/${id}`, dto).then(r => r.data)
 
+export const reconcileDemoOrders = () =>
+  api.post('/api/orders/oltp/reconcile-demo').then(r => r.data)
+
 export const cancelOrder = (id) =>
   api.delete(`/api/orders/oltp/${id}`).then(r => r.data)
 
