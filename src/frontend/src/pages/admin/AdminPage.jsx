@@ -51,6 +51,88 @@ const ACTION_LABELS = {
   TRIGGER_SYNC: 'Kích hoạt Sync', TRIGGER_ETL: 'Kích hoạt ETL',
 }
 
+const KPI_COPY = {
+  Manager: {
+    primary: 'Doanh thu đội / Mục tiêu',
+    progress: 'Tiến độ đội',
+    secondary: 'Đơn toàn đội / Mục tiêu',
+    tertiary: 'KH mới / Mục tiêu',
+    primaryInput: 'Mục tiêu doanh thu đội (₫)',
+    secondaryInput: 'Mục tiêu số đơn toàn đội',
+    tertiaryInput: 'Mục tiêu khách mới',
+    actualPrimary: 'Doanh thu đội',
+    actualSecondary: 'Đơn toàn đội',
+    actualTertiary: 'KH mới',
+  },
+  Staff_Sales: {
+    primary: 'Doanh thu / Mục tiêu',
+    progress: 'Tiến độ DT',
+    secondary: 'Đơn / Mục tiêu',
+    tertiary: 'KH mới / Mục tiêu',
+    primaryInput: 'Mục tiêu doanh thu (₫)',
+    secondaryInput: 'Mục tiêu số đơn',
+    tertiaryInput: 'Mục tiêu KH mới',
+    actualPrimary: 'Doanh thu',
+    actualSecondary: 'Số đơn',
+    actualTertiary: 'KH mới',
+  },
+  Staff_Warehouse: {
+    primary: 'Giá trị kho / Mục tiêu',
+    progress: 'Tiến độ kho',
+    secondary: 'Thao tác / Mục tiêu',
+    tertiary: 'Phiếu kho / Mục tiêu',
+    primaryInput: 'Mục tiêu giá trị nghiệp vụ kho',
+    secondaryInput: 'Mục tiêu số thao tác kho',
+    tertiaryInput: 'Mục tiêu số phiếu kho',
+    actualPrimary: 'Giá trị kho',
+    actualSecondary: 'Thao tác',
+    actualTertiary: 'Phiếu kho',
+  },
+  Staff_Marketing: {
+    primary: 'QC quản lý / Mục tiêu',
+    progress: 'Tiến độ MKT',
+    secondary: 'Dòng QC / Mục tiêu',
+    tertiary: 'Hoạt động / Mục tiêu',
+    primaryInput: 'Mục tiêu ngân sách QC quản lý',
+    secondaryInput: 'Mục tiêu số dòng chi phí QC',
+    tertiaryInput: 'Mục tiêu hoạt động marketing',
+    actualPrimary: 'QC quản lý',
+    actualSecondary: 'Dòng QC',
+    actualTertiary: 'Hoạt động',
+  },
+  Staff: {
+    primary: 'Doanh thu / Mục tiêu',
+    progress: 'Tiến độ',
+    secondary: 'Đơn / Mục tiêu',
+    tertiary: 'KH mới / Mục tiêu',
+    primaryInput: 'Mục tiêu doanh thu (₫)',
+    secondaryInput: 'Mục tiêu số đơn',
+    tertiaryInput: 'Mục tiêu KH mới',
+    actualPrimary: 'Doanh thu',
+    actualSecondary: 'Số đơn',
+    actualTertiary: 'KH mới',
+  },
+}
+
+const getKpiCopy = role => KPI_COPY[role] ?? KPI_COPY.Staff_Sales
+const getKpiGapText = s => {
+  const copy = getKpiCopy(s.role)
+  const gaps = []
+  if (s.revTarget) {
+    const missing = Math.max(0, Number(s.revTarget) - Number(s.actualRevenue ?? s.revenue ?? 0))
+    if (missing > 0) gaps.push(`${copy.actualPrimary}: thiếu ${fmtMoneyExact(missing)}`)
+  }
+  if (s.ordTarget) {
+    const missing = Math.max(0, Number(s.ordTarget) - Number(s.actualOrders ?? s.orderCount ?? 0))
+    if (missing > 0) gaps.push(`${copy.actualSecondary}: thiếu ${missing}`)
+  }
+  if (s.custTarget) {
+    const missing = Math.max(0, Number(s.custTarget) - Number(s.actualNewCustomers ?? s.newCustomers ?? 0))
+    if (missing > 0) gaps.push(`${copy.actualTertiary}: thiếu ${missing}`)
+  }
+  return gaps.join(' · ')
+}
+
 // ─── Shared sub-components ────────────────────────────────────────────────────
 function RoleBadge({ role }) {
   const c = ROLE_COLOR[role] ?? ROLE_COLOR.Viewer
@@ -290,7 +372,7 @@ function EditUserDrawer({ open, user: u, onClose, onSaved }) {
 function PayrollDrawer({ open, staff, year, month, onClose, onSaved }) {
   const [form, setForm] = useState({
     baseSalary:    String(staff?.baseSalary    ?? ''),
-    bonusAmount:   String(staff?.bonusAmount   ?? ''),
+    bonusAmount:   '',
     penaltyAmount: String(staff?.penaltyAmount ?? ''),
     note:          staff?.note ?? '',
     sendPayslipEmail: true,
@@ -298,6 +380,19 @@ function PayrollDrawer({ open, staff, year, month, onClose, onSaved }) {
   const [saving, setSaving] = useState(false)
   const [err,    setErr]    = useState('')
   const [success,setSuccess]= useState('')
+
+  useEffect(() => {
+    if (!open || !staff) return
+    setForm({
+      baseSalary:    String(staff.baseSalary    ?? ''),
+      bonusAmount:   '',
+      penaltyAmount: String(staff.penaltyAmount ?? ''),
+      note:          staff.note ?? '',
+      sendPayslipEmail: true,
+    })
+    setErr('')
+    setSuccess('')
+  }, [open, staff])
 
   const f = (k, v) => setForm(p => ({ ...p, [k]: v }))
 
@@ -335,14 +430,14 @@ function PayrollDrawer({ open, staff, year, month, onClose, onSaved }) {
   return (
     <DetailDrawer
       open={open} onClose={onClose}
-      title={`Cài lương — ${staff?.fullName ?? ''}`}
+      title={`Chốt lương — ${staff?.fullName ?? ''}`}
       subtitle={`Tháng ${month}/${year}`}
       width={560}
       footer={
         <>
           <button onClick={onClose} className="lbtn lbtn-secondary flex-1 justify-center" disabled={saving}>Hủy</button>
           <button onClick={handleSave} className="lbtn lbtn-primary flex-1 justify-center" disabled={saving}>
-            {saving ? <><Spinner size={4} /><span className="ml-2">Đang lưu...</span></> : 'Lưu lương'}
+            {saving ? <><Spinner size={4} /><span className="ml-2">Đang lưu...</span></> : 'Lưu / chốt lương'}
           </button>
         </>
       }
@@ -361,14 +456,14 @@ function PayrollDrawer({ open, staff, year, month, onClose, onSaved }) {
             {!staff?.hasAnyTarget
               ? 'Chưa đặt KPI — thưởng sẽ không được cộng tự động'
               : staff?.isKpiAchieved
-                ? 'KPI đạt — thưởng được cộng vào tổng lương'
-                : 'KPI chưa đạt — thưởng không được cộng'}
+                ? 'KPI đạt — chủ doanh nghiệp nhập thưởng KPI để cộng vào kỳ lương'
+                : 'KPI chưa đạt — có thể ghi nhận thưởng, nhưng chưa cộng vào tổng lương'}
           </span>
         </div>
 
         {[
-          { label: 'Lương cơ bản (₫)',  key: 'baseSalary',    ph: 'VD: 8000000' },
-          { label: 'Thưởng KPI (₫)',    key: 'bonusAmount',   ph: 'VD: 2000000' },
+          { label: 'Lương cố định (₫)',  key: 'baseSalary',    ph: 'VD: 8000000' },
+          { label: 'Thưởng KPI chốt cuối kỳ (₫)', key: 'bonusAmount', ph: 'VD: 2000000' },
           { label: 'Khấu trừ (₫)',      key: 'penaltyAmount', ph: 'VD: 0'       },
         ].map(fd => (
           <Field key={fd.key} label={fd.label}>
@@ -378,6 +473,12 @@ function PayrollDrawer({ open, staff, year, month, onClose, onSaved }) {
                    style={{ fontFamily: 'monospace' }} />
           </Field>
         ))}
+
+        {staff?.baseSalaryInherited && (
+          <p className="text-xs -mt-2" style={{ color: 'var(--text-tertiary)' }}>
+            Lương cố định đang lấy từ kỳ lương gần nhất. Chỉ sửa ô này khi nhân viên thay đổi mức lương.
+          </p>
+        )}
 
         <Field label="Ghi chú">
           <input type="text" value={form.note} onChange={e => f('note', e.target.value)}
@@ -390,7 +491,7 @@ function PayrollDrawer({ open, staff, year, month, onClose, onSaved }) {
           <div>
             <p className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>Tổng lương dự kiến</p>
             <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
-              {staff?.isKpiAchieved ? 'Lương + Thưởng − Khấu trừ' : 'Lương − Khấu trừ (KPI chưa đạt)'}
+              {staff?.isKpiAchieved ? 'Lương cố định + Thưởng KPI − Khấu trừ' : 'Lương cố định − Khấu trừ (KPI chưa đạt)'}
             </p>
           </div>
           <span className="text-xl font-bold font-mono" style={{ color: '#6366F1' }}>
@@ -419,6 +520,7 @@ function PayrollDrawer({ open, staff, year, month, onClose, onSaved }) {
 // ─── Drawer Đặt KPI nhân viên ────────────────────────────────────────────────
 function SetKpiDrawer({ open, staff, period, onClose, onSaved }) {
   const [year, month] = (period ?? '').split('-').map(Number)
+  const copy = getKpiCopy(staff?.role)
   const [rev,  setRev]       = useState(String(staff?.revTarget  ?? ''))
   const [ord,  setOrd]       = useState(String(staff?.ordTarget  ?? ''))
   const [cust, setCust]      = useState(String(staff?.custTarget ?? ''))
@@ -427,6 +529,16 @@ function SetKpiDrawer({ open, staff, period, onClose, onSaved }) {
   const [saving, setSaving]  = useState(false)
   const [err,    setErr]     = useState('')
   const [success,setSuccess] = useState('')
+
+  useEffect(() => {
+    if (!open || !staff) return
+    setRev(String(staff.revTarget ?? ''))
+    setOrd(String(staff.ordTarget ?? ''))
+    setCust(String(staff.custTarget ?? ''))
+    setNote('')
+    setErr('')
+    setSuccess('')
+  }, [open, staff])
 
   const handleSave = async () => {
     setSaving(true); setErr(''); setSuccess('')
@@ -471,9 +583,9 @@ function SetKpiDrawer({ open, staff, period, onClose, onSaved }) {
             <p className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>KPI thực tế tháng {month}/{year}</p>
             <div className="grid grid-cols-3 gap-3">
               {[
-                { label: 'Doanh thu', val: staff?.actualRevenue != null ? fmtMoneyExact(staff.actualRevenue) : '—' },
-                { label: 'Số đơn',   val: staff?.actualOrders  ?? '—' },
-                { label: 'KH mới',   val: staff?.actualCustomers ?? '—' },
+                { label: copy.actualPrimary, val: staff?.actualRevenue != null ? fmtMoneyExact(staff.actualRevenue) : '—' },
+                { label: copy.actualSecondary, val: staff?.actualOrders ?? '—' },
+                { label: copy.actualTertiary, val: staff?.actualNewCustomers ?? staff?.actualCustomers ?? '—' },
               ].map(({ label, val }) => (
                 <div key={label} className="text-center">
                   <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{label}</p>
@@ -485,9 +597,9 @@ function SetKpiDrawer({ open, staff, period, onClose, onSaved }) {
         )}
 
         {[
-          { label: 'Mục tiêu doanh thu (₫)', val: rev,  set: setRev,  ph: 'VD: 50000000' },
-          { label: 'Mục tiêu số đơn',         val: ord,  set: setOrd,  ph: 'VD: 100' },
-          { label: 'Mục tiêu KH mới',          val: cust, set: setCust, ph: 'VD: 20' },
+          { label: copy.primaryInput, val: rev, set: setRev, ph: staff?.role === 'Staff_Warehouse' ? 'VD: 500' : 'VD: 50000000' },
+          { label: copy.secondaryInput, val: ord, set: setOrd, ph: staff?.role === 'Staff_Marketing' ? 'VD: 4' : 'VD: 100' },
+          { label: copy.tertiaryInput, val: cust, set: setCust, ph: staff?.role === 'Staff_Marketing' ? 'VD: 4' : 'VD: 20' },
         ].map(f => (
           <Field key={f.label} label={f.label}>
             <input type="number" value={f.val} onChange={e => f.set(e.target.value)}
@@ -530,6 +642,16 @@ const PAYROLL_STATUS_CFG = {
   Paid:      { label: 'Đã trả',     color: '#F59E0B', bg: 'rgba(245,158,11,0.1)'  },
 }
 
+const withoutKpiBonus = (row) => {
+  const base = Number(row.baseSalary ?? 0)
+  const penalty = Number(row.penaltyAmount ?? 0)
+  return {
+    ...row,
+    bonusAmount: 0,
+    totalSalary: Math.max(0, base - penalty),
+  }
+}
+
 function PayrollStatusBadge({ status }) {
   const c = PAYROLL_STATUS_CFG[status] ?? PAYROLL_STATUS_CFG.Draft
   return (
@@ -544,7 +666,7 @@ function PayrollStatusBadge({ status }) {
 function PayrollModal({ staff, year, month, onClose, onSaved }) {
   const [form, setForm] = useState({
     baseSalary:    String(staff.baseSalary    ?? ''),
-    bonusAmount:   String(staff.bonusAmount   ?? ''),
+    bonusAmount:   '',
     penaltyAmount: String(staff.penaltyAmount ?? ''),
     note:          staff.note ?? '',
   })
@@ -583,7 +705,7 @@ function PayrollModal({ staff, year, month, onClose, onSaved }) {
       <div className="lcard w-full max-w-sm p-6 space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>
-            Cài lương — {staff.fullName}
+            Chốt lương — {staff.fullName}
           </h3>
           <button onClick={onClose} className="icon text-xl" style={{ color: 'var(--text-tertiary)' }}>close</button>
         </div>
@@ -596,14 +718,14 @@ function PayrollModal({ staff, year, month, onClose, onSaved }) {
             {!staff.hasAnyTarget
               ? '— Chưa đặt KPI (thưởng sẽ không tự động)'
               : staff.isKpiAchieved
-                ? '✅ KPI đạt — thưởng được cộng vào tổng'
-                : '⚠ KPI chưa đạt — thưởng không được cộng'}
+                ? '✓ KPI đạt — chủ doanh nghiệp nhập thưởng KPI để cộng vào kỳ lương'
+                : '⚠ KPI chưa đạt — có thể ghi nhận thưởng, nhưng chưa cộng vào tổng lương'}
           </span>
         </p>
 
         {[
-          { label: 'Lương cơ bản (₫)',  key: 'baseSalary',    ph: 'VD: 8000000' },
-          { label: 'Thưởng KPI (₫)',    key: 'bonusAmount',   ph: 'VD: 2000000' },
+          { label: 'Lương cố định (₫)',  key: 'baseSalary',    ph: 'VD: 8000000' },
+          { label: 'Thưởng KPI chốt cuối kỳ (₫)', key: 'bonusAmount', ph: 'VD: 2000000' },
           { label: 'Khấu trừ (₫)',      key: 'penaltyAmount', ph: 'VD: 0' },
         ].map(fd => (
           <div key={fd.key}>
@@ -613,6 +735,12 @@ function PayrollModal({ staff, year, month, onClose, onSaved }) {
                    placeholder={fd.ph} className="linput !h-9 text-sm w-full" style={{ fontFamily: 'monospace' }} />
           </div>
         ))}
+
+        {staff?.baseSalaryInherited && (
+          <p className="text-xs -mt-2" style={{ color: 'var(--text-tertiary)' }}>
+            Lương cố định đang lấy từ kỳ lương gần nhất. Chỉ sửa ô này khi nhân viên thay đổi mức lương.
+          </p>
+        )}
 
         <div>
           <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>Ghi chú</label>
@@ -659,6 +787,7 @@ function KpiBar({ actual, target, color = 'var(--primary-500)' }) {
 // ─── Set KPI Target Modal ────────────────────────────────────────────────────
 function SetTargetModal({ staff, period, onClose, onSaved }) {
   const [year, month] = period.split('-').map(Number)
+  const copy = getKpiCopy(staff?.role)
   const [rev,  setRev]  = useState(String(staff.revTarget ?? ''))
   const [ord,  setOrd]  = useState(String(staff.ordTarget ?? ''))
   const [cust, setCust] = useState(String(staff.custTarget ?? ''))
@@ -693,9 +822,9 @@ function SetTargetModal({ staff, period, onClose, onSaved }) {
         <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Tháng {month}/{year}</p>
 
         {[
-          { label: 'Mục tiêu doanh thu (VND)', val: rev,  set: setRev,  placeholder: 'VD: 50000000' },
-          { label: 'Mục tiêu số đơn',          val: ord,  set: setOrd,  placeholder: 'VD: 100' },
-          { label: 'Mục tiêu KH mới',           val: cust, set: setCust, placeholder: 'VD: 20' },
+          { label: copy.primaryInput, val: rev, set: setRev, ph: staff?.role === 'Staff_Warehouse' ? 'VD: 500' : 'VD: 50000000' },
+          { label: copy.secondaryInput, val: ord, set: setOrd, ph: staff?.role === 'Staff_Marketing' ? 'VD: 4' : 'VD: 100' },
+          { label: copy.tertiaryInput, val: cust, set: setCust, ph: staff?.role === 'Staff_Marketing' ? 'VD: 4' : 'VD: 20' },
         ].map(f => (
           <div key={f.label} className="flex flex-col gap-1">
             <label className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>{f.label}</label>
@@ -790,8 +919,13 @@ function KpiTab() {
                     Chưa có dữ liệu nhân viên cho kỳ này
                   </td></tr>
                 ) : data.map(s => {
-                  const revPct = s.revTarget ? Math.min(150, Math.round(s.revenue / s.revTarget * 100)) : null
-                  const kpiOk  = s.revTarget && s.revenue >= s.revTarget
+                  const copy = getKpiCopy(s.role)
+                  const actualPrimary = Number(s.revenue ?? s.actualRevenue ?? 0)
+                  const actualSecondary = Number(s.orderCount ?? s.actualOrders ?? 0)
+                  const actualTertiary = Number(s.newCustomers ?? s.actualNewCustomers ?? 0)
+                  const revPct = s.revTarget ? Math.min(100, Math.round(actualPrimary / s.revTarget * 100)) : null
+                  const kpiOk  = Boolean(s.isKpiAchieved)
+                  const hasAnyTarget = Boolean(s.hasAnyTarget ?? (s.revTarget || s.ordTarget || s.custTarget))
                   return (
                     <tr key={s.userId} style={{ borderBottom: '1px solid var(--border)' }}
                         onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
@@ -799,28 +933,31 @@ function KpiTab() {
                       <td className="px-4 py-2.5 font-medium" style={{ color: 'var(--text-primary)' }}>{s.fullName}</td>
                       <td className="px-4 py-2.5"><RoleBadge role={s.role} /></td>
                       <td className="px-4 py-2.5">
-                        <div className="text-xs font-mono" style={{ color: 'var(--text-primary)' }}>{fmt(s.revenue)} ₫</div>
+                        <div className="text-[11px] font-medium mb-0.5" style={{ color: 'var(--text-tertiary)' }}>{copy.actualPrimary}</div>
+                        <div className="text-xs font-mono" style={{ color: 'var(--text-primary)' }}>{fmt(actualPrimary)} ₫</div>
                         {s.revTarget && <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>/ {fmt(s.revTarget)} ₫</div>}
                       </td>
                       <td className="px-4 py-2.5 min-w-[120px]">
-                        <KpiBar actual={Number(s.revenue)} target={s.revTarget ? Number(s.revTarget) : null} />
+                        <KpiBar actual={actualPrimary} target={s.revTarget ? Number(s.revTarget) : null} />
                       </td>
                       <td className="px-4 py-2.5 text-xs font-mono">
-                        <span style={{ color: 'var(--text-primary)' }}>{fmt(s.orderCount)}</span>
+                        <div className="text-[11px] font-medium mb-0.5" style={{ color: 'var(--text-tertiary)' }}>{copy.actualSecondary}</div>
+                        <span style={{ color: 'var(--text-primary)' }}>{fmt(actualSecondary)}</span>
                         {s.ordTarget && <span style={{ color: 'var(--text-tertiary)' }}> / {s.ordTarget}</span>}
                       </td>
                       <td className="px-4 py-2.5 text-xs font-mono">
-                        <span style={{ color: 'var(--text-primary)' }}>{fmt(s.newCustomers)}</span>
+                        <div className="text-[11px] font-medium mb-0.5" style={{ color: 'var(--text-tertiary)' }}>{copy.actualTertiary}</div>
+                        <span style={{ color: 'var(--text-primary)' }}>{fmt(actualTertiary)}</span>
                         {s.custTarget && <span style={{ color: 'var(--text-tertiary)' }}> / {s.custTarget}</span>}
                       </td>
                       <td className="px-4 py-2.5">
-                        {!s.revTarget && !s.ordTarget && !s.custTarget ? (
+                        {!hasAnyTarget ? (
                           <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Chưa đặt KPI</span>
                         ) : (
                           <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
                                 style={{ background: kpiOk ? 'rgba(16,185,129,0.1)' : 'rgba(245,158,11,0.1)',
                                          color: kpiOk ? '#10B981' : '#F59E0B' }}>
-                            {kpiOk ? '✅ Đạt' : `⚠ ${revPct ?? '—'}%`}
+                            {kpiOk ? '✓ Đạt' : `⚠ ${Math.min(100, Number(s.overallPct ?? revPct ?? 0))}%`}
                           </span>
                         )}
                       </td>
@@ -860,7 +997,7 @@ function PayrollTab() {
     setLoading(true); setError('')
     try {
       const res = await getPayroll(year, month)
-      setData(res.staff ?? [])
+      setData((res.staff ?? []).map(withoutKpiBonus))
     } catch (e) {
       const msg = e?.response?.data?.error ?? 'Không tải được dữ liệu bảng lương'
       setError(msg.includes('employee_payroll') ? 'Cần chạy migration CT-071 trước.' : msg)
@@ -952,7 +1089,7 @@ function PayrollTab() {
             <table className="w-full text-sm">
               <thead>
                 <tr style={{ borderBottom: '2px solid var(--border)', background: 'var(--bg-elevated)' }}>
-                  {['Nhân viên','Vai trò','KPI','Lương CB','Thưởng','Khấu trừ','Tổng lương','Trạng thái','Email','Hành động'].map(h => (
+                  {['Nhân viên','Vai trò','KPI','Lương cố định','Thưởng KPI','Khấu trừ','Tổng lương','Trạng thái','Email','Hành động'].map(h => (
                     <th key={h} className="text-left px-3 py-2.5 text-xs font-semibold whitespace-nowrap"
                         style={{ color: 'var(--text-tertiary)' }}>{h}</th>
                   ))}
@@ -981,14 +1118,21 @@ function PayrollTab() {
                           <span className="text-xs font-semibold px-1.5 py-0.5 rounded-full"
                                 style={{ background: s.isKpiAchieved ? 'rgba(16,185,129,0.1)' : 'rgba(245,158,11,0.1)',
                                          color: s.isKpiAchieved ? '#10B981' : '#F59E0B' }}>
-                            {s.isKpiAchieved ? '✅ Đạt' : `⚠ ${s.overallPct ?? '—'}%`}
+                            {s.isKpiAchieved ? '✓ Đạt' : `⚠ ${s.overallPct == null ? '—' : Math.min(100, Number(s.overallPct))}%`}
                           </span>
                         )}
                       </td>
                       <td className="px-3 py-2.5 font-mono text-xs">{fmtVNDShort(s.baseSalary)}</td>
                       <td className="px-3 py-2.5 font-mono text-xs"
-                          style={{ color: s.isKpiAchieved && s.bonusAmount > 0 ? '#10B981' : 'var(--text-tertiary)' }}>
-                        {s.isKpiAchieved ? '+' : ''}{fmtVNDShort(s.bonusAmount)}
+                          style={{ color: s.bonusAmount > 0 ? '#10B981' : 'var(--text-tertiary)' }}>
+                        {s.payrollId ? (
+                          <>
+                            <div>{s.bonusAmount > 0 ? fmtVNDShort(s.bonusAmount) : '—'}</div>
+                            {s.bonusAmount > 0 && !s.isKpiAchieved && (
+                              <div className="mt-0.5 text-[10px] font-sans" style={{ color: '#F59E0B' }}>Chưa cộng</div>
+                            )}
+                          </>
+                        ) : 'Chưa nhập'}
                       </td>
                       <td className="px-3 py-2.5 font-mono text-xs" style={{ color: s.penaltyAmount > 0 ? '#EF4444' : 'var(--text-tertiary)' }}>
                         {s.penaltyAmount > 0 ? `-${fmtVNDShort(s.penaltyAmount)}` : '—'}
@@ -1012,7 +1156,7 @@ function PayrollTab() {
                             <>
                               {/* Cài lương */}
                               {!isLocked && (
-                                <IconBtn icon="edit" title="Cài / sửa lương"
+                                <IconBtn icon="edit" title="Chốt lương / sửa lương cố định"
                                   color="var(--primary-500)" bg="rgba(99,102,241,0.08)" hoverBg="rgba(99,102,241,0.16)"
                                   onClick={() => setSalaryTarget(s)} />
                               )}
@@ -1441,3 +1585,4 @@ export default function AdminPage() {
     </div>
   )
 }
+

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { fmtMoneyExact, tickFmt, tickFmtPreM, splitFmt } from '../../utils/format'
+import { fmtMoneyExact, tickFmt, splitFmt } from '../../utils/format'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import {
@@ -28,7 +28,30 @@ import InfoTooltip from '../../components/ui/InfoTooltip'
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function relDate(offsetDays) {
   const d = new Date(Date.now() + offsetDays * 86_400_000)
-  return d.toISOString().slice(0, 10)
+  return localDateKey(d)
+}
+
+function localDateKey(date) {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+function startOfMonthKey() {
+  const d = new Date()
+  d.setDate(1)
+  return localDateKey(d)
+}
+
+function startOfQuarterKey() {
+  const d = new Date()
+  d.setMonth(Math.floor(d.getMonth() / 3) * 3, 1)
+  return localDateKey(d)
+}
+
+function startOfYearKey() {
+  return `${new Date().getFullYear()}-01-01`
 }
 
 // fmtM — imported from utils/format (language-aware: vi=triệu, en=M)
@@ -955,7 +978,6 @@ function TabSales({ data, compareMode, prevData, from, to }) {
       return {
         ...p,
         shortName:    p.productName.length > 14 ? p.productName.slice(0, 13) + '…' : p.productName,
-        revM:         p.revenue / 1_000_000,
         cumulativePct: grandTotal > 0 ? parseFloat(((cum / grandTotal) * 100).toFixed(1)) : 0,
       }
     })
@@ -1048,11 +1070,11 @@ function TabSales({ data, compareMode, prevData, from, to }) {
             <ComposedChart data={paretoData} margin={{ top: 8, right: 40, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
               <XAxis dataKey="shortName" tick={{ fontSize: 10, fill: 'var(--text-tertiary)' }} axisLine={false} tickLine={false} />
-              <YAxis yAxisId="left"  tick={{ fontSize: 10, fill: 'var(--text-tertiary)' }} axisLine={false} tickLine={false} width={44} tickFormatter={tickFmtPreM} />
+              <YAxis yAxisId="left"  tick={{ fontSize: 10, fill: 'var(--text-tertiary)' }} axisLine={false} tickLine={false} width={52} tickFormatter={tickFmt} />
               <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10, fill: 'var(--text-tertiary)' }} axisLine={false} tickLine={false} width={36} tickFormatter={v => `${v}%`} domain={[0,100]} />
               <Tooltip content={<ChartTooltip />} />
               <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
-              <Bar yAxisId="left" dataKey="revM" name="Doanh thu (M₫)" fill="#6366F1" radius={[4,4,0,0]}
+              <Bar yAxisId="left" dataKey="revenue" name="Doanh thu" fill="#6366F1" radius={[4,4,0,0]}
                 onClick={handleDrillProduct} cursor="pointer" />
               <Line yAxisId="right" type="monotone" dataKey="cumulativePct" name="% Tích lũy"
                 stroke="#F59E0B" strokeWidth={2} dot={{ fill: '#F59E0B', r: 4 }} />
@@ -1885,17 +1907,32 @@ function TabMarketing({ data, wd = {}, wl = {} }) {
   const campLoading = wl.campaign ?? false
 
   // Kiểm tra có kênh nào chưa nhập chi phí QC không
-  const missingAdSpend = (data.revenueByChannel ?? []).filter(ch => (ch.adSpend ?? 0) === 0)
+  const missingAdSpend = (data.revenueByChannel ?? [])
+    .filter(ch => Number(ch.revenue ?? 0) > 0 && Number(ch.adSpend ?? 0) <= 0)
 
   const safeRoas = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? n : 0 }
   const comboData = data.revenueByChannel.map(ch => ({
     name:       ch.channelName.split(' ')[0],
-    adSpend:    ch.adSpend / 1_000_000,
-    revenue:    ch.revenue / 1_000_000,
+    fullName:   ch.channelName,
+    adSpend:    Number(ch.adSpend ?? 0) / 1_000_000,
+    revenue:    Number(ch.revenue ?? 0) / 1_000_000,
+    adSpendRaw: Number(ch.adSpend ?? 0),
+    revenueRaw: Number(ch.revenue ?? 0),
     roas:       safeRoas(ch.roas),
     roasTarget: ch.roasTarget || 4.0,
     cac:        ch.cac,
   }))
+
+  const marketingTooltipFormatter = (value, name, item) => {
+    if (item?.dataKey === 'roas') {
+      const roas = Number(value)
+      return [Number.isFinite(roas) ? `${roas.toFixed(2)}x` : '—', 'ROAS']
+    }
+    const raw = item?.dataKey === 'adSpend'
+      ? item?.payload?.adSpendRaw
+      : item?.payload?.revenueRaw
+    return [fmtMoneyExact(raw ?? Number(value) * 1_000_000), name]
+  }
 
   // Label ROAS tùy chỉnh hiển thị trực tiếp trên bar
   const RoasLabel = ({ x, y, width, value }) => {
@@ -1943,12 +1980,12 @@ function TabMarketing({ data, wd = {}, wl = {} }) {
             <ComposedChart data={comboData} margin={{ top: 20, right: 16, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
               <XAxis dataKey="name" tick={{ fontSize: 11, fill: 'var(--text-tertiary)' }} axisLine={false} tickLine={false} />
-              <YAxis yAxisId="left"  tick={{ fontSize: 10, fill: 'var(--text-tertiary)' }} axisLine={false} tickLine={false} width={44} tickFormatter={tickFmtPreM} />
+              <YAxis yAxisId="left"  tick={{ fontSize: 10, fill: 'var(--text-tertiary)' }} axisLine={false} tickLine={false} width={92} tickFormatter={v => fmtMoneyExact(Number(v) * 1_000_000)} />
               <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10, fill: 'var(--text-tertiary)' }} axisLine={false} tickLine={false} width={40} tickFormatter={v => `${v}x`} />
-              <Tooltip />
+              <Tooltip formatter={marketingTooltipFormatter} />
               <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
-              <Bar yAxisId="left" dataKey="adSpend" name={t('dashboard.series.adCostM')}  fill="#EC4899" radius={[3,3,0,0]} />
-              <Bar yAxisId="left" dataKey="revenue" name={t('dashboard.series.revenueM')} fill="#6366F1" radius={[3,3,0,0]}>
+              <Bar yAxisId="left" dataKey="adSpend" name="Chi phí QC phân bổ"  fill="#EC4899" radius={[3,3,0,0]} />
+              <Bar yAxisId="left" dataKey="revenue" name="Doanh thu" fill="#6366F1" radius={[3,3,0,0]}>
                 {/* Label ROAS hiển thị trên đầu bar doanh thu */}
                 <LabelList dataKey="roas" content={<RoasLabel />} />
               </Bar>
@@ -1999,7 +2036,7 @@ function TabMarketing({ data, wd = {}, wl = {} }) {
                     <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
                       <td className="py-2 px-3 font-semibold" style={{ color: CHART_COLORS[i % CHART_COLORS.length] }}>{ch.name}</td>
                       <td className="py-2 px-3 text-right font-mono" style={{ color: 'var(--text-primary)' }}>
-                        {ch.cac ? ch.cac.toLocaleString('vi-VN') + ' VND' : '—'}
+                        {ch.cac ? fmtMoneyExact(ch.cac) : '—'}
                       </td>
                       <td className="py-2 px-3 text-right font-mono font-bold"
                         style={{ color: met ? 'var(--accent-500)' : 'var(--color-error)' }}>
@@ -2462,9 +2499,9 @@ export default function DashboardPage() {
   const { user }   = useAuth()
   const canViewAnalytics = ANALYST_ROLES.includes(user?.role ?? '')
   const [activeTab,   setActiveTab]   = useState('overview')
-  const [presetKey,   setPresetKey]   = useState('month')
-  const [customFrom,  setCustomFrom]  = useState(() => `${new Date().getFullYear()}-01-01`)
-  const [customTo,    setCustomTo]    = useState(() => new Date().toISOString().slice(0, 10))
+  const [presetKey,   setPresetKey]   = useState('mtd')
+  const [customFrom,  setCustomFrom]  = useState(() => startOfMonthKey())
+  const [customTo,    setCustomTo]    = useState(() => relDate(0))
   const [channel,     setChannel]     = useState('all')
   const [data,    setData]    = useState(null)
   const [loading, setLoading] = useState(true)
@@ -2478,12 +2515,13 @@ export default function DashboardPage() {
 
   // Định nghĩa bên trong component để t() được gọi đúng context
   const QUICK_PRESETS = [
-    { key: 'today',  label: t('dashboard.preset.today'),  from: () => relDate(0),      to: () => relDate(0)  },
-    { key: 'week',   label: t('dashboard.preset.week'),   from: () => relDate(-6),     to: () => relDate(0)  },
-    { key: 'month',  label: t('dashboard.preset.month'),  from: () => relDate(-29),    to: () => relDate(0)  },
-    { key: '90d',    label: t('dashboard.preset.90d'),    from: () => relDate(-90),    to: () => relDate(0)  },
-    { key: 'all',    label: t('dashboard.preset.all'),    from: () => '2020-01-01',    to: () => relDate(0)  },
-    { key: 'custom', label: t('dashboard.preset.custom'), from: null,                  to: null              },
+    { key: 'yesterday', label: t('dashboard.preset.yesterday'), from: () => relDate(-1),         to: () => relDate(-1) },
+    { key: 'today',     label: t('dashboard.preset.today'),     from: () => relDate(0),          to: () => relDate(0)  },
+    { key: 'last7days', label: t('dashboard.preset.last7days'), from: () => relDate(-6),         to: () => relDate(0)  },
+    { key: 'mtd',       label: t('dashboard.preset.mtd'),       from: () => startOfMonthKey(),   to: () => relDate(0)  },
+    { key: 'qtd',       label: t('dashboard.preset.qtd'),       from: () => startOfQuarterKey(), to: () => relDate(0)  },
+    { key: 'ytd',       label: t('dashboard.preset.ytd'),       from: () => startOfYearKey(),    to: () => relDate(0)  },
+    { key: 'custom',    label: t('dashboard.preset.custom'),    from: null,                      to: null              },
   ]
 
   const TABS = [

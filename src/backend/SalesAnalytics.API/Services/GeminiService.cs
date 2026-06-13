@@ -432,7 +432,7 @@ public class GeminiService(
             "top_product"             => "Bắt đầu bằng tên sản phẩm bán chạy nhất và số lượng đã bán. Không liệt kê doanh thu, đơn hàng, kênh.",
             "declining_product"       => "Nếu context ghi 'KHÔNG ĐỦ DỮ LIỆU', trả lời: 'Hệ thống chưa có đủ dữ liệu tháng trước để so sánh xu hướng.' Nếu có dữ liệu, liệt kê sản phẩm giảm và % giảm cụ thể.",
             "trending_product"        => "Nêu sản phẩm có xu hướng tăng và % tăng cụ thể. Không liệt kê doanh thu hay kênh.",
-            "revenue_summary"         => "Chỉ nói về doanh thu và so sánh kỳ trước. Không đề cập sản phẩm hay kênh. Nếu người dùng yêu cầu gửi email báo cáo (ví dụ: 'gửi email', 'gửi báo cáo vào email'), hãy thêm câu thông báo mô phỏng ở cuối câu trả lời: 'Hệ thống đã chuẩn bị báo cáo tóm tắt và gửi vào email của bạn (demo_owner@company.com) thành công.'",
+            "revenue_summary"         => "Chỉ nói về doanh thu và so sánh kỳ trước. Không đề cập sản phẩm hay kênh.",
             "order_summary"           => "Chỉ nói về số lượng đơn hàng và so sánh kỳ trước. Không đề cập doanh thu hay sản phẩm.",
             "top_channel"             => "Nêu tên kênh có doanh thu cao nhất và con số cụ thể. Không liệt kê sản phẩm.",
             "channel_comparison"      => "Liệt kê và so sánh các kênh theo doanh thu, có số liệu cụ thể mỗi kênh.",
@@ -454,8 +454,7 @@ public class GeminiService(
                                        + "Nếu người dùng hỏi về 'lợi nhuận/margin': giải thích chatbot chỉ có dữ liệu doanh thu thuần, "
                                        + "lợi nhuận xem tại trang Tài chính → Báo cáo lợi nhuận. "
                                        + "Nếu hỏi 'tại sao doanh thu tăng/giảm': phân tích nguyên nhân có thể dựa trên kênh, sản phẩm, "
-                                       + "xu hướng trong dữ liệu có sẵn — gợi ý xem thêm tab Phân bổ và Bất thường để điều tra sâu. "
-                                       + "Nếu người dùng yêu cầu gửi email báo cáo (ví dụ: 'gửi email', 'gửi báo cáo vào email'), hãy thêm câu thông báo mô phỏng ở cuối câu trả lời: 'Hệ thống đã chuẩn bị báo cáo tóm tắt và gửi vào email của bạn (demo_owner@company.com) thành công.'",
+                                       + "xu hướng trong dữ liệu có sẵn — gợi ý xem thêm tab Phân bổ và Bất thường để điều tra sâu.",
             "market"                  => "Tổng quan xu hướng thị trường: liệt kê top từ khóa theo tần suất, nội dung nổi bật nhất. Nếu không đủ dữ liệu: nhắc chạy Google Scraper trong Data Sync.",
             "market_overview"         => "Tổng quan xu hướng: top 5 từ khóa theo tần suất, 2-3 xu hướng nổi bật từ nội dung thu thập. Ngắn gọn, mỗi trend 1 câu.",
             "market_keyword"          => "Liệt kê top từ khóa được tìm kiếm nhiều nhất theo tần suất giảm dần, nêu lý do có thể vì sao từ khóa đó hot.",
@@ -1330,7 +1329,7 @@ public class GeminiService(
     private static (DateTime Start, DateTime End, string Label)? ParseExplicitDateRange(string question)
     {
         var q = question.ToLowerInvariant();
-        var now = DateTime.UtcNow;
+        var today = DateTime.UtcNow.AddHours(7).Date;
 
         // 1. từ DD/MM/YYYY đến/tới DD/MM/YYYY hoặc từ DD/MM/YYYY đến/tới nay/bây giờ
         var match1 = System.Text.RegularExpressions.Regex.Match(q, 
@@ -1351,12 +1350,12 @@ public class GeminiService(
                     int.TryParse(match1.Groups[4].Value, out var d2);
                     int.TryParse(match1.Groups[5].Value, out var m2);
                     int.TryParse(match1.Groups[6].Value, out var y2);
-                    end = new DateTime(y2, m2, d2, 23, 59, 59, DateTimeKind.Utc);
+                    end = new DateTime(y2, m2, d2, 0, 0, 0, DateTimeKind.Utc).AddDays(1);
                     label = $"từ {d1:D2}/{m1:D2}/{y1} đến {d2:D2}/{m2:D2}/{y2}";
                 }
                 else // đến nay/bây giờ
                 {
-                    end = now;
+                    end = today.AddDays(1);
                     label = $"từ {d1:D2}/{m1:D2}/{y1} đến nay";
                 }
                 return (start, end, label);
@@ -1373,8 +1372,8 @@ public class GeminiService(
                 int.TryParse(match2.Groups[3].Value, out var d2) &&
                 int.TryParse(match2.Groups[4].Value, out var m2))
             {
-                var start = new DateTime(now.Year, m1, d1, 0, 0, 0, DateTimeKind.Utc);
-                var end = new DateTime(now.Year, m2, d2, 23, 59, 59, DateTimeKind.Utc);
+                var start = new DateTime(today.Year, m1, d1, 0, 0, 0, DateTimeKind.Utc);
+                var end = new DateTime(today.Year, m2, d2, 0, 0, 0, DateTimeKind.Utc).AddDays(1);
                 var label = $"từ {d1:D2}/{m1:D2} đến {d2:D2}/{m2:D2}";
                 return (start, end, label);
             }
@@ -1390,7 +1389,7 @@ public class GeminiService(
                 int.TryParse(match3.Groups[3].Value, out var y1))
             {
                 var start = new DateTime(y1, m1, d1, 0, 0, 0, DateTimeKind.Utc);
-                var end = now;
+                var end = today.AddDays(1);
                 var label = $"từ {d1:D2}/{m1:D2}/{y1} đến nay";
                 return (start, end, label);
             }

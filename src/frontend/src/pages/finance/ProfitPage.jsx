@@ -9,6 +9,7 @@ import {
   getProfitByDate, getProfitOrders, getFeeConfigs, updateFeeConfig,
 } from '../../api/financeApi'
 import AiEmptyState from '../../components/ui/AiEmptyState'
+import SharedInfoTooltip from '../../components/ui/InfoTooltip'
 import { KPI_DEFINITIONS } from '../../utils/kpiDefinitions'
 import DateRangeFilter from '../../components/ui/DateRangeFilter'
 import { fmtMoneyExact } from '../../utils/format'
@@ -23,10 +24,21 @@ function fmtCompactMoney(v) {
 }
 function fmtPct(v) { return v == null ? '—' : Number(v).toFixed(1) + '%' }
 function fmtRate(v) { return v == null ? '' : (Number(v) * 100).toFixed(1) + '%' }
+function dateKey(date) {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
 function dateInputFromToday(offsetDays = 0) {
   const date = new Date()
   date.setDate(date.getDate() + offsetDays)
-  return date.toISOString().slice(0, 10)
+  return dateKey(date)
+}
+function firstDayOfMonth() {
+  const date = new Date()
+  date.setDate(1)
+  return dateKey(date)
 }
 
 const CHANNEL_LABELS = {
@@ -53,29 +65,19 @@ const KPI_KEY_MAP = {
   'ACOS':               'acos',
 }
 
-function InfoTooltip({ kpiKey }) {
-  const [show, setShow] = useState(false)
+function KpiInfoTooltip({ kpiKey }) {
   const def = KPI_DEFINITIONS[KPI_KEY_MAP[kpiKey]]
   if (!def) return null
+
   return (
-    <span className="relative inline-flex ml-1">
-      <button
-        onMouseEnter={() => setShow(true)}
-        onMouseLeave={() => setShow(false)}
-        onClick={() => setShow(v => !v)}
-        className="w-4 h-4 rounded-full text-[10px] font-bold flex items-center justify-center opacity-50 hover:opacity-100 transition-opacity"
-        style={{ background: 'currentColor', color: 'inherit', border: '1.5px solid currentColor' }}>
-        <span style={{ color: 'white', fontSize: 9 }}>?</span>
-      </button>
-      {show && (
-        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 rounded-lg shadow-xl border z-50 p-3 text-left"
-             style={{ background: '#1e293b', color: '#f1f5f9', fontSize: 11, lineHeight: 1.5 }}>
-          <div className="font-mono text-[10px] text-blue-300 mb-1">{def.formula}</div>
-          <div className="mb-1">{def.description}</div>
-          <div className="text-green-300 text-[10px]">{def.businessMeaning}</div>
-        </div>
-      )}
-    </span>
+    <SharedInfoTooltip
+      title={def.name || kpiKey}
+      description={[def.description, def.businessMeaning].filter(Boolean).join(' ')}
+      formula={def.formula}
+      source={Array.isArray(def.sourceFields) ? def.sourceFields.join(', ') : def.sourceFields}
+      placement="bottom"
+      className="ml-1"
+    />
   )
 }
 
@@ -97,7 +99,7 @@ function KpiCard({ label, value, sub, color = 'blue', estimated, infoKey }) {
       <div className="text-xs font-medium opacity-70 mb-1 flex items-center">
         {label}
         {estimated && <span className="ml-1 text-[10px] opacity-60">(ước tính)</span>}
-        {infoKey && <InfoTooltip kpiKey={infoKey} />}
+        {infoKey && <KpiInfoTooltip kpiKey={infoKey} />}
       </div>
       <div className="text-2xl font-bold">{value}</div>
       {sub && <div className="text-xs opacity-60 mt-1">{sub}</div>}
@@ -178,7 +180,7 @@ function FeeConfigRow({ cfg, onSave }) {
 export default function ProfitPage() {
   const { t } = useTranslation()
 
-  const [from, setFrom] = useState(() => dateInputFromToday(-29))
+  const [from, setFrom] = useState(() => firstDayOfMonth())
   const [to,   setTo]   = useState(() => dateInputFromToday(0))
   const [tab,  setTab]  = useState('overview')
 

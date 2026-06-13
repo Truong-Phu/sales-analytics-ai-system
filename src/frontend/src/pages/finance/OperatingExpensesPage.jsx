@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { getExpenses, getExpensesSummary, createExpense, updateExpense, deleteExpense } from '../../api/financeApi'
 import { useAuth } from '../../hooks/useAuth'
 import DateRangeFilter from '../../components/ui/DateRangeFilter'
+import InfoTooltip from '../../components/ui/InfoTooltip'
 import { fmtMoneyExact } from '../../utils/format'
 
 const EXPENSE_TYPES = ['Salary', 'Warehouse', 'Utilities', 'Internet', 'Office', 'Other']
@@ -23,10 +24,23 @@ const TYPE_COLORS = {
   Other:     '#94A3B8',
 }
 
-const today = () => new Date().toISOString().slice(0, 10)
+const dateKey = (date) => {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+const today = () => dateKey(new Date())
 const firstOfMonth = () => {
   const d = new Date(); d.setDate(1)
-  return d.toISOString().slice(0, 10)
+  return dateKey(d)
+}
+
+const OPERATING_EXPENSE_TOOLTIP = {
+  title: 'Chi phí vận hành',
+  description: 'Chi phí doanh nghiệp không gắn trực tiếp với đơn hàng như lương, kho bãi, điện nước, internet, văn phòng phẩm và các chi phí khác. Chi phí quảng cáo QC được quản lý riêng tại trang Chi phí quảng cáo.',
+  formula: 'Business Net Profit = Lợi nhuận vận hành - Chi phí vận hành',
+  source: 'Chi phí vận hành nhập tay + lương phát sinh từ payroll',
 }
 
 // Form thêm / sửa chi phí
@@ -207,9 +221,12 @@ export default function OperatingExpensesPage() {
       {/* Header */}
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
-            {t('opex.title')}
-          </h1>
+          <div className="flex items-center gap-1.5">
+            <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
+              {t('opex.title')}
+            </h1>
+            <InfoTooltip {...OPERATING_EXPENSE_TOOLTIP} placement="bottom" />
+          </div>
           <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
             {t('opex.subtitle')}
           </p>
@@ -405,18 +422,6 @@ export default function OperatingExpensesPage() {
         </div>
       </div>
 
-      {/* Note */}
-      <div className="lcard p-4 flex items-start gap-3"
-           style={{ background: 'rgba(99,102,241,0.04)', borderColor: 'rgba(99,102,241,0.15)' }}>
-        <span className="icon text-base shrink-0" style={{ color: 'var(--primary-500)' }}>info</span>
-        <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-          <strong>Chi phí vận hành</strong> là chi phí doanh nghiệp không gắn trực tiếp với đơn hàng
-          (lương, kho bãi, điện nước...). Được dùng trong báo cáo P&amp;L để tính{' '}
-          <strong>Business Net Profit = Lợi nhuận vận hành − Chi phí vận hành</strong>.
-          Chi phí quảng cáo QC được quản lý riêng tại <a href="/finance/ad-spend"
-            className="underline" style={{ color: 'var(--primary-500)' }}>Chi phí quảng cáo</a>.
-        </div>
-      </div>
     </div>
   )
 }
