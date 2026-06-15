@@ -658,12 +658,10 @@ function ImportTab() {
   const [fileType,    setFileType]    = useState(null)
   const [file,        setFile]        = useState(null)
   const [preview,     setPreview]     = useState(null)   // { headers, allRows, total }
-  const [previewPage, setPreviewPage] = useState(1)
   const [importing,   setImporting]   = useState(false)
   const [result,      setResult]      = useState(null)
   const [dragOver,    setDragOver]    = useState(false)
   const fileRef = useRef(null)
-  const PAGE_SIZE = 10
 
   const selectedPlatform = PLATFORM_SOURCES.find(s => s.key === source) ?? PLATFORM_SOURCES[0]
   const typeConf         = fileType ? FILE_TYPE_CONFIG[fileType] : null
@@ -686,7 +684,6 @@ function ImportTab() {
         l.split(',').map(c => c.trim().replace(/^"|"$/g, ''))
       )
       setPreview({ headers, allRows, total: allRows.length })
-      setPreviewPage(1)
     }
     reader.readAsText(csvFile, 'UTF-8')
   }
@@ -739,7 +736,7 @@ function ImportTab() {
     }
   }
 
-  const resetFile = () => { setFile(null); setPreview(null); setResult(null); setPreviewPage(1) }
+  const resetFile = () => { setFile(null); setPreview(null); setResult(null) }
   const resetAll  = () => { resetFile(); setFileType(null) }
 
   return (
@@ -891,13 +888,8 @@ function ImportTab() {
         </div>
       )}
 
-      {/* Preview với phân trang */}
-      {preview && (() => {
-        const totalPages  = Math.ceil(preview.total / PAGE_SIZE)
-        const pageRows    = preview.allRows.slice((previewPage - 1) * PAGE_SIZE, previewPage * PAGE_SIZE)
-        const startRow    = (previewPage - 1) * PAGE_SIZE + 1
-        const endRow      = Math.min(previewPage * PAGE_SIZE, preview.total)
-        return (
+      {/* Preview */}
+      {preview && (
           <div className="lcard p-5 space-y-3">
             <div className="flex items-center justify-between flex-wrap gap-2">
               <p className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>XEM TRƯỚC</p>
@@ -906,9 +898,9 @@ function ImportTab() {
               </span>
             </div>
 
-            <div className="overflow-x-auto rounded-lg border" style={{ borderColor: 'var(--border)' }}>
+            <div className="overflow-auto rounded-lg border" style={{ borderColor: 'var(--border)', maxHeight: 360 }}>
               <table className="w-full text-xs">
-                <thead>
+                <thead className="sticky top-0 z-10">
                   <tr style={{ background: 'var(--bg-elevated)', borderBottom: '1px solid var(--border)' }}>
                     <th className="px-3 py-2 text-left font-semibold whitespace-nowrap w-8"
                         style={{ color: 'var(--text-tertiary)' }}>#</th>
@@ -919,10 +911,10 @@ function ImportTab() {
                   </tr>
                 </thead>
                 <tbody>
-                  {pageRows.map((row, ri) => (
+                  {preview.allRows.map((row, ri) => (
                     <tr key={ri} style={{ borderBottom: '1px solid var(--border)' }}>
                       <td className="px-3 py-1.5 whitespace-nowrap font-mono"
-                          style={{ color: 'var(--text-tertiary)' }}>{startRow + ri}</td>
+                          style={{ color: 'var(--text-tertiary)' }}>{ri + 1}</td>
                       {row.map((cell, ci) => (
                         <td key={ci} className="px-3 py-1.5 whitespace-nowrap"
                             style={{ color: 'var(--text-primary)' }}>{cell || '—'}</td>
@@ -932,57 +924,8 @@ function ImportTab() {
                 </tbody>
               </table>
             </div>
-
-            {/* Phân trang */}
-            {totalPages > 1 && (
-              <div className="flex items-center justify-between">
-                <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                  Dòng {startRow}–{endRow} / {preview.total}
-                </span>
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => setPreviewPage(p => Math.max(1, p - 1))}
-                    disabled={previewPage === 1}
-                    className="w-7 h-7 flex items-center justify-center rounded-lg text-xs disabled:opacity-30"
-                    style={{ border: '1px solid var(--border)', background: 'var(--bg-elevated)' }}
-                  >
-                    <span className="icon" style={{ fontSize: 16 }}>chevron_left</span>
-                  </button>
-                  {Array.from({ length: totalPages }, (_, i) => i + 1)
-                    .filter(p => p === 1 || p === totalPages || Math.abs(p - previewPage) <= 1)
-                    .reduce((acc, p, idx, arr) => {
-                      if (idx > 0 && p - arr[idx - 1] > 1) acc.push('...')
-                      acc.push(p)
-                      return acc
-                    }, [])
-                    .map((p, i) => p === '...'
-                      ? <span key={`e${i}`} className="w-7 h-7 flex items-center justify-center text-xs"
-                              style={{ color: 'var(--text-tertiary)' }}>…</span>
-                      : <button key={p}
-                          onClick={() => setPreviewPage(p)}
-                          className="w-7 h-7 flex items-center justify-center rounded-lg text-xs font-medium"
-                          style={{
-                            border: `1px solid ${previewPage === p ? 'var(--primary-500)' : 'var(--border)'}`,
-                            background: previewPage === p ? 'var(--primary-500)' : 'var(--bg-elevated)',
-                            color: previewPage === p ? '#fff' : 'var(--text-primary)',
-                          }}
-                        >{p}</button>
-                    )
-                  }
-                  <button
-                    onClick={() => setPreviewPage(p => Math.min(totalPages, p + 1))}
-                    disabled={previewPage === totalPages}
-                    className="w-7 h-7 flex items-center justify-center rounded-lg text-xs disabled:opacity-30"
-                    style={{ border: '1px solid var(--border)', background: 'var(--bg-elevated)' }}
-                  >
-                    <span className="icon" style={{ fontSize: 16 }}>chevron_right</span>
-                  </button>
-                </div>
-              </div>
-            )}
           </div>
-        )
-      })()}
+      )}
 
       {/* Xác nhận import */}
       {preview && fileType && (
@@ -1020,13 +963,23 @@ function ImportTab() {
                 {result.message ?? `Đã import ${result.success} bản ghi`}
               </p>
               <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                {result.success} thành công · {result.skipped} bỏ qua
+                {result.totalRows != null ? `${result.totalRows} dòng trong file · ` : ''}
+                {result.importedRows ?? result.success} dòng đã xử lý
+                {result.uniqueOrders != null ? ` · ${result.uniqueOrders} đơn` : ''}
+                {result.changedOrders != null ? ` · ${result.changedOrders} đơn có dữ liệu mới` : ''}
+                {' · '}{result.skippedRows ?? result.skipped} dòng bỏ qua
                 {result.newCategories > 0 ? ` · ${result.newCategories} danh mục mới` : ''}
               </p>
+              {result.dwMessage && (
+                <div className="mt-2 pt-2 border-t text-xs flex items-center gap-1.5" style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>
+                  <span className="icon text-sm" style={{ color: 'var(--primary-500)' }}>sync</span>
+                  <span>{result.dwMessage}</span>
+                </div>
+              )}
               {result.skipped > 0 && result.skippedDetails?.length > 0 && (
                 <details className="mt-1">
                   <summary className="text-xs cursor-pointer font-medium" style={{ color: 'var(--text-secondary)' }}>
-                    Xem chi tiết {result.skipped} đơn bỏ qua
+                    Xem chi tiết {result.skippedRows ?? result.skipped} dòng bỏ qua
                   </summary>
                   <div className="mt-2 space-y-1">
                     {result.skippedDetails.map((s, i) => (

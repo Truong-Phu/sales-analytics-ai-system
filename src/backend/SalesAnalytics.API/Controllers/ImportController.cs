@@ -22,7 +22,8 @@ public class ImportController(
     IConfiguration cfg,
     ITenantContext tenant,
     IAuditLogService audit,
-    AiProxyService aiProxy) : ControllerBase
+    AiProxyService aiProxy,
+    ILogger<ImportController> logger) : ControllerBase
 {
     private readonly string _connStr = cfg.GetConnectionString("Default")!;
 
@@ -218,6 +219,23 @@ public class ImportController(
         var buyers = new List<(string Name, string Phone, string Ward, string District, string Province)>();
         DateTime? lastOrderDate = null;
         var datesWithOrders = new HashSet<DateTime>();
+        var existingCodes = new HashSet<string>();
+
+        var backupBuyers = new (string Name, string Phone, string Ward, string District, string Province)[]
+        {
+            ("Nguyễn Văn Nam", "0912345678", "Phường Bến Nghé", "Quận 1", "Hồ Chí Minh"),
+            ("Trần Thị Tuyết Mai", "0987654321", "Phường Võ Thị Sáu", "Quận 3", "Hồ Chí Minh"),
+            ("Lê Hoàng Long", "0909123456", "Phường Thảo Điền", "Thành phố Thủ Đức", "Hồ Chí Minh"),
+            ("Phạm Minh Đức", "0934567890", "Phường Hàng Trống", "Quận Hoàn Kiếm", "Hà Nội"),
+            ("Phan Thanh Thảo", "0978123456", "Phường Láng Hạ", "Quận Đống Đa", "Hà Nội"),
+            ("Vũ Hoàng Giang", "0868123456", "Phường Thạch Thang", "Quận Hải Châu", "Đà Nẵng"),
+            ("Đặng Thị Thu Hà", "0915987654", "Phường Lộc Thọ", "Thành phố Nha Trang", "Khánh Hòa"),
+            ("Bùi Anh Tuấn", "0982345678", "Phường Phú Hội", "Thành phố Huế", "Thừa Thiên Huế"),
+            ("Đỗ Hoài Nam", "0903456789", "Phường Vạn Thạnh", "Thành phố Nha Trang", "Khánh Hòa"),
+            ("Ngô Quốc Bảo", "0914567890", "Phường 1", "Thành phố Đà Lạt", "Lâm Đồng"),
+            ("Hồ Minh Châu", "0989012345", "Phường An Khánh", "Quận Ninh Kiều", "Cần Thơ"),
+            ("Dương Trung Kiên", "0976123456", "Phường 2", "Thành phố Vũng Tàu", "Bà Rịa - Vũng Tàu")
+        };
 
         try
         {
@@ -240,6 +258,20 @@ public class ImportController(
                         if (arr is not null)
                             foreach (var d in arr) datesWithOrders.Add(d.Date);
                     }
+                }
+            }
+
+            // Lấy tất cả mã đơn hàng hiện có để tránh trùng lặp
+            await using var codeCmd = new NpgsqlCommand("""
+                SELECT order_code FROM public.orders WHERE company_id = @cid::uuid
+                """, conn);
+            codeCmd.Parameters.AddWithValue("cid", companyId.ToString());
+            await using (var dr = await codeCmd.ExecuteReaderAsync())
+            {
+                while (await dr.ReadAsync())
+                {
+                    var code = dr.GetString(0);
+                    if (!string.IsNullOrEmpty(code)) existingCodes.Add(code);
                 }
             }
 
@@ -295,6 +327,15 @@ public class ImportController(
         }
         catch { return []; }
 
+        // Đảm bảo có đủ khách hàng demo chất lượng
+        if (buyers.Count < 10)
+        {
+            foreach (var bb in backupBuyers)
+            {
+                buyers.Add(bb);
+            }
+        }
+
         if (vars.Count == 0) return [];
         if (buyers.Count == 0) return [];
 
@@ -330,10 +371,11 @@ public class ImportController(
         int[] qtyTable = { 1, 1, 2, 1, 1, 1, 1, 2, 1, 1, 3, 1, 1, 1, 1, 2 };
 
         var plt = platform.ToLower();
-        var pfx = plt == "tiktok" ? "TKT" : plt == "shopee" ? "SPE" : "LZD";
         var rows     = new List<string>();
         int varPool  = 0;
         int orderSeq = 0;
+
+        var streets = new[] { "Lê Lợi", "Nguyễn Huệ", "Trần Hưng Đạo", "Hai Bà Trưng", "Cách Mạng Tháng Tám", "Lý Tự Trọng", "Nam Kỳ Khởi Nghĩa", "Điện Biên Phủ", "Nguyễn Thị Minh Khai", "Lê Duẩn" };
 
         foreach (var day in missingDates)
         {
@@ -343,11 +385,49 @@ public class ImportController(
                 var (orderStatus, pkgStatus, carrier, carrierName, shipFee) = statusDist[slot];
                 var b          = buyers[orderSeq % buyers.Count];
                 var seq        = $"{orderSeq:D4}";
-                var orderCode  = $"{pfx}{dayStr}{seq}";
-                var trackNum   = pkgStatus is "CANCELLED" or "PENDING" ? "" : $"{carrier}{dayStr}{seq}";
+
+                // Tạo order code ngẫu nhiên thực tế và duy nhất
+                string orderCode;
+                do
+                {
+                    if (plt == "tiktok")
+                    {
+                        var sb = new System.Text.StringBuilder();
+                        for (int i = 0; i < 19; i++) sb.Append(Random.Shared.Next(0, 10));
+                        orderCode = sb.ToString();
+                    }
+                    else if (plt == "lazada")
+                    {
+                        var sb = new System.Text.StringBuilder();
+                        for (int i = 0; i < 15; i++) sb.Append(Random.Shared.Next(0, 10));
+                        orderCode = sb.ToString();
+                    }
+                    else // shopee
+                    {
+                        var sb = new System.Text.StringBuilder();
+                        sb.Append(dayStr);
+                        for (int i = 0; i < 4; i++) sb.Append((char)Random.Shared.Next('A', 'Z' + 1));
+                        for (int i = 0; i < 4; i++) sb.Append(Random.Shared.Next(0, 10));
+                        orderCode = sb.ToString();
+                    }
+                } while (existingCodes.Contains(orderCode));
+                existingCodes.Add(orderCode);
+
+                var randomSuffix = Random.Shared.Next(1000, 9999);
+                var trackNum   = pkgStatus is "CANCELLED" or "PENDING" ? "" : $"{carrier}{dayStr}{randomSuffix}";
                 var origShip   = shipFee > 0 ? shipFee + 5000 : 0m;
                 var shipDisc   = origShip > shipFee ? origShip - shipFee : 0m;
-                var buyerLogin = $"user_{b.Name.Replace(" ", "").ToLower()[..Math.Min(8, b.Name.Replace(" ", "").Length)]}";
+
+                var nameRaw = b.Name.Replace(" ", "").ToLower();
+                var cleanName = System.Text.RegularExpressions.Regex.Replace(
+                    nameRaw.Normalize(System.Text.NormalizationForm.FormD), 
+                    @"\p{IsCombiningDiacriticalMarks}+", ""
+                ).Replace("đ", "d").Replace("Đ", "d");
+                cleanName = System.Text.RegularExpressions.Regex.Replace(cleanName, @"[^a-zA-Z0-9]", "");
+                if (cleanName.Length > 8) cleanName = cleanName[..8];
+                var buyerLogin = $"{cleanName}{Random.Shared.Next(10, 99)}";
+
+                var street = $"Số {Random.Shared.Next(1, 200)} Đường {streets[orderSeq % streets.Length]}";
 
                 // ── Chọn sản phẩm cho đơn (không trùng trong cùng đơn) ───────
                 int numItems = itemsPerSlot[slot];
@@ -419,7 +499,7 @@ public class ImportController(
                             orderCode, shopeeStatus, shopeeCancel,
                             DFmt(day), DFmt(day.AddDays(1)), shopeePaid,
                             buyerLogin, b.Name, b.Phone,
-                            $"Số {orderSeq + 1} đường {b.District}",
+                            street,
                             b.Ward, b.District, b.Province, "Miền Nam", "70000",
                             v.ProductName, v.VarName, v.VarSku, v.ProductId,
                             (long)v.OriginalPrice, (long)v.SalePrice, qty,
@@ -433,8 +513,8 @@ public class ImportController(
                             "", buyerLogin, "", slot % 2 == 0 ? "COD" : "BANK_TRANSFER",
                             slot % 2 == 0 ? "TRUE" : "FALSE",
                             b.Name, b.Phone,
-                            $"Số {orderSeq + 1} {b.District} {b.Province}",
-                            $"Số {orderSeq + 1} {b.District}",
+                            $"{street}, {b.Ward}, {b.District}",
+                            street,
                             b.Province, b.District, b.Ward,
                             "70000", "VN", "STANDARD",
                             carrier, trackNum, "CROSS_BORDER", "VND",
@@ -453,7 +533,7 @@ public class ImportController(
                             "0", "0", "0",
                             b.Name.Split(' ').First(),
                             string.Join(" ", b.Name.Split(' ').Skip(1)),
-                            $"Số {orderSeq + 1} {b.District}", b.Province,
+                            street, b.Province,
                             b.District, b.Ward, "Vietnam",
                             orderItems.Count, "WH001", itemCode,
                             v.ProductName, v.VarSku, v.VarSku, v.VarName,
@@ -512,6 +592,7 @@ public class ImportController(
         int success = 0, skipped = 0;
         var errors         = new List<object>();
         var skippedDetails = new List<object>();
+        var successfulOrders = new HashSet<string>();
 
         for (int r = 1; r < rows.Count; r++)
         {
@@ -536,7 +617,11 @@ public class ImportController(
                 mapped = mapped with { Status = NormalizeStatus(mapped.Status, platform) };
 
                 var affected = await UpsertOrder(conn, mapped);
-                if (affected > 0) success++;
+                if (affected > 0)
+                {
+                    success++;
+                    successfulOrders.Add(mapped.OrderCode);
+                }
                 else
                 {
                     skipped++;
@@ -569,10 +654,18 @@ public class ImportController(
                 status:     "SUCCESS");
 
             // Tự động sync OLTP → Data Warehouse sau khi import
+            // Map platform name → ETL channel_type (DB lưu "TIKTOK_SHOP", không phải "TIKTOK")
+            var etlChannel = platform.ToLower() switch
+            {
+                "tiktok" => "TIKTOK_SHOP",
+                "shopee" => "SHOPEE",
+                "lazada" => "LAZADA",
+                _        => platform.ToUpper(),
+            };
             try
             {
                 var dwResult = await aiProxy.TriggerOltpToDwAsync(
-                    channel:   platform,
+                    channel:   etlChannel,
                     companyId: tenant.CompanyId?.ToString());
 
                 if (dwResult is not null)
@@ -589,6 +682,22 @@ public class ImportController(
             {
                 dwMessage = "Không thể kết nối AI Service — DW sẽ được đồng bộ tự động trong lần sync tiếp theo.";
             }
+
+            // Ghi log vào public.etl_logs để hiển thị trong ETL Monitor
+            try
+            {
+                await using var etlLogCmd = new NpgsqlCommand("""
+                    INSERT INTO public.etl_logs (job_id, phase, level, message, records_count, created_at)
+                    VALUES (0, 'LOAD', 'INFO', @msg, @cnt, NOW())
+                    """, conn);
+                etlLogCmd.Parameters.AddWithValue("msg", $"import/platform-orders source={platform} channel={platform.ToUpper()} rows={rows.Count - 1} unique_orders={successfulOrders.Count} inserted={dwInserted} updated=0");
+                etlLogCmd.Parameters.AddWithValue("cnt", dwInserted);
+                await etlLogCmd.ExecuteNonQueryAsync();
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning("Không thể ghi ETL log sau khi import: {Msg}", ex.Message);
+            }
         }
 
         return Ok(new
@@ -600,9 +709,13 @@ public class ImportController(
             platform,
             dwInserted,
             dwMessage,
+            totalRows = rows.Count - 1,
+            uniqueOrders = successfulOrders.Count,
+            importedRows = success,
+            skippedRows = skipped,
             message = success > 0
-                ? $"Đã import {success} đơn hàng từ {platform}. {dwMessage}"
-                : $"Không có đơn hàng mới — {skipped} bỏ qua (đã tồn tại hoặc thiếu dữ liệu).",
+                ? $"Đã import {success} dòng ({successfulOrders.Count} đơn) từ {platform}. {dwMessage}"
+                : $"Không có đơn hàng mới — {skipped} dòng bỏ qua (đã tồn tại hoặc thiếu dữ liệu).",
         });
     }
 
@@ -833,7 +946,19 @@ public class ImportController(
         var feeStr    = ColVal(row, HeaderIndex(headers, "Shipping Fee (VND)", "Shipping Fee", "Shipping Amount (VND)"));
         decimal.TryParse(feeStr.Replace(",",""), NumberStyles.Any, CultureInfo.InvariantCulture, out var shippingFee);
         var qtyStr    = ColVal(row, HeaderIndex(headers, "Quantity"));
-        int.TryParse(qtyStr, out var qty); if (qty <= 0) qty = 1;
+        int.TryParse(qtyStr, out var qty);
+        if (qty <= 0)
+        {
+            if (origPrice > 0 && salePrice > 0)
+            {
+                qty = (int)Math.Round(salePrice / origPrice);
+            }
+            if (qty <= 0) qty = 1;
+        }
+
+        // Vì Paid Price của Lazada là tổng tiền (subtotal) của sản phẩm trong dòng đó,
+        // chúng ta cần chia cho qty để ra đơn giá thực tế (unit sale price).
+        var unitSalePrice = qty > 0 ? salePrice / qty : salePrice;
 
         var firstName     = ColVal(row, HeaderIndex(headers, "Customer First Name"));
         var lastName      = ColVal(row, HeaderIndex(headers, "Customer Last Name"));
@@ -870,8 +995,8 @@ public class ImportController(
             ProductName:         ColVal(row, HeaderIndex(headers, "Item Name")),
             Sku:                 ColVal(row, HeaderIndex(headers, "SKU", "Seller SKU", "Shop SKU")),
             VariationName:       ColVal(row, HeaderIndex(headers, "Variation")),
-            UnitPrice:           origPrice > 0 ? origPrice : salePrice,
-            SalePrice:           salePrice,
+            UnitPrice:           origPrice > 0 ? origPrice : unitSalePrice,
+            SalePrice:           unitSalePrice,
             OriginalPrice:       origPrice,
             Quantity:            qty,
             TotalAmount:         total,
@@ -1204,6 +1329,19 @@ public class ImportController(
                 itmCmd.Parameters.AddWithValue("sellDisc", o.SellerDiscount);
                 itmCmd.Parameters.AddWithValue("platDisc", o.PlatformDiscount);
                 await itmCmd.ExecuteNonQueryAsync();
+
+                // Recalculate total_amount = SUM(subtotal) + shipping_fee - discounts từ tất cả order_items
+                // Fix lỗi đơn multi-item: total_amount chỉ lưu giá trị dòng CSV đầu tiên
+                await using var recalcCmd = new NpgsqlCommand("""
+                    UPDATE public.orders
+                    SET total_amount = GREATEST(0, COALESCE((
+                            SELECT SUM(subtotal) FROM public.order_items WHERE order_id = @oid
+                        ), 0) + COALESCE(shipping_fee, 0) - COALESCE(seller_discount, 0) - COALESCE(platform_discount, 0)),
+                        updated_at = NOW()
+                    WHERE order_id = @oid
+                    """, conn);
+                recalcCmd.Parameters.AddWithValue("oid", orderId);
+                await recalcCmd.ExecuteNonQueryAsync();
 
                 if (o.Status is "CONFIRMED" or "SHIPPING" or "DELIVERED")
                 {

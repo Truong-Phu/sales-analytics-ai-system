@@ -206,56 +206,41 @@ public class DataSyncController(
         var totalLoaded = logs.Where(l => l.Phase == "LOAD").Sum(l => l.RecordsCount ?? 0);
 
         // ── Tổng hợp pipelines từ etl_logs ──────────────────────────────────
-        // Pipeline 1: Offline ETL — Import dữ liệu lịch sử (chạy một lần qua Python script)
-        // Không có log riêng, nhưng fact_sales đã có 3352 bản ghi → success
-        var offlineStatus = "success";
-
-        // Pipeline 2: Auto Incremental Sync (chạy định kỳ từ backend)
-        var incrLogs   = logs.Where(l => l.Message != null &&
-                             l.Message.Contains("incremental", StringComparison.OrdinalIgnoreCase)).ToList();
-        var incrErrLog = incrLogs.FirstOrDefault(l => l.Level == "ERROR");
-        var incrWarnLog= incrLogs.FirstOrDefault(l => l.Level == "WARN");
-        var incrStatus = incrErrLog  != null ? "failed"
-                       : incrLogs.Any()      ? "success"
-                       : "pending";
-        // WARN (AI unavailable) vẫn là success nhưng hiện errorMessage
-        var incrErrMsg = incrErrLog?.Message ?? incrWarnLog?.Message;
-
-        // Pipeline 3: ETL trigger thủ công (từ nút "Chạy thủ công")
-        var manualLogs  = logs.Where(l => l.Message != null &&
-                              l.Message.Contains("Manual ETL trigger", StringComparison.OrdinalIgnoreCase)).ToList();
-        var manualStatus = manualLogs.Any() ? "success" : "pending";
-
-        var pipelines = new object[]
-        {
-            new {
-                pipelineId    = "offline_etl",
-                name          = "Offline ETL — Import dữ liệu lịch sử",
-                status        = offlineStatus,
-                lastRun       = (string?)null,
+        var etlRuns = logs
+            .Where(l => l.Message != null &&
+                        (l.Message.Contains("Manual ETL trigger", StringComparison.OrdinalIgnoreCase) ||
+                         l.Message.Contains("sync/trigger", StringComparison.OrdinalIgnoreCase) ||
+                         l.Message.Contains("import/platform-orders", StringComparison.OrdinalIgnoreCase) ||
+                         l.Message.Contains("incremental", StringComparison.OrdinalIgnoreCase)))
+            .Select(l => new
+            {
+                sortAt        = l.createdAt,
+                pipelineId    = $"etl-log-{l.LogId}",
+                name          = l.Message!.Contains("incremental", StringComparison.OrdinalIgnoreCase) ? "Auto Incremental Sync"
+                              : l.Message.Contains("import/platform-orders", StringComparison.OrdinalIgnoreCase) ? "Import đơn hàng"
+                              : l.Message.Contains("Manual ETL trigger", StringComparison.OrdinalIgnoreCase) ? "Chạy lại pipeline"
+                              : "Đồng bộ ngay",
+                status        = l.Level == "ERROR" ? "failed" : "success",
+                lastRun       = (string?)l.createdAt,
                 duration      = (int?)null,
-                rowsProcessed = (int?)3352,
-                errorMessage  = (string?)null,
-            },
-            new {
-                pipelineId    = "auto_incremental",
-                name          = "Auto Incremental Sync",
-                status        = incrStatus,
-                lastRun       = incrLogs.FirstOrDefault()?.createdAt,
-                duration      = (int?)null,
-                rowsProcessed = (int?)null,
-                errorMessage  = incrErrMsg,
-            },
-            new {
-                pipelineId    = "manual_trigger",
-                name          = "ETL Trigger thủ công",
-                status        = manualStatus,
-                lastRun       = manualLogs.FirstOrDefault()?.createdAt,
-                duration      = (int?)null,
-                rowsProcessed = (int?)null,
-                errorMessage  = (string?)null,
-            },
-        };
+                rowsProcessed = l.RecordsCount,
+                errorMessage  = l.Level == "ERROR" ? l.Message : null,
+            });
+
+        var pipelineRuns = etlRuns
+            .OrderByDescending(r => r.sortAt)
+            .Take(30)
+            .Select(r => new
+            {
+                r.pipelineId,
+                r.name,
+                r.status,
+                r.lastRun,
+                r.duration,
+                r.rowsProcessed,
+                r.errorMessage,
+            })
+            .ToArray();
 
         return Ok(new
         {
@@ -263,7 +248,7 @@ public class DataSyncController(
             lastRun,
             totalLoaded,
             logs,
-            pipelines,
+            pipelines = pipelineRuns,
         });
     }
 
@@ -328,6 +313,7 @@ public class DataSyncController(
     public async Task<IActionResult> TriggerFullSync([FromBody] TriggerFullSyncRequest? req)
     {
         var channel   = req?.Channel?.Trim().ToLower();
+        var etlChannel = NormalizeEtlChannel(channel);
         var companyId = tenant.CompanyId?.ToString();  // resolve trước khi vào background task
         var jobId     = Guid.NewGuid().ToString("N")[..8];
 
@@ -364,7 +350,7 @@ public class DataSyncController(
                 state.Message  = "Đang đọc dữ liệu từ OLTP...";
 
                 // Gọi Python AI Service nếu có (truyền company_id để ETL không dùng hardcoded email)
-                var etlResult = await ai.TriggerOltpToDwAsync(channel, companyId);
+                var etlResult = await ai.TriggerOltpToDwAsync(etlChannel, companyId);
 
                 if (etlResult is not null)
                 {
@@ -377,6 +363,20 @@ public class DataSyncController(
                     state.Status   = "completed";
                     var inserted   = etlResult.TryGetValue("inserted", out var ins) ? ins?.ToString() : "?";
                     state.Message  = $"Đồng bộ thành công – {inserted} bản ghi vào Data Warehouse";
+
+                    using var scope = scopeFactory.CreateScope();
+                    var ctx = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                    int? insertedCount = int.TryParse(inserted, out var parsedInserted) ? parsedInserted : null;
+                    ctx.EtlLogs.Add(new()
+                    {
+                        JobId        = 0,
+                        Phase        = "LOAD",
+                        Message      = $"sync/trigger jobId={jobId} channel={etlChannel ?? "all"} completed",
+                        Level        = "INFO",
+                        RecordsCount = insertedCount,
+                        CreatedAt    = DateTime.UtcNow,
+                    });
+                    await ctx.SaveChangesAsync();
                 }
                 else
                 {
@@ -392,7 +392,7 @@ public class DataSyncController(
                     {
                         JobId     = 0,
                         Phase     = "LOAD",
-                        Message   = $"sync/trigger jobId={jobId} channel={channel ?? "all"}",
+                        Message   = $"sync/trigger jobId={jobId} channel={etlChannel ?? "all"}",
                         Level     = "INFO",
                         CreatedAt = DateTime.UtcNow,
                     });
@@ -418,6 +418,25 @@ public class DataSyncController(
                 state.Status   = "failed";
                 state.Progress = 0;
                 state.Message  = $"Lỗi: {ex.Message}";
+
+                try
+                {
+                    using var scope = scopeFactory.CreateScope();
+                    var ctx = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                    ctx.EtlLogs.Add(new()
+                    {
+                        JobId     = 0,
+                        Phase     = "GENERAL",
+                        Message   = $"sync/trigger jobId={jobId} channel={etlChannel ?? "all"} failed: {ex.Message}",
+                        Level     = "ERROR",
+                        CreatedAt = DateTime.UtcNow,
+                    });
+                    await ctx.SaveChangesAsync();
+                }
+                catch (Exception logEx)
+                {
+                    logger.LogError(logEx, "Không ghi được ETL error log cho sync job {JobId}", jobId);
+                }
             }
             finally
             {
@@ -742,6 +761,21 @@ public class DataSyncController(
         "vnpay" => "VNPay",
         _       => key,
     };
+
+    private static string? NormalizeEtlChannel(string? channel)
+    {
+        return channel?.Trim().ToLowerInvariant() switch
+        {
+            null or "" => null,
+            "all" => null,
+            "shopee" => "SHOPEE",
+            "lazada" => "LAZADA",
+            "tiktok" or "tiktok_shop" or "tiktokshop" => "TIKTOK_SHOP",
+            "facebook" => "FACEBOOK",
+            "website" or "offline" => "WEBSITE",
+            _ => channel!.Trim().ToUpperInvariant(),
+        };
+    }
 }
 
 public class TriggerSyncRequest     { public string? Source   { get; set; } }

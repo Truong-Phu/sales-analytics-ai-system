@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import AiEmptyState from '../../components/ui/AiEmptyState'
-import { getEtlStatus, triggerEtl } from '../../api/syncApi'
+import { getEtlStatus } from '../../api/syncApi'
 
 const STATUS_CFG = {
   running: { bg: 'rgba(245,158,11,0.10)', border: 'rgba(245,158,11,0.30)', color: '#F59E0B',            dot: '#F59E0B',   icon: 'hourglass_top',   labelKey: 'etlMonitor.status.running' },
@@ -38,11 +38,15 @@ function ProgressBar({ status, duration }) {
   )
 }
 
+function formatLastRun(pipeline, t) {
+  if (pipeline.lastRun) return new Date(pipeline.lastRun).toLocaleString('vi-VN')
+  return pipeline.status === 'pending' ? t('etlMonitor.neverRun') : t('etlMonitor.ranWithoutTimestamp')
+}
+
 export default function EtlMonitorPage() {
   const { t } = useTranslation()
   const [data,       setData]       = useState(null)
   const [loading,    setLoading]    = useState(true)
-  const [triggering, setTriggering] = useState({})
   const [expanded,   setExpanded]   = useState(null)
   const fetchedRef = useRef(false)
 
@@ -59,15 +63,9 @@ export default function EtlMonitorPage() {
 
   useEffect(() => { if (fetchedRef.current) return; fetchedRef.current = true; fetchData() }, [])
 
-  const handleTrigger = async pipeline => {
-    setTriggering(s => ({ ...s, [pipeline]: true }))
-    try { await triggerEtl(pipeline); await fetchData() } catch { /* ignore */ }
-    finally { setTriggering(s => ({ ...s, [pipeline]: false })) }
-  }
-
   const pipelines = data?.pipelines ?? []
   const statCards = [
-    { label: t('etlMonitor.totalPipelines'), value: pipelines.length,                                    color: 'var(--text-primary)', icon: 'account_tree' },
+    { label: t('etlMonitor.totalRuns'), value: pipelines.length,                                         color: 'var(--text-primary)', icon: 'history' },
     { label: t('etlMonitor.status.running'), value: pipelines.filter(p => p.status === 'running').length, color: '#F59E0B',             icon: 'hourglass_top' },
     { label: t('etlMonitor.status.success'), value: pipelines.filter(p => p.status === 'success').length, color: 'var(--accent-500)',   icon: 'check_circle'  },
     { label: t('etlMonitor.status.failed'),  value: pipelines.filter(p => p.status === 'failed').length,  color: '#EF4444',             icon: 'cancel'        },
@@ -128,7 +126,6 @@ export default function EtlMonitorPage() {
               </div>
             ) : pipelines.map(pipeline => {
               const isExpanded = expanded === pipeline.pipelineId
-              const isBusy = triggering[pipeline.pipelineId] || pipeline.status === 'running'
               return (
                 <div key={pipeline.pipelineId} style={{ borderBottom: '1px solid var(--border)' }}>
                   {/* Main row */}
@@ -141,7 +138,7 @@ export default function EtlMonitorPage() {
                     {/* Icon */}
                     <span className="icon w-9 h-9 flex items-center justify-center rounded-xl shrink-0 mt-0.5"
                           style={{ fontSize: 20, background: 'var(--bg-elevated)', color: 'var(--primary-500)' }}>
-                      account_tree
+                      history
                     </span>
 
                     {/* Content */}
@@ -161,9 +158,7 @@ export default function EtlMonitorPage() {
                            style={{ color: 'var(--text-tertiary)' }}>
                         <span className="flex items-center gap-1">
                           <span className="icon" style={{ fontSize: 13 }}>schedule</span>
-                          {pipeline.lastRun
-                            ? new Date(pipeline.lastRun).toLocaleString('vi-VN')
-                            : t('etlMonitor.neverRun')}
+                          {formatLastRun(pipeline, t)}
                         </span>
                         {pipeline.duration != null && (
                           <span className="flex items-center gap-1">
@@ -188,21 +183,8 @@ export default function EtlMonitorPage() {
                       )}
                     </div>
 
-                    {/* Actions */}
+                    {/* Expand */}
                     <div className="flex items-center gap-2 shrink-0">
-                      <button
-                        onClick={e => { e.stopPropagation(); handleTrigger(pipeline.pipelineId) }}
-                        disabled={isBusy}
-                        className="lbtn lbtn-secondary !h-8 !px-3 text-xs disabled:opacity-50"
-                      >
-                        {isBusy ? (
-                          <span className="w-3.5 h-3.5 border-2 rounded-full"
-                                style={{ borderColor: 'var(--border-strong)', borderTopColor: 'var(--primary-500)', animation: 'spin 0.8s linear infinite' }} />
-                        ) : (
-                          <span className="icon" style={{ fontSize: 15 }}>play_arrow</span>
-                        )}
-                        {t('etlMonitor.runManual')}
-                      </button>
                       <span className="icon" style={{
                         fontSize: 20,
                         color: 'var(--text-tertiary)',

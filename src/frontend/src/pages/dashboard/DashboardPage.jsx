@@ -50,6 +50,38 @@ function startOfQuarterKey() {
   return localDateKey(d)
 }
 
+function wrapChartLabel(value, maxChars = 18) {
+  const words = String(value ?? '').split(/\s+/).filter(Boolean)
+  const lines = []
+  let line = ''
+  words.forEach(word => {
+    const next = line ? `${line} ${word}` : word
+    if (next.length <= maxChars) {
+      line = next
+    } else {
+      if (line) lines.push(line)
+      line = word
+    }
+  })
+  if (line) lines.push(line)
+  return lines.length ? lines : ['']
+}
+
+function WrappedProductTick({ x, y, payload }) {
+  const lines = wrapChartLabel(payload?.value, 20)
+  return (
+    <g transform={`translate(${x},${y})`}>
+      <text textAnchor="middle" fill="var(--text-tertiary)" fontSize={10}>
+        {lines.map((line, i) => (
+          <tspan key={`${line}-${i}`} x={0} dy={i === 0 ? 12 : 12}>
+            {line}
+          </tspan>
+        ))}
+      </text>
+    </g>
+  )
+}
+
 function startOfYearKey() {
   return `${new Date().getFullYear()}-01-01`
 }
@@ -115,8 +147,18 @@ function getChannelColor(name = '') {
   if (key.includes('shopee'))  return CHANNEL_COLOR.shopee
   if (key.includes('lazada'))  return CHANNEL_COLOR.lazada
   if (key.includes('tiktok'))  return CHANNEL_COLOR.tiktok
-  if (key.includes('offline') || key.includes('pos')) return CHANNEL_COLOR.offline
+  if (key.includes('offline') || key.includes('pos') || key.includes('banquay') || key.includes('bántạiquầy')) return CHANNEL_COLOR.offline
   return CHANNEL_COLOR.other
+}
+
+function getChannelDisplayName(name = '') {
+  const raw = String(name || '').trim()
+  const key = raw.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, '')
+  if (key.includes('shopee')) return 'Shopee'
+  if (key.includes('lazada')) return 'Lazada'
+  if (key.includes('tiktok')) return 'TikTok'
+  if (key.includes('offline') || key.includes('pos') || key.includes('banquay')) return 'Bán tại quầy'
+  return raw || 'Khác'
 }
 
 function resolvePreset(p) {
@@ -127,12 +169,100 @@ function resolvePreset(p) {
 }
 
 // ── Shared UI ─────────────────────────────────────────────────────────────────
-function SectionTitle({ children }) {
+function SectionTitle({ children, tooltip, className = '' }) {
   return (
-    <h3 className="text-[22px] font-bold mb-4 tracking-tight leading-snug text-foreground">
-      {children}
+    <h3 className={`text-[22px] font-bold mb-4 tracking-tight leading-snug text-foreground inline-flex items-center gap-1.5 ${className}`}>
+      <span>{children}</span>
+      {tooltip && <InfoTooltip {...tooltip} placement="bottom" />}
     </h3>
   )
+}
+
+const CHART_TOOLTIPS = {
+  revenueTrend: {
+    title: 'Xu hướng doanh thu và lợi nhuận',
+    description: 'Theo dõi doanh thu thuần và lợi nhuận theo thời gian trong bộ lọc hiện tại. Dùng để nhận biết ngày tăng/giảm bất thường và xu hướng kinh doanh.',
+    formula: 'Mỗi điểm = tổng doanh thu/lợi nhuận của ngày tương ứng',
+    source: 'Dashboard API, theo filter ngày và kênh',
+  },
+  channelShare: {
+    title: 'Tỷ trọng doanh thu theo kênh',
+    description: 'Cho biết mỗi kênh đóng góp bao nhiêu phần trăm doanh thu trong kỳ đang chọn. Click vào kênh để xem danh sách đơn hàng liên quan.',
+    formula: 'Tỷ trọng = doanh thu kênh / tổng doanh thu các kênh',
+    source: 'Dashboard API, dữ liệu doanh thu theo kênh',
+  },
+  paretoProducts: {
+    title: 'Biểu đồ Pareto top sản phẩm',
+    description: 'Xếp sản phẩm theo doanh thu giảm dần và đường % tích lũy cho biết nhóm sản phẩm đầu đang đóng góp bao nhiêu trong tổng doanh thu của các sản phẩm hiển thị.',
+    formula: '% tích lũy = tổng doanh thu từ sản phẩm đầu đến sản phẩm hiện tại / tổng doanh thu top sản phẩm',
+    source: 'Dashboard API, top sản phẩm theo filter hiện tại',
+  },
+  productsByChannel: {
+    title: 'Top sản phẩm theo kênh',
+    description: 'So sánh các sản phẩm bán chạy nhất trong từng kênh. Cột thể hiện doanh thu, đường thể hiện lợi nhuận gộp để nhận ra sản phẩm doanh thu cao nhưng biên lợi nhuận thấp.',
+    formula: 'Doanh thu = tổng giá trị bán; Lợi nhuận gộp = doanh thu - giá vốn',
+    source: 'Dashboard API, dữ liệu sản phẩm theo kênh',
+  },
+  orderFunnel: {
+    title: 'Phễu xử lý đơn hàng',
+    description: 'Theo dõi số đơn ở từng trạng thái xử lý để phát hiện đơn bị kẹt ở bước chờ xử lý, đang giao hoặc hoàn/hủy.',
+    formula: 'Mỗi cột = số đơn ở trạng thái tương ứng trong kỳ',
+    source: 'Orders API, theo filter ngày và kênh',
+  },
+  channelMonthly: {
+    title: 'Doanh thu kênh theo tháng',
+    description: 'So sánh doanh thu các kênh theo từng tháng, giúp nhìn nhanh kênh nào đóng góp chính trong từng giai đoạn.',
+    formula: 'Mỗi phần cột = doanh thu của một kênh trong tháng',
+    source: 'Dashboard API, doanh thu tháng theo kênh',
+  },
+  channelTrend: {
+    title: 'Xu hướng doanh thu từng kênh theo tháng',
+    description: 'Hiển thị đường doanh thu riêng của từng kênh qua các tháng để so sánh tốc độ tăng/giảm giữa các kênh.',
+    formula: 'Mỗi điểm = doanh thu kênh trong tháng',
+    source: 'Dashboard API, doanh thu tháng theo kênh',
+  },
+  channelGrowth: {
+    title: 'Tỷ trọng và tăng trưởng kênh',
+    description: 'Tóm tắt tỷ trọng doanh thu, mức tăng trưởng, số đơn và ROAS của từng kênh để đánh giá hiệu quả đa kênh.',
+    formula: 'Tăng trưởng = kỳ này so với kỳ trước; ROAS = doanh thu / chi phí QC',
+    source: 'Dashboard API và chi phí quảng cáo',
+  },
+  customerClv: {
+    title: 'CLV theo phân khúc khách hàng',
+    description: 'Ước tính giá trị vòng đời khách hàng theo từng phân khúc để ưu tiên chăm sóc và giữ chân nhóm có giá trị cao.',
+    formula: 'CLV = giá trị mua trung bình x tần suất mua x thời gian duy trì',
+    source: 'Customers/Dashboard API',
+  },
+  heatmap: {
+    title: 'Heatmap hoạt động khách hàng',
+    description: 'Cho biết thời điểm khách hàng phát sinh đơn hoặc tương tác nhiều nhất theo ngày/giờ, hỗ trợ chọn khung giờ bán hàng và chăm sóc.',
+    formula: 'Mỗi ô = số đơn hoặc lượt hoạt động trong ngày/giờ tương ứng',
+    source: 'Orders/Customers API',
+  },
+  marketingCombo: {
+    title: 'Hiệu quả Marketing',
+    description: 'So sánh doanh thu, chi phí quảng cáo và hiệu quả theo thời gian để xem chi phí QC có tạo ra doanh thu tương xứng không.',
+    formula: 'ROAS = doanh thu / chi phí QC; ACOS = chi phí QC / doanh thu',
+    source: 'Dashboard API và Ad Spend API',
+  },
+  roas: {
+    title: 'ROAS theo kênh',
+    description: 'Đánh giá mỗi kênh quảng cáo tạo ra bao nhiêu doanh thu trên mỗi đồng chi phí.',
+    formula: 'ROAS = doanh thu / chi phí quảng cáo',
+    source: 'Dashboard API và Ad Spend API',
+  },
+  inventoryForecast: {
+    title: 'Tồn kho so với dự báo',
+    description: 'So sánh tồn kho hiện tại với nhu cầu dự báo để nhận biết sản phẩm có nguy cơ thiếu hàng hoặc tồn quá nhiều.',
+    formula: 'Chênh lệch = tồn kho hiện tại - nhu cầu dự báo',
+    source: 'Inventory API và dữ liệu bán hàng',
+  },
+  returnRate: {
+    title: 'Tỷ lệ hoàn/hủy theo kênh',
+    description: 'Theo dõi tỷ lệ đơn hoàn hoặc hủy ở từng kênh để phát hiện vấn đề về vận hành, chất lượng sản phẩm hoặc kỳ vọng khách hàng.',
+    formula: 'Tỷ lệ = số đơn hoàn/hủy / tổng số đơn của kênh',
+    source: 'Orders API',
+  },
 }
 
 // Sparkline mini — không có axes/legend/tooltip, width=120 height=40
@@ -539,7 +669,7 @@ function AiInsightsCard({ insights = null, loading = false, autoRecs = null }) {
 }
 
 // ── Tab: 1 — Overview ─────────────────────────────────────────────────────────
-function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd = {}, wl = {}, dateRange = {} }) {
+function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd = {}, wl = {}, dateRange = {}, leaderboardKey = 'leaderboard' }) {
   const { t }  = useTranslation()
   const kpi    = data.kpi
 
@@ -591,8 +721,8 @@ function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd 
     { key: 'revenue',     label: 'Doanh thu', render: v => Number(v).toLocaleString('vi-VN') + ' ₫' },
   ]
   const sp     = data.sparklines || {}
-  const lbData       = wd.leaderboard ?? null
-  const lbLoading    = wl.leaderboard ?? false
+  const lbData       = wd[leaderboardKey] ?? wd.leaderboard ?? null
+  const lbLoading    = wl[leaderboardKey] ?? wl.leaderboard ?? false
   const insData      = wd.insights   ?? null
   const insLoading   = wl.insights   ?? false
   const autoRecs     = wd.autoRecs   ?? null
@@ -631,6 +761,38 @@ function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd 
       prevProfit:     prev?.grossProfit  ?? null,
     }
   })
+
+  const leaderboardSections = (() => {
+    const firstEntry = entries => Array.isArray(entries) && entries.length > 0 ? entries[0] : null
+    const asMoney = value => Number(value ?? 0)
+    const makeSection = (key, label, options = {}) => {
+      const entry = firstEntry(lbData?.[key]?.entries)
+      if (!entry) return null
+      const value = asMoney(entry.value ?? entry.revenue ?? entry.total_revenue)
+      const activity = entry.orders ?? entry.activity_count
+      return {
+        label,
+        name: entry.name ?? entry.product_name ?? entry.channel ?? '—',
+        value,
+        valueLabel: options.valueLabel?.(entry, value) ?? fmtMoneyExact(value),
+        meta: options.meta?.(entry) ?? (activity != null ? `${Number(activity).toLocaleString('vi-VN')} đơn` : ''),
+      }
+    }
+
+    return [
+      makeSection('product', 'Sản phẩm'),
+      makeSection('customer', 'Khách hàng'),
+      makeSection('channel', 'Kênh bán'),
+      makeSection('staff', 'NV bán hàng'),
+      makeSection('staff_warehouse', 'NV kho', {
+        valueLabel: (_, value) => Number(value).toLocaleString('vi-VN'),
+        meta: entry => entry.orders != null ? `${Number(entry.orders).toLocaleString('vi-VN')} thao tác` : '',
+      }),
+      makeSection('staff_marketing', 'NV marketing', {
+        meta: entry => entry.orders != null ? `${Number(entry.orders).toLocaleString('vi-VN')} dòng QC` : '',
+      }),
+    ].filter(Boolean)
+  })()
 
   // Label nhóm KPI — subtle separator
   const GroupLabel = ({ children }) => (
@@ -737,11 +899,11 @@ function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd 
       {/* AI Insights — chỉ hiện cho Owner/Manager/DataIT/SuperAdmin */}
       {canViewAnalytics && <AiInsightsCard insights={insData} loading={insLoading || autoRecsLoading} autoRecs={autoRecs} />}
 
-      {/* Hero 2/3 + Donut 1/3 */}
-      <div className="grid grid-cols-12 gap-4">
-        <div className="lcard p-5 col-span-12 lg:col-span-8">
+      {/* Revenue trend */}
+      <div className="lcard p-5">
+        <div>
           <div className="flex items-center justify-between mb-4">
-            <SectionTitle>{t('dashboard.chart.revenueTrend')}</SectionTitle>
+            <SectionTitle tooltip={CHART_TOOLTIPS.revenueTrend}>{t('dashboard.chart.revenueTrend')}</SectionTitle>
             <div className="flex items-center gap-3 text-caption flex-wrap" style={{ color: 'var(--text-tertiary)' }}>
               <span className="flex items-center gap-1.5">
                 <span className="w-3 h-0.5 inline-block rounded" style={{ background: '#6366F1' }} />{t('dashboard.series.revenue')}
@@ -803,69 +965,75 @@ function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd 
             </AreaChart>
           </ResponsiveContainer>
         </div>
+      </div>
 
-        <div className="lcard p-5 col-span-12 lg:col-span-4">
-          <SectionTitle>{t('dashboard.chart.channelShare')}</SectionTitle>
-          <p className="text-[11px] mb-2" style={{ color: 'var(--text-tertiary)' }}>
+      {/* Channel mix + leaderboard summary */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="lcard p-4 h-full">
+          <SectionTitle tooltip={CHART_TOOLTIPS.channelShare}>{t('dashboard.chart.channelShare')}</SectionTitle>
+          <p className="text-[11px] mb-1" style={{ color: 'var(--text-tertiary)' }}>
             Click vào kênh để xem đơn hàng
           </p>
-          <ResponsiveContainer width="100%" height={200}>
-            <PieChart>
-              <Pie
-                data={data.revenueByChannel} dataKey="revenue" nameKey="channelName"
-                cx="50%" cy="50%" outerRadius={80} innerRadius={48} paddingAngle={3}
-                onClick={(entry) => openDrill({ type: 'channel', key: entry.channelName, label: entry.channelName })}
-                style={{ cursor: 'pointer' }}
-              >
-                {data.revenueByChannel.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
-              </Pie>
-              <Tooltip formatter={v => fmtMoneyExact(v)} />
-            </PieChart>
-          </ResponsiveContainer>
-          <div className="space-y-1.5 mt-2">
-            {data.revenueByChannel.map((ch, i) => (
-              <div key={i}
-                className="flex items-center gap-2 text-caption cursor-pointer rounded-lg px-1 py-0.5 transition-colors"
-                onClick={() => openDrill({ type: 'channel', key: ch.channelName, label: ch.channelName })}
-                onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
-                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: getChannelColor(ch.channelName) }} />
-                <span className="flex-1 truncate" style={{ color: 'var(--text-secondary)' }}>{ch.channelName}</span>
-                <span className="font-mono" style={{ color: 'var(--text-primary)' }}>{ch.revenuePct.toFixed(0)}%</span>
-                <span className="icon shrink-0" style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>chevron_right</span>
-              </div>
-            ))}
+          <div className="flex flex-col md:flex-row md:items-center gap-3">
+            <div className="md:flex-[1.15] min-w-0">
+              <ResponsiveContainer width="100%" height={250}>
+                <PieChart>
+                  <Pie
+                    data={data.revenueByChannel} dataKey="revenue" nameKey="channelName"
+                    cx="50%" cy="50%" outerRadius={104} innerRadius={62} paddingAngle={3}
+                    onClick={(entry) => openDrill({ type: 'channel', key: entry.channelName, label: entry.channelName })}
+                    style={{ cursor: 'pointer' }}
+                  >
+                    {data.revenueByChannel.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
+                  </Pie>
+                  <Tooltip formatter={v => fmtMoneyExact(v)} />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="md:flex-1 space-y-1">
+              {data.revenueByChannel.map((ch, i) => (
+                <div key={i}
+                  className="flex items-center gap-2 text-caption cursor-pointer rounded-lg px-2 py-1 transition-colors"
+                  onClick={() => openDrill({ type: 'channel', key: ch.channelName, label: ch.channelName })}
+                  onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: getChannelColor(ch.channelName) }} />
+                  <span className="flex-1 truncate" style={{ color: 'var(--text-secondary)' }}>{ch.channelName}</span>
+                  <span className="font-mono font-semibold" style={{ color: 'var(--text-primary)' }}>{ch.revenuePct.toFixed(0)}%</span>
+                  <span className="icon shrink-0" style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>chevron_right</span>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
-      </div>
 
       {/* ── Leaderboard mini-widget ── */}
       <MiniWidget title="Bảng xếp hạng hiệu suất" icon="leaderboard" href="/leaderboard" loading={lbLoading}>
-        {lbData ? (
-          <div className="space-y-2">
-            {(lbData.top_products ?? lbData.products ?? []).slice(0, 5).map((p, i) => (
-              <div key={i} className="flex items-center gap-3">
-                <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
-                      style={{ background: i < 3 ? ['rgba(251,191,36,0.15)','rgba(148,163,184,0.15)','rgba(180,83,9,0.12)'][i] : 'var(--bg-elevated)',
-                               color:      i < 3 ? ['#D97706','#64748B','#92400E'][i] : 'var(--text-tertiary)' }}>
-                  {i + 1}
+        {leaderboardSections.length > 0 ? (
+          <div className="space-y-1.5">
+            {leaderboardSections.map((p, i) => (
+              <div key={i} className="flex items-center gap-2.5">
+                <span className="w-[70px] shrink-0 text-[11px] font-semibold rounded-full px-1.5 py-0.5 text-center"
+                      style={{ background: 'rgba(99,102,241,0.10)', color: 'var(--primary-600)' }}>
+                  {p.label}
                 </span>
-                <span className="flex-1 text-sm truncate" style={{ color: 'var(--text-secondary)' }}>
-                  {p.product_name ?? p.name ?? p.channel ?? '—'}
-                </span>
-                <span className="text-sm font-semibold font-mono" style={{ color: 'var(--text-primary)' }}>
-                  {fmtMoneyExact(p.revenue ?? p.total_revenue ?? 0)}
+                <div className="flex-1 min-w-0">
+                  <div className="text-[13px] font-medium truncate" style={{ color: 'var(--text-secondary)' }}>
+                    {p.name}
+                  </div>
+                  {p.meta && <div className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>{p.meta}</div>}
+                </div>
+                <span className="text-[13px] font-semibold font-mono shrink-0" style={{ color: 'var(--text-primary)' }}>
+                  {p.valueLabel}
                 </span>
               </div>
             ))}
-            {!(lbData.top_products ?? lbData.products)?.length && (
-              <p className="text-xs text-center py-2" style={{ color: 'var(--text-tertiary)' }}>Chưa có dữ liệu</p>
-            )}
           </div>
         ) : (
-          <p className="text-xs text-center py-2" style={{ color: 'var(--text-tertiary)' }}>Không tải được dữ liệu</p>
+          <p className="text-xs text-center py-2" style={{ color: 'var(--text-tertiary)' }}>Chưa có dữ liệu</p>
         )}
       </MiniWidget>
+      </div>
 
       {/* DetailDrawer — drill-down khi click biểu đồ doanh thu hoặc kênh */}
       <DetailDrawer
@@ -899,8 +1067,10 @@ function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd 
 }
 
 // ── Tab: 2 — Sales Performance ────────────────────────────────────────────────
-function TabSales({ data, compareMode, prevData, from, to }) {
+function TabSales({ data, compareMode = false, prevData = null, from, to }) {
   const { t } = useTranslation()
+  const [channelTopLimit, setChannelTopLimit] = useState(3)
+  const [channelTopSort, setChannelTopSort] = useState('revenue')
   const [drillProduct,        setDrillProduct]        = useState(null)
   const [drillOrders,         setDrillOrders]         = useState({ items: [], total: 0, page: 1, totalPages: 1 })
   const [drillLoading,        setDrillLoading]        = useState(false)
@@ -953,35 +1123,180 @@ function TabSales({ data, compareMode, prevData, from, to }) {
     { key: 'qty',         label: 'SL' },
     { key: 'revenue',     label: 'Doanh thu', render: v => Number(v).toLocaleString('vi-VN') + ' ₫' },
   ]
-
-  // Dữ liệu theo tháng gộp kỳ này + kỳ trước (cho tab Sales)
-  const monthlyCompare = compareMode && prevData
-    ? data.monthlyByChannel.map((row, i) => {
-        const prev = prevData.monthlyByChannel?.[i]
-        if (!prev) return row
-        const combined = { ...row }
-        Object.keys(prev).forEach(k => {
-          if (k !== 'month') combined[`prev_${k}`] = prev[k]
-        })
-        return combined
+  const funnelSummary = (() => {
+    const stages = data.funnel ?? []
+    const total = Number(stages[0]?.value ?? 0)
+    const delivered = Number(stages.find(s => {
+      const key = String(s.stage ?? '').toLowerCase()
+      return key.includes('delivered') || key.includes('giao thành công')
+    })?.value ?? 0)
+    const lost = stages
+      .filter(s => {
+        const key = String(s.stage ?? '').toLowerCase()
+        return key.includes('returned') || key.includes('cancelled') || key.includes('hoàn') || key.includes('hủy')
       })
-    : null
+      .reduce((sum, s) => sum + Number(s.value ?? 0), 0)
+    const drops = stages.slice(1).map((stage, index) => {
+      const prev = Number(stages[index]?.value ?? 0)
+      const current = Number(stage.value ?? 0)
+      return {
+        stage: stage.stage,
+        drop: Math.max(prev - current, 0),
+        dropPct: prev > 0 ? ((Math.max(prev - current, 0) / prev) * 100) : 0,
+      }
+    })
+    const biggestDrop = drops.sort((a, b) => b.dropPct - a.dropPct)[0]
+    return {
+      total,
+      delivered,
+      lost,
+      deliveryRate: total > 0 ? (delivered / total) * 100 : 0,
+      lostRate: total > 0 ? (lost / total) * 100 : 0,
+      biggestDrop,
+    }
+  })()
 
   // Tính Pareto: sắp xếp theo doanh thu giảm dần, thêm % tích lũy
   const totalRevenue = data.revenueByChannel.reduce((s, ch) => s + ch.revenue, 0)
   const paretoData = (() => {
-    const sorted = [...data.topProducts].sort((a, b) => b.revenue - a.revenue)
+    const sorted = [...(data.paretoProducts ?? data.topProducts)].sort((a, b) => b.revenue - a.revenue)
+    const prevRevenueByProduct = new Map()
+    if (compareMode && prevData) {
+      ;[...(prevData.paretoProducts ?? prevData.topProducts ?? [])].forEach(p => {
+        const key = p.productName
+        prevRevenueByProduct.set(key, (prevRevenueByProduct.get(key) ?? 0) + Number(p.revenue ?? 0))
+      })
+    }
     let cum = 0
     const grandTotal = sorted.reduce((s, p) => s + p.revenue, 0)
     return sorted.map(p => {
       cum += p.revenue
       return {
         ...p,
-        shortName:    p.productName.length > 14 ? p.productName.slice(0, 13) + '…' : p.productName,
+        prevRevenue: compareMode && prevData ? (prevRevenueByProduct.get(p.productName) ?? 0) : null,
         cumulativePct: grandTotal > 0 ? parseFloat(((cum / grandTotal) * 100).toFixed(1)) : 0,
       }
     })
   })()
+  const productsByChannelChart = (() => {
+    const platformMap = new Map()
+    ;(data.productsByChannel ?? [])
+      .filter(ch => Array.isArray(ch.products) && ch.products.length > 0)
+      .forEach(ch => {
+        const displayName = getChannelDisplayName(ch.channelName)
+        const platform = platformMap.get(displayName) ?? { channelName: displayName, products: new Map() }
+        ch.products.forEach(p => {
+          const productName = p.productName ?? 'Sản phẩm'
+          const current = platform.products.get(productName) ?? {
+            productName,
+            revenue: 0,
+            grossProfit: 0,
+            orders: 0,
+            quantitySold: 0,
+          }
+          current.revenue += Number(p.revenue ?? 0)
+          current.grossProfit += Number(p.grossProfit ?? p.profit ?? 0)
+          current.orders += Number(p.orders ?? 0)
+          current.quantitySold += Number(p.quantitySold ?? p.QuantitySold ?? p.quantity_sold ?? p.qtySold ?? p.qty_sold ?? p.quantity ?? 0)
+          platform.products.set(productName, current)
+        })
+        platformMap.set(displayName, platform)
+      })
+
+    const rows = [...platformMap.values()]
+      .flatMap(ch => {
+        const products = [...ch.products.values()]
+          .sort((a, b) => {
+            const getValue = (item) => {
+              if (channelTopSort === 'quantitySold') return Number(item.quantitySold ?? 0)
+              if (channelTopSort === 'orders') return Number(item.orders ?? 0)
+              if (channelTopSort === 'grossProfit') return Number(item.grossProfit ?? 0)
+              if (channelTopSort === 'marginPct') return Number(item.revenue ?? 0) > 0 ? (Number(item.grossProfit ?? 0) / Number(item.revenue ?? 0)) * 100 : 0
+              return Number(item.revenue ?? 0)
+            }
+            return getValue(b) - getValue(a)
+          })
+          .slice(0, channelTopLimit)
+        return products.map((p, index) => ({
+          color: getChannelColor(ch.channelName),
+          channelName: ch.channelName,
+          rank: index + 1,
+          productName: p.productName,
+          label: `${ch.channelName}-${index + 1}-${p.productName}`,
+          revenue: Number(p.revenue ?? 0),
+          grossProfit: Number(p.grossProfit ?? p.profit ?? 0),
+          marginPct: Number(p.revenue ?? 0) > 0 ? (Number(p.grossProfit ?? p.profit ?? 0) / Number(p.revenue ?? 0)) * 100 : 0,
+          orders: Number(p.orders ?? 0),
+          quantitySold: Number(p.quantitySold ?? p.QuantitySold ?? p.quantity_sold ?? p.qtySold ?? p.qty_sold ?? p.quantity ?? 0),
+        }))
+      })
+    return { rows }
+  })()
+  const channelTopSortOptions = [
+    { value: 'revenue', label: 'Doanh thu' },
+    { value: 'quantitySold', label: 'SL bán' },
+    { value: 'orders', label: 'Số đơn' },
+    { value: 'grossProfit', label: 'LN gộp' },
+    { value: 'marginPct', label: 'Biên LN' },
+  ]
+  const channelTopSortLabel = channelTopSortOptions.find(opt => opt.value === channelTopSort)?.label ?? 'Doanh thu'
+
+  function ChannelTopTooltip({ active, payload }) {
+    if (!active || !payload?.length) return null
+    const row = payload[0].payload
+    return (
+      <div className="lcard px-3 py-2" style={{ boxShadow: 'var(--shadow-md)', minWidth: 240 }}>
+        <p className="text-xs font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>
+          {row.channelName} · Top {row.rank} theo {channelTopSortLabel}
+        </p>
+        <p className="text-[11px] mb-2 max-w-[280px]" style={{ color: 'var(--text-secondary)' }}>
+          {row.productName}
+        </p>
+        <div className="space-y-1 text-[11px] font-mono">
+          <div className="flex justify-between gap-4">
+            <span style={{ color: 'var(--text-tertiary)' }}>Doanh thu</span>
+            <span style={{ color: 'var(--text-primary)' }}>{fmtMoneyExact(row.revenue)}</span>
+          </div>
+          <div className="flex justify-between gap-4">
+            <span style={{ color: 'var(--text-tertiary)' }}>LN gộp</span>
+            <span style={{ color: row.grossProfit >= 0 ? 'var(--profit-positive)' : 'var(--profit-negative)' }}>
+              {fmtMoneyExact(row.grossProfit)}
+            </span>
+          </div>
+          <div className="flex justify-between gap-4">
+            <span style={{ color: 'var(--text-tertiary)' }}>Biên LN</span>
+            <span style={{ color: row.marginPct >= 0 ? 'var(--profit-positive)' : 'var(--profit-negative)' }}>
+              {row.marginPct.toFixed(1)}%
+            </span>
+          </div>
+          <div className="flex justify-between gap-4">
+            <span style={{ color: 'var(--text-tertiary)' }}>Số đơn</span>
+            <span style={{ color: 'var(--text-primary)' }}>{row.orders.toLocaleString('vi-VN')}</span>
+          </div>
+          <div className="flex justify-between gap-4">
+            <span style={{ color: 'var(--text-tertiary)' }}>SL bán</span>
+            <span style={{ color: 'var(--text-primary)' }}>{row.quantitySold.toLocaleString('vi-VN')}</span>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  function ChannelProductTick({ x, y, payload }) {
+    const row = productsByChannelChart.rows[payload.index]
+    if (!row) return null
+    const name = row.productName.length > 32 ? `${row.productName.slice(0, 32)}...` : row.productName
+    return (
+      <g transform={`translate(${x},${y})`}>
+        <text textAnchor="end" fill="var(--text-secondary)" fontSize={10}>
+          {row.rank === 1 && (
+            <tspan x={0} dy={-8} fontWeight={700} fill="var(--text-primary)">{row.channelName}</tspan>
+          )}
+          <tspan x={0} dy={row.rank === 1 ? 13 : 3} fill="var(--text-tertiary)">#{row.rank} {name}</tspan>
+        </text>
+      </g>
+    )
+  }
 
   // Khi click bar Pareto: load đơn hàng thật từ DW
   const handleDrillProduct = async (entry) => {
@@ -1024,57 +1339,27 @@ function TabSales({ data, compareMode, prevData, from, to }) {
 
   return (
     <div className="space-y-5">
-      {/* Grouped bar doanh thu kênh theo tháng (tab Sales) */}
-      <div className="lcard p-5">
-        <div className="flex items-center justify-between mb-4">
-          <SectionTitle>{t('dashboard.chart.channelMonthly')}</SectionTitle>
-          {compareMode && prevData && (
-            <span className="text-xs px-2 py-1 rounded-full font-medium"
-                  style={{ background: 'rgba(99,102,241,0.1)', color: 'var(--primary-600)' }}>
-              {t('dashboard.today.comparePrev')} ({t('dashboard.today.compareNote')})
-            </span>
-          )}
-        </div>
-        <ResponsiveContainer width="100%" height={280}>
-          <ComposedChart data={monthlyCompare ?? data.monthlyByChannel} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-            <XAxis dataKey="month" tick={{ fontSize: 11, fill: 'var(--text-tertiary)' }} axisLine={false} tickLine={false} />
-            <YAxis tick={{ fontSize: 11, fill: 'var(--text-tertiary)' }} axisLine={false} tickLine={false} width={52}
-              tickFormatter={tickFmt} />
-            <Tooltip content={<ChartTooltip />} />
-            <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11, color: 'var(--text-secondary)' }} />
-            {data.revenueByChannel.map((ch, i) => (
-              <Bar key={ch.channelName} dataKey={ch.channelName} stackId="a"
-                fill={getChannelColor(ch.channelName)}
-                radius={i === data.revenueByChannel.length - 1 ? [4,4,0,0] : [0,0,0,0]} />
-            ))}
-            {compareMode && prevData && data.revenueByChannel.map((ch, i) => (
-              <Line key={`prev_${ch.channelName}`} dataKey={`prev_${ch.channelName}`}
-                name={`${ch.channelName} (${t('dashboard.series.prevPeriod')})`}
-                stroke={CHART_COLORS[i % CHART_COLORS.length]} strokeWidth={1.5}
-                strokeDasharray="4 3" dot={false} connectNulls />
-            ))}
-          </ComposedChart>
-        </ResponsiveContainer>
-      </div>
-
       {/* Pareto chart + bảng Top 5 */}
-      <div className="grid grid-cols-12 gap-4">
+      <div className="lcard p-5">
         {/* Biểu đồ Pareto */}
-        <div className="lcard p-5 col-span-12 lg:col-span-7">
-          <SectionTitle>Biểu đồ Pareto — Top sản phẩm</SectionTitle>
+        <div>
+          <SectionTitle tooltip={CHART_TOOLTIPS.paretoProducts}>Biểu đồ Pareto — Top sản phẩm</SectionTitle>
           <p className="text-caption mb-3" style={{ color: 'var(--text-tertiary)' }}>
             Click vào cột để xem chi tiết đơn hàng
           </p>
-          <ResponsiveContainer width="100%" height={260}>
-            <ComposedChart data={paretoData} margin={{ top: 8, right: 40, left: 0, bottom: 0 }}>
+          <ResponsiveContainer width="100%" height={340}>
+            <ComposedChart data={paretoData} margin={{ top: 20, right: 40, left: 0, bottom: 66 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-              <XAxis dataKey="shortName" tick={{ fontSize: 10, fill: 'var(--text-tertiary)' }} axisLine={false} tickLine={false} />
+              <XAxis dataKey="productName" interval={0} height={66}
+                tick={<WrappedProductTick />} axisLine={false} tickLine={false} />
               <YAxis yAxisId="left"  tick={{ fontSize: 10, fill: 'var(--text-tertiary)' }} axisLine={false} tickLine={false} width={52} tickFormatter={tickFmt} />
               <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10, fill: 'var(--text-tertiary)' }} axisLine={false} tickLine={false} width={36} tickFormatter={v => `${v}%`} domain={[0,100]} />
               <Tooltip content={<ChartTooltip />} />
-              <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
-              <Bar yAxisId="left" dataKey="revenue" name="Doanh thu" fill="#6366F1" radius={[4,4,0,0]}
+              <Legend verticalAlign="top" align="right" iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11, top: 0 }} />
+              {compareMode && prevData && (
+                <Bar yAxisId="left" dataKey="prevRevenue" name="Doanh thu kỳ trước" fill="#A5B4FC" radius={[4,4,0,0]} barSize={28} />
+              )}
+              <Bar yAxisId="left" dataKey="revenue" name="Doanh thu" fill="#6366F1" radius={[4,4,0,0]} barSize={44}
                 onClick={handleDrillProduct} cursor="pointer" />
               <Line yAxisId="right" type="monotone" dataKey="cumulativePct" name="% Tích lũy"
                 stroke="#F59E0B" strokeWidth={2} dot={{ fill: '#F59E0B', r: 4 }} />
@@ -1083,7 +1368,7 @@ function TabSales({ data, compareMode, prevData, from, to }) {
         </div>
 
         {/* Bảng Top 5 với cột % đóng góp */}
-        <div className="lcard p-5 col-span-12 lg:col-span-5">
+        <div className="hidden">
           <SectionTitle>{t('dashboard.chart.top5Products')}</SectionTitle>
           <div className="overflow-x-auto">
             <table className="w-full text-caption border-collapse">
@@ -1112,84 +1397,140 @@ function TabSales({ data, compareMode, prevData, from, to }) {
         </div>
       </div>
 
-      {/* Bảng Top sản phẩm theo kênh */}
+      {/* Top sản phẩm theo kênh */}
       <div className="lcard p-5">
-        <SectionTitle>Top sản phẩm theo kênh</SectionTitle>
-        {data?.productsByChannel?.length > 0 ? (
-          <div className="overflow-x-auto">
-            <table className="w-full text-caption border-collapse">
-              <thead>
-                <tr style={{ borderBottom: '2px solid var(--border)' }}>
-                  <th className="text-left py-2 px-2 font-semibold" style={{ color: 'var(--text-tertiary)' }}>Kênh</th>
-                  <th className="text-left py-2 px-2 font-semibold" style={{ color: 'var(--text-tertiary)' }}>Sản phẩm</th>
-                  <th className="text-right py-2 px-2 font-semibold" style={{ color: 'var(--text-tertiary)' }}>Số đơn</th>
-                  <th className="text-right py-2 px-2 font-semibold" style={{ color: 'var(--text-tertiary)' }}>Doanh thu</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.productsByChannel.flatMap((ch, ci) =>
-                  ch.products.map((p, pi) => (
-                    <tr key={`${ci}-${pi}`} style={{ borderBottom: '1px solid var(--border)' }}>
-                      {pi === 0 && (
-                        <td className="py-2 px-2 font-semibold" rowSpan={ch.products.length}
-                          style={{ color: getChannelColor(ch.channelName), verticalAlign: 'top', paddingTop: 10 }}>
-                          {ch.channelName}
-                        </td>
-                      )}
-                      <td className="py-2 px-2" style={{ color: 'var(--text-secondary)' }}>{p.productName}</td>
-                      <td className="py-2 px-2 text-right font-mono" style={{ color: 'var(--text-primary)' }}>{p.orders.toLocaleString('vi-VN')}</td>
-                      <td className="py-2 px-2 text-right font-mono" style={{ color: 'var(--text-primary)' }}>{fmtMoneyExact(p.revenue)}</td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <SectionTitle tooltip={CHART_TOOLTIPS.productsByChannel} className="!mb-0">Top sản phẩm theo kênh</SectionTitle>
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              value={channelTopSort}
+              onChange={(e) => setChannelTopSort(e.target.value)}
+              className="linput text-xs !h-8 !py-0"
+              style={{ minWidth: 132 }}
+              title="Chọn tiêu chí xếp hạng top sản phẩm"
+            >
+              {channelTopSortOptions.map(opt => (
+                <option key={opt.value} value={opt.value}>Theo {opt.label}</option>
+              ))}
+            </select>
+            <div className="inline-flex rounded-lg p-1" style={{ background: 'var(--bg-elevated)' }}>
+              {[3, 10].map(limit => (
+                <button
+                  key={limit}
+                  type="button"
+                  onClick={() => setChannelTopLimit(limit)}
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${channelTopLimit === limit ? 'text-white' : ''}`}
+                  style={{
+                    background: channelTopLimit === limit ? 'var(--primary-500)' : 'transparent',
+                    color: channelTopLimit === limit ? '#fff' : 'var(--text-secondary)',
+                  }}
+                >
+                  Top {limit}
+                </button>
+              ))}
+            </div>
           </div>
+        </div>
+        {productsByChannelChart.rows.length > 0 ? (
+          <ResponsiveContainer width="100%" height={Math.max(360, productsByChannelChart.rows.length * 42)}>
+            <ComposedChart
+              data={productsByChannelChart.rows}
+              layout="vertical"
+              margin={{ top: 12, right: 32, left: 24, bottom: 8 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+              <XAxis type="number" tick={{ fontSize: 10, fill: 'var(--text-tertiary)' }} axisLine={false} tickLine={false} tickFormatter={tickFmt} />
+              <YAxis type="category" dataKey="label" width={250} interval={0}
+                tick={<ChannelProductTick />} axisLine={false} tickLine={false} />
+              <Tooltip content={<ChannelTopTooltip />} />
+              <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
+              <Bar dataKey="revenue" name="Doanh thu" radius={[0, 4, 4, 0]} barSize={18}>
+                {productsByChannelChart.rows.map((row, i) => <Cell key={i} fill={row.color} />)}
+              </Bar>
+              <Line type="monotone" dataKey="grossProfit" name="Lợi nhuận gộp"
+                stroke="#10B981" strokeWidth={2.5} dot={{ fill: '#10B981', r: 4 }} />
+            </ComposedChart>
+          </ResponsiveContainer>
         ) : (
           <DevEmptyState title="Chưa có dữ liệu top sản phẩm theo kênh" desc="Hệ thống chưa có API tổng hợp top sản phẩm phân tách theo từng kênh bán." />
         )}
       </div>
 
-      {/* Phễu trạng thái đơn hàng (PENDING → DELIVERED) */}
+      {/* Phễu xử lý đơn hàng (PENDING → DELIVERED) */}
       <div className="lcard p-5">
-        <SectionTitle>{t('dashboard.chart.funnel')}</SectionTitle>
+        <SectionTitle tooltip={CHART_TOOLTIPS.orderFunnel}>Phễu xử lý đơn hàng</SectionTitle>
         <p className="text-caption mb-3" style={{ color: 'var(--text-tertiary)' }}>
-          Luồng xử lý đơn hàng — click vào từng bước để xem danh sách đơn
+          Theo dõi đơn rơi ở bước nào trong quy trình xử lý — click vào từng bước để xem danh sách đơn
         </p>
-        <div className="space-y-2 max-w-xl">
-          {(data.funnel ?? []).map((stage, i) => {
-            const pct      = (stage.value / maxFunnel) * 100
-            const convRate = i === 0 ? 100 : (stage.value / (data.funnel[i - 1]?.value || 1) * 100).toFixed(1)
-            const dropPct  = i === 0 ? null : (100 - parseFloat(convRate)).toFixed(1)
-            return (
-              <div key={i}>
-                {dropPct !== null && (
-                  <div className="text-center text-caption py-0.5" style={{ color: 'var(--color-error)' }}>
-                    ↓ {dropPct}% rơi rụng
+        <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.15fr)_360px] gap-6 items-start">
+          <div className="space-y-2">
+            {(data.funnel ?? []).map((stage, i) => {
+              const pct      = (stage.value / maxFunnel) * 100
+              const convRate = i === 0 ? 100 : (stage.value / (data.funnel[i - 1]?.value || 1) * 100).toFixed(1)
+              const dropPct  = i === 0 ? null : (100 - parseFloat(convRate)).toFixed(1)
+              return (
+                <div key={i}>
+                  {dropPct !== null && (
+                    <div className="text-center text-caption py-0.5" style={{ color: 'var(--color-error)' }}>
+                      ↓ {dropPct}% rơi rụng
+                    </div>
+                  )}
+                  <div className="flex justify-between text-caption mb-1" style={{ color: 'var(--text-secondary)' }}>
+                    <span>{stage.stage}</span>
+                    <span className="font-mono" style={{ color: 'var(--text-primary)' }}>
+                      {stage.value.toLocaleString('vi-VN')}
+                      {i > 0 && <span style={{ color: 'var(--text-tertiary)' }}> ({convRate}%)</span>}
+                    </span>
                   </div>
-                )}
-                <div className="flex justify-between text-caption mb-1" style={{ color: 'var(--text-secondary)' }}>
-                  <span>{stage.stage}</span>
-                  <span className="font-mono" style={{ color: 'var(--text-primary)' }}>
-                    {stage.value.toLocaleString('vi-VN')}
-                    {i > 0 && <span style={{ color: 'var(--text-tertiary)' }}> ({convRate}%)</span>}
-                  </span>
+                  <div
+                    className="h-6 rounded-lg cursor-pointer transition-opacity"
+                    style={{ background: 'var(--bg-elevated)' }}
+                    onClick={() => stage.value > 0 && handleFunnelClick(stage)}
+                    title={`Click để xem đơn hàng ${stage.stage}`}
+                  >
+                    <div className="h-full rounded-lg transition-all duration-700"
+                      style={{ width: `${pct}%`, background: CHART_COLORS[i], minWidth: 40 }}
+                      onMouseEnter={e => e.currentTarget.style.opacity = '0.8'}
+                      onMouseLeave={e => e.currentTarget.style.opacity = '1'}
+                    />
+                  </div>
                 </div>
-                <div
-                  className="h-6 rounded-lg cursor-pointer transition-opacity"
-                  style={{ background: 'var(--bg-elevated)' }}
-                  onClick={() => stage.value > 0 && handleFunnelClick(stage)}
-                  title={`Click để xem đơn hàng ${stage.stage}`}
-                >
-                  <div className="h-full rounded-lg transition-all duration-700"
-                    style={{ width: `${pct}%`, background: CHART_COLORS[i], minWidth: 40 }}
-                    onMouseEnter={e => e.currentTarget.style.opacity = '0.8'}
-                    onMouseLeave={e => e.currentTarget.style.opacity = '1'}
-                  />
-                </div>
+              )
+            })}
+          </div>
+          <div className="rounded-lg p-4" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)' }}>
+            <p className="text-sm font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>Tóm tắt xử lý đơn</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <p className="text-caption" style={{ color: 'var(--text-tertiary)' }}>Tổng đơn</p>
+                <p className="font-mono text-lg font-bold" style={{ color: 'var(--text-primary)' }}>{funnelSummary.total.toLocaleString('vi-VN')}</p>
               </div>
-            )
-          })}
+              <div>
+                <p className="text-caption" style={{ color: 'var(--text-tertiary)' }}>Giao thành công</p>
+                <p className="font-mono text-lg font-bold" style={{ color: 'var(--profit-positive)' }}>{funnelSummary.deliveryRate.toFixed(1)}%</p>
+              </div>
+              <div>
+                <p className="text-caption" style={{ color: 'var(--text-tertiary)' }}>Hoàn/Hủy</p>
+                <p className="font-mono text-lg font-bold" style={{ color: funnelSummary.lost > 0 ? 'var(--color-error)' : 'var(--text-primary)' }}>
+                  {funnelSummary.lost.toLocaleString('vi-VN')}
+                </p>
+              </div>
+              <div>
+                <p className="text-caption" style={{ color: 'var(--text-tertiary)' }}>Tỷ lệ rơi</p>
+                <p className="font-mono text-lg font-bold" style={{ color: funnelSummary.lostRate > 0 ? 'var(--color-error)' : 'var(--text-primary)' }}>
+                  {funnelSummary.lostRate.toFixed(1)}%
+                </p>
+              </div>
+            </div>
+            {funnelSummary.biggestDrop && (
+              <div className="mt-4 pt-3" style={{ borderTop: '1px solid var(--border)' }}>
+                <p className="text-caption mb-1" style={{ color: 'var(--text-tertiary)' }}>Điểm cần chú ý</p>
+                <p className="text-sm font-semibold" style={{ color: funnelSummary.biggestDrop.dropPct > 0 ? 'var(--color-error)' : 'var(--text-secondary)' }}>
+                  {funnelSummary.biggestDrop.stage}: giảm {funnelSummary.biggestDrop.dropPct.toFixed(1)}%
+                </p>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -1230,7 +1571,7 @@ function TabSales({ data, compareMode, prevData, from, to }) {
           drillOrders.items.length > 0 && (
             <button className="lbtn lbtn-secondary text-xs" style={{ height: 32 }}
               onClick={() => drillProduct && exportCsv(
-                `orders_${drillProduct.shortName ?? 'product'}.csv`,
+                `orders_${drillProduct.productName ?? 'product'}.csv`,
                 drillOrders.items.map(({ is_mock, ...r }) => r)
               )}>
               <span className="icon icon-sm">download</span>
@@ -1252,7 +1593,7 @@ function TabSales({ data, compareMode, prevData, from, to }) {
 }
 
 // ── Tab: 3 — Multi-channel ────────────────────────────────────────────────────
-function TabMultiChannel({ data, wd = {}, wl = {} }) {
+function TabMultiChannel({ data, compareMode = false, prevData = null, wd = {}, wl = {} }) {
   const { t } = useTranslation()
   const attrData    = wd.attribution ?? null
   const attrLoading = wl.attribution ?? false
@@ -1267,19 +1608,11 @@ function TabMultiChannel({ data, wd = {}, wl = {} }) {
     revPct:      ch.revenuePct.toFixed(1),
   }))
 
-  // Ranking table theo từng chỉ số radar
-  const radarMetrics = [
-    { key: 'adCost',     label: 'Chi phí QC' },
-    { key: 'engagement', label: 'Tương tác' },
-    { key: 'conversion', label: 'Chuyển đổi' },
-    { key: 'revenue',    label: 'Doanh thu (chỉ số)' },
-  ]
-
   return (
     <div className="space-y-5">
-      {/* Grouped bar + đường Total */}
+      {/* Stacked revenue by channel */}
       <div className="lcard p-5">
-        <SectionTitle>{t('dashboard.chart.channelCompare')} — theo tháng</SectionTitle>
+        <SectionTitle tooltip={CHART_TOOLTIPS.channelMonthly}>{t('dashboard.chart.channelMonthly')}</SectionTitle>
         <ResponsiveContainer width="100%" height={300}>
           <ComposedChart data={data.monthlyByChannel} margin={{ top: 8, right: 24, left: 0, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
@@ -1289,12 +1622,10 @@ function TabMultiChannel({ data, wd = {}, wl = {} }) {
             <Tooltip content={<ChartTooltip />} />
             <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
             {data.revenueByChannel.map((ch, i) => (
-              <Bar key={ch.channelName} dataKey={ch.channelName} fill={getChannelColor(ch.channelName)} radius={[3,3,0,0]} />
+              <Bar key={ch.channelName} dataKey={ch.channelName} stackId="channel"
+                fill={getChannelColor(ch.channelName)}
+                radius={i === data.revenueByChannel.length - 1 ? [4,4,0,0] : [0,0,0,0]} />
             ))}
-            {/* Đường Total tổng tất cả kênh */}
-            <Line type="monotone" dataKey="Total" name={t('common.total')}
-              stroke="var(--text-secondary)" strokeWidth={2.5} strokeDasharray="6 3"
-              dot={{ fill: 'var(--text-secondary)', r: 4 }} />
           </ComposedChart>
         </ResponsiveContainer>
       </div>
@@ -1322,9 +1653,9 @@ function TabMultiChannel({ data, wd = {}, wl = {} }) {
 
         return (
           <div className="grid grid-cols-12 gap-4">
-            {/* Line Chart: xu hướng từng kênh theo tháng (KHÁC stacked bar của Tab Sales) */}
+            {/* Line chart: xu hướng riêng từng kênh theo tháng */}
             <div className="lcard p-5 col-span-12 lg:col-span-7">
-              <SectionTitle>Xu hướng doanh thu từng kênh theo tháng</SectionTitle>
+              <SectionTitle tooltip={CHART_TOOLTIPS.channelTrend}>Xu hướng doanh thu từng kênh theo tháng</SectionTitle>
               <p className="text-caption mb-3" style={{ color: 'var(--text-tertiary)' }}>
                 Mỗi đường = 1 kênh · Theo dõi tốc độ tăng trưởng riêng từng kênh
               </p>
@@ -1350,7 +1681,7 @@ function TabMultiChannel({ data, wd = {}, wl = {} }) {
 
             {/* Scorecard tỷ trọng kênh — không có ROAS (thuộc Marketing tab) */}
             <div className="lcard p-5 col-span-12 lg:col-span-5">
-              <SectionTitle>Tỷ trọng & tăng trưởng kênh</SectionTitle>
+              <SectionTitle tooltip={CHART_TOOLTIPS.channelGrowth}>Tỷ trọng & tăng trưởng kênh</SectionTitle>
               <div className="space-y-3 mt-2">
                 {[...chData].sort((a, b) => b.revenue - a.revenue).map((ch, idx) => {
                   const growthUp = ch.growth >= 0
@@ -1500,7 +1831,7 @@ function buildClvScatterFromRfm(rfm) {
     .sort((a, b) => b.clv - a.clv)
 }
 
-function TabCustomer({ data, wd = {}, wl = {} }) {
+function TabCustomer({ data, compareMode = false, prevData = null, wd = {}, wl = {} }) {
   const { t }        = useTranslation()
   const [drillSeg,        setDrillSeg]        = useState(null)
   const [drillCusts,      setDrillCusts]      = useState({ items: [], total: 0, page: 1, totalPages: 1 })
@@ -1573,7 +1904,7 @@ function TabCustomer({ data, wd = {}, wl = {} }) {
       {/* CLV + Heatmap — 2 cột trên desktop, 1 cột mobile */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="lcard p-5">
-          <SectionTitle>{t('dashboard.chart.clv')}</SectionTitle>
+          <SectionTitle tooltip={CHART_TOOLTIPS.customerClv}>{t('dashboard.chart.clv')}</SectionTitle>
           <p className="text-caption mb-2" style={{ color: 'var(--text-tertiary)' }}>
             X: tần suất mua · Y: CLV trung bình · Kích thước: số khách
             {rfmData && <span className="ml-2 font-semibold" style={{ color: 'var(--accent-500)' }}>● Dữ liệu thật</span>}
@@ -1618,7 +1949,7 @@ function TabCustomer({ data, wd = {}, wl = {} }) {
         </div>
 
         <div className="lcard p-5">
-          <SectionTitle>{t('dashboard.chart.heatmap')}</SectionTitle>
+          <SectionTitle tooltip={CHART_TOOLTIPS.heatmap}>{t('dashboard.chart.heatmap')}</SectionTitle>
           <p className="text-caption mb-2" style={{ color: 'var(--text-tertiary)' }}>
             Mật độ đơn hàng theo giờ × ngày trong tuần
           </p>
@@ -1900,7 +2231,7 @@ function HeatmapGrid({ data = [] }) {
 }
 
 // ── Tab: 5 — Marketing & ROI ──────────────────────────────────────────────────
-function TabMarketing({ data, wd = {}, wl = {} }) {
+function TabMarketing({ data, compareMode = false, prevData = null, wd = {}, wl = {} }) {
   const { t }       = useTranslation()
   const navigate    = useNavigate()
   const campData    = wd.campaign ?? null
@@ -1972,7 +2303,7 @@ function TabMarketing({ data, wd = {}, wl = {} }) {
       <div className="grid grid-cols-12 gap-4">
         {/* ComboChart chi phí vs doanh thu + ROAS label */}
         <div className="lcard p-5 col-span-12 lg:col-span-8">
-          <SectionTitle>{t('dashboard.chart.marketingCombo')}</SectionTitle>
+          <SectionTitle tooltip={CHART_TOOLTIPS.marketingCombo}>{t('dashboard.chart.marketingCombo')}</SectionTitle>
           <p className="text-caption mb-3" style={{ color: 'var(--text-tertiary)' }}>
             {t('dashboard.series.roasNote')}
           </p>
@@ -1996,7 +2327,7 @@ function TabMarketing({ data, wd = {}, wl = {} }) {
 
         {/* ROAS ranking bars */}
         <div className="lcard p-5 col-span-12 lg:col-span-4">
-          <SectionTitle>{t('dashboard.chart.roas')}</SectionTitle>
+          <SectionTitle tooltip={CHART_TOOLTIPS.roas}>{t('dashboard.chart.roas')}</SectionTitle>
           <div className="space-y-3 mt-2">
             {[...comboData].sort((a,b) => b.roas - a.roas).map((ch, i) => (
               <div key={ch.name}>
@@ -2148,7 +2479,7 @@ function TabMarketing({ data, wd = {}, wl = {} }) {
 }
 
 // ── Tab: 6 — Inventory Analytics ─────────────────────────────────────────────
-function TabInventory({ data, wd = {}, wl = {} }) {
+function TabInventory({ data, compareMode = false, prevData = null, wd = {}, wl = {} }) {
   const { t }      = useTranslation()
   const navigate   = useNavigate()
   const [showAllLowStock,  setShowAllLowStock]  = useState(false)
@@ -2234,7 +2565,7 @@ function TabInventory({ data, wd = {}, wl = {} }) {
 
       {/* Biểu đồ tồn kho vs Dự báo với nhãn % chênh lệch */}
       <div className="lcard p-5">
-        <SectionTitle>{t('dashboard.chart.inventory')} — Tồn kho vs Dự báo</SectionTitle>
+        <SectionTitle tooltip={CHART_TOOLTIPS.inventoryForecast}>{t('dashboard.chart.inventory')} — Tồn kho vs Dự báo</SectionTitle>
         <p className="text-caption mb-3" style={{ color: 'var(--text-tertiary)' }}>
           Nhãn trên cột thể hiện % chênh lệch thực tế so với dự báo
         </p>
@@ -2359,7 +2690,7 @@ function TabInventory({ data, wd = {}, wl = {} }) {
       <div className="lcard p-5">
         {/* Tab nhỏ */}
         <div className="flex items-center gap-1 mb-4">
-          <SectionTitle>{t('dashboard.chart.returnRate')}</SectionTitle>
+          <SectionTitle tooltip={CHART_TOOLTIPS.returnRate}>{t('dashboard.chart.returnRate')}</SectionTitle>
           <div className="ml-auto flex items-center gap-1 p-0.5 rounded-lg" style={{ background: 'var(--bg-elevated)' }}>
             {[{ key: 'product', label: 'Theo sản phẩm' }, { key: 'channel', label: 'Theo kênh' }].map(tab => (
               <button key={tab.key} onClick={() => setReturnTab(tab.key)}
@@ -2564,7 +2895,7 @@ export default function DashboardPage() {
         getOrderFunnel(from, to, ch),
         getOpsKpi(from, to, ch),
         getInventoryReal(from, to),
-        getTopProductsByChannel(from, to, 3),
+        getTopProductsByChannel(from, to, 10),
       ])
       const resData = res.status === 'fulfilled' ? res.value : null
       if (resData?.kpi == null) throw new Error('no_data')
@@ -2574,7 +2905,7 @@ export default function DashboardPage() {
       const invData = invReal.status === 'fulfilled' ? invReal.value : null
 
       // Top products: gộp trùng tên, tính % đóng góp
-      const topProductsReal = (() => {
+      const paretoProductsReal = (() => {
         const raw = resData.topProducts ?? []
         const byName = {}
         raw.forEach(p => {
@@ -2583,10 +2914,13 @@ export default function DashboardPage() {
           byName[key].revenue += Number(p.revenue ?? 0)
           byName[key].orders  += Number(p.orders  ?? 0)
         })
-        const sorted     = Object.values(byName).sort((a, b) => b.revenue - a.revenue).slice(0, 5)
+        const sorted     = Object.values(byName).sort((a, b) => b.revenue - a.revenue)
         const grandTotal = sorted.reduce((s, p) => s + p.revenue, 0)
-        return sorted.map(p => ({ ...p, revContribPct: grandTotal > 0 ? ((p.revenue / grandTotal) * 100).toFixed(1) : '0.0' }))
+        return sorted
+          .slice(0, 10)
+          .map(p => ({ ...p, revContribPct: grandTotal > 0 ? ((p.revenue / grandTotal) * 100).toFixed(1) : '0.0' }))
       })()
+      const topProductsReal = paretoProductsReal.slice(0, 5)
 
       const merged = {
         // ── KPI từ DW (DashboardService) ──────────────────────────────────────
@@ -2603,6 +2937,7 @@ export default function DashboardPage() {
         // ── Xu hướng và kênh từ DW ─────────────────────────────────────────
         revenueByDay:     resData.revenueByDay     ?? [],
         revenueByChannel: resData.revenueByChannel ?? [],
+        paretoProducts:   paretoProductsReal,
         topProducts:      topProductsReal,
         // ── Monthly + Heatmap + Funnel từ OLTP ───────────────────────────────
         monthlyByChannel:  monthlyReal.status === 'fulfilled' ? (monthlyReal.value ?? []) : [],
@@ -2692,11 +3027,26 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (activeTab === 'overview') {
-      loadWidget('leaderboard',  () => getLeaderboard({ limit: 5 }))
+      const { from, to } = getRange()
+      const leaderboardParams = { topN: 3, start_date: from, end_date: to }
+      loadWidget(`leaderboard:${from}:${to}:${channel}`,  () => Promise.allSettled([
+        getLeaderboard({ ...leaderboardParams, category: 'product' }),
+        getLeaderboard({ ...leaderboardParams, category: 'customer' }),
+        getLeaderboard({ ...leaderboardParams, category: 'channel' }),
+        getLeaderboard({ ...leaderboardParams, category: 'staff' }),
+        getLeaderboard({ ...leaderboardParams, category: 'staff_warehouse' }),
+        getLeaderboard({ ...leaderboardParams, category: 'staff_marketing' }),
+      ]).then(([product, customer, channelResult, staff, staffWarehouse, staffMarketing]) => ({
+        product:  product.status  === 'fulfilled' ? product.value  : null,
+        customer: customer.status === 'fulfilled' ? customer.value : null,
+        channel:  channelResult.status  === 'fulfilled' ? channelResult.value  : null,
+        staff:    staff.status    === 'fulfilled' ? staff.value    : null,
+        staff_warehouse: staffWarehouse.status === 'fulfilled' ? staffWarehouse.value : null,
+        staff_marketing: staffMarketing.status === 'fulfilled' ? staffMarketing.value : null,
+      })))
       loadWidget('insights',     () => getInsights())
       loadWidget('autoRecs',     () => getRecommendations())
       // Finance KPI phụ thuộc bộ lọc ngày/kênh nên phải refetch khi filter thay đổi.
-      const { from, to } = getRange()
       const ch = channel === 'all' ? null : channel
       setWidgetLoading(p => ({ ...p, financeKpi: true }))
       getProfitOverview({ from, to, channel: ch })
@@ -2887,12 +3237,12 @@ export default function DashboardPage() {
         </div>
       ) : data && (
         <div className="page-enter">
-          {activeTab === 'overview'     && <TabOverview     data={data} compareMode={compareMode} prevData={prevData} canViewAnalytics={canViewAnalytics} wd={widgetData} wl={widgetLoading} dateRange={getRange()} />}
+          {activeTab === 'overview'     && <TabOverview     data={data} compareMode={compareMode} prevData={prevData} canViewAnalytics={canViewAnalytics} wd={widgetData} wl={widgetLoading} dateRange={getRange()} leaderboardKey={`leaderboard:${getRange().from}:${getRange().to}:${channel}`} />}
           {activeTab === 'sales'        && <TabSales        data={data} compareMode={compareMode} prevData={prevData} from={getRange().from} to={getRange().to} />}
-          {activeTab === 'multichannel' && <TabMultiChannel data={data} wd={widgetData} wl={widgetLoading} />}
-          {activeTab === 'customer'     && <TabCustomer     data={data} wd={widgetData} wl={widgetLoading} />}
-          {activeTab === 'marketing'    && <TabMarketing    data={data} wd={widgetData} wl={widgetLoading} />}
-          {activeTab === 'inventory'    && <TabInventory    data={data} wd={widgetData} wl={widgetLoading} />}
+          {activeTab === 'multichannel' && <TabMultiChannel data={data} compareMode={compareMode} prevData={prevData} wd={widgetData} wl={widgetLoading} />}
+          {activeTab === 'customer'     && <TabCustomer     data={data} compareMode={compareMode} prevData={prevData} wd={widgetData} wl={widgetLoading} />}
+          {activeTab === 'marketing'    && <TabMarketing    data={data} compareMode={compareMode} prevData={prevData} wd={widgetData} wl={widgetLoading} />}
+          {activeTab === 'inventory'    && <TabInventory    data={data} compareMode={compareMode} prevData={prevData} wd={widgetData} wl={widgetLoading} />}
         </div>
       )}
     </div>

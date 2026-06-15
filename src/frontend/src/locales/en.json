@@ -602,19 +602,37 @@
     "title": "ETL Monitor",
     "subtitle": "Monitor data processing pipeline",
     "pipeline": "Pipeline",
-    "pipelineList": "Pipeline list",
+    "pipelineList": "Sync history",
     "lastRun": "Last run",
     "neverRun": "Never run",
+    "ranWithoutTimestamp": "Ran, timestamp unavailable",
     "duration": "Duration",
     "rowsProcessed": "Rows processed",
     "totalPipelines": "Total pipelines",
+    "totalRuns": "Total runs",
     "status": {
       "running": "Running",
       "success": "Success",
       "failed": "Failed",
       "pending": "Pending"
     },
-    "runManual": "Run Manually"
+    "runManual": "Run Manually",
+    "runPipeline": "Run pipeline again",
+    "runPipelineHint": "Run this data pipeline immediately without waiting for the scheduled job.",
+    "help": {
+      "offline": {
+        "title": "Historical import",
+        "desc": "Reprocess imported files or historical data so reporting can use them."
+      },
+      "incremental": {
+        "title": "Incremental sync",
+        "desc": "Fetch new records created since the previous sync, such as new orders or updates."
+      },
+      "manual": {
+        "title": "Manual run",
+        "desc": "Trigger one data processing run on demand to refresh reports and check the pipeline."
+      }
+    }
   },
   "report": {
     "title": "Export Report",
@@ -1088,7 +1106,7 @@
     "staffSales": "Sales",
     "staffWarehouse": "Warehouse",
     "staffMarketing": "Marketing",
-    "totalRevLabel": "Total: {{value}}M VND",
+    "totalRevLabel": "Total: {{value}}",
     "trendUp": "up",
     "trendDown": "down",
     "trendStable": "stable",

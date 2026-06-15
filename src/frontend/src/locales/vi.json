@@ -602,19 +602,37 @@
     "title": "ETL Monitor",
     "subtitle": "Giám sát pipeline xử lý dữ liệu",
     "pipeline": "Pipeline",
-    "pipelineList": "Danh sách pipeline",
+    "pipelineList": "Lịch sử đồng bộ",
     "lastRun": "Lần chạy cuối",
     "neverRun": "Chưa chạy",
+    "ranWithoutTimestamp": "Đã chạy, chưa có thời gian",
     "duration": "Thời gian",
     "rowsProcessed": "Bản ghi xử lý",
     "totalPipelines": "Tổng pipeline",
+    "totalRuns": "Số lần chạy",
     "status": {
       "running": "Đang chạy",
       "success": "Thành công",
       "failed": "Thất bại",
       "pending": "Chờ chạy"
     },
-    "runManual": "Chạy thủ công"
+    "runManual": "Chạy thủ công",
+    "runPipeline": "Chạy lại pipeline",
+    "runPipelineHint": "Chạy lại pipeline dữ liệu này ngay lập tức, không chờ lịch tự động.",
+    "help": {
+      "offline": {
+        "title": "Import lịch sử",
+        "desc": "Xử lý lại dữ liệu được import từ file hoặc dữ liệu cũ để đưa vào báo cáo."
+      },
+      "incremental": {
+        "title": "Đồng bộ tăng dần",
+        "desc": "Lấy các dữ liệu mới phát sinh từ lần đồng bộ trước, ví dụ đơn hàng hoặc thay đổi mới."
+      },
+      "manual": {
+        "title": "Chạy thủ công",
+        "desc": "Kích hoạt một lượt xử lý dữ liệu theo yêu cầu để cập nhật báo cáo và kiểm tra pipeline."
+      }
+    }
   },
   "report": {
     "title": "Xuất báo cáo",
@@ -1088,7 +1106,7 @@
     "staffSales": "Bán hàng",
     "staffWarehouse": "Kho",
     "staffMarketing": "Marketing",
-    "totalRevLabel": "Tổng: {{value}}M VNĐ",
+    "totalRevLabel": "Tổng: {{value}}",
     "trendUp": "tăng",
     "trendDown": "giảm",
     "trendStable": "ổn định",

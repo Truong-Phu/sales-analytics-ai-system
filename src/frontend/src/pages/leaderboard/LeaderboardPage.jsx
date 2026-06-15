@@ -148,6 +148,7 @@ export default function LeaderboardPage() {
   const hasData = data && (data.entries ?? []).length > 0
 
   const orderUnit = category !== 'staff' ? t('leaderboard.unitOrders') : activeSubtab.unit
+  const maxEntryValue = Math.max(...(data?.entries ?? []).map(e => Number(e.value) || 0), 1)
 
   return (
     <div className="space-y-5">
@@ -273,9 +274,9 @@ export default function LeaderboardPage() {
                 <div className="flex-1 min-w-0">
                   <div className="font-semibold" style={{ color: 'var(--text-primary)' }}>{entry.name}</div>
                   <div className="mt-1.5 flex items-center gap-2">
-                    <div className="flex-1 h-1.5 rounded-full" style={{ background: 'var(--bg-elevated)', maxWidth: 200 }}>
+                    <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--bg-elevated)', maxWidth: 200 }}>
                       <div className="h-full rounded-full" style={{
-                        width: `${Math.round(entry.value / (data?.entries?.[0]?.value ?? 1) * 100)}%`,
+                        width: `${Math.min(100, Math.round((Number(entry.value) || 0) / maxEntryValue * 100))}%`,
                         background: 'var(--primary-500)',
                       }} />
                     </div>
