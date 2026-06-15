@@ -5,6 +5,12 @@ CLAUDE.md
 PROMPTS.md
 .claude/
 
+# Temp / Postman (không cần track)
+.postman/
+postman/
+.tmp/
+tmp/
+
 # .NET build artifacts
 **/bin/
 **/obj/
