@@ -109,7 +109,7 @@ public class DashboardService
 
         // Tính % thay đổi
         decimal Trend(decimal curr, decimal prev) =>
-            prev > 0 ? Math.Round((curr - prev) / prev * 100, 1) : 0;
+            prev > 0 ? Math.Round((curr - prev) / prev * 100, 1) : (curr > 0 ? 100 : 0);
 
         var profitMarginPct = totalRevenue > 0
             ? Math.Round(totalProfit / totalRevenue * 100, 2) : 0m;

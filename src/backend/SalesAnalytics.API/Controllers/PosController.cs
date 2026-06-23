@@ -490,12 +490,12 @@ public class PosController(IConfiguration cfg, ITenantContext tenant) : Controll
                     (order_code, customer_id, channel_id, order_date, status,
                      total_amount, discount_amount, shipping_fee,
                      payment_method, payment_status, shipping_status,
-                     company_id, created_by_user_id, pos_note, is_stock_deducted, created_at, updated_at)
+                     company_id, created_by_user_id, pos_note, is_stock_deducted, voucher_code, created_at, updated_at)
                 VALUES
                     (@code, @cust, @chan, NOW(), 'DELIVERED',
                      @total, @disc, 0,
                      @pay, 'PAID', 'NOT_SHIPPED',
-                     @cid::uuid, @createdBy, @note, TRUE, NOW(), NOW())
+                     @cid::uuid, @createdBy, @note, TRUE, @vcode, NOW(), NOW())
                 RETURNING order_id
                 """, conn, tx);
             orCmd.Parameters.AddWithValue("code",      orderCode);
@@ -507,6 +507,7 @@ public class PosController(IConfiguration cfg, ITenantContext tenant) : Controll
             orCmd.Parameters.AddWithValue("cid",       tenant.CompanyId!.Value.ToString());
             orCmd.Parameters.AddWithValue("createdBy", userId2 > 0 ? userId2 : DBNull.Value);
             orCmd.Parameters.AddWithValue("note",      (object?)(dto.Note) ?? DBNull.Value);
+            orCmd.Parameters.AddWithValue("vcode",     (object?)(dto.VoucherCode) ?? DBNull.Value);
             var orderId = Convert.ToInt32(await orCmd.ExecuteScalarAsync());
 
             // 8. Insert order_items + trừ tồn kho (đã validate ở bước 6, exact deduction)

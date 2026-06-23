@@ -209,6 +209,7 @@ public class OrdersController(
                 ShippingFullAddress  = o.ShippingFullAddress,
                 PlatformStatus       = o.PlatformStatus,
                 PaidAt               = o.PaidAt,
+                VoucherCode          = o.VoucherCode,
                 CreatedAt            = o.CreatedAt,
             });
 
@@ -262,6 +263,7 @@ public class OrdersController(
                                        ?? BuildFullAddress(order.Customer),
                 PlatformStatus       = order.PlatformStatus,
                 PaidAt               = order.PaidAt,
+                VoucherCode          = order.VoucherCode,
                 CreatedAt            = order.CreatedAt,
                 Details              = order.OrderDetails.Select(d => new OrderDetailDto
                 {

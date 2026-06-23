@@ -243,14 +243,20 @@ export const getCustomerOrderHistory = (customerId, limit = 5, filters = {}) => 
 // ── Drill-down chung — hỗ trợ filter theo product / date / channel / status ───
 
 // Chuẩn hóa row từ DW /api/orders (fact_sales)
-const _normDrillRow = o => ({
-  orderId:     o.ExternalOrderId ?? o.externalOrderId ?? `#${o.SalesKey ?? o.salesKey}`,
-  date:        (o.SaleDate ?? o.saleDate ?? '').toString().slice(0, 10),
-  channel:     o.ChannelName  ?? o.channelName  ?? '—',
-  productName: o.ProductName  ?? o.productName  ?? '—',
-  qty:         o.Quantity     ?? o.quantity     ?? 0,
-  revenue:     Number(o.NetRevenue ?? o.netRevenue ?? 0),
-})
+const _normDrillRow = o => {
+  let orderId = o.ExternalOrderId ?? o.externalOrderId ?? `#${o.SalesKey ?? o.salesKey}`;
+  if (orderId && typeof orderId === 'string' && orderId.includes('#')) {
+    orderId = orderId.split('#')[0];
+  }
+  return {
+    orderId,
+    date:        (o.SaleDate ?? o.saleDate ?? '').toString().slice(0, 10),
+    channel:     o.ChannelName  ?? o.channelName  ?? '—',
+    productName: o.ProductName  ?? o.productName  ?? '—',
+    qty:         o.Quantity     ?? o.quantity     ?? 0,
+    revenue:     Number(o.NetRevenue ?? o.netRevenue ?? 0),
+  };
+}
 
 // Chuẩn hóa row từ OLTP /api/orders/oltp
 const _normOltpRow = o => ({

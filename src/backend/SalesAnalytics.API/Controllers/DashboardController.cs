@@ -225,17 +225,17 @@ public class DashboardController(DashboardService service, ITenantContext tenant
 
         decimal revPct = y.Kpi.TotalRevenue > 0
             ? Math.Round((t.Kpi.TotalRevenue - y.Kpi.TotalRevenue) / y.Kpi.TotalRevenue * 100, 1)
-            : 0;
+            : (t.Kpi.TotalRevenue > 0 ? 100 : 0);
         decimal ordPct = y.Kpi.TotalOrders > 0
             ? Math.Round((t.Kpi.TotalOrders - y.Kpi.TotalOrders) / (decimal)y.Kpi.TotalOrders * 100, 1)
-            : 0;
+            : (t.Kpi.TotalOrders > 0 ? 100 : 0);
         decimal custPct = y.Kpi.NewCustomers > 0
             ? Math.Round((t.Kpi.NewCustomers - y.Kpi.NewCustomers) / (decimal)y.Kpi.NewCustomers * 100, 1)
-            : 0;
+            : (t.Kpi.NewCustomers > 0 ? 100 : 0);
         // % thay đổi lợi nhuận gộp so hôm qua (dùng Abs để tránh chia số âm gây nghịch chiều)
         decimal profPct = y.Kpi.TotalProfit != 0
             ? Math.Round((t.Kpi.TotalProfit - y.Kpi.TotalProfit) / Math.Abs(y.Kpi.TotalProfit) * 100, 1)
-            : 0;
+            : (t.Kpi.TotalProfit > 0 ? 100 : 0);
 
         return Ok(new
         {

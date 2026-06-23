@@ -31,6 +31,7 @@ public class OrderResponseDto
     public string? PlatformStatus        { get; set; }
     public DateTime? PaidAt              { get; set; }
     public string? PosNote               { get; set; }
+    public string? VoucherCode           { get; set; }
     public DateTime CreatedAt            { get; set; }
     public List<OrderDetailDto> Details  { get; set; } = [];
 }

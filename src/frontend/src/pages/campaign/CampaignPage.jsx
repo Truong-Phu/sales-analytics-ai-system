@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useSearchParams, useNavigate } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
 import axios from '../../api/axios'
 import MockToast from '../../components/ui/MockToast'
 import AiEmptyState from '../../components/ui/AiEmptyState'
@@ -320,8 +320,161 @@ function ActionExecutionDrawer({ config, onClose, onSuccess }) {
   )
 }
 
-function ExecutedCampaignsHistory({ list, onClear }) {
+function ExecutedCampaignsHistory({ list, onClear, vouchers = [], dwSales = [], oltpOrders = [] }) {
   if (list.length === 0) return null;
+
+  const ordersMap = {}
+  dwSales.forEach(row => {
+    let orderId = row.ExternalOrderId ?? row.externalOrderId ?? String(row.SalesKey ?? row.salesKey)
+    if (orderId && typeof orderId === 'string' && orderId.includes('#')) {
+      orderId = orderId.split('#')[0];
+    }
+    if (!ordersMap[orderId]) {
+      ordersMap[orderId] = {
+        orderId,
+        date: new Date(row.SaleDate ?? row.saleDate),
+        channel: row.ChannelName ?? row.channelName ?? '—',
+        products: [],
+        revenue: 0,
+      }
+    }
+    ordersMap[orderId].products.push(row.ProductName ?? row.productName ?? '')
+    ordersMap[orderId].revenue += Number(row.NetRevenue ?? row.netRevenue ?? 0)
+  })
+  const allOrders = Object.values(ordersMap)
+
+  const renderEffectiveness = (item) => {
+    if (item.action === 'bundle') {
+      const targetProducts = item.target.split(' + ').map(p => p.trim().toLowerCase());
+      const campaignTime = new Date(item.timestamp);
+      const campaignDate = new Date(campaignTime.getFullYear(), campaignTime.getMonth(), campaignTime.getDate());
+      
+      const match = item.discount?.match(/\[(.*?)\]/);
+      const code = match ? match[1]?.toUpperCase() : null;
+      
+      let matchedOrders = 0;
+      let matchedRevenue = 0;
+      const matchedChannels = new Set();
+      const countedOrderCodes = new Set();
+
+      // 1. Quét đơn hàng live OLTP (để hỗ trợ hiển thị ngay lập tức khi vừa thanh toán tại POS)
+      oltpOrders.forEach(order => {
+        const orderDt = new Date(order.orderDate ?? order.createdAt);
+        const orderDate = new Date(orderDt.getFullYear(), orderDt.getMonth(), orderDt.getDate());
+        if (orderDate >= campaignDate) {
+          const orderVoucher = order.voucherCode?.toUpperCase();
+          if (code && orderVoucher === code) {
+            const codeKey = order.orderCode || '';
+            const idKey = order.orderId ? String(order.orderId) : '';
+            const extKey = order.orderId ? `ORDER_${order.orderId}` : '';
+            
+            const isAlreadyCounted = (codeKey && countedOrderCodes.has(codeKey)) ||
+                                     (idKey && countedOrderCodes.has(idKey)) ||
+                                     (extKey && countedOrderCodes.has(extKey));
+                                     
+            if (!isAlreadyCounted) {
+              if (codeKey) countedOrderCodes.add(codeKey);
+              if (idKey) countedOrderCodes.add(idKey);
+              if (extKey) countedOrderCodes.add(extKey);
+              
+              matchedOrders++;
+              matchedRevenue += Number(order.totalAmount ?? 0);
+              matchedChannels.add(order.channelName ?? 'Offline');
+            }
+          }
+        }
+      });
+
+      // 2. Quét đơn hàng DW (cho các kênh khác như Shopee, Lazada, hoặc Offline cũ đã đồng bộ)
+      allOrders.forEach(order => {
+        const orderDate = new Date(order.date.getFullYear(), order.date.getMonth(), order.date.getDate());
+        if (orderDate >= campaignDate) {
+          const orderProductsLower = order.products.map(p => p.toLowerCase());
+          const hasAll = targetProducts.every(tp => 
+            orderProductsLower.some(op => op.includes(tp) || tp.includes(op))
+          );
+          if (hasAll) {
+            const key = order.orderId;
+            const isAlreadyCounted = countedOrderCodes.has(key) || 
+                                     countedOrderCodes.has(key.replace(/^ORDER_/, '')) ||
+                                     Array.from(countedOrderCodes).some(ok => `ORDER_${ok}` === key || ok === key);
+            if (!isAlreadyCounted) {
+              countedOrderCodes.add(key);
+              matchedOrders++;
+              matchedRevenue += order.revenue;
+              if (order.channel && order.channel !== '—') {
+                matchedChannels.add(order.channel);
+              }
+            }
+          }
+        }
+      });
+
+      if (matchedOrders > 0) {
+        const channelsStr = Array.from(matchedChannels).join(', ');
+        return (
+          <div className="flex flex-col gap-0.5">
+            <span className="font-semibold text-emerald-600" style={{ color: '#10B981' }}>
+              {matchedOrders} đơn hàng ({channelsStr || 'Chưa phân loại'})
+            </span>
+            <span className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
+              Doanh thu: {new Intl.NumberFormat('vi-VN').format(matchedRevenue)}₫
+            </span>
+          </div>
+        );
+      }
+
+      return (
+        <span className="font-medium text-indigo-500 animate-pulse" style={{ color: 'var(--primary-500)' }}>
+          Đang chạy (0 lượt dùng)
+        </span>
+      );
+    }
+
+    const match = item.discount?.match(/\[(.*?)\]/);
+    const code = match ? match[1] : null;
+    const voucher = code ? vouchers.find(v => v.code?.toUpperCase() === code.toUpperCase()) : null;
+
+    if (!voucher) {
+      return (
+        <span style={{ color: 'var(--text-tertiary)', opacity: 0.8 }}>
+          Chưa áp dụng (Đang theo dõi)
+        </span>
+      );
+    }
+
+    const isExpired = new Date(voucher.validTo) < new Date();
+    const usedCount = voucher.usedCount || 0;
+
+    if (usedCount > 0) {
+      return (
+        <div className="flex flex-col gap-0.5">
+          <span className="font-semibold text-emerald-600" style={{ color: '#10B981' }}>
+            {usedCount} đơn hàng thành công
+          </span>
+          {voucher.minOrderValue > 0 && (
+            <span className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
+              Doanh thu tối thiểu: {new Intl.NumberFormat('vi-VN').format(usedCount * voucher.minOrderValue)}₫
+            </span>
+          )}
+        </div>
+      );
+    }
+
+    if (isExpired) {
+      return (
+        <span className="font-medium text-red-500" style={{ color: '#EF4444' }}>
+          Đã hết hạn (0 lượt dùng)
+        </span>
+      );
+    }
+
+    return (
+      <span className="font-medium text-indigo-500 animate-pulse" style={{ color: 'var(--primary-500)' }}>
+        Đang chạy (0 lượt dùng)
+      </span>
+    );
+  };
 
   return (
     <div className="lcard p-5 space-y-4">
@@ -347,6 +500,7 @@ function ExecutedCampaignsHistory({ list, onClear }) {
               <th className="pb-2 font-semibold" style={{ color: 'var(--text-tertiary)' }}>Mã Voucher</th>
               <th className="pb-2 font-semibold" style={{ color: 'var(--text-tertiary)' }}>Kênh gửi</th>
               <th className="pb-2 font-semibold" style={{ color: 'var(--text-tertiary)' }}>Thời gian</th>
+              <th className="pb-2 font-semibold" style={{ color: 'var(--text-tertiary)' }}>Hiệu quả</th>
               <th className="pb-2 font-semibold" style={{ color: 'var(--text-tertiary)' }}>Trạng thái</th>
             </tr>
           </thead>
@@ -369,6 +523,7 @@ function ExecutedCampaignsHistory({ list, onClear }) {
                 <td className="py-2.5 text-caption" style={{ color: 'var(--text-tertiary)' }}>
                   {new Date(item.timestamp).toLocaleString('vi-VN')}
                 </td>
+                <td className="py-2.5">{renderEffectiveness(item)}</td>
                 <td className="py-2.5">
                   <span className="lbadge lbadge-success">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse mr-0.5" />
@@ -395,6 +550,9 @@ export default function CampaignPage() {
   const [executionModal, setExecutionModal] = useState(null)
   const [toastMsg, setToastMsg] = useState(null)
   const [history, setHistory] = useState([])
+  const [vouchers, setVouchers] = useState([])
+  const [dwSales, setDwSales] = useState([])
+  const [oltpOrders, setOltpOrders] = useState([])
 
   const loadHistory = () => {
     try {
@@ -405,15 +563,47 @@ export default function CampaignPage() {
     }
   }
 
+  const loadVouchers = async () => {
+    try {
+      const res = await axios.get('/api/pos/vouchers')
+      setVouchers(res.data ?? [])
+    } catch (e) {
+      console.error('Error fetching vouchers:', e)
+    }
+  }
+
+  const loadDwSales = async () => {
+    try {
+      const res = await axios.get('/api/orders?limit=100')
+      setDwSales(res.data?.Data ?? res.data?.data ?? [])
+    } catch (e) {
+      console.error('Error fetching DW sales:', e)
+    }
+  }
+
+  const loadOltpOrders = async () => {
+    try {
+      const res = await axios.get('/api/orders/oltp?pageSize=100')
+      setOltpOrders(res.data?.data ?? res.data?.items ?? [])
+    } catch (e) {
+      console.error('Error fetching OLTP orders:', e)
+    }
+  }
+
   const clearHistory = () => {
     try {
       localStorage.removeItem('executed_campaigns')
       setHistory([])
-    } catch {}
+    } catch (e) {
+      /* ignore */
+    }
   }
 
   useEffect(() => {
     loadHistory()
+    loadVouchers()
+    loadDwSales()
+    loadOltpOrders()
   }, [])
 
   const load = async () => {
@@ -623,7 +813,7 @@ export default function CampaignPage() {
           )}
 
           {/* Executed Campaigns History */}
-          <ExecutedCampaignsHistory list={history} onClear={clearHistory} />
+          <ExecutedCampaignsHistory list={history} onClear={clearHistory} vouchers={vouchers} dwSales={dwSales} oltpOrders={oltpOrders} />
         </>
       )}
 
@@ -636,6 +826,9 @@ export default function CampaignPage() {
             setShowBanner(false)
             setSearchParams({})
             loadHistory()
+            loadVouchers()
+            loadDwSales()
+            loadOltpOrders()
             setTimeout(() => setToastMsg(null), 3000)
           }}
         />

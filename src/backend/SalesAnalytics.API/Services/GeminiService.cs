@@ -519,7 +519,7 @@ public class GeminiService(
         try
         {
             var now            = DateTime.UtcNow;
-            var monthStart     = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+            var monthStart     = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Unspecified);
             var monthEnd       = monthStart.AddMonths(1);
             var prevMonthStart = monthStart.AddMonths(-1);
 
@@ -1401,6 +1401,14 @@ public class GeminiService(
     // ── Lấy khoảng thời gian query thống nhất cho mọi context builder ──
     private static (DateTime Start, DateTime End, string Label) GetQueryDateRange(string question)
     {
+        var (start, end, label) = GetQueryDateRangeRaw(question);
+        return (DateTime.SpecifyKind(start, DateTimeKind.Unspecified),
+                DateTime.SpecifyKind(end, DateTimeKind.Unspecified),
+                label);
+    }
+
+    private static (DateTime Start, DateTime End, string Label) GetQueryDateRangeRaw(string question)
+    {
         var now = DateTime.UtcNow;
         
         // 1. Explicit range (từ ngày... đến...)
@@ -1784,8 +1792,8 @@ public class GeminiService(
                   AND fs.company_id = @companyId
                 """;
             await using var cmd = new NpgsqlCommand(sql, conn);
-            cmd.Parameters.AddWithValue("from", start.Date);
-            cmd.Parameters.AddWithValue("to", end.Date);
+            cmd.Parameters.AddWithValue("from", DateTime.SpecifyKind(start.Date, DateTimeKind.Unspecified));
+            cmd.Parameters.AddWithValue("to", DateTime.SpecifyKind(end.Date, DateTimeKind.Unspecified));
             cmd.Parameters.AddWithValue("companyId", companyId);
             await using var reader = await cmd.ExecuteReaderAsync();
             if (await reader.ReadAsync())
@@ -1796,13 +1804,15 @@ public class GeminiService(
         {
             logger.LogWarning("GetRevenueInRange DW lỗi, fallback OLTP: {M}", ex.Message);
             // Fallback về OLTP nếu DW chưa có dữ liệu
+            var utcStart = DateTime.SpecifyKind(start, DateTimeKind.Utc);
+            var utcEnd = DateTime.SpecifyKind(end, DateTimeKind.Utc);
             var rev = await db.OrderDetails
                 .Join(db.Orders, od => od.OrderId, o => o.OrderId, (od, o) => new { od, o })
-                .Where(x => x.o.CompanyId == companyId && x.o.OrderDate >= start && x.o.OrderDate < end
+                .Where(x => x.o.CompanyId == companyId && x.o.OrderDate >= utcStart && x.o.OrderDate < utcEnd
                          && x.o.Status != "CANCELLED" && x.o.Status != "RETURNED")
                 .SumAsync(x => (decimal?)x.od.Subtotal) ?? 0;
             var cnt = await db.Orders.CountAsync(o => o.CompanyId == companyId
-                && o.OrderDate >= start && o.OrderDate < end && o.Status != "CANCELLED");
+                && o.OrderDate >= utcStart && o.OrderDate < utcEnd && o.Status != "CANCELLED");
             return (rev, cnt);
         }
     }
@@ -1972,8 +1982,8 @@ public class GeminiService(
             if (range.HasValue)
             {
                 var (sm, em, yr) = range.Value;
-                var start = new DateTime(yr, sm, 1, 0, 0, 0, DateTimeKind.Utc);
-                var end   = new DateTime(yr, em, 1, 0, 0, 0, DateTimeKind.Utc).AddMonths(1);
+                var start = new DateTime(yr, sm, 1, 0, 0, 0, DateTimeKind.Unspecified);
+                var end   = new DateTime(yr, em, 1, 0, 0, 0, DateTimeKind.Unspecified).AddMonths(1);
                 var (rev, cnt) = await GetRevenueInRange(companyId, start, end);
                 return $"""
                     INTENT: revenue_summary | T{sm:D2}-T{em:D2}/{yr}
@@ -2005,8 +2015,8 @@ public class GeminiService(
             if (twoMonthsRev.HasValue)
             {
                 var (rm1, ry1, rm2, ry2) = twoMonthsRev.Value;
-                var rs1 = new DateTime(ry1, rm1, 1, 0, 0, 0, DateTimeKind.Utc);
-                var rs2 = new DateTime(ry2, rm2, 1, 0, 0, 0, DateTimeKind.Utc);
+                var rs1 = new DateTime(ry1, rm1, 1, 0, 0, 0, DateTimeKind.Unspecified);
+                var rs2 = new DateTime(ry2, rm2, 1, 0, 0, 0, DateTimeKind.Unspecified);
                 var (rev1, cnt1) = await GetRevenueInRange(companyId, rs1, rs1.AddMonths(1));
                 var (rev2, cnt2) = await GetRevenueInRange(companyId, rs2, rs2.AddMonths(1));
                 var revChg = rev2 > 0
@@ -2025,12 +2035,12 @@ public class GeminiService(
             DateTime monthStart, prevMonthStart;
             if (parsed.HasValue)
             {
-                monthStart     = new DateTime(parsed.Value.Year, parsed.Value.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+                monthStart     = new DateTime(parsed.Value.Year, parsed.Value.Month, 1, 0, 0, 0, DateTimeKind.Unspecified);
                 prevMonthStart = monthStart.AddMonths(-1);
             }
             else
             {
-                monthStart     = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+                monthStart     = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Unspecified);
                 prevMonthStart = monthStart.AddMonths(-1);
             }
 
@@ -2648,8 +2658,8 @@ public class GeminiService(
         var now    = DateTime.UtcNow;
         var parsed = ParseDateFromQuestion(question);
         var monthStart = parsed.HasValue
-            ? new DateTime(parsed.Value.Year, parsed.Value.Month, 1, 0, 0, 0, DateTimeKind.Utc)
-            : new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+            ? new DateTime(parsed.Value.Year, parsed.Value.Month, 1, 0, 0, 0, DateTimeKind.Unspecified)
+            : new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Unspecified);
         var monthEnd       = monthStart.AddMonths(1);
         var prevMonthStart = monthStart.AddMonths(-1);
         try

@@ -1055,7 +1055,7 @@ def run_oltp_to_dw(company_id: Optional[str] = None, channel: Optional[str] = No
         (order_id, ext_id, channel_type, cust_name, province, payment_method,
          order_date, status, total_amount, discount_amount, shipping_fee) = row
 
-        # -- Lấy product + tổng số lượng từ order_items -----------------------
+        # -- Lấy tất cả product + tổng số lượng từ order_items -----------------------
         # COGS ưu tiên: goods_receipt_items.import_price → purchase_order_items.import_price → products.cost_price
         with conn.cursor() as cur2:
             cur2.execute("""
@@ -1093,107 +1093,116 @@ def run_oltp_to_dw(company_id: Optional[str] = None, channel: Optional[str] = No
                 WHERE oi.order_id = %s
                 GROUP BY p.sku, p.product_name
                 ORDER BY gross_rev DESC
-                LIMIT 1
             """, (order_id,))
-            item_row = cur2.fetchone()
+            item_rows = cur2.fetchall()
 
-        if item_row:
-            sku, prod_name, total_qty, gross_rev, total_cost, any_missing = item_row
-        else:
-            sku, prod_name = "UNKNOWN", "Unknown Product"
-            total_qty = 1
-            gross_rev = float(total_amount or 0)
-            total_cost = None
-            any_missing = True
+        if not item_rows:
+            item_rows = [("UNKNOWN", "Unknown Product", 1, float(total_amount or 0), None, True)]
 
-        # PART B: Sửa gross/net revenue logic
-        # gross_revenue = doanh thu trước giảm giá (từ order_items)
-        # net_revenue   = doanh thu sau giảm giá = total_amount - discount_amount
-        disc_val      = float(discount_amount or 0)
-        gross_revenue = float(gross_rev or total_amount or 0)
-        net_revenue   = max(0.0, float(total_amount or 0) - disc_val)
-        if net_revenue == 0.0 and gross_revenue > 0:
-            # Nếu discount bằng total → dùng gross làm fallback hiển thị
-            net_revenue = gross_revenue
+        total_gross_rev = sum(float(r[3] or 0) for r in item_rows)
+        order_discount = float(discount_amount or 0)
+        order_shipping = float(shipping_fee or 0)
+        order_total = float(total_amount or 0)
 
-        # COGS thực tế (không fallback 60%)
-        if total_cost is not None and float(total_cost) > 0:
-            cogs_amount  = float(total_cost)
-            missing_cost = False
-        else:
-            cogs_amount  = 0.0
-            missing_cost = bool(any_missing if any_missing is not None else True)
+        for idx, item in enumerate(item_rows):
+            sku, prod_name, total_qty, gross_rev, total_cost, any_missing = item
+            
+            # Phân bổ tỷ lệ theo doanh thu gộp
+            ratio = (float(gross_rev) / total_gross_rev) if total_gross_rev > 0 else (1.0 / len(item_rows))
+            
+            disc_val = round(order_discount * ratio, 2)
+            gross_revenue = float(gross_rev or 0)
+            net_revenue = round(order_total * ratio, 2)
+            
+            if net_revenue == 0.0 and gross_revenue > 0:
+                net_revenue = gross_revenue
 
-        # Enforce check constraint chk_factsales_profit: gross_profit >= -gross_revenue
-        # gross_profit = net_revenue - cogs_amount >= -gross_revenue -> cogs_amount <= net_revenue + gross_revenue
-        max_allowed_cogs = net_revenue + gross_revenue
-        if cogs_amount > max_allowed_cogs:
-            cogs_amount = max_allowed_cogs
+            # COGS thực tế
+            if total_cost is not None and float(total_cost) > 0:
+                cogs_amount  = float(total_cost)
+                missing_cost = False
+            else:
+                cogs_amount  = 0.0
+                missing_cost = bool(any_missing if any_missing is not None else True)
 
-        gross_profit       = net_revenue - cogs_amount
-        raw_gm             = (gross_profit / net_revenue * 100) if net_revenue > 0 else 0
-        gross_margin       = round(max(-100.0, min(100.0, raw_gm)), 4)
-        is_returned        = (status == "RETURNED")
+            # Enforce check constraint chk_factsales_profit
+            max_allowed_cogs = net_revenue + gross_revenue
+            if cogs_amount > max_allowed_cogs:
+                cogs_amount = max_allowed_cogs
 
-        # -- Fee estimates từ channel_fee_configs ----------------------------------
-        ch_type = channel_type  # e.g. 'SHOPEE', 'TIKTOK_SHOP'
-        fee_cfg = _fee_config_cache.get(ch_type) if _fee_config_cache else None
+            gross_profit = net_revenue - cogs_amount
+            raw_gm = (gross_profit / net_revenue * 100) if net_revenue > 0 else 0
+            gross_margin = round(max(-100.0, min(100.0, raw_gm)), 4)
+            is_returned = (status == "RETURNED")
 
-        if fee_cfg:
-            pf_rate      = float(fee_cfg["platform_fee_rate"] or 0)
-            pay_rate     = float(fee_cfg["payment_fee_rate"] or 0)
-            pkg_cost     = float(fee_cfg["packaging_cost_per_order"] or 0)
-            fixed_fee    = float(fee_cfg["fixed_fee_per_order"] or 0)
-            ship_mode    = fee_cfg.get("shipping_cost_mode", "USE_ORDER_SHIPPING_FEE")
-        else:
-            pf_rate = pay_rate = pkg_cost = fixed_fee = 0.0
-            ship_mode = "ZERO"
+            # -- Fee estimates từ channel_fee_configs ----------------------------------
+            ch_type = channel_type  # e.g. 'SHOPEE', 'TIKTOK_SHOP'
+            fee_cfg = _fee_config_cache.get(ch_type) if _fee_config_cache else None
 
-        est_platform  = round(net_revenue * pf_rate, 2)
-        est_payment   = round(net_revenue * pay_rate, 2)
-        est_packaging = round(pkg_cost, 2)
-        est_fixed     = round(fixed_fee, 2)
-        ship_val      = round(float(shipping_fee or 0), 2)
-        est_ship_cost = ship_val if ship_mode == "USE_ORDER_SHIPPING_FEE" else 0.0
-        est_total_fee = round(est_platform + est_payment + est_packaging + est_fixed + est_ship_cost, 2)
-        est_net_profit = round(net_revenue - cogs_amount - est_total_fee, 2)
-        raw_nm         = (est_net_profit / net_revenue * 100) if net_revenue > 0 else 0
-        est_net_margin = round(max(-100.0, min(100.0, raw_nm)), 4)
-        is_fee_estimated = fee_cfg.get("is_estimated", True) if fee_cfg else True
+            if fee_cfg:
+                pf_rate      = float(fee_cfg["platform_fee_rate"] or 0)
+                pay_rate     = float(fee_cfg["payment_fee_rate"] or 0)
+                pkg_cost     = float(fee_cfg["packaging_cost_per_order"] or 0)
+                fixed_fee    = float(fee_cfg["fixed_fee_per_order"] or 0)
+                ship_mode    = fee_cfg.get("shipping_cost_mode", "USE_ORDER_SHIPPING_FEE")
+            else:
+                pf_rate = pay_rate = pkg_cost = fixed_fee = 0.0
+                ship_mode = "ZERO"
 
-        fact_records.append({
-            "_external_order_id": ext_id or f"ORDER_{order_id}",
-            "_channel_name":      _CHANNEL_MAP.get(channel_type, channel_type.lower()),
-            "_customer_name":     cust_name or "Khach hang",
-            "_product_sku":       sku,
-            "_product_name":      prod_name,
-            "_order_date":        order_date,
-            "_province":          province or "Khac",
-            "_payment_method":    payment_method or "COD",
-            "_company_id":        actual_company_id,
-            "order_count":        1,
-            "item_quantity":      int(total_qty or 1),
-            "gross_revenue":      round(gross_revenue, 2),
-            "discount_amount":    round(disc_val, 2),
-            "net_revenue":        round(net_revenue, 2),
-            "cost_amount":        round(cogs_amount, 2),
-            "cogs_amount":        round(cogs_amount, 2),
-            "gross_profit":       round(gross_profit, 2),
-            "profit_margin":      gross_margin,
-            "gross_profit_margin": gross_margin,
-            "shipping_fee":       ship_val,
-            "return_count":       1 if is_returned else 0,
-            "return_amount":      round(net_revenue, 2) if is_returned else 0.0,
-            "missing_cost":       missing_cost,
-            "is_fee_estimated":   is_fee_estimated,
-            "estimated_platform_fee":       est_platform,
-            "estimated_payment_fee":        est_payment,
-            "estimated_packaging_cost":     est_packaging,
-            "estimated_shipping_cost":      est_ship_cost,
-            "estimated_total_fee":          est_total_fee,
-            "estimated_net_profit":         est_net_profit,
-            "estimated_net_profit_margin":  est_net_margin,
-        })
+            est_platform  = round(net_revenue * pf_rate, 2)
+            est_payment   = round(net_revenue * pay_rate, 2)
+            
+            # Chỉ tính phí đóng gói, phí cố định và phí vận chuyển vào dòng sản phẩm đầu tiên
+            est_packaging = round(pkg_cost, 2) if idx == 0 else 0.0
+            est_fixed     = round(fixed_fee, 2) if idx == 0 else 0.0
+            ship_val      = round(order_shipping * ratio, 2)
+            est_ship_cost = ship_val if ship_mode == "USE_ORDER_SHIPPING_FEE" else 0.0
+            
+            est_total_fee = round(est_platform + est_payment + est_packaging + est_fixed + est_ship_cost, 2)
+            est_net_profit = round(net_revenue - cogs_amount - est_total_fee, 2)
+            raw_nm         = (est_net_profit / net_revenue * 100) if net_revenue > 0 else 0
+            est_net_margin = round(max(-100.0, min(100.0, raw_nm)), 4)
+            is_fee_estimated = fee_cfg.get("is_estimated", True) if fee_cfg else True
+
+            # Để tránh trùng lặp external_order_id UNIQUE:
+            # Nếu order có nhiều sản phẩm, thêm hậu tố SKU ngăn cách bởi '#'
+            item_ext_id = ext_id or f"ORDER_{order_id}"
+            if len(item_rows) > 1:
+                item_ext_id = f"{item_ext_id}#{sku}"
+
+            fact_records.append({
+                "_external_order_id": item_ext_id,
+                "_channel_name":      _CHANNEL_MAP.get(channel_type, channel_type.lower()),
+                "_customer_name":     cust_name or "Khach hang",
+                "_product_sku":       sku,
+                "_product_name":      prod_name,
+                "_order_date":        order_date,
+                "_province":          province or "Khac",
+                "_payment_method":    payment_method or "COD",
+                "_company_id":        actual_company_id,
+                "order_count":        1 if idx == 0 else 0, # Chỉ đếm 1 lần cho dòng đầu tiên
+                "item_quantity":      int(total_qty or 1),
+                "gross_revenue":      round(gross_revenue, 2),
+                "discount_amount":    round(disc_val, 2),
+                "net_revenue":        round(net_revenue, 2),
+                "cost_amount":        round(cogs_amount, 2),
+                "cogs_amount":        round(cogs_amount, 2),
+                "gross_profit":       round(gross_profit, 2),
+                "profit_margin":      gross_margin,
+                "gross_profit_margin": gross_margin,
+                "shipping_fee":       ship_val,
+                "return_count":       (1 if is_returned else 0) if idx == 0 else 0,
+                "return_amount":      (round(net_revenue, 2) if is_returned else 0.0) if idx == 0 else 0.0,
+                "missing_cost":       missing_cost,
+                "is_fee_estimated":   is_fee_estimated,
+                "estimated_platform_fee":       est_platform,
+                "estimated_payment_fee":        est_payment,
+                "estimated_packaging_cost":     est_packaging,
+                "estimated_shipping_cost":      est_ship_cost,
+                "estimated_total_fee":          est_total_fee,
+                "estimated_net_profit":         est_net_profit,
+                "estimated_net_profit_margin":  est_net_margin,
+            })
 
     # Reset cache trước khi load để tránh stale data
     _channel_cache.clear()
