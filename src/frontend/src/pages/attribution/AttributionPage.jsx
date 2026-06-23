@@ -10,6 +10,16 @@ import { fmtMoneyExact } from '../../utils/format'
 
 const COLORS = ['#6366F1','#22C55E','#F59E0B','#EF4444','#8B5CF6','#06B6D4']
 
+function getChannelDisplayName(name = '') {
+  const raw = String(name || '').trim()
+  const key = raw.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, '')
+  if (key.includes('shopee')) return 'Shopee'
+  if (key.includes('lazada')) return 'Lazada'
+  if (key.includes('tiktok')) return 'TikTok Shop'
+  if (key.includes('offline') || key.includes('pos') || key.includes('banquay')) return 'Bán tại quầy'
+  return raw || 'Khác'
+}
+
 export default function AttributionPage() {
   const { t } = useTranslation()
   const [data,   setData]   = useState(null)
@@ -30,7 +40,7 @@ export default function AttributionPage() {
 
   useEffect(() => { load() }, [days])
 
-  const pieData  = (data?.channels ?? []).map(c => ({ name: c.channel, value: c.revenue }))
+  const pieData  = (data?.channels ?? []).map(c => ({ name: getChannelDisplayName(c.channel), value: c.revenue }))
   const fmt      = v => fmtMoneyExact(v || 0)
   const roiColor = roi => roi >= 500 ? '#22C55E' : roi >= 200 ? 'var(--primary-500)' : roi >= 50 ? '#F59E0B' : roi > 0 ? '#EF4444' : 'var(--text-tertiary)'
 
@@ -90,8 +100,8 @@ export default function AttributionPage() {
               {[
                 { label: t('attribution.totalRevenue'), tip: MT.totalRevenue,  value: fmt(data?.total_revenue ?? 0), color: 'var(--primary-500)' },
                 { label: t('attribution.totalOrders'),  tip: MT.orderCount,   value: `${(data?.total_orders ?? 0).toLocaleString()} ${t('attribution.orderCount', { n: '' }).trim()}`, color: '#22C55E' },
-                { label: t('attribution.bestChannel'),  tip: MT.salesChannel, value: data?.top_channel ?? '—', color: '#22C55E' },
-                { label: t('attribution.lowestRoi'),    tip: MT.roi,          value: data?.worst_roi_channel ?? '—', color: '#EF4444' },
+                { label: t('attribution.bestChannel'),  tip: MT.salesChannel, value: getChannelDisplayName(data?.top_channel ?? '—'), color: '#22C55E' },
+                { label: t('attribution.lowestRoi'),    tip: MT.roi,          value: getChannelDisplayName(data?.worst_roi_channel ?? '—'), color: '#EF4444' },
               ].map(k => (
                 <div key={k.label} className="flex justify-between items-center py-2"
                   style={{ borderBottom: '1px solid var(--border)' }}>
@@ -137,7 +147,7 @@ export default function AttributionPage() {
                       className="transition-colors"
                       onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
                       onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                      <td className="p-3 font-medium" style={{ color: 'var(--text-primary)' }}>{c.channel}</td>
+                      <td className="p-3 font-medium" style={{ color: 'var(--text-primary)' }}>{getChannelDisplayName(c.channel)}</td>
                       <td className="p-3">
                         <div className="font-semibold" style={{ color: 'var(--text-primary)' }}>{fmt(c.revenue)}</div>
                         <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{c.attribution_pct}%</div>

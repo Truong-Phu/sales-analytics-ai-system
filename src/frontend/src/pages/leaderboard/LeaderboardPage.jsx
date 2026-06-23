@@ -25,6 +25,18 @@ const fmtProgressPct = value => {
   return `${Math.min(100, Number(value)).toLocaleString('vi-VN')}%`
 }
 
+function normalizeChannel(name) {
+  if (!name) return ''
+  const lower = name.toLowerCase()
+  if (lower.includes('shopee')) return 'Shopee'
+  if (lower.includes('tiktok')) return 'TikTok Shop'
+  if (lower.includes('lazada')) return 'Lazada'
+  if (lower.includes('facebook')) return 'Facebook'
+  if (lower.includes('website')) return 'Website'
+  if (lower.includes('offline') || lower.includes('quầy')) return 'Offline'
+  return name
+}
+
 function buildApiParams(mode, customStart, customEnd, category) {
   const today    = new Date()
   const tomorrow = dateKey(addDays(today, 1))
@@ -240,7 +252,55 @@ export default function LeaderboardPage() {
             style={{ borderColor: 'var(--border)', borderTopColor: 'var(--primary-500)' }} />
         </div>
       ) : hasData ? (
-        <div className="lcard overflow-hidden">
+        <div className="space-y-4">
+          {/* AI Decision Support Banner */}
+          <div className="lcard p-4" style={{ background: 'rgba(99,102,241,0.04)', border: '1px solid rgba(99,102,241,0.18)' }}>
+            <div className="flex items-start gap-2.5">
+              <span className="icon text-primary-500 animate-pulse mt-0.5" style={{ color: 'var(--primary-500)', fontSize: 20 }}>auto_awesome</span>
+              <div className="flex-1 min-w-0">
+                <h4 className="text-xs font-bold text-foreground" style={{ color: 'var(--text-primary)' }}>
+                  Gợi ý & Tư vấn Quyết định AI (AI Action Insights)
+                </h4>
+                <p className="text-xs mt-1.5 leading-relaxed" style={{ color: 'var(--text-tertiary)' }}>
+                  {(() => {
+                    const topPerformer = data.entries[0]
+                    const topName = category === 'channel' ? normalizeChannel(topPerformer?.name) : (topPerformer?.name || '—')
+                    const topVal = topPerformer ? (isMoneyLeaderboard ? fmtMoneyExact(topPerformer.value) : `${topPerformer.value.toLocaleString('vi-VN')} ${orderUnit}`) : '—'
+                    
+                    if (category === 'product') {
+                      return (
+                        <>
+                          Sản phẩm <strong>{topName}</strong> đang dẫn đầu doanh số với <strong>{topVal}</strong> trong kỳ. Hệ thống đề xuất doanh nghiệp liên hệ sớm với nhà cung cấp để đảm bảo tồn kho cho sản phẩm này, tránh đứt hàng. Đối với các sản phẩm xếp cuối bảng (hiệu suất thấp), hãy cân nhắc thiết lập chính sách bán kèm (bundle) với sản phẩm hot hoặc chạy flash sale xả hàng để giải phóng mặt bằng kho và thu hồi vốn lưu động.
+                        </>
+                      )
+                    }
+                    if (category === 'customer') {
+                      return (
+                        <>
+                          Khách hàng VIP lớn nhất trong kỳ này là <strong>{topName}</strong> đóng góp <strong>{topVal}</strong>. Hệ thống khuyên bạn nên thiết lập chương trình tri ân VIP riêng biệt (tặng voucher độc quyền 15-20%) cho Top 5 khách hàng hàng đầu. Đồng thời, kết hợp với bộ lọc khách hàng rời bỏ (Rfm/Churn) để chủ động chăm sóc lại nhóm khách hàng có tần suất mua giảm dần.
+                        </>
+                      )
+                    }
+                    if (category === 'channel') {
+                      return (
+                        <>
+                          Kênh bán hàng <strong>{topName}</strong> đem lại doanh số cao nhất đạt <strong>{topVal}</strong>. Khuyến nghị doanh nghiệp ưu tiên phân bổ ngân sách marketing vào kênh này. Hãy click trực tiếp vào tên kênh trên bảng để đối chiếu chi tiết số đơn hàng, đồng thời rà soát lại cơ cấu phí nền tảng để đảm bảo biên lợi nhuận ròng của kênh luôn tối ưu.
+                        </>
+                      )
+                    }
+                    // category === 'staff'
+                    return (
+                      <>
+                        Nhân sự xuất sắc nhất trong bảng xếp hạng kỳ này là <strong>{topName}</strong> với <strong>{topVal}</strong>. Đề xuất ban quản lý tổ chức các buổi chia sẻ kinh nghiệm thực chiến từ nhân sự đầu bảng để đồng bộ và nâng cao năng lực cho toàn bộ nhân sự cấp dưới. Bạn cũng có thể thiết lập thêm chính sách thưởng nóng để tạo động lực thi đua cạnh tranh lành mạnh.
+                      </>
+                    )
+                  })()}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="lcard overflow-hidden">
           {/* Sub-header */}
           <div className="px-5 py-3 flex items-center justify-between"
             style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-elevated)' }}>
@@ -272,7 +332,9 @@ export default function LeaderboardPage() {
 
                 {/* Bar */}
                 <div className="flex-1 min-w-0">
-                  <div className="font-semibold" style={{ color: 'var(--text-primary)' }}>{entry.name}</div>
+                  <div className="font-semibold" style={{ color: 'var(--text-primary)' }}>
+                    {category === 'channel' ? normalizeChannel(entry.name) : entry.name}
+                  </div>
                   <div className="mt-1.5 flex items-center gap-2">
                     <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--bg-elevated)', maxWidth: 200 }}>
                       <div className="h-full rounded-full" style={{
@@ -330,6 +392,7 @@ export default function LeaderboardPage() {
               </div>
             ))}
           </div>
+        </div>
         </div>
       ) : (
         <AiEmptyState title={t('leaderboard.emptyState')} />

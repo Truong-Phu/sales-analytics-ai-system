@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """
 OfflineETL & ExcelImporter – ETL Mức 3: Import thủ công từ CSV/Excel.
 
@@ -518,7 +518,7 @@ def _row_to_fact_record(row: Dict, company_id: Optional[str] = None) -> Optional
         return None
 
     gross_revenue = unit_price * quantity
-    net_revenue   = gross_revenue - discount
+    net_revenue   = max(0.0, gross_revenue - discount)
     # COGS từ CSV nếu có, không dùng estimate 60%
     cost_raw      = row.get("cost_price") or row.get("cost_amount")
     if cost_raw:
@@ -527,6 +527,13 @@ def _row_to_fact_record(row: Dict, company_id: Optional[str] = None) -> Optional
     else:
         cogs_amount  = 0.0
         missing_cost = True
+
+    # Enforce check constraint chk_factsales_profit: gross_profit >= -gross_revenue
+    # gross_profit = net_revenue - cogs_amount >= -gross_revenue -> cogs_amount <= net_revenue + gross_revenue
+    max_allowed_cogs = net_revenue + gross_revenue
+    if cogs_amount > max_allowed_cogs:
+        cogs_amount = max_allowed_cogs
+
     gross_profit  = net_revenue - cogs_amount
     raw_margin    = (gross_profit / net_revenue * 100) if net_revenue > 0 else 0
     profit_margin = round(max(-100.0, min(100.0, raw_margin)), 2)
@@ -1116,6 +1123,12 @@ def run_oltp_to_dw(company_id: Optional[str] = None, channel: Optional[str] = No
         else:
             cogs_amount  = 0.0
             missing_cost = bool(any_missing if any_missing is not None else True)
+
+        # Enforce check constraint chk_factsales_profit: gross_profit >= -gross_revenue
+        # gross_profit = net_revenue - cogs_amount >= -gross_revenue -> cogs_amount <= net_revenue + gross_revenue
+        max_allowed_cogs = net_revenue + gross_revenue
+        if cogs_amount > max_allowed_cogs:
+            cogs_amount = max_allowed_cogs
 
         gross_profit       = net_revenue - cogs_amount
         raw_gm             = (gross_profit / net_revenue * 100) if net_revenue > 0 else 0

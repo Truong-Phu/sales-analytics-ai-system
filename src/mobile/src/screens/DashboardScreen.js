@@ -40,7 +40,7 @@ const MOCK_TREND = [
 
 const MOCK_TOP_PRODUCTS = [
   { name: 'Áo thun Unisex',       channel: 'Shopee',   revenue: 45_200_000 },
-  { name: 'Quần jogger cotton',    channel: 'TikTok',   revenue: 38_900_000 },
+  { name: 'Quần jogger cotton',    channel: 'TikTok Shop', revenue: 38_900_000 },
   { name: 'Váy hoa midi',          channel: 'Lazada',   revenue: 31_500_000 },
   { name: 'Áo khoác dù unisex',   channel: 'Facebook', revenue: 27_100_000 },
   { name: 'Giày sneaker trắng',   channel: 'Website',  revenue: 19_800_000 },
@@ -49,7 +49,7 @@ const MOCK_TOP_PRODUCTS = [
 const MOCK_CHANNEL_REVENUE = [
   { channel: 'Shopee',   revenue: 45_000_000, color: '#EE4D2D' },
   { channel: 'Lazada',   revenue: 28_000_000, color: '#0F3DD1' },
-  { channel: 'TikTok',   revenue: 22_000_000, color: '#2DD4BF' },
+  { channel: 'TikTok Shop', revenue: 22_000_000, color: '#2DD4BF' },
   { channel: 'Facebook', revenue: 18_000_000, color: '#1877F2' },
   { channel: 'Website',  revenue: 12_000_000, color: '#6366F1' },
 ]
@@ -85,7 +85,7 @@ function getPeriodRange(periodKey) {
 // Quy tắc: dùng màu chính thức của từng sàn, đủ sáng để đọc được trên nền tối
 const CHANNEL_COLORS = {
   Shopee:   '#EE4D2D', // cam-đỏ chính thức Shopee
-  TikTok:   '#2DD4BF', // teal — đọc được cả light+dark
+  'TikTok Shop': '#2DD4BF', // teal — đọc được cả light+dark
   Lazada:   '#0F3DD1', // xanh dương Lazada
   Facebook: '#1877F2', // xanh Facebook
   Website:  '#6366F1', // indigo — brand hệ thống
@@ -223,7 +223,7 @@ function DashboardSkeleton() {
 
 // ─── AI Insights mock fallback ────────────────────────────────────────────────
 const MOCK_INSIGHTS = [
-  { type: 'anomaly', level: 'warning', text: 'Doanh thu kênh TikTok giảm 23% so với tuần trước.' },
+  { type: 'anomaly', level: 'warning', text: 'Doanh thu kênh TikTok Shop giảm 23% so với tuần trước.' },
   { type: 'churn',   level: 'alert',   text: '12 khách hàng VIP chưa mua hàng trong 30 ngày.' },
   { type: 'trend',   level: 'info',    text: 'Xu hướng tăng trưởng Shopee +15% trong 7 ngày qua.' },
   { type: 'stock',   level: 'warning', text: '3 sản phẩm sắp hết hàng dưới mức tối thiểu.' },

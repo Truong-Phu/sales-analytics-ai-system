@@ -10,7 +10,7 @@ import { radius } from '../components/theme'
 import { formatMoney } from '../utils/format'
 
 const CHANNEL_COLORS = {
-  Shopee: '#EE4D2D', TikTok: '#2DD4BF', Lazada: '#0F3DD1',
+  Shopee: '#EE4D2D', 'TikTok Shop': '#2DD4BF', Lazada: '#0F3DD1',
   Facebook: '#1877F2', Website: '#6366F1', Zalo: '#0068FF',
 }
 
@@ -25,7 +25,7 @@ const MOCK_CURRENT = {
   totalCustomers: 89,        totalProfit: 253_560_000,
   channels: [
     { name: 'Shopee',   revenue: 310_000_000, orders: 115, color: '#EE4D2D' },
-    { name: 'TikTok',   revenue: 245_000_000, orders: 87,  color: '#69C9D0' },
+    { name: 'TikTok Shop', revenue: 245_000_000, orders: 87,  color: '#69C9D0' },
     { name: 'Lazada',   revenue: 178_000_000, orders: 63,  color: '#0F146D' },
     { name: 'Facebook', revenue: 92_000_000,  orders: 34,  color: '#1877F2' },
     { name: 'Website',  revenue: 20_200_000,  orders: 13,  color: '#4AE176' },

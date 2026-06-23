@@ -43,6 +43,35 @@ const startOfQuarter = () => {
   return toDateKey(d)
 }
 
+const startOfLastMonth = () => {
+  const d = new Date()
+  d.setMonth(d.getMonth() - 1, 1)
+  return toDateKey(d)
+}
+
+const endOfLastMonth = () => {
+  const d = new Date()
+  d.setDate(0)
+  return toDateKey(d)
+}
+
+const startOfLastQuarter = () => {
+  const d = new Date()
+  const currentQuarterStartMonth = Math.floor(d.getMonth() / 3) * 3
+  d.setMonth(currentQuarterStartMonth - 3, 1)
+  return toDateKey(d)
+}
+
+const endOfLastQuarter = () => {
+  const d = new Date()
+  const currentQuarterStartMonth = Math.floor(d.getMonth() / 3) * 3
+  d.setMonth(currentQuarterStartMonth, 0)
+  return toDateKey(d)
+}
+
+const startOfLastYear = () => `${new Date().getFullYear() - 1}-01-01`
+const endOfLastYear = () => `${new Date().getFullYear() - 1}-12-31`
+
 const startOfYear = () => `${new Date().getFullYear()}-01-01`
 
 const PRESET_ALIASES = {
@@ -53,6 +82,9 @@ const PRESET_ALIASES = {
   days_7: 'last7days',
   days_30: 'mtd',
   days_90: 'qtd',
+  lastMonth: 'last_month',
+  lastQuarter: 'last_quarter',
+  lastYear: 'last_year',
 }
 
 const normalizePresetKey = (key) => PRESET_ALIASES[key] ?? key
@@ -62,8 +94,11 @@ const PRESETS = [
   { key: 'today',     label: 'Hôm nay' },
   { key: 'last7days', label: '7 ngày' },
   { key: 'mtd',       label: 'Tháng này' },
+  { key: 'last_month', label: 'Tháng trước' },
   { key: 'qtd',       label: 'Quý này' },
+  { key: 'last_quarter', label: 'Quý trước' },
   { key: 'ytd',       label: 'Năm nay' },
+  { key: 'last_year', label: 'Năm trước' },
   { key: 'custom',    label: 'Tùy chọn' },
 ]
 
@@ -76,8 +111,11 @@ function resolvePreset(key) {
     case 'today':     return { from: t, to: t }
     case 'last7days': return { from: daysAgo(6), to: t }
     case 'mtd':       return { from: startOfMonth(), to: t }
+    case 'last_month':   return { from: startOfLastMonth(), to: endOfLastMonth() }
     case 'qtd':       return { from: startOfQuarter(), to: t }
+    case 'last_quarter': return { from: startOfLastQuarter(), to: endOfLastQuarter() }
     case 'ytd':       return { from: startOfYear(), to: t }
+    case 'last_year':    return { from: startOfLastYear(), to: endOfLastYear() }
     default:          return null
   }
 }

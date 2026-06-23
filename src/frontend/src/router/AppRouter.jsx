@@ -30,6 +30,7 @@ const EtlMonitorPage      = lazy(() => import('../pages/etl-monitor/EtlMonitorPa
 const ReportPage          = lazy(() => import('../pages/report/ReportPage'))
 const AdminPage           = lazy(() => import('../pages/admin/AdminPage'))
 const SettingsPage        = lazy(() => import('../pages/settings/SettingsPage'))
+const LoyaltyVouchersPage = lazy(() => import('../pages/loyalty/LoyaltyVouchersPage'))
 const ChangePasswordPage  = lazy(() => import('../pages/auth/ChangePasswordPage'))
 const OnboardingPage      = lazy(() => import('../pages/OnboardingPage'))
 
@@ -347,6 +348,12 @@ export default function AppRouter() {
         <Route path="/pos" element={
           <ProtectedRoute roles={['Owner', 'Manager', 'Staff_Sales', 'Staff']}>
             <Shell><PosPage /></Shell>
+          </ProtectedRoute>
+        } />
+
+        <Route path="/loyalty-vouchers" element={
+          <ProtectedRoute roles={['Owner', 'Manager']}>
+            <Shell><LoyaltyVouchersPage /></Shell>
           </ProtectedRoute>
         } />
 

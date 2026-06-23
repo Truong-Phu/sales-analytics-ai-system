@@ -41,13 +41,16 @@ function firstDayOfMonth() {
   return dateKey(date)
 }
 
-const CHANNEL_LABELS = {
-  shopee: 'Shopee', tiktok: 'TikTok', lazada: 'Lazada',
-  'bán tại quầy': 'POS', offline: 'POS', website: 'Website',
-}
-
 function channelLabel(raw) {
-  return CHANNEL_LABELS[(raw || '').toLowerCase()] || raw
+  if (!raw) return '—'
+  const lower = raw.toLowerCase()
+  if (lower.includes('shopee')) return 'Shopee'
+  if (lower.includes('tiktok')) return 'TikTok Shop'
+  if (lower.includes('lazada')) return 'Lazada'
+  if (lower.includes('facebook')) return 'Facebook'
+  if (lower.includes('website')) return 'Website'
+  if (lower.includes('offline') || lower.includes('quầy') || lower.includes('bán tại quầy')) return 'POS'
+  return raw
 }
 
 // ── Ánh xạ từ label hiển thị → key trong KPI_DEFINITIONS (nguồn chân lý duy nhất)
@@ -244,7 +247,7 @@ export default function ProfitPage() {
           <h1 className="text-2xl font-bold text-gray-800">{t('profit.title')}</h1>
           <p className="text-sm text-gray-500">{t('profit.subtitle')}</p>
         </div>
-        <DateRangeFilter from={from} to={to} onChange={(f, toVal) => { setFrom(f); setTo(toVal) }} />
+        <DateRangeFilter from={from} to={to} presets={['mtd', 'last_month', 'qtd', 'last_quarter', 'ytd', 'last_year', 'custom']} onChange={(f, toVal) => { setFrom(f); setTo(toVal); setPage(1) }} />
       </div>
 
       {!ov && !loading && <AiEmptyState title={t('profit.emptyState')} />}

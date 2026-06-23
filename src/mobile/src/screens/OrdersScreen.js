@@ -39,8 +39,21 @@ const CHANNEL_COLORS = {
   website:      '#4ae176',
   zalo:         '#0066cc',
 }
+function normalizeChannel(name) {
+  if (!name) return ''
+  const lower = name.toLowerCase()
+  if (lower.includes('shopee')) return 'Shopee'
+  if (lower.includes('tiktok')) return 'TikTok Shop'
+  if (lower.includes('lazada')) return 'Lazada'
+  if (lower.includes('facebook')) return 'Facebook'
+  if (lower.includes('website')) return 'Website'
+  if (lower.includes('offline') || lower.includes('quầy')) return 'Offline'
+  return name
+}
+
 function channelColor(ch = '') {
-  return CHANNEL_COLORS[ch.toLowerCase()] ?? '#6366F1'
+  const norm = normalizeChannel(ch)
+  return CHANNEL_COLORS[norm.toLowerCase()] ?? '#6366F1'
 }
 
 const MOCK_ORDERS = [
@@ -54,7 +67,7 @@ const MOCK_ORDERS = [
 function OrderItem({ item, onPress, colors, statusLabel }) {
   const orderCode    = item.externalOrderId ?? item.external_order_id ?? item.code ?? `#${item.orderId ?? item.id ?? '?'}`
   const customerName = item.customerName   ?? item.customer_name   ?? item.customer?.name   ?? 'Khách lẻ'
-  const channel      = item.channelName    ?? item.channel_name    ?? item.channel          ?? ''
+  const channel      = normalizeChannel(item.channelName ?? item.channel_name ?? item.channel ?? '')
   const dateStr      = item.orderDate      ?? item.order_date      ?? item.createdAt        ?? item.created_at ?? ''
   const total        = item.totalAmount    ?? item.total_amount    ?? item.grandTotal        ?? 0
   const statusKey    = (item.status        ?? item.orderStatus     ?? 'pending').toLowerCase()
@@ -166,7 +179,6 @@ export default function OrdersScreen({ navigation }) {
   const { colors }  = useTheme()
   const { t }       = useTranslation()
   const s           = useMemo(() => makeStyles(colors), [colors])
-  const canAdd      = usePermission('orders.add')
 
   const [data,         setData]         = useState([])
   const [loading,      setLoading]      = useState(true)
@@ -300,7 +312,7 @@ export default function OrdersScreen({ navigation }) {
   ]
 
   const PERIOD_OPTIONS  = [t('common.today'), t('common.day7'), t('common.day30')]
-  const CHANNEL_OPTIONS = [t('common.all'), 'Shopee', 'Lazada', 'TikTok', 'Facebook', 'Website']
+  const CHANNEL_OPTIONS = [t('common.all'), 'Shopee', 'Lazada', 'TikTok Shop', 'Facebook', 'Website']
 
   return (
     <View style={s.container}>
@@ -417,16 +429,7 @@ export default function OrdersScreen({ navigation }) {
         />
       )}
 
-      {canAdd && (
-        <TouchableOpacity
-          style={s.fab}
-          onPress={() => navigation.navigate('AddOrder')}
-          activeOpacity={0.85}
-        >
-          <Text style={s.fabText}>+</Text>
-          <Text style={s.fabLabel}>{t('orders.addOrder')}</Text>
-        </TouchableOpacity>
-      )}
+
 
       <Modal visible={showFilter} transparent animationType="slide" onRequestClose={() => setShowFilter(false)}>
         <TouchableOpacity

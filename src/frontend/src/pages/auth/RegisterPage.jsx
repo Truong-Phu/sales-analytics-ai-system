@@ -338,14 +338,14 @@ export default function RegisterPage() {
           Quản lý bán hàng<br />đa kênh thông minh
         </h2>
         <p className="text-white/70 text-sm mb-8">
-          Hợp nhất dữ liệu Shopee, Lazada, TikTok vào một nơi.<br />
+          Hợp nhất dữ liệu Shopee, Lazada, TikTok Shop vào một nơi.<br />
           Dự báo AI, báo cáo PDF chuyên nghiệp.
         </p>
 
         <div className="space-y-3 mb-8">
           {[
             { icon: 'trending_up',    text: 'Dự báo doanh thu với AI Prophet' },
-            { icon: 'store',          text: 'Đa kênh: Shopee, Lazada, TikTok, Facebook' },
+            { icon: 'store',          text: 'Đa kênh: Shopee, Lazada, TikTok Shop, Facebook' },
             { icon: 'picture_as_pdf', text: 'Báo cáo PDF chuyên nghiệp, tự động' },
             { icon: 'security',       text: 'Dữ liệu mã hóa AES-256, an toàn tuyệt đối' },
           ].map((f, i) => (

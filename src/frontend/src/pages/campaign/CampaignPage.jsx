@@ -1,13 +1,15 @@
 import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useSearchParams, useNavigate } from 'react-router-dom'
+import axios from '../../api/axios'
 import MockToast from '../../components/ui/MockToast'
 import AiEmptyState from '../../components/ui/AiEmptyState'
+import DetailDrawer from '../../components/ui/DetailDrawer'
 import { getCampaignPlan } from '../../api/aiApi'
 import { fmtMoneyExact } from '../../utils/format'
 
 // ── Hiển thị card gợi ý từ URL params (basket / rfm / churn) ─────────────────
-function ActionSuggestionBanner({ params, onDismiss }) {
+function ActionSuggestionBanner({ params, onDismiss, onExecute }) {
   const { t } = useTranslation()
   const action = params.get('action')
   if (!action) return null
@@ -35,6 +37,10 @@ function ActionSuggestionBanner({ params, onDismiss }) {
           <p className="text-xs mt-1.5 font-medium" style={{ color: 'var(--text-primary)' }}>
             {t('campaign.bundleProposal')}
           </p>
+          <button onClick={() => onExecute({ action: 'bundle', products, lift, conf })}
+            className="lbtn lbtn-primary text-xs mt-2.5 !h-8 !px-3">
+            Tạo khuyến mãi combo ngay
+          </button>
         </div>
         <button onClick={onDismiss} className="icon shrink-0 text-sm transition-colors"
           style={{ color: 'var(--text-tertiary)', fontSize: 18 }}
@@ -64,6 +70,11 @@ function ActionSuggestionBanner({ params, onDismiss }) {
           <p className="text-xs mt-1.5 font-medium" style={{ color: 'var(--text-primary)' }}>
             Đề xuất: Gửi voucher giảm giá 20% + email cá nhân hóa cho {count} khách này — chạy vào thời điểm cao điểm bên dưới.
           </p>
+          <button onClick={() => onExecute({ action: 'winback', segment, count })}
+            className="lbtn lbtn-primary text-xs mt-2.5 !h-8 !px-3"
+            style={{ background: segColor, borderColor: segColor }}>
+            Kích hoạt chiến dịch ngay
+          </button>
         </div>
         <button onClick={onDismiss} className="icon shrink-0 transition-colors"
           style={{ color: 'var(--text-tertiary)', fontSize: 18 }}
@@ -96,6 +107,11 @@ function ActionSuggestionBanner({ params, onDismiss }) {
           <p className="text-xs mt-1.5 font-medium" style={{ color: 'var(--text-primary)' }}>
             Đề xuất: Gửi ngay voucher cá nhân hóa hoặc gọi điện chăm sóc — chọn thời điểm tốt nhất bên dưới để liên hệ.
           </p>
+          <button onClick={() => onExecute({ action: 'retain', customer, prob, risk, channel })}
+            className="lbtn lbtn-primary text-xs mt-2.5 !h-8 !px-3"
+            style={{ background: riskColor, borderColor: riskColor }}>
+            Thực hiện giữ chân ngay
+          </button>
         </div>
         <button onClick={onDismiss} className="icon shrink-0 transition-colors"
           style={{ color: 'var(--text-tertiary)', fontSize: 18 }}
@@ -110,6 +126,264 @@ function ActionSuggestionBanner({ params, onDismiss }) {
   return null
 }
 
+const fallbackVouchers = [
+  { id: 'v-10', code: 'GIUCHAN10', type: 'PERCENT', value: 10 },
+  { id: 'v-15', code: 'GIUCHAN15', type: 'PERCENT', value: 15 },
+  { id: 'v-20', code: 'GIUCHAN20', type: 'PERCENT', value: 20 },
+  { id: 'v-ship', code: 'FREESHIP', type: 'FREESHIP', value: 0 },
+]
+
+const getVoucherLabel = (v) => {
+  if (v.type === 'PERCENT') {
+    return `Giảm ${v.value}% (Mã: ${v.code}${v.minOrderValue ? `, Đơn tối thiểu: ${new Intl.NumberFormat('vi-VN').format(v.minOrderValue)}₫` : ''})`;
+  }
+  if (v.type === 'FIXED') {
+    return `Giảm ${new Intl.NumberFormat('vi-VN').format(v.value)}₫ (Mã: ${v.code}${v.minOrderValue ? `, Đơn tối thiểu: ${new Intl.NumberFormat('vi-VN').format(v.minOrderValue)}₫` : ''})`;
+  }
+  return `Miễn phí vận chuyển (Mã: ${v.code}${v.minOrderValue ? `, Đơn tối thiểu: ${new Intl.NumberFormat('vi-VN').format(v.minOrderValue)}₫` : ''})`;
+}
+
+function ActionExecutionDrawer({ config, onClose, onSuccess }) {
+  const [sending, setSending] = useState(false)
+  const [method, setMethod] = useState('SMS')
+  const [vouchers, setVouchers] = useState([])
+  const [selectedVoucher, setSelectedVoucher] = useState(null)
+  const [message, setMessage] = useState('')
+
+  useEffect(() => {
+    axios.get('/api/pos/vouchers')
+      .then(r => {
+        const active = (r.data ?? []).filter(v => v.isActive)
+        if (active.length > 0) {
+          setVouchers(active)
+          setSelectedVoucher(active[0])
+        } else {
+          setVouchers(fallbackVouchers)
+          setSelectedVoucher(fallbackVouchers[0])
+        }
+      })
+      .catch(() => {
+        setVouchers(fallbackVouchers)
+        setSelectedVoucher(fallbackVouchers[0])
+      })
+  }, [])
+
+  useEffect(() => {
+    if (!selectedVoucher) return
+    const discountText = selectedVoucher.type === 'PERCENT' 
+      ? `giảm giá ${selectedVoucher.value}% [${selectedVoucher.code}]`
+      : selectedVoucher.type === 'FIXED'
+        ? `giảm giá ${new Intl.NumberFormat('vi-VN').format(selectedVoucher.value)}₫ [${selectedVoucher.code}]`
+        : `miễn phí vận chuyển [${selectedVoucher.code}]`
+
+    if (config.action === 'retain') {
+      const channelName = config.channel === 'SHOPEE' ? 'Shopee' : config.channel === 'TIKTOK_SHOP' ? 'TikTok Shop' : config.channel === 'LAZADA' ? 'Lazada' : config.channel === 'FACEBOOK' ? 'Facebook' : config.channel === 'WEBSITE' ? 'Website' : 'cửa hàng';
+      setMessage(`Chào anh/chị ${config.customer}, ${channelName} gửi tặng anh/chị mã ${discountText} cho đơn hàng tiếp theo. Áp dụng đến hết tháng này. Cảm ơn anh/chị đã đồng hành cùng cửa hàng!`)
+    } else if (config.action === 'winback') {
+      setMessage(`Chào anh/chị, để tri ân khách hàng cũ, cửa hàng gửi tặng anh/chị mã voucher ${discountText} áp dụng cho mọi đơn hàng. Chúc anh/chị có trải nghiệm mua sắm tuyệt vời!`)
+    } else if (config.action === 'bundle') {
+      setMessage(`Chương trình khuyến mãi Mua kèm giá tốt: Giảm ngay ${selectedVoucher.type === 'PERCENT' ? `${selectedVoucher.value}%` : selectedVoucher.type === 'FIXED' ? `${new Intl.NumberFormat('vi-VN').format(selectedVoucher.value)}₫` : 'phí vận chuyển'} [${selectedVoucher.code}] khi mua combo bộ đôi sản phẩm: ${config.products?.join(' và ')}.`)
+    }
+  }, [config, selectedVoucher])
+
+  const handleSend = () => {
+    setSending(true)
+    setTimeout(() => {
+      setSending(false)
+      
+      try {
+        const list = JSON.parse(localStorage.getItem('executed_campaigns') ?? '[]')
+        const discountVal = selectedVoucher 
+          ? `[${selectedVoucher.code}] - ${selectedVoucher.type === 'PERCENT' ? `${selectedVoucher.value}%` : selectedVoucher.type === 'FIXED' ? `${new Intl.NumberFormat('vi-VN').format(selectedVoucher.value)}₫` : 'Freeship'}` 
+          : '20%'
+          
+        list.unshift({
+          id: Date.now(),
+          timestamp: new Date().toISOString(),
+          action: config.action,
+          target: config.action === 'retain' ? config.customer : config.action === 'winback' ? `${config.segment} (${config.count} KH)` : config.products?.join(' + '),
+          method: config.action === 'bundle' ? 'Combo' : method,
+          discount: discountVal,
+          message: message,
+          status: 'SUCCESS'
+        })
+        localStorage.setItem('executed_campaigns', JSON.stringify(list))
+      } catch (e) {
+        console.error(e)
+      }
+
+      onSuccess(`Đã kích hoạt thành công chiến dịch ${config.action === 'retain' ? `giữ chân cho khách hàng ${config.customer}` : config.action === 'winback' ? `kích hoạt lại cho phân khúc ${config.segment}` : 'khuyến mãi combo sản phẩm'}!`)
+      onClose()
+    }, 1500)
+  }
+
+  const title = config.action === 'retain' 
+    ? 'Thực thi chiến dịch giữ chân' 
+    : config.action === 'winback' 
+      ? 'Kích hoạt lại khách hàng cũ' 
+      : 'Cấu hình khuyến mãi mua kèm'
+
+  const subtitle = config.action === 'retain'
+    ? `Khách hàng: ${config.customer} (Rủi ro: ${config.risk})`
+    : config.action === 'winback'
+      ? `Phân khúc: ${config.segment} (${config.count} khách hàng)`
+      : `Mua kèm: ${config.products?.join(' + ')}`
+
+  const drawerFooter = (
+    <div className="flex justify-end gap-2 w-full">
+      <button onClick={onClose} disabled={sending} className="lbtn lbtn-secondary text-xs !h-9 !px-3">
+        Hủy bỏ
+      </button>
+      <button onClick={handleSend} disabled={sending} className="lbtn lbtn-primary text-xs !h-9 !px-4">
+        {sending ? (
+          <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+        ) : (
+          config.action === 'bundle' ? 'Kích hoạt combo' : 'Gửi ưu đãi ngay'
+        )}
+      </button>
+    </div>
+  )
+
+  return (
+    <DetailDrawer
+      open={true}
+      onClose={onClose}
+      title={title}
+      subtitle={subtitle}
+      width={460}
+      footer={drawerFooter}
+    >
+      <div className="p-5 space-y-4 text-xs text-secondary" style={{ color: 'var(--text-secondary)' }}>
+        {config.action === 'retain' && (
+          <div className="bg-red-50 dark:bg-red-950/20 p-3.5 rounded-xl border border-red-100 dark:border-red-900/30 space-y-1">
+            <p>Khách hàng: <strong className="text-foreground" style={{ color: 'var(--text-primary)' }}>{config.customer}</strong></p>
+            <p>Xác suất rời bỏ: <strong style={{ color: '#EF4444' }}>{config.prob}% ({config.risk})</strong></p>
+            <p>Kênh tiếp cận gợi ý: <strong className="text-foreground" style={{ color: 'var(--text-primary)' }}>{config.channel || 'Tất cả'}</strong></p>
+          </div>
+        )}
+        {config.action === 'winback' && (
+          <div className="bg-indigo-50 dark:bg-indigo-950/20 p-3.5 rounded-xl border border-indigo-100 dark:border-indigo-900/30 space-y-1">
+            <p>Phân khúc khách hàng: <strong className="text-foreground" style={{ color: 'var(--text-primary)' }}>{config.segment}</strong></p>
+            <p>Số lượng tiếp cận: <strong className="text-foreground" style={{ color: 'var(--text-primary)' }}>{config.count} khách hàng</strong></p>
+          </div>
+        )}
+        {config.action === 'bundle' && (
+          <div className="bg-green-50 dark:bg-green-950/20 p-3.5 rounded-xl border border-green-100 dark:border-green-900/30 space-y-1.5">
+            <p className="font-semibold text-foreground" style={{ color: 'var(--text-primary)' }}>Sản phẩm mua kèm gợi ý:</p>
+            <ul className="list-disc list-inside space-y-0.5 text-foreground" style={{ color: 'var(--text-primary)' }}>
+              {config.products?.map((p, i) => <li key={i}>{p}</li>)}
+            </ul>
+            <p className="mt-1">Độ nâng doanh thu dự kiến: <strong style={{ color: '#10B981' }}>{config.lift}x (Conf {config.conf}%)</strong></p>
+          </div>
+        )}
+
+        {/* Form fields */}
+        <div className="space-y-4 pt-2">
+          {config.action !== 'bundle' && (
+            <div>
+              <label className="block font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>Phương thức gửi ưu đãi</label>
+              <select value={method} onChange={e => setMethod(e.target.value)} className="linput text-xs w-full">
+                <option value="SMS">Gửi SMS Brandname tự động (qua SĐT)</option>
+                <option value="Email">Gửi Email Marketing cá nhân hóa (qua Gmail)</option>
+              </select>
+            </div>
+          )}
+          
+          <div>
+            <label className="block font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>Mức ưu đãi / Voucher</label>
+            <select 
+              value={selectedVoucher?.id || ''} 
+              onChange={e => {
+                const found = vouchers.find(v => v.id === e.target.value || String(v.id) === e.target.value)
+                if (found) setSelectedVoucher(found)
+              }} 
+              className="linput text-xs w-full"
+            >
+              {vouchers.map(v => (
+                <option key={v.id} value={v.id}>{getVoucherLabel(v)}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>Nội dung thông điệp</label>
+            <textarea
+              value={message}
+              onChange={e => setMessage(e.target.value)}
+              className="linput w-full p-2 h-36 text-xs"
+              style={{ fontFamily: 'sans-serif', lineHeight: '1.4' }}
+            />
+          </div>
+        </div>
+      </div>
+    </DetailDrawer>
+  )
+}
+
+function ExecutedCampaignsHistory({ list, onClear }) {
+  if (list.length === 0) return null;
+
+  return (
+    <div className="lcard p-5 space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold" style={{ color: 'var(--text-secondary)' }}>
+          Lịch sử Chiến dịch đã Thực thi (Executed Campaigns)
+        </h3>
+        <button
+          onClick={onClear}
+          className="text-xs transition-colors hover:text-red-500"
+          style={{ color: 'var(--text-tertiary)' }}
+        >
+          Xóa lịch sử
+        </button>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs text-left">
+          <thead>
+            <tr style={{ borderBottom: '1px solid var(--border)' }}>
+              <th className="pb-2 font-semibold" style={{ color: 'var(--text-tertiary)' }}>Loại chiến dịch</th>
+              <th className="pb-2 font-semibold" style={{ color: 'var(--text-tertiary)' }}>Đối tượng tiếp cận</th>
+              <th className="pb-2 font-semibold" style={{ color: 'var(--text-tertiary)' }}>Mã Voucher</th>
+              <th className="pb-2 font-semibold" style={{ color: 'var(--text-tertiary)' }}>Kênh gửi</th>
+              <th className="pb-2 font-semibold" style={{ color: 'var(--text-tertiary)' }}>Thời gian</th>
+              <th className="pb-2 font-semibold" style={{ color: 'var(--text-tertiary)' }}>Trạng thái</th>
+            </tr>
+          </thead>
+          <tbody>
+            {list.map((item) => (
+              <tr key={item.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                <td className="py-2.5">
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold"
+                    style={{
+                      background: item.action === 'retain' ? 'rgba(239,68,68,0.1)' : item.action === 'winback' ? 'rgba(99,102,241,0.1)' : 'rgba(16,185,129,0.1)',
+                      color: item.action === 'retain' ? '#EF4444' : item.action === 'winback' ? 'var(--primary-600)' : '#10B981',
+                    }}
+                  >
+                    {item.action === 'retain' ? 'Giữ chân' : item.action === 'winback' ? 'Kích hoạt lại' : 'Mua kèm'}
+                  </span>
+                </td>
+                <td className="py-2.5 font-medium" style={{ color: 'var(--text-primary)' }}>{item.target}</td>
+                <td className="py-2.5 font-mono text-xs" style={{ color: 'var(--text-secondary)' }}>{item.discount}</td>
+                <td className="py-2.5" style={{ color: 'var(--text-secondary)' }}>{item.method}</td>
+                <td className="py-2.5 text-caption" style={{ color: 'var(--text-tertiary)' }}>
+                  {new Date(item.timestamp).toLocaleString('vi-VN')}
+                </td>
+                <td className="py-2.5">
+                  <span className="lbadge lbadge-success">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse mr-0.5" />
+                    Đã thực thi
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 export default function CampaignPage() {
   const { t } = useTranslation()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -118,6 +392,29 @@ export default function CampaignPage() {
   const [loading,setLoading]= useState(true)
   const [isMock, setIsMock] = useState(false)
   const fetchedRef = useRef(false)
+  const [executionModal, setExecutionModal] = useState(null)
+  const [toastMsg, setToastMsg] = useState(null)
+  const [history, setHistory] = useState([])
+
+  const loadHistory = () => {
+    try {
+      const list = JSON.parse(localStorage.getItem('executed_campaigns') ?? '[]')
+      setHistory(list)
+    } catch {
+      setHistory([])
+    }
+  }
+
+  const clearHistory = () => {
+    try {
+      localStorage.removeItem('executed_campaigns')
+      setHistory([])
+    } catch {}
+  }
+
+  useEffect(() => {
+    loadHistory()
+  }, [])
 
   const load = async () => {
     setLoading(true)
@@ -154,6 +451,7 @@ export default function CampaignPage() {
         <ActionSuggestionBanner
           params={searchParams}
           onDismiss={() => { setShowBanner(false); setSearchParams({}); }}
+          onExecute={(cfg) => setExecutionModal(cfg)}
         />
       )}
 
@@ -166,6 +464,69 @@ export default function CampaignPage() {
         </div>
       ) : (
         <>
+          {/* AI Decision Support Banner */}
+          {data?.seasonal_insight && (
+            <div className="lcard p-5" style={{ background: 'rgba(99,102,241,0.04)', border: '1px solid rgba(99,102,241,0.18)' }}>
+              <div className="flex items-center gap-2 mb-3">
+                <span className="icon text-primary-500 animate-pulse" style={{ color: 'var(--primary-500)' }}>auto_awesome</span>
+                <h2 className="text-sm font-bold text-foreground" style={{ color: 'var(--text-primary)' }}>
+                  Trung tâm Tư vấn Quyết định AI (AI Decision Support)
+                </h2>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Budget optimization */}
+                <div className="flex gap-2.5 items-start">
+                  <span className="icon text-lg shrink-0 mt-0.5" style={{ color: '#F59E0B' }}>savings</span>
+                  <div>
+                    <h4 className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>Phân bổ ngân sách Marketing</h4>
+                    <p className="text-xs mt-1 leading-relaxed" style={{ color: 'var(--text-tertiary)' }}>
+                      Tập trung 60-70% ngân sách quảng cáo vào mùa cao điểm <strong>{data.seasonal_insight.best_month_name}</strong> để đạt hiệu quả chuyển đổi lớn nhất. Hạn chế chi tiêu quảng cáo vào tháng thấp điểm <strong>{data.seasonal_insight.worst_month_name}</strong>, chuyển sang chạy các chương trình tri ân hoặc chăm sóc khách hàng cũ để tiết kiệm chi phí.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Weekday timing */}
+                <div className="flex gap-2.5 items-start">
+                  <span className="icon text-lg shrink-0 mt-0.5" style={{ color: '#6366F1' }}>schedule</span>
+                  <div>
+                    <h4 className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>Thời điểm vàng đẩy doanh số</h4>
+                    <p className="text-xs mt-1 leading-relaxed" style={{ color: 'var(--text-tertiary)' }}>
+                      Doanh thu ghi nhận tốt nhất vào <strong>{data.seasonal_insight.best_weekday}</strong>. Đề xuất setup trước các chiến dịch quảng cáo tự động, chuẩn bị bài đăng fanpage hoặc Livestream sớm 24-48 giờ để thu hút lượt truy cập trước thời điểm mua sắm bùng nổ.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Upcoming Events */}
+                <div className="flex gap-2.5 items-start">
+                  <span className="icon text-lg shrink-0 mt-0.5" style={{ color: '#10B981' }}>event_available</span>
+                  <div>
+                    <h4 className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>Kế hoạch sự kiện đặc biệt</h4>
+                    <p className="text-xs mt-1 leading-relaxed" style={{ color: 'var(--text-tertiary)' }}>
+                      {data.upcoming_events?.length > 0 ? (
+                        <>
+                          Sắp diễn ra sự kiện <strong>{data.upcoming_events[0].name}</strong> ({data.upcoming_events[0].date}), còn <strong>{data.upcoming_events[0].days_until} ngày</strong>. Hệ thống đề xuất chuẩn bị tồn kho và thiết lập chiến dịch ad-spend trước ngày <strong>{data.upcoming_events[0].prepare_by?.split('T')[0] || data.upcoming_events[0].prepare_by}</strong> để tối ưu doanh thu.
+                        </>
+                      ) : (
+                        "Không có ngày lễ lớn nào trong 60 ngày tới. Doanh nghiệp nên duy trì quảng cáo đều đặn và tập trung tạo các chương trình mini-game hoặc flash sale chớp nhoáng hàng tuần để kích cầu."
+                      )}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Action Suggestions */}
+                <div className="flex gap-2.5 items-start">
+                  <span className="icon text-lg shrink-0 mt-0.5" style={{ color: '#EC4899' }}>rocket_launch</span>
+                  <div>
+                    <h4 className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>Gợi ý hành động tối ưu</h4>
+                    <p className="text-xs mt-1 leading-relaxed" style={{ color: 'var(--text-tertiary)' }}>
+                      Nên kết hợp bán kèm sản phẩm (Bundle) trong các ngày cao điểm. Nếu đang ở mùa thấp điểm, hãy chạy chiến dịch gửi mã giảm giá kích hoạt lại (Win-Back) cho tập khách hàng "At Risk" (có nguy cơ rời bỏ) tại trang phân tích khách hàng để giữ dòng tiền ổn định.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Seasonal insight KPIs */}
           {data?.seasonal_insight && (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -260,7 +621,32 @@ export default function CampaignPage() {
               </div>
             </div>
           )}
+
+          {/* Executed Campaigns History */}
+          <ExecutedCampaignsHistory list={history} onClear={clearHistory} />
         </>
+      )}
+
+      {executionModal && (
+        <ActionExecutionDrawer
+          config={executionModal}
+          onClose={() => setExecutionModal(null)}
+          onSuccess={(msg) => {
+            setToastMsg(msg)
+            setShowBanner(false)
+            setSearchParams({})
+            loadHistory()
+            setTimeout(() => setToastMsg(null), 3000)
+          }}
+        />
+      )}
+
+      {toastMsg && (
+        <div className="fixed bottom-5 right-5 z-50 rounded-xl p-4 flex items-center gap-2 text-white shadow-lg animate-fade-in"
+             style={{ background: '#10B981', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }}>
+          <span className="icon">check_circle</span>
+          <span className="text-sm font-semibold">{toastMsg}</span>
+        </div>
       )}
     </div>
   )

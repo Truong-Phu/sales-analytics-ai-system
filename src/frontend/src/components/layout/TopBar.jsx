@@ -488,6 +488,9 @@ export default function TopBar() {
       { label: t('nav.customers',   'Khách hàng'),     desc: 'Thông tin & phân tích khách hàng',  icon: 'people',        href: '/customers' },
       { label: t('nav.rfmAnalysis', 'Phân tích RFM'),  desc: 'Phân khúc khách hàng RFM',          icon: 'pie_chart',     href: '/customers/rfm' },
     ] : []),
+    ...((role === 'Owner' || role === 'Manager') ? [
+      { label: 'Loyalty & Voucher', desc: 'Tích điểm & mã giảm giá', icon: 'loyalty', href: '/loyalty-vouchers' }
+    ] : []),
   ]
 
   // ── Nhóm Tồn kho & Mua hàng ──────────────────────────────────────────────
@@ -509,6 +512,7 @@ export default function TopBar() {
     { label: t('nav.recommendations', 'Gợi ý hành động'),      desc: 'Khuyến nghị từ AI insights',              icon: 'psychology',             href: '/recommendations' },
     { label: t('nav.churn',           'Dự báo Churn'),         desc: 'Churn prediction khách hàng',             icon: 'person_off',             href: '/churn' },
     { label: t('nav.basket',          'Phân tích giỏ hàng'),   desc: 'Market basket analysis',                  icon: 'shopping_bag',           href: '/basket' },
+    { label: t('nav.campaigns',       'Quản lý chiến dịch'),   desc: 'Thiết lập & theo dõi chiến dịch marketing', icon: 'campaign',             href: '/campaign' },
     { label: t('nav.whatIf',          'Mô phỏng What-If'),     desc: 'What-if scenario simulation',             icon: 'science',                href: '/whatif' },
     { label: t('nav.price',           'Thông minh Giá'),       desc: 'Tối ưu chiến lược định giá',              icon: 'price_check',            href: '/price' },
     { label: t('nav.report',          'Báo cáo tổng hợp'),     desc: 'Xuất báo cáo PDF, Excel',                 icon: 'picture_as_pdf',         href: '/report' },

@@ -9,7 +9,7 @@ import { fmtMoneyExact } from '../../utils/format'
 
 const PLATFORMS = [
   { name: 'Shopee', rate: 0.040 },
-  { name: 'TikTok', rate: 0.025 },
+  { name: 'TikTok Shop', rate: 0.025 },
   { name: 'Lazada', rate: 0.040 },
 ]
 
@@ -128,11 +128,10 @@ function ProductSearch({ allProducts, value, onSelect, style = {} }) {
 function CreateDrawer({ open, onClose, onSaved, defaultProductId = '', defaultProductName = '', defaultItems = [] }) {
   const [allProducts,   setAllProducts]   = useState([])
   const [allSuppliers,  setAllSuppliers]  = useState([])
-  const [filteredSupps, setFilteredSupps] = useState(null)
+  const [prodSuppliersMap, setProdSuppliersMap] = useState({}) // { productId: [suppliers] }
   const [variationsMap, setVariationsMap] = useState({}) // { productId: [variations] }
-  const [suppId,        setSuppId]        = useState('')
   const [note,          setNote]          = useState('')
-  const [items,         setItems]         = useState([{ productId: '', variationId: '', quantity: 1, importPrice: 0 }])
+  const [items,         setItems]         = useState([{ productId: '', variationId: '', quantity: 1, importPrice: 0, supplierId: '' }])
   const [loading,       setLoading]       = useState(false)
   const [loadingSupps,  setLoadingSupps]  = useState(false)
   const [err,           setErr]           = useState('')
@@ -150,12 +149,11 @@ function CreateDrawer({ open, onClose, onSaved, defaultProductId = '', defaultPr
     if (!open) return
     const pid = defaultProductId ? String(defaultProductId) : ''
     setItems(defaultItems.length > 0
-      ? defaultItems
-      : [{ productId: pid, variationId: '', quantity: 1, importPrice: 0 }])
-    setSuppId('')
+      ? defaultItems.map(it => ({ ...it, supplierId: it.supplierId ? String(it.supplierId) : '' }))
+      : [{ productId: pid, variationId: '', quantity: 1, importPrice: 0, supplierId: '' }])
     setNote('')
     setErr('')
-    setFilteredSupps(null)
+    setProdSuppliersMap({})
   }, [open, defaultProductId, defaultItems])
 
   // Sau khi allProducts load, auto-fill giá cho defaultProductId
@@ -182,27 +180,82 @@ function CreateDrawer({ open, onClose, onSaved, defaultProductId = '', defaultPr
     })
   }, [open, defaultItems, variationsMap])
 
-  // Khi sản phẩm đầu tiên thay đổi → fetch NCC cung cấp sản phẩm đó
-  const leadProductId = items[0]?.productId || ''
+  // Fetch nhà cung cấp đề xuất cho từng sản phẩm trong danh sách
   useEffect(() => {
-    if (!leadProductId) { setFilteredSupps(null); return }
-    setLoadingSupps(true)
-    api.get(`/api/suppliers/by-product/${leadProductId}`)
-       .then(r => setFilteredSupps(r.data ?? []))
-       .catch(() => setFilteredSupps(null))
-       .finally(() => setLoadingSupps(false))
-  }, [leadProductId])
+    if (!open) return
+    const productIds = [...new Set(items.map(it => it.productId).filter(Boolean))]
+    const missingIds = productIds.filter(pid => !prodSuppliersMap[pid])
+    if (missingIds.length === 0) return
 
-  const addItem    = () => setItems(it => [...it, { productId: '', variationId: '', quantity: 1, importPrice: 0 }])
+    setLoadingSupps(true)
+    Promise.all(
+      missingIds.map(pid =>
+        api.get(`/api/suppliers/by-product/${pid}`)
+           .then(r => {
+             const sups = r.data ?? []
+             setProdSuppliersMap(m => ({ ...m, [pid]: sups }))
+             
+             // Auto-fill supplierId & importPrice cho các items có pid này nếu chưa có supplierId
+             setItems(its => its.map(it => {
+               if (String(it.productId) === String(pid) && !it.supplierId) {
+                 const bestSup = sups[0]
+                 return {
+                   ...it,
+                   supplierId: bestSup ? String(bestSup.supplierId) : '',
+                   importPrice: bestSup && it.importPrice === 0 ? bestSup.importPrice : it.importPrice
+                 }
+               }
+               return it
+             }))
+           })
+           .catch(() => {
+             setProdSuppliersMap(m => ({ ...m, [pid]: [] }))
+           })
+      )
+    ).finally(() => setLoadingSupps(false))
+  }, [open, items, prodSuppliersMap])
+
+  // Lọc danh sách NCC: gom toàn bộ các NCC của các SP đã chọn (không trùng lặp)
+  const filteredSupps = useMemo(() => {
+    const activeProductIds = items.map(it => it.productId).filter(Boolean)
+    if (activeProductIds.length === 0) return null
+    const list = []
+    const seen = new Set()
+    activeProductIds.forEach(pid => {
+      const suppliers = prodSuppliersMap[pid] ?? []
+      suppliers.forEach(s => {
+        if (!seen.has(s.supplierId)) {
+          seen.add(s.supplierId)
+          list.push(s)
+        }
+      })
+    })
+    return list.length > 0 ? list : null
+  }, [items, prodSuppliersMap])
+
+  const addItem    = () => setItems(it => [...it, { productId: '', variationId: '', quantity: 1, importPrice: 0, supplierId: '' }])
   const removeItem = (i) => setItems(it => it.filter((_, j) => j !== i))
   const setItem    = (i, k, v) => setItems(it => it.map((x, j) => j === i ? { ...x, [k]: v } : x))
 
   // Khi chọn sản phẩm → auto-fill giá, reset variation, fetch variations
   const handleProductChange = (i, productId) => {
     const prod = allProducts.find(p => String(p.productId) === String(productId))
-    const autoPrice = prod?.importPrice > 0 ? prod.importPrice
-                    : prod?.costPrice   > 0 ? prod.costPrice : 0
-    setItems(it => it.map((x, j) => j !== i ? x : { ...x, productId, variationId: '', importPrice: autoPrice }))
+    
+    // Tìm nhà cung cấp đầu tiên cung cấp SP này và tự động set NCC & giá tương ứng
+    const sups = prodSuppliersMap[productId] ?? []
+    const bestSup = sups[0]
+    
+    let autoPrice = 0
+    let autoSuppId = ''
+    if (bestSup) {
+      autoPrice = bestSup.importPrice
+      autoSuppId = String(bestSup.supplierId)
+    } else {
+      autoPrice = prod?.importPrice > 0 ? prod.importPrice
+                : prod?.costPrice   > 0 ? prod.costPrice : 0
+    }
+
+    setItems(it => it.map((x, j) => j !== i ? x : { ...x, productId, variationId: '', importPrice: autoPrice, supplierId: autoSuppId }))
 
     // Fetch variations nếu chưa có
     if (productId && !variationsMap[productId]) {
@@ -212,49 +265,87 @@ function CreateDrawer({ open, onClose, onSaved, defaultProductId = '', defaultPr
     }
   }
 
-  // Khi chọn NCC → nếu NCC có giá nhập riêng cho sản phẩm đầu → auto-fill giá
-  const handleSuppChange = (newSuppId) => {
-    setSuppId(newSuppId)
-    if (!newSuppId || !filteredSupps?.length) return
-    const suppData = filteredSupps.find(s => String(s.supplierId) === String(newSuppId))
-    if (suppData?.importPrice > 0)
-      setItems(its => its.map((it, idx) => idx === 0 ? { ...it, importPrice: suppData.importPrice } : it))
+  // Khi chọn NCC cụ thể cho một dòng sản phẩm
+  const handleSuppItemChange = async (i, newSuppId) => {
+    const item = items[i]
+    if (!item) return
+    
+    setItems(its => its.map((it, idx) => idx === i ? { ...it, supplierId: newSuppId } : it))
+    
+    if (!newSuppId) return
+    
+    try {
+      const res = await api.get(`/api/suppliers/${newSuppId}/products`)
+      const productsList = res.data ?? []
+      const match = productsList.find(p => String(p.productId) === String(item.productId))
+      if (match && match.importPrice > 0) {
+        setItems(its => its.map((it, idx) => idx === i ? { ...it, importPrice: match.importPrice } : it))
+      }
+    } catch {
+      // Giữ nguyên giá
+    }
   }
 
   // NCC hiển thị: ưu tiên danh sách đã lọc; fallback toàn bộ NCC
   const displaySuppliers = (filteredSupps && filteredSupps.length > 0) ? filteredSupps : allSuppliers
 
   // Hint text bên cạnh label NCC
-  const suppHint = !leadProductId
+  const hasProducts = items.some(it => it.productId)
+  const suppHint = !hasProducts
     ? 'Chọn sản phẩm trước để lọc NCC'
     : loadingSupps
       ? 'Đang tải...'
       : filteredSupps === null || filteredSupps.length === 0
         ? 'Hiển thị tất cả NCC'
-        : `${filteredSupps.length} NCC cung cấp SP này`
+        : `${filteredSupps.length} NCC cung cấp các SP này`
 
   const suppHintColor = filteredSupps?.length > 0 ? '#22C55E' : '#94a3b8'
 
   const total = items.reduce((s, it) => s + (Number(it.quantity) || 0) * (Number(it.importPrice) || 0), 0)
 
   const save = async () => {
-    if (!suppId) { setErr('Chọn nhà cung cấp.'); return }
-    if (items.some(it => !it.productId || it.quantity <= 0)) { setErr('Kiểm tra lại sản phẩm và số lượng.'); return }
-    setLoading(true); setErr('')
+    if (items.some(it => !it.productId || it.quantity <= 0)) {
+      setErr('Kiểm tra lại sản phẩm và số lượng.')
+      return
+    }
+    if (items.some(it => !it.supplierId)) {
+      setErr('Vui lòng chọn nhà cung cấp cho tất cả sản phẩm.')
+      return
+    }
+
+    setLoading(true)
+    setErr('')
+
     try {
-      await api.post('/api/purchase-orders', {
-        supplierId: Number(suppId), note: note || null,
-        items: items.map(it => ({
-          productId:   Number(it.productId),
-          variationId: it.variationId ? Number(it.variationId) : null,
-          quantity:    Number(it.quantity),
-          importPrice: Number(it.importPrice),
-        })),
+      // Nhóm items theo supplierId
+      const groups = {}
+      items.forEach(it => {
+        const sId = it.supplierId
+        if (!groups[sId]) groups[sId] = []
+        groups[sId].push(it)
       })
+
+      // Gửi request tạo PO cho từng NCC song song
+      await Promise.all(
+        Object.entries(groups).map(([sId, groupItems]) =>
+          api.post('/api/purchase-orders', {
+            supplierId: Number(sId),
+            note: note ? `${note} (Tách phiếu tự động)` : 'Tách phiếu nhập tự động theo nhà cung cấp',
+            items: groupItems.map(it => ({
+              productId:   Number(it.productId),
+              variationId: it.variationId ? Number(it.variationId) : null,
+              quantity:    Number(it.quantity),
+              importPrice: Number(it.importPrice),
+            })),
+          })
+        )
+      )
       onSaved()
     } catch (e) {
       setErr(e?.response?.data?.message ?? 'Lỗi tạo phiếu nhập.')
-    } finally { setLoading(false) }
+    } finally {
+      setLoading(false)
+    }
   }
 
   const inputStyle = {
@@ -312,7 +403,7 @@ function CreateDrawer({ open, onClose, onSaved, defaultProductId = '', defaultPr
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {items.map((it, i) => (
-              <div key={i} style={{ border: '1px solid #e5e7eb', borderRadius: 10, padding: '12px 14px', background: '#f8fafc' }}>
+              <div key={i} style={{ border: '1px solid #e5e7eb', borderRadius: 10, padding: '12px 14px', marginBottom: 10, background: '#f8fafc' }}>
                 {/* Chọn sản phẩm — tìm kiếm */}
                 <div style={{ marginBottom: 8 }}>
                   <ProductSearch
@@ -351,36 +442,75 @@ function CreateDrawer({ open, onClose, onSaved, defaultProductId = '', defaultPr
                   </div>
                 )}
 
-                <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
-                  <div style={{ flex: '0 0 90px' }}>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end', marginTop: 8 }}>
+                  {/* Chọn nhà cung cấp cho từng dòng sản phẩm */}
+                  <div style={{ flex: '1 1 200px', minWidth: '150px' }}>
+                    <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 4 }}>Nhà cung cấp *</div>
+                    <select
+                      value={it.supplierId || ''}
+                      onChange={e => handleSuppItemChange(i, e.target.value)}
+                      style={{ width: '100%', fontSize: 13, borderRadius: 7, border: '1px solid #e5e7eb',
+                               padding: '7px 8px', background: '#ffffff', color: '#0f172a', boxSizing: 'border-box' }}
+                    >
+                      <option value="">-- Chọn nhà cung cấp --</option>
+                      {(prodSuppliersMap[it.productId] ?? []).map(s => (
+                        <option key={s.supplierId} value={s.supplierId}>
+                          {s.supplierName} ({fmtMoneyExact(s.importPrice)})
+                        </option>
+                      ))}
+                      {(prodSuppliersMap[it.productId] ?? []).length === 0 && allSuppliers.map(s => (
+                        <option key={s.supplierId} value={s.supplierId}>
+                          {s.supplierName}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div style={{ flex: '0 0 70px' }}>
                     <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 4 }}>Số lượng</div>
                     <input type="number" min="1" value={it.quantity}
                       onChange={e => setItem(i, 'quantity', e.target.value)}
                       style={{ width: '100%', fontSize: 13, borderRadius: 7, border: '1px solid #e5e7eb',
                                padding: '7px 8px', background: '#ffffff', color: '#0f172a', textAlign: 'center', boxSizing: 'border-box' }} />
                   </div>
-                  <div style={{ flex: 1 }}>
+
+                  <div style={{ flex: '1 1 110px' }}>
                     <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 4 }}>Giá nhập (đ)</div>
                     <input type="number" min="0" step="1000" value={it.importPrice}
                       onChange={e => setItem(i, 'importPrice', e.target.value)}
                       style={{ width: '100%', fontSize: 13, borderRadius: 7, border: '1px solid #e5e7eb',
                                padding: '7px 10px', background: '#ffffff', color: '#0f172a', textAlign: 'right', boxSizing: 'border-box' }} />
+                    {(() => {
+                      const matched = it.supplierId ? (prodSuppliersMap[it.productId] ?? []).find(sp => String(sp.supplierId) === String(it.supplierId)) : null
+                      if (matched && matched.importPrice > 0 && Number(it.importPrice) !== Number(matched.importPrice)) {
+                        return (
+                          <div style={{ fontSize: 10, color: '#16a34a', marginTop: 3, cursor: 'pointer', textAlign: 'right' }}
+                               onClick={() => setItem(i, 'importPrice', matched.importPrice)}>
+                            💡 NCC gợi ý: <span style={{ textDecoration: 'underline' }}>{fmtMoneyExact(matched.importPrice)}</span>
+                          </div>
+                        )
+                      }
+                      return null
+                    })()}
                   </div>
-                  <div style={{ flex: '0 0 120px', textAlign: 'right' }}>
+
+                  <div style={{ flex: '0 0 100px', textAlign: 'right' }}>
                     <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 4 }}>Thành tiền</div>
                     <div style={{ fontSize: 13, fontWeight: 600, color: '#6366f1', height: 33, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
                       {fmtMoneyExact((Number(it.quantity) || 0) * (Number(it.importPrice) || 0))}
                     </div>
                   </div>
+
                   {items.length > 1 && (
                     <button onClick={() => removeItem(i)}
                       style={{ flex: '0 0 30px', width: 30, height: 33, borderRadius: 7, border: '1px solid #fecaca',
                                background: 'rgba(239,68,68,0.05)', color: '#EF4444', cursor: 'pointer',
-                               display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14 }}>
+                               display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, alignSelf: 'flex-end' }}>
                       ✕
                     </button>
                   )}
                 </div>
+
                 {Number(it.importPrice) > 0 && (
                   <div style={{ marginTop: 8, display: 'flex', gap: 14, flexWrap: 'wrap' }}>
                     {PLATFORMS.map(pf => (
@@ -398,29 +528,41 @@ function CreateDrawer({ open, onClose, onSaved, defaultProductId = '', defaultPr
           </div>
         </div>
 
-        {/* ② Nhà cung cấp — lọc theo sản phẩm đã chọn */}
-        <div style={{ marginBottom: 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-            <label style={labelStyle}>
-              ② Nhà cung cấp <span style={{ color: '#EF4444' }}>*</span>
-            </label>
-            <span style={{ fontSize: 11, color: suppHintColor,
-                           background: filteredSupps?.length > 0 ? 'rgba(34,197,94,0.08)' : 'rgba(100,116,139,0.06)',
-                           padding: '2px 8px', borderRadius: 99 }}>
-              {suppHint}
-            </span>
+        {/* ② Danh sách phiếu nhập hàng dự kiến sẽ tạo */}
+        {hasProducts && (
+          <div style={{ marginBottom: 16 }}>
+            <label style={labelStyle}>② Danh sách phiếu nhập dự kiến (Tự động tách theo NCC)</label>
+            <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {(() => {
+                const groups = {}
+                items.forEach(it => {
+                  if (!it.productId) return
+                  const sId = it.supplierId || 'unknown'
+                  if (!groups[sId]) groups[sId] = []
+                  groups[sId].push(it)
+                })
+
+                return Object.entries(groups).map(([sId, groupItems]) => {
+                  const supplierName = sId === 'unknown'
+                    ? 'Chưa chọn nhà cung cấp'
+                    : (allSuppliers.find(s => String(s.supplierId) === String(sId))?.supplierName ?? `Nhà cung cấp #${sId}`)
+                  const subtotal = groupItems.reduce((s, it) => s + (Number(it.quantity) || 0) * (Number(it.importPrice) || 0), 0)
+                  return (
+                    <div key={sId} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                           padding: '8px 12px', borderRadius: 8, background: '#f1f5f9', border: '1px solid #e2e8f0', fontSize: 12 }}>
+                      <span style={{ fontWeight: 600, color: '#334155' }}>
+                        {supplierName} ({groupItems.length} sản phẩm)
+                      </span>
+                      <span style={{ fontWeight: 700, color: '#6366f1' }}>
+                        {fmtMoneyExact(subtotal)}
+                      </span>
+                    </div>
+                  )
+                })
+              })()}
+            </div>
           </div>
-          <select value={suppId} onChange={e => handleSuppChange(e.target.value)}
-            disabled={loadingSupps}
-            style={{ ...inputStyle, opacity: loadingSupps ? 0.6 : 1 }}>
-            <option value="">{loadingSupps ? 'Đang tải NCC...' : '-- Chọn nhà cung cấp --'}</option>
-            {displaySuppliers.map(s => (
-              <option key={s.supplierId} value={s.supplierId}>
-                {s.supplierName}{s.importPrice > 0 ? ` — ${fmtMoneyExact(s.importPrice)}` : ''}
-              </option>
-            ))}
-          </select>
-        </div>
+        )}
 
         {/* ③ Ghi chú */}
         <div>

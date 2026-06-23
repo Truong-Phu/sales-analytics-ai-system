@@ -513,7 +513,7 @@ public class ImportController(
                             "", buyerLogin, "", slot % 2 == 0 ? "COD" : "BANK_TRANSFER",
                             slot % 2 == 0 ? "TRUE" : "FALSE",
                             b.Name, b.Phone,
-                            $"{street}, {b.Ward}, {b.District}",
+                            $"\"{street}, {b.Ward}, {b.District}\"",
                             street,
                             b.Province, b.District, b.Ward,
                             "70000", "VN", "STANDARD",
@@ -521,7 +521,7 @@ public class ImportController(
                             grandItemTotal, (long)shipFee, (long)origShip, (long)shipDisc, "0", "0",
                             orderTotal, grandItemTotal,
                             lineId, $"SKU{seq}{i}", v.ProductId,
-                            v.ProductName, v.VarSku, v.VarName,
+                            $"\"{v.ProductName.Replace("\"", "\"\"")}\"", v.VarSku, $"\"{v.VarName.Replace("\"", "\"\"")}\"",
                             (long)v.OriginalPrice, (long)v.SalePrice, "0", "0",
                             pkgId, pkgStatus, trackNum, carrierName, orderStatus),
 

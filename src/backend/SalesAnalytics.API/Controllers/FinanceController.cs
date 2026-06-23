@@ -94,6 +94,22 @@ public class FinanceController(
             });
             AddDateParams(cmd, dateParams, from, to);
 
+            // Calculate actual procurement cost (Goods Receipts) in the period
+            decimal procurementCost = 0;
+            await using (var grCmd = new NpgsqlCommand("""
+                SELECT COALESCE(SUM(total_amount), 0)
+                FROM public.goods_receipts
+                WHERE company_id = @cid::uuid
+                  AND (@from IS NULL OR created_at::date >= @from::date)
+                  AND (@to IS NULL OR created_at::date <= @to::date)
+                """, conn))
+            {
+                grCmd.Parameters.AddWithValue("cid", Cid);
+                grCmd.Parameters.AddWithValue("from", string.IsNullOrWhiteSpace(from) ? DBNull.Value : from);
+                grCmd.Parameters.AddWithValue("to",   string.IsNullOrWhiteSpace(to)   ? DBNull.Value : to);
+                procurementCost = Convert.ToDecimal(await grCmd.ExecuteScalarAsync());
+            }
+
             await using var r = await cmd.ExecuteReaderAsync();
             if (await r.ReadAsync())
             {
@@ -117,12 +133,14 @@ public class FinanceController(
                     operatingProfit      = opProfit,
                     operatingMargin      = opMargin,
                     acos                 = acos,
+                    procurementCost      = procurementCost
                 });
             }
             return Ok(new { revenue = 0, cogs = 0, grossProfit = 0, estimatedFees = 0,
                             estimatedNetProfit = 0, grossMargin = 0, estimatedNetMargin = 0,
                             missingCostOrders = 0, isEstimated = true,
-                            advertisingCost = 0, operatingProfit = 0, operatingMargin = 0, acos = 0 });
+                            advertisingCost = 0, operatingProfit = 0, operatingMargin = 0, acos = 0,
+                            procurementCost = 0 });
         }
         catch (Exception ex)
         {

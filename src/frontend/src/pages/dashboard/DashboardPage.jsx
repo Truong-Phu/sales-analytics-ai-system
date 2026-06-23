@@ -156,7 +156,7 @@ function getChannelDisplayName(name = '') {
   const key = raw.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, '')
   if (key.includes('shopee')) return 'Shopee'
   if (key.includes('lazada')) return 'Lazada'
-  if (key.includes('tiktok')) return 'TikTok'
+  if (key.includes('tiktok')) return 'TikTok Shop'
   if (key.includes('offline') || key.includes('pos') || key.includes('banquay')) return 'Bán tại quầy'
   return raw || 'Khác'
 }
@@ -772,7 +772,9 @@ function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd 
       const activity = entry.orders ?? entry.activity_count
       return {
         label,
-        name: entry.name ?? entry.product_name ?? entry.channel ?? '—',
+        name: key === 'channel'
+          ? getChannelDisplayName(entry.name ?? entry.channel ?? '')
+          : (entry.name ?? entry.product_name ?? entry.channel ?? '—'),
         value,
         valueLabel: options.valueLabel?.(entry, value) ?? fmtMoneyExact(value),
         meta: options.meta?.(entry) ?? (activity != null ? `${Number(activity).toLocaleString('vi-VN')} đơn` : ''),
@@ -1013,7 +1015,7 @@ function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd 
           <div className="space-y-1.5">
             {leaderboardSections.map((p, i) => (
               <div key={i} className="flex items-center gap-2.5">
-                <span className="w-[70px] shrink-0 text-[11px] font-semibold rounded-full px-1.5 py-0.5 text-center"
+                <span className="w-[92px] shrink-0 text-[11px] font-semibold rounded-full px-1.5 py-0.5 text-center"
                       style={{ background: 'rgba(99,102,241,0.10)', color: 'var(--primary-600)' }}>
                   {p.label}
                 </span>
@@ -1763,7 +1765,8 @@ function TabMultiChannel({ data, compareMode = false, prevData = null, wd = {}, 
           <div className="space-y-2">
             {(attrData.channels ?? attrData.attribution ?? []).slice(0, 5).map((ch, i) => {
               const pct      = Number(ch.pct ?? ch.contribution_pct ?? ch.attribution_pct ?? 0)
-              const chName   = ch.channel ?? ch.channelName ?? ch.name ?? '—'
+              const rawName  = ch.channel ?? ch.channelName ?? ch.name ?? '—'
+              const chName   = getChannelDisplayName(rawName)
               const chColor  = getChannelColor(chName)
               return (
                 <div key={i}>
@@ -2437,38 +2440,64 @@ function TabMarketing({ data, compareMode = false, prevData = null, wd = {}, wl 
       <MiniWidget title="Chiến dịch Marketing được đề xuất" icon="campaign" href="/campaign" loading={campLoading}>
         {campData ? (
           <div className="space-y-2">
-            {(campData.upcoming_events ?? campData.windows ?? []).slice(0, 4).map((c, i) => (
-              <div key={i} className="flex items-start gap-2.5 px-3 py-2 rounded-lg"
-                   style={{ background: 'var(--bg-elevated)' }}>
-                <span className="icon text-base shrink-0 mt-0.5"
-                      style={{ color: ['#6366F1','#10B981','#F59E0B','#EC4899'][i % 4] }}>
-                  {c.days_until != null ? 'event' : 'campaign'}
-                </span>
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>
-                    {c.name ?? c.label ?? `Chiến dịch ${i + 1}`}
+            {(() => {
+              const events = campData.upcoming_events ?? []
+              const windows = campData.windows ?? []
+              const items = [...events, ...windows].slice(0, 4)
+              if (items.length === 0) {
+                return (
+                  <p className="text-xs text-center py-2" style={{ color: 'var(--text-tertiary)' }}>
+                    Chưa có đề xuất
                   </p>
-                  <p className="text-xs mt-0.5 line-clamp-1" style={{ color: 'var(--text-tertiary)' }}>
-                    {c.tip ?? (c.events?.length ? c.events.join(', ') : '')}
-                    {c.days_until != null && ` · còn ${c.days_until} ngày`}
-                  </p>
-                </div>
-                {c.boost_expected != null && (
-                  <span className="text-xs font-bold shrink-0" style={{ color: '#10B981' }}>
-                    +{Math.round((c.boost_expected - 1) * 100)}%
-                  </span>
-                )}
-                {c.vs_overall_pct != null && c.boost_expected == null && (
-                  <span className="text-xs font-bold shrink-0"
-                        style={{ color: c.vs_overall_pct > 0 ? '#10B981' : '#F59E0B' }}>
-                    {c.vs_overall_pct > 0 ? '+' : ''}{c.vs_overall_pct}%
-                  </span>
-                )}
-              </div>
-            ))}
-            {!(campData.upcoming_events ?? campData.windows)?.length && (
-              <p className="text-xs text-center py-2" style={{ color: 'var(--text-tertiary)' }}>Chưa có đề xuất</p>
-            )}
+                )
+              }
+              return items.map((c, i) => {
+                const isEvent = c.days_until != null
+                const iconColor = ['#6366F1','#10B981','#F59E0B','#EC4899'][i % 4]
+                const title = c.name ?? c.label ?? `Chiến dịch ${i + 1}`
+                const eventTip = c.events?.length ? `Sự kiện: ${c.events.join(', ')}` : ''
+                const defaultTip = () => {
+                  switch (c.recommendation) {
+                    case 'RUN_CAMPAIGN': return 'Mùa cao điểm bán hàng, nên đẩy mạnh quảng cáo'
+                    case 'PREPARE':      return 'Thị trường tăng trưởng, nên chuẩn bị chạy chiến dịch'
+                    case 'LOW_SEASON':   return 'Mùa thấp điểm bán hàng, nên chạy chương trình kích cầu'
+                    case 'NORMAL':
+                    default:             return 'Thị trường ổn định, duy trì hoạt động marketing'
+                  }
+                }
+                const displayTip = c.tip || eventTip || defaultTip()
+
+                return (
+                  <div key={i} className="flex items-start gap-2.5 px-3 py-2 rounded-lg"
+                       style={{ background: 'var(--bg-elevated)' }}>
+                    <span className="icon text-base shrink-0 mt-0.5"
+                          style={{ color: iconColor }}>
+                      {isEvent ? 'event' : 'campaign'}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>
+                        {title}
+                      </p>
+                      <p className="text-xs mt-0.5 line-clamp-1" style={{ color: 'var(--text-tertiary)' }}>
+                        {displayTip}
+                        {isEvent && ` · còn ${c.days_until} ngày`}
+                      </p>
+                    </div>
+                    {c.boost_expected != null && (
+                      <span className="text-xs font-bold shrink-0" style={{ color: '#10B981' }}>
+                        +{Math.round((c.boost_expected - 1) * 100)}%
+                      </span>
+                    )}
+                    {c.vs_overall_pct != null && c.boost_expected == null && (
+                      <span className="text-xs font-bold shrink-0"
+                            style={{ color: c.vs_overall_pct > 0 ? '#10B981' : '#F59E0B' }}>
+                        {c.vs_overall_pct > 0 ? '+' : ''}{c.vs_overall_pct}%
+                      </span>
+                    )}
+                  </div>
+                )
+              })
+            })()}
           </div>
         ) : (
           <p className="text-xs text-center py-2" style={{ color: 'var(--text-tertiary)' }}>Không tải được dữ liệu</p>
@@ -2922,6 +2951,11 @@ export default function DashboardPage() {
       })()
       const topProductsReal = paretoProductsReal.slice(0, 5)
 
+      const normalizedRevenueByChannel = (resData.revenueByChannel ?? []).map(ch => ({
+        ...ch,
+        channelName: getChannelDisplayName(ch.channelName)
+      }))
+
       const merged = {
         // ── KPI từ DW (DashboardService) ──────────────────────────────────────
         kpi: {
@@ -2936,11 +2970,21 @@ export default function DashboardPage() {
         },
         // ── Xu hướng và kênh từ DW ─────────────────────────────────────────
         revenueByDay:     resData.revenueByDay     ?? [],
-        revenueByChannel: resData.revenueByChannel ?? [],
+        revenueByChannel: normalizedRevenueByChannel,
         paretoProducts:   paretoProductsReal,
         topProducts:      topProductsReal,
         // ── Monthly + Heatmap + Funnel từ OLTP ───────────────────────────────
-        monthlyByChannel:  monthlyReal.status === 'fulfilled' ? (monthlyReal.value ?? []) : [],
+        monthlyByChannel:  monthlyReal.status === 'fulfilled'
+          ? (monthlyReal.value ?? []).map(row => {
+              const norm = { month: row.month }
+              Object.entries(row).forEach(([k, v]) => {
+                if (k !== 'month') {
+                  norm[getChannelDisplayName(k)] = v
+                }
+              })
+              return norm
+            })
+          : [],
         heatmap:           heatmapReal.status === 'fulfilled'  ? (heatmapReal.value  ?? []) : [],
         funnel:            funnelReal.status === 'fulfilled'   ? (funnelReal.value   ?? []) : [],
         productsByChannel: topByChannelReal.status === 'fulfilled' ? (topByChannelReal.value ?? []) : [],
@@ -2957,7 +3001,7 @@ export default function DashboardPage() {
           deliverySuccess: Number(opsData?.deliverySuccess ?? 0),
         },
         // Return/cancel theo kênh từ revenueByChannel (backend tính từ OLTP)
-        returnByChannel: (resData.revenueByChannel ?? []).map(ch => ({
+        returnByChannel: normalizedRevenueByChannel.map(ch => ({
           channelName: ch.channelName,
           returnRate:  Number(ch.returnRate ?? 0).toFixed(1),
           cancelRate:  Number(ch.cancelRate ?? 0).toFixed(1),

@@ -1,13 +1,15 @@
 import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
+import axios from '../../api/axios'
 import AiEmptyState from '../../components/ui/AiEmptyState'
+import DetailDrawer from '../../components/ui/DetailDrawer'
 import { getChurnPrediction } from '../../api/aiApi'
 import { fmtMoneyExact } from '../../utils/format'
 
 const CHANNEL_CFG = {
   'SHOPEE':      { icon: '🛒', label: 'Shopee',    color: '#EE4D2D' },
-  'TIKTOK_SHOP': { icon: '🎵', label: 'TikTok',    color: '#555555' },
+  'TIKTOK_SHOP': { icon: '🎵', label: 'TikTok Shop', color: '#555555' },
   'LAZADA':      { icon: '🛍️', label: 'Lazada',    color: '#0F146D' },
   'OFFLINE':     { icon: '🏪', label: 'Cửa hàng',  color: '#10B981' },
   'FACEBOOK':    { icon: '📘', label: 'Facebook',   color: '#1877F2' },
@@ -48,6 +50,166 @@ function ProbBar({ pct }) {
     </div>
   )
 }
+const fallbackVouchers = [
+  { id: 'v-10', code: 'GIUCHAN10', type: 'PERCENT', value: 10 },
+  { id: 'v-15', code: 'GIUCHAN15', type: 'PERCENT', value: 15 },
+  { id: 'v-20', code: 'GIUCHAN20', type: 'PERCENT', value: 20 },
+  { id: 'v-ship', code: 'FREESHIP', type: 'FREESHIP', value: 0 },
+]
+
+const getVoucherLabel = (v) => {
+  if (v.type === 'PERCENT') {
+    return `Giảm ${v.value}% (Mã: ${v.code}${v.minOrderValue ? `, Đơn tối thiểu: ${new Intl.NumberFormat('vi-VN').format(v.minOrderValue)}₫` : ''})`;
+  }
+  if (v.type === 'FIXED') {
+    return `Giảm ${new Intl.NumberFormat('vi-VN').format(v.value)}₫ (Mã: ${v.code}${v.minOrderValue ? `, Đơn tối thiểu: ${new Intl.NumberFormat('vi-VN').format(v.minOrderValue)}₫` : ''})`;
+  }
+  return `Miễn phí vận chuyển (Mã: ${v.code}${v.minOrderValue ? `, Đơn tối thiểu: ${new Intl.NumberFormat('vi-VN').format(v.minOrderValue)}₫` : ''})`;
+}
+
+function ActionExecutionDrawer({ config, onClose, onSuccess }) {
+  const [sending, setSending] = useState(false)
+  const [method, setMethod] = useState('SMS')
+  const [vouchers, setVouchers] = useState([])
+  const [selectedVoucher, setSelectedVoucher] = useState(null)
+  const [message, setMessage] = useState('')
+
+  useEffect(() => {
+    axios.get('/api/pos/vouchers')
+      .then(r => {
+        const active = (r.data ?? []).filter(v => v.isActive)
+        if (active.length > 0) {
+          setVouchers(active)
+          setSelectedVoucher(active[0])
+        } else {
+          setVouchers(fallbackVouchers)
+          setSelectedVoucher(fallbackVouchers[0])
+        }
+      })
+      .catch(() => {
+        setVouchers(fallbackVouchers)
+        setSelectedVoucher(fallbackVouchers[0])
+      })
+  }, [])
+
+  useEffect(() => {
+    if (!selectedVoucher) return
+    const discountText = selectedVoucher.type === 'PERCENT' 
+      ? `giảm giá ${selectedVoucher.value}% [${selectedVoucher.code}]`
+      : selectedVoucher.type === 'FIXED'
+        ? `giảm giá ${new Intl.NumberFormat('vi-VN').format(selectedVoucher.value)}₫ [${selectedVoucher.code}]`
+        : `miễn phí vận chuyển [${selectedVoucher.code}]`
+
+    if (config.action === 'retain') {
+      const channelName = config.channel === 'SHOPEE' ? 'Shopee' : config.channel === 'TIKTOK_SHOP' ? 'TikTok Shop' : config.channel === 'LAZADA' ? 'Lazada' : config.channel === 'FACEBOOK' ? 'Facebook' : config.channel === 'WEBSITE' ? 'Website' : 'cửa hàng';
+      setMessage(`Chào anh/chị ${config.customer}, ${channelName} gửi tặng anh/chị mã ${discountText} cho đơn hàng tiếp theo. Áp dụng đến hết tháng này. Cảm ơn anh/chị đã đồng hành cùng cửa hàng!`)
+    }
+  }, [config, selectedVoucher])
+
+  const handleSend = () => {
+    setSending(true)
+    setTimeout(() => {
+      setSending(false)
+      
+      try {
+        const list = JSON.parse(localStorage.getItem('executed_campaigns') ?? '[]')
+        const discountVal = selectedVoucher 
+          ? `[${selectedVoucher.code}] - ${selectedVoucher.type === 'PERCENT' ? `${selectedVoucher.value}%` : selectedVoucher.type === 'FIXED' ? `${new Intl.NumberFormat('vi-VN').format(selectedVoucher.value)}₫` : 'Freeship'}` 
+          : '20%'
+          
+        list.unshift({
+          id: Date.now(),
+          timestamp: new Date().toISOString(),
+          action: 'retain',
+          target: config.customer,
+          method: method,
+          discount: discountVal,
+          message: message,
+          status: 'SUCCESS'
+        })
+        localStorage.setItem('executed_campaigns', JSON.stringify(list))
+      } catch (e) {
+        console.error(e)
+      }
+
+      onSuccess(`Đã kích hoạt thành công chiến dịch giữ chân cho khách hàng ${config.customer}!`)
+      onClose()
+    }, 1500)
+  }
+
+  const title = 'Thực thi chiến dịch giữ chân'
+  const subtitle = `Khách hàng: ${config.customer} (Rủi ro: ${config.risk})`
+
+  const drawerFooter = (
+    <div className="flex justify-end gap-2 w-full">
+      <button onClick={onClose} disabled={sending} className="lbtn lbtn-secondary text-xs !h-9 !px-3">
+        Hủy bỏ
+      </button>
+      <button onClick={handleSend} disabled={sending} className="lbtn lbtn-primary text-xs !h-9 !px-4">
+        {sending ? (
+          <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+        ) : (
+          'Gửi ưu đãi ngay'
+        )}
+      </button>
+    </div>
+  )
+
+  return (
+    <DetailDrawer
+      open={true}
+      onClose={onClose}
+      title={title}
+      subtitle={subtitle}
+      width={460}
+      footer={drawerFooter}
+    >
+      <div className="p-5 space-y-4 text-xs text-secondary" style={{ color: 'var(--text-secondary)' }}>
+        <div className="bg-red-50 dark:bg-red-950/20 p-3.5 rounded-xl border border-red-100 dark:border-red-900/30 space-y-1">
+          <p>Khách hàng: <strong className="text-foreground" style={{ color: 'var(--text-primary)' }}>{config.customer}</strong></p>
+          <p>Xác suất rời bỏ: <strong style={{ color: '#EF4444' }}>{config.prob}% ({config.risk})</strong></p>
+          <p>Kênh tiếp cận gợi ý: <strong className="text-foreground" style={{ color: 'var(--text-primary)' }}>{config.channel || 'Tất cả'}</strong></p>
+        </div>
+
+        <div className="space-y-4 pt-2">
+          <div>
+            <label className="block font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>Phương thức gửi ưu đãi</label>
+            <select value={method} onChange={e => setMethod(e.target.value)} className="linput text-xs w-full">
+              <option value="SMS">Gửi SMS Brandname tự động (qua SĐT)</option>
+              <option value="Email">Gửi Email Marketing cá nhân hóa (qua Gmail)</option>
+            </select>
+          </div>
+          
+          <div>
+            <label className="block font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>Mức ưu đãi / Voucher</label>
+            <select 
+              value={selectedVoucher?.id || ''} 
+              onChange={e => {
+                const found = vouchers.find(v => v.id === e.target.value || String(v.id) === e.target.value)
+                if (found) setSelectedVoucher(found)
+              }} 
+              className="linput text-xs w-full"
+            >
+              {vouchers.map(v => (
+                <option key={v.id} value={v.id}>{getVoucherLabel(v)}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>Nội dung thông điệp</label>
+            <textarea
+              value={message}
+              onChange={e => setMessage(e.target.value)}
+              className="linput w-full p-2 h-36 text-xs"
+              style={{ fontFamily: 'sans-serif', lineHeight: '1.4' }}
+            />
+          </div>
+        </div>
+      </div>
+    </DetailDrawer>
+  )
+}
 
 export default function ChurnPage() {
   const { t } = useTranslation()
@@ -56,6 +218,8 @@ export default function ChurnPage() {
   const [loading, setLoading] = useState(true)
   const fetchedRef = useRef(false)
   const [filter,  setFilter]  = useState('ALL')
+  const [executionDrawer, setExecutionDrawer] = useState(null)
+  const [toastMsg, setToastMsg] = useState(null)
 
   const load = async () => {
     setLoading(true)
@@ -245,14 +409,13 @@ export default function ChurnPage() {
                         {c.risk !== 'LOW' && (
                           <button
                             onClick={() => {
-                              const params = new URLSearchParams({
+                              setExecutionDrawer({
                                 action:   'retain',
                                 customer:  c.full_name,
                                 prob:      String(c.churn_prob),
                                 risk:      c.risk,
                                 channel:   c.channels?.[0]?.channel ?? '',
                               })
-                              navigate(`/campaign?${params}`)
                             }}
                             className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-all whitespace-nowrap"
                             style={{ borderColor: 'rgba(239,68,68,0.35)', color: '#EF4444', background: 'rgba(239,68,68,0.06)' }}
@@ -273,6 +436,25 @@ export default function ChurnPage() {
           </table>
         )}
       </div>
+
+      {executionDrawer && (
+        <ActionExecutionDrawer
+          config={executionDrawer}
+          onClose={() => setExecutionDrawer(null)}
+          onSuccess={(msg) => {
+            setToastMsg(msg)
+            setTimeout(() => setToastMsg(null), 3000)
+          }}
+        />
+      )}
+
+      {toastMsg && (
+        <div className="fixed bottom-5 right-5 z-50 rounded-xl p-4 flex items-center gap-2 text-white shadow-lg animate-fade-in"
+             style={{ background: '#10B981', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }}>
+          <span className="icon">check_circle</span>
+          <span className="text-sm font-semibold">{toastMsg}</span>
+        </div>
+      )}
     </div>
   )
 }

@@ -41,7 +41,7 @@ const CATEGORY_CONFIG = {
 
 const MOCK_ALERTS = [
   { id: 1, category: 'low_stock',       isRead: false, title: 'Tồn kho thấp',          message: 'Sản phẩm "Áo thun oversize" còn 5 cái, dưới mức tối thiểu (10).',            createdAt: new Date(Date.now() - 15 * 60_000).toISOString() },
-  { id: 2, category: 'revenue_anomaly', isRead: false, title: 'Doanh thu bất thường',   message: 'Doanh thu kênh TikTok hôm nay giảm 45% so với trung bình 7 ngày.',           createdAt: new Date(Date.now() - 2 * 3_600_000).toISOString() },
+  { id: 2, category: 'revenue_anomaly', isRead: false, title: 'Doanh thu bất thường',   message: 'Doanh thu kênh TikTok Shop hôm nay giảm 45% so với trung bình 7 ngày.',           createdAt: new Date(Date.now() - 2 * 3_600_000).toISOString() },
   { id: 3, category: 'system',          isRead: true,  title: 'Đồng bộ dữ liệu xong',  message: 'ETL pipeline đã xử lý thành công 1.247 bản ghi từ Shopee lúc 08:00.',        createdAt: new Date(Date.now() - 5 * 3_600_000).toISOString() },
   { id: 4, category: 'order',           isRead: true,  title: 'Đơn hàng mới',           message: '15 đơn hàng mới từ kênh Lazada đang chờ xử lý.',                            createdAt: new Date(Date.now() - 86_400_000).toISOString() },
   { id: 5, category: 'payment',         isRead: false, title: 'Thanh toán thất bại',    message: 'Đơn SP-2026-0034: thanh toán MoMo thất bại. Vui lòng kiểm tra lại.',        createdAt: new Date(Date.now() - 30 * 60_000).toISOString() },

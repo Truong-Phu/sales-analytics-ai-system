@@ -67,6 +67,12 @@ def calculate_item_metrics(
     # Giá vốn (nếu có)
     cost_amount = round(cost_price * qty, 2)
 
+    # Enforce check constraint chk_factsales_profit: gross_profit >= -gross_revenue
+    # gross_profit = net_revenue - cost_amount >= -gross_revenue -> cost_amount <= net_revenue + gross_revenue
+    max_allowed_cost = round(net_revenue + gross_revenue, 2)
+    if cost_amount > max_allowed_cost:
+        cost_amount = max_allowed_cost
+
     # Lợi nhuận gộp
     gross_profit = round(net_revenue - cost_amount, 2)
 

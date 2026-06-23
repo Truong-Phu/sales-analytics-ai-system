@@ -5,6 +5,14 @@ import i18n from '../../i18n'
 
 // ─── Kênh bán hàng ────────────────────────────────────────────────────────────
 const CHANNEL_KEYS = ['all', 'shopee', 'lazada', 'tiktok', 'facebook', 'website']
+const CHANNEL_NAMES = {
+  all: 'Tất cả các kênh',
+  shopee: 'Shopee',
+  lazada: 'Lazada',
+  tiktok: 'TikTok Shop',
+  facebook: 'Facebook',
+  website: 'Website',
+}
 
 // ─── 8 Section Groups — khớp 1:1 với 7 tab Dashboard + AI Insights ──────────
 const SECTION_GROUPS = [
@@ -335,7 +343,7 @@ export default function ReportPage() {
   const includedCount = SECTION_GROUPS.filter(g => form[g.key]).length
   const channelLabel  = form.channel === 'all'
     ? t('report.allChannels')
-    : form.channel.charAt(0).toUpperCase() + form.channel.slice(1)
+    : (CHANNEL_NAMES[form.channel] || form.channel)
 
   return (
     <div className="space-y-5">
@@ -431,7 +439,7 @@ export default function ReportPage() {
               <select className="linput text-sm" value={form.channel} onChange={e => set('channel', e.target.value)}>
                 {CHANNEL_KEYS.map(k => (
                   <option key={k} value={k}>
-                    {k === 'all' ? t('report.allChannels') : (k.charAt(0).toUpperCase() + k.slice(1))}
+                    {k === 'all' ? t('report.allChannels') : (CHANNEL_NAMES[k] || k)}
                   </option>
                 ))}
               </select>

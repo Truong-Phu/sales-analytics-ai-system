@@ -289,6 +289,75 @@ export default function PosPage() {
   const [submitting,  setSubmitting]  = useState(false)
   const [lastOrder,   setLastOrder]   = useState(null)
   const cusTimer = useRef(null)
+  const lastAutoAppliedCodeRef = useRef('')
+  const lastValidatedSubtotalRef = useRef(0)
+
+  // Tự động áp dụng voucher nếu giỏ hàng khớp với một chiến dịch mua kèm (bundle) đã thực thi
+  useEffect(() => {
+    try {
+      const campaigns = JSON.parse(localStorage.getItem('executed_campaigns') ?? '[]')
+      const bundleCampaigns = campaigns.filter(c => c.action === 'bundle' || (c.target && c.target.includes(' + ')))
+
+      let matchedAutoCode = null
+
+      if (cart.length >= 2) {
+        for (const campaign of bundleCampaigns) {
+          if (!campaign.target || !campaign.discount) continue
+          
+          const targetProducts = campaign.target.split(' + ').map(p => p.trim())
+          if (targetProducts.length === 0) continue
+
+          const allPresent = targetProducts.every(tp => 
+            cart.some(item => item.name?.toLowerCase().includes(tp.toLowerCase()) || tp.toLowerCase().includes(item.name?.toLowerCase()))
+          )
+
+          if (allPresent) {
+            const match = campaign.discount.match(/\[(.*?)\]/)
+            if (match && match[1]) {
+              matchedAutoCode = match[1].trim()
+              break
+            }
+          }
+        }
+      }
+
+      if (matchedAutoCode) {
+        const currentSubtotal = cart.reduce((s, i) => s + i.price * i.qty, 0)
+        if (lastAutoAppliedCodeRef.current !== matchedAutoCode || lastValidatedSubtotalRef.current !== currentSubtotal) {
+          const isCodeChange = lastAutoAppliedCodeRef.current !== matchedAutoCode
+          lastAutoAppliedCodeRef.current = matchedAutoCode
+          lastValidatedSubtotalRef.current = currentSubtotal
+          setVoucherCode(matchedAutoCode)
+          validateVoucher(matchedAutoCode, currentSubtotal, customer?.id)
+            .then(res => {
+              if (res.valid) {
+                setVoucherInfo(res)
+                setVoucherErr('')
+                if (isCodeChange) {
+                  showToast(`Tự động áp dụng voucher combo: ${matchedAutoCode}`, 'success')
+                }
+              } else {
+                setVoucherErr(res.message ?? 'Voucher combo tự động không hợp lệ')
+              }
+            })
+            .catch(err => {
+              setVoucherErr(err?.response?.data?.message ?? 'Lỗi áp dụng voucher tự động')
+            })
+        }
+      } else {
+        // Không còn khớp combo nào, nếu trước đó có tự động áp dụng thì hủy bỏ
+        if (lastAutoAppliedCodeRef.current) {
+          lastAutoAppliedCodeRef.current = ''
+          lastValidatedSubtotalRef.current = 0
+          setVoucherCode('')
+          setVoucherInfo(null)
+          setVoucherErr('')
+        }
+      }
+    } catch (e) {
+      console.error('Error auto applying bundle voucher:', e)
+    }
+  }, [cart, customer?.id])
 
   useEffect(() => {
     api.get('/api/payment/methods')

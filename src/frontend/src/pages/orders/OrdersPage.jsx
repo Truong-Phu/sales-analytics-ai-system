@@ -25,16 +25,29 @@ const STATUS_COLOR = {
 
 const CHANNEL_CFG = {
   shopee:  { bg: 'rgba(238,77,45,0.12)',    text: '#EE4D2D', label: 'Shopee'   },
-  tiktok:  { bg: 'rgba(45,212,191,0.15)',   text: '#0D9488', label: 'TikTok'   }, // teal — hoạt động cả light+dark
+  tiktok:  { bg: 'rgba(45,212,191,0.15)',   text: '#0D9488', label: 'TikTok Shop' }, // teal — hoạt động cả light+dark
   lazada:  { bg: 'rgba(15,61,209,0.12)',    text: '#0F3DD1', label: 'Lazada'   },
   offline: { bg: 'rgba(139,92,246,0.12)',   text: '#7C3AED', label: 'Offline'  },
   facebook:{ bg: 'rgba(24,119,242,0.12)',   text: '#1877F2', label: 'Facebook' },
   website: { bg: 'rgba(99,102,241,0.12)',   text: '#6366F1', label: 'Website'  }, // brand indigo
 }
 
+function normalizeChannel(name) {
+  if (!name) return '—'
+  const lower = name.toLowerCase()
+  if (lower.includes('shopee')) return 'Shopee'
+  if (lower.includes('tiktok')) return 'TikTok Shop'
+  if (lower.includes('lazada')) return 'Lazada'
+  if (lower.includes('facebook')) return 'Facebook'
+  if (lower.includes('website')) return 'Website'
+  if (lower.includes('offline') || lower.includes('quầy')) return 'Offline'
+  return name
+}
+
 function ChannelBadge({ name }) {
-  const key = (name ?? '').toLowerCase().replace(' shop', '').replace(' ', '')
-  const cfg = CHANNEL_CFG[key] ?? { bg: 'rgba(100,116,139,0.1)', text: '#64748B', label: name ?? '—' }
+  const normalized = normalizeChannel(name)
+  const key = normalized.toLowerCase().replace(' shop', '').replace(' ', '')
+  const cfg = CHANNEL_CFG[key] ?? { bg: 'rgba(100,116,139,0.1)', text: '#64748B', label: normalized }
   return (
     <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap"
           style={{ background: cfg.bg, color: cfg.text }}>

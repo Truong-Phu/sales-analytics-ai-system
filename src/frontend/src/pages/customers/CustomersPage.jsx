@@ -129,7 +129,7 @@ const SEGMENT_CFG = {
 }
 const SEGMENTS = ['all', 'VIP', 'LOYAL', 'REGULAR', 'NEW', 'AT_RISK', 'LOST']
 
-const CHANNEL_ICON = { Shopee: 'store', TikTok: 'play_circle', Lazada: 'shopping_bag', Offline: 'storefront' }
+const CHANNEL_ICON = { Shopee: 'store', TikTok: 'play_circle', 'TikTok Shop': 'play_circle', Lazada: 'shopping_bag', Offline: 'storefront' }
 const LOYALTY_TIER = {
   Bronze:   { color: '#92400E', bg: 'rgba(146,64,14,0.12)'  },
   Silver:   { color: '#6B7280', bg: 'rgba(107,114,128,0.12)' },
