@@ -1,4 +1,4 @@
-docs/
+# docs/
 *.docx
 *.pdf
 CLAUDE.md
@@ -115,3 +115,5 @@ README.md
 README*.md
 
 # Force GitHub cache update
+!docs/**/*.docx
+!docs/**/*.pdf
