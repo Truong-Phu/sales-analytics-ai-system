@@ -99,7 +99,7 @@ def _get_top_channel(days: int, company_id: str = None) -> tuple[str, float]:
     df = query_df(sql, params)
     if df.empty:
         return "N/A", 0.0
-    return str(df.iloc[0]["channel_name"]), float(df.iloc[0]["rev"])
+    return str(df.iloc[0]["channel_name"]).replace(" Phú Thịnh", ""), float(df.iloc[0]["rev"])
 
 
 def _get_top_product(days: int, company_id: str = None) -> str:

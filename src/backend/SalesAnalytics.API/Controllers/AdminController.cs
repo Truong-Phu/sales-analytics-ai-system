@@ -323,6 +323,8 @@ public class AdminController(
             {
                 a.Id, a.UserId, a.Username, a.Action, a.EntityType,
                 a.EntityId, a.Status, a.ErrorMessage, a.IpAddress,
+                userFullName = a.User != null ? a.User.FullName : null,
+                userRole = a.User != null ? a.User.Role.ToString() : null,
                 createdAt = a.CreatedAt.ToString("O"),
             })
             .ToListAsync();

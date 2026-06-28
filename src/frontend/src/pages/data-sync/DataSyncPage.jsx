@@ -58,6 +58,7 @@ async function toggleIntegration(integrationId) {
 }
 
 function KeywordManager() {
+  const { t } = useTranslation()
   const [keywords, setKeywords] = useState([])
   const [loading,  setLoading]  = useState(true)
   const [input,    setInput]    = useState('')
@@ -107,8 +108,8 @@ function KeywordManager() {
     <>
     <ConfirmDialog
       open={!!confirmDlg}
-      title="Xóa từ khóa"
-      message="Xóa từ khóa này?"
+      title={t('dataSync.deleteKeywordTitle', 'Xóa từ khóa')}
+      message={t('dataSync.deleteKeywordConfirm', 'Xóa từ khóa này?')}
       icon="delete_forever"
       danger
       onClose={() => setConfirmDlg(null)}
@@ -118,11 +119,11 @@ function KeywordManager() {
       <div className="flex items-center gap-2">
         <span className="icon" style={{ fontSize: 20, color: 'var(--primary-500)' }}>search</span>
         <h2 className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>
-          Từ khóa tìm kiếm Google
+          {t('dataSync.googleSearchKeywords', 'Từ khóa tìm kiếm Google')}
         </h2>
         <span className="text-xs ml-1 px-2 py-0.5 rounded-full"
               style={{ background: 'rgba(100,116,139,0.10)', color: 'var(--text-tertiary)' }}>
-          {keywords.filter(k => k.isActive).length} đang hoạt động
+          {keywords.filter(k => k.isActive).length} {t('dataSync.active', 'đang hoạt động')}
         </span>
       </div>
 
@@ -132,7 +133,7 @@ function KeywordManager() {
           value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && handleAdd()}
-          placeholder="Nhập từ khóa tìm kiếm..."
+          placeholder={t('dataSync.enterKeywordPlaceholder', 'Nhập từ khóa tìm kiếm...')}
           className="lbtn flex-1 min-w-0 !h-9 !px-3 text-sm border"
           style={{ background: 'var(--bg-elevated)', borderColor: 'var(--border-default)' }}
         />
@@ -142,7 +143,7 @@ function KeywordManager() {
           className="lbtn lbtn-primary !h-9 !px-4 disabled:opacity-50"
         >
           <span className="icon text-base">add</span>
-          Thêm
+          {t('common.add', 'Thêm')}
         </button>
       </div>
 
@@ -163,7 +164,7 @@ function KeywordManager() {
         <div className="space-y-2">
           {keywords.length === 0 ? (
             <p className="text-xs text-center py-4" style={{ color: 'var(--text-tertiary)' }}>
-              Chưa có từ khóa nào. Thêm từ khóa để bắt đầu scrape.
+              {t('dataSync.noKeywords', 'Chưa có từ khóa nào. Thêm từ khóa để bắt đầu scrape.')}
             </p>
           ) : keywords.map(kw => (
             <div key={kw.id}
@@ -181,13 +182,13 @@ function KeywordManager() {
               </span>
               <span className="px-1.5 py-0.5 rounded text-xs"
                     style={{ background: 'rgba(100,116,139,0.10)', color: 'var(--text-tertiary)' }}>
-                {kw.useCount} lần
+                {kw.useCount} {t('dataSync.times', 'lần')}
               </span>
               {/* Toggle */}
               <button
                 onClick={() => handleToggle(kw.id)}
                 disabled={busy}
-                title={kw.isActive ? 'Tắt' : 'Bật'}
+                title={kw.isActive ? t('dataSync.disable', 'Tắt') : t('dataSync.enable', 'Bật')}
                 className="w-8 h-5 rounded-full relative transition-colors shrink-0"
                 style={{
                   background: kw.isActive ? 'var(--accent-500)' : 'var(--border-strong)',
@@ -201,7 +202,7 @@ function KeywordManager() {
                 onClick={() => handleDelete(kw.id)}
                 disabled={busy}
                 className="shrink-0 hover:opacity-70"
-                title="Xóa"
+                title={t('common.delete', 'Xóa')}
               >
                 <span className="icon text-base" style={{ color: '#EF4444' }}>delete_outline</span>
               </button>
@@ -227,6 +228,7 @@ const STATUS_CFG = {
 }
 
 function SourceCard({ src, syncing, onSync, onToggle, canToggle, t }) {
+  const { i18n } = useTranslation()
   const s = STATUS_CFG[src.status] ?? STATUS_CFG.idle
   const isBusy = syncing || src.status === 'syncing'
   const isActive = src.isActive !== false
@@ -264,7 +266,7 @@ function SourceCard({ src, syncing, onSync, onToggle, canToggle, t }) {
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
                       style={{ background: 'rgba(100,116,139,0.10)', border: '1px solid rgba(100,116,139,0.30)', color: '#64748B' }}>
                   <span className="w-1.5 h-1.5 rounded-full" style={{ background: '#94A3B8' }} />
-                  Đã tắt
+                  {t('dataSync.disabled', 'Đã tắt')}
                 </span>
               )}
             </div>
@@ -287,14 +289,14 @@ function SourceCard({ src, syncing, onSync, onToggle, canToggle, t }) {
         <div className="flex items-center gap-1.5">
           <span className="icon" style={{ fontSize: 14 }}>schedule</span>
           {t('dataSync.lastSync')}: {src.lastSync
-            ? new Date(src.lastSync).toLocaleString('vi-VN')
+            ? new Date(src.lastSync).toLocaleString(i18n.language === 'en' ? 'en-US' : 'vi-VN')
             : t('dataSync.neverSynced')}
         </div>
         {src.recordsSynced != null && (
           <div className="flex items-center gap-1.5">
             <span className="icon" style={{ fontSize: 14 }}>table_rows</span>
             {t('dataSync.records')}: <span className="font-mono font-medium" style={{ color: 'var(--text-primary)' }}>
-              {src.recordsSynced.toLocaleString('vi-VN')}
+              {src.recordsSynced.toLocaleString(i18n.language === 'en' ? 'en-US' : 'vi-VN')}
             </span>
           </div>
         )}
@@ -351,6 +353,7 @@ function SourceCard({ src, syncing, onSync, onToggle, canToggle, t }) {
 
 // ── ETL Pipeline Card (OLTP → DW) ────────────────────────────────────────────
 function EtlPipelineCard({ t }) {
+  const { i18n } = useTranslation()
   const [jobId,    setJobId]    = useState(null)
   const [status,   setStatus]   = useState(null) // null | 'running' | 'completed' | 'failed'
   const [progress, setProgress] = useState(0)
@@ -371,23 +374,23 @@ function EtlPipelineCard({ t }) {
       setStatus(d.status)
       if (d.status === 'completed' || d.status === 'failed') {
         stopPolling()
-        if (d.status === 'completed') setDoneAt(new Date().toLocaleTimeString('vi-VN'))
+        if (d.status === 'completed') setDoneAt(new Date().toLocaleTimeString(i18n.language === 'en' ? 'en-US' : 'vi-VN'))
       }
     } catch { /* ignore */ }
   }
 
   const handleTrigger = async () => {
-    setStatus('running'); setProgress(0); setMessage('Đang khởi động...'); setDoneAt(null)
+    setStatus('running'); setProgress(0); setMessage(t('dataSync.starting', 'Đang khởi động...')); setDoneAt(null)
     try {
       const res = await api.post('/api/sync/trigger', {})
       const jid = res.data.jobId
       setJobId(jid)
-      setMessage(res.data.message || 'Đang xử lý...')
+      setMessage(res.data.message || t('dataSync.processing', 'Đang xử lý...'))
       stopPolling()
       pollRef.current = setInterval(() => poll(jid), 1500)
     } catch (err) {
       setStatus('failed')
-      setMessage(err.response?.data?.message || 'Không thể kết nối server')
+      setMessage(err.response?.data?.message || t('dataSync.connectError', 'Không thể kết nối server'))
     }
   }
 
@@ -403,12 +406,12 @@ function EtlPipelineCard({ t }) {
           {isRunning ? 'hourglass_empty' : 'storage'}
         </span>
         <h2 className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>
-          Cập nhật dữ liệu báo cáo
+          {t('dataSync.updateReportData', 'Cập nhật dữ liệu báo cáo')}
         </h2>
       </div>
 
       <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-        Làm mới số liệu bán hàng để Dashboard, báo cáo và AI dùng dữ liệu mới nhất sau khi nhập hoặc đồng bộ dữ liệu.
+        {t('dataSync.updateReportDataDesc', 'Làm mới số liệu bán hàng để Dashboard, báo cáo và AI dùng dữ liệu mới nhất sau khi nhập hoặc đồng bộ dữ liệu.')}
       </p>
 
       {/* Progress bar */}
@@ -432,7 +435,7 @@ function EtlPipelineCard({ t }) {
         <div className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs"
              style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.25)', color: 'var(--accent-500)' }}>
           <span className="icon" style={{ fontSize: 16 }}>check_circle</span>
-          <span>Đồng bộ thành công lúc <strong>{doneAt}</strong> — {message}</span>
+          <span>{t('dataSync.syncSuccessAt', 'Đồng bộ thành công lúc')} <strong>{doneAt}</strong> — {message}</span>
         </div>
       )}
       {status === 'failed' && (
@@ -453,12 +456,12 @@ function EtlPipelineCard({ t }) {
           <>
             <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full"
                   style={{ animation: 'spin 0.7s linear infinite' }} />
-            Đang đồng bộ...
+            {t('dataSync.syncing', 'Đang đồng bộ...')}
           </>
         ) : (
           <>
             <span className="icon text-base">sync_alt</span>
-            Đồng bộ ngay
+            {t('dataSync.syncNow', 'Đồng bộ ngay')}
           </>
         )}
       </button>
@@ -519,6 +522,7 @@ const TEMPLATE_PLATFORMS = [
 ]
 
 function TemplateDownloadSection() {
+  const { t, i18n } = useTranslation()
   const [tplPlatform,    setTplPlatform]    = useState('shopee')
   const [tplType,        setTplType]        = useState('orders')
   const [includeSample,  setIncludeSample]  = useState(true)
@@ -539,9 +543,9 @@ function TemplateDownloadSection() {
       link.href = url; link.download = fname
       document.body.appendChild(link); link.click(); link.remove()
       URL.revokeObjectURL(url)
-      showToast(`Đã tải template ${selectedPlat.label} ${tplType}`, 'success')
+      showToast(t('dataSync.downloadedTemplate', 'Đã tải template'), 'success')
     } catch {
-      showToast('Không tải được template', 'error')
+      showToast(t('dataSync.downloadTemplateError', 'Không tải được template'), 'error')
     } finally {
       setDownloading(false)
     }
@@ -552,13 +556,13 @@ function TemplateDownloadSection() {
       <div className="flex items-center gap-2">
         <span className="icon text-xl" style={{ color: 'var(--accent-500)' }}>download</span>
         <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
-          Tải template dữ liệu mẫu
+          {t('dataSync.downloadTemplateTitle', 'Tải template dữ liệu mẫu')}
         </p>
       </div>
 
       {/* Chọn nền tảng */}
       <div>
-        <p className="text-sm mb-2" style={{ color: 'var(--text-secondary)' }}>Chọn nền tảng:</p>
+        <p className="text-sm mb-2" style={{ color: 'var(--text-secondary)' }}>{t('dataSync.selectPlatform', 'Chọn nền tảng:')}</p>
         <div className="flex flex-wrap gap-2">
           {TEMPLATE_PLATFORMS.map(p => (
             <button
@@ -572,7 +576,7 @@ function TemplateDownloadSection() {
               }}
             >
               <span className="icon" style={{ fontSize: 14 }}>{p.icon}</span>
-              {p.label}
+              {t(`dataSync.sources.${p.key}`, p.label)}
             </button>
           ))}
         </div>
@@ -581,24 +585,24 @@ function TemplateDownloadSection() {
       {/* Chọn loại dữ liệu */}
       {tplPlatform !== 'ghn' && (
         <div>
-          <p className="text-sm mb-2" style={{ color: 'var(--text-secondary)' }}>Chọn loại dữ liệu:</p>
+          <p className="text-sm mb-2" style={{ color: 'var(--text-secondary)' }}>{t('dataSync.selectDataType', 'Chọn loại dữ liệu:')}</p>
           <div className="flex gap-2">
             {[
-              { key: 'orders',   label: 'Đơn hàng', icon: 'package_2' },
-              { key: 'products', label: 'Sản phẩm', icon: 'inventory_2' },
-            ].map(t => (
+              { key: 'orders',   label: t('dataSync.dataTypeOrders', 'Đơn hàng'), icon: 'package_2' },
+              { key: 'products', label: t('dataSync.dataTypeProducts', 'Sản phẩm'), icon: 'inventory_2' },
+            ].map(tItem => (
               <button
-                key={t.key}
-                onClick={() => setTplType(t.key)}
+                key={tItem.key}
+                onClick={() => setTplType(tItem.key)}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all"
                 style={{
-                  borderColor: tplType === t.key ? selectedPlat.color : 'var(--border)',
-                  background:  tplType === t.key ? `${selectedPlat.color}15` : 'var(--bg-elevated)',
-                  color:       tplType === t.key ? selectedPlat.color : 'var(--text-secondary)',
+                  borderColor: tplType === tItem.key ? selectedPlat.color : 'var(--border)',
+                  background:  tplType === tItem.key ? `${selectedPlat.color}15` : 'var(--bg-elevated)',
+                  color:       tplType === tItem.key ? selectedPlat.color : 'var(--text-secondary)',
                 }}
               >
-                <span className="icon" style={{ fontSize: 14 }}>{t.icon}</span>
-                {t.label}
+                <span className="icon" style={{ fontSize: 14 }}>{tItem.icon}</span>
+                {tItem.label}
               </button>
             ))}
           </div>
@@ -618,7 +622,7 @@ function TemplateDownloadSection() {
           />
         </div>
         <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-          Bao gồm dữ liệu mẫu thực tế (5 dòng trong 30 ngày gần nhất)
+          {t('dataSync.includeSampleDesc', 'Bao gồm dữ liệu mẫu thực tế (5 dòng trong 30 ngày gần nhất)')}
         </span>
       </label>
 
@@ -639,13 +643,17 @@ function TemplateDownloadSection() {
           <>
             <span className="w-4 h-4 border-2 rounded-full border-current border-t-transparent"
                   style={{ animation: 'spin 0.7s linear infinite' }} />
-            Đang tạo file...
+            {t('dataSync.generatingFile', 'Đang tạo file...')}
           </>
         ) : (
           <>
             <span className="icon text-base">download</span>
-            Tải Template — {selectedPlat.label}
-            {tplPlatform !== 'ghn' ? ` (${tplType === 'orders' ? 'Đơn hàng' : 'Sản phẩm'})` : ' (Vận chuyển)'}
+            {t('dataSync.downloadSampleTemplateBtn', {
+              platform: t(`dataSync.sources.${selectedPlat.key}`, selectedPlat.label),
+              type: tplPlatform !== 'ghn' 
+                ? (tplType === 'orders' ? t('dataSync.dataTypeOrders') : t('dataSync.dataTypeProducts'))
+                : t('dataSync.dataTypeShipping', 'Vận chuyển')
+            })}
           </>
         )}
       </button>
@@ -654,6 +662,7 @@ function TemplateDownloadSection() {
 }
 
 function ImportTab() {
+  const { t, i18n } = useTranslation()
   const [source,      setSource]      = useState('shopee')
   const [fileType,    setFileType]    = useState(null)
   const [file,        setFile]        = useState(null)
@@ -744,7 +753,7 @@ function ImportTab() {
       {/* BƯỚC 1: Chọn nguồn sàn */}
       <div className="lcard p-5">
         <p className="text-xs font-semibold mb-3" style={{ color: 'var(--text-secondary)' }}>
-          BƯỚC 1 — CHỌN NGUỒN DỮ LIỆU
+          {t('dataSync.step1SelectSource', 'BƯỚC 1 — CHỌN NGUỒN DỮ LIỆU')}
         </p>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {PLATFORM_SOURCES.map(it => (
@@ -761,7 +770,7 @@ function ImportTab() {
                 {it.icon}
               </span>
               <span className="text-sm font-semibold" style={{ color: source === it.key ? it.color : 'var(--text-secondary)' }}>
-                {it.label}
+                {t(`dataSync.sources.${it.key}`, it.label)}
               </span>
             </button>
           ))}
@@ -771,7 +780,7 @@ function ImportTab() {
       {/* BƯỚC 2: Chọn loại file */}
       <div className="lcard p-5">
         <p className="text-xs font-semibold mb-3" style={{ color: 'var(--text-secondary)' }}>
-          BƯỚC 2 — CHỌN LOẠI FILE
+          {t('dataSync.step2SelectFileType', 'BƯỚC 2 — CHỌN LOẠI FILE')}
         </p>
         <div className="grid grid-cols-2 gap-3">
           {Object.entries(FILE_TYPE_CONFIG).map(([key, cfg]) => (
@@ -787,10 +796,10 @@ function ImportTab() {
               <span style={{ fontSize: 28 }}>{cfg.emoji}</span>
               <div>
                 <p className="text-sm font-semibold" style={{ color: fileType === key ? selectedPlatform.color : 'var(--text-primary)' }}>
-                  {cfg.label}
+                  {key === 'orders' ? t('dataSync.dataTypeOrders', 'File Đơn hàng') : t('dataSync.dataTypeProducts', 'File Sản phẩm')}
                 </p>
                 <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
-                  {cfg.descriptions[source]}
+                  {t(`dataSync.desc${key === 'orders' ? 'Orders' : 'Products'}${source.charAt(0).toUpperCase() + source.slice(1)}`, cfg.descriptions[source])}
                 </p>
               </div>
             </button>
@@ -802,16 +811,18 @@ function ImportTab() {
       {fileType && (
         <div className="lcard p-5 space-y-4">
           <p className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>
-            BƯỚC 3 — TẢI FILE VÀ IMPORT
+            {t('dataSync.step3UploadImport', 'BƯỚC 3 — TẢI FILE VÀ IMPORT')}
           </p>
 
           {/* Hướng dẫn */}
           <div className="px-4 py-3 rounded-lg text-xs space-y-1.5"
                style={{ background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.18)' }}>
             <p className="font-semibold" style={{ color: 'var(--primary-500)' }}>
-              Cách xuất file từ {selectedPlatform.label}:
+              {t('dataSync.howToExport', 'Cách xuất file từ {{name}}:', { name: t(`dataSync.sources.${selectedPlatform.key}`, selectedPlatform.label) })}
             </p>
-            <p style={{ color: 'var(--text-secondary)' }}>{typeConf.descriptions[source]}</p>
+            <p style={{ color: 'var(--text-secondary)' }}>
+              {t(`dataSync.desc${fileType === 'orders' ? 'Orders' : 'Products'}${source.charAt(0).toUpperCase() + source.slice(1)}`, typeConf.descriptions[source])}
+            </p>
             {typeConf.guideLinks[source] && (
               <a
                 href={typeConf.guideLinks[source]}
@@ -821,7 +832,7 @@ function ImportTab() {
                 style={{ color: 'var(--primary-500)' }}
               >
                 <span className="icon" style={{ fontSize: 13 }}>open_in_new</span>
-                Mở trang Seller Center
+                {t('dataSync.openSellerCenter', 'Mở trang Seller Center')}
               </a>
             )}
           </div>
@@ -838,7 +849,10 @@ function ImportTab() {
               }}
             >
               <span className="icon text-base">download</span>
-              Tải template mẫu — {selectedPlatform.label} {typeConf.label}
+              {t('dataSync.downloadSampleTemplateBtn', {
+                platform: t(`dataSync.sources.${selectedPlatform.key}`, selectedPlatform.label),
+                type: fileType === 'orders' ? t('dataSync.dataTypeOrders') : t('dataSync.dataTypeProducts')
+              })}
             </button>
           )}
 
@@ -872,17 +886,17 @@ function ImportTab() {
             ) : (
               <div>
                 <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                  Kéo thả file CSV vào đây hoặc{' '}
-                  <span style={{ color: selectedPlatform.color }}>chọn file</span>
+                  {t('dataSync.dragDropHintBefore', 'Kéo thả file CSV vào đây hoặc')}{' '}
+                  <span style={{ color: selectedPlatform.color }}>{t('dataSync.chooseFile', 'chọn file')}</span>
                 </p>
-                <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>Chấp nhận .csv, .xlsx</p>
+                <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>{t('dataSync.acceptedFileTypes', 'Chấp nhận .csv, .xlsx')}</p>
               </div>
             )}
           </div>
 
           {file && (
             <button onClick={resetFile} className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-              ✕ Xóa file
+              {t('dataSync.removeFile', '✕ Xóa file')}
             </button>
           )}
         </div>
@@ -892,9 +906,9 @@ function ImportTab() {
       {preview && (
           <div className="lcard p-5 space-y-3">
             <div className="flex items-center justify-between flex-wrap gap-2">
-              <p className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>XEM TRƯỚC</p>
+              <p className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>{t('dataSync.preview', 'XEM TRƯỚC')}</p>
               <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                {preview.total} dòng · {preview.headers.length} cột
+                {t('dataSync.previewStats', '{{total}} dòng · {{headers}} cột', { total: preview.total, headers: preview.headers.length })}
               </span>
             </div>
 
@@ -930,7 +944,7 @@ function ImportTab() {
       {/* Xác nhận import */}
       {preview && fileType && (
         <div className="lcard p-5 space-y-4">
-          <p className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>XÁC NHẬN VÀ IMPORT</p>
+          <p className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>{t('dataSync.confirmAndImport', 'XÁC NHẬN VÀ IMPORT')}</p>
 
           <button
             onClick={handleImport}
@@ -942,12 +956,12 @@ function ImportTab() {
               <>
                 <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full"
                       style={{ animation: 'spin 0.7s linear infinite' }} />
-                Đang import...
+                {t('dataSync.importing', 'Đang import...')}
               </>
             ) : (
               <>
                 <span className="icon text-base">upload</span>
-                Import {preview.total} bản ghi ({typeConf?.label})
+                {t('dataSync.importRecordsCount', 'Import {{count}} bản ghi ({{label}})', { count: preview.total, label: fileType === 'orders' ? t('dataSync.dataTypeOrders') : t('dataSync.dataTypeProducts') })}
               </>
             )}
           </button>
@@ -960,31 +974,31 @@ function ImportTab() {
                  }}>
               <p className="text-sm font-semibold"
                  style={{ color: result.errors?.length > 0 ? '#F59E0B' : 'var(--accent-500)' }}>
-                {result.message ?? `Đã import ${result.success} bản ghi`}
+                {result.message ?? t('dataSync.importSuccessCount', 'Đã import {{count}} bản ghi', { count: result.success })}
               </p>
               <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                {result.totalRows != null ? `${result.totalRows} dòng trong file · ` : ''}
-                {result.importedRows ?? result.success} dòng đã xử lý
-                {result.uniqueOrders != null ? ` · ${result.uniqueOrders} đơn` : ''}
-                {result.changedOrders != null ? ` · ${result.changedOrders} đơn có dữ liệu mới` : ''}
-                {' · '}{result.skippedRows ?? result.skipped} dòng bỏ qua
-                {result.newCategories > 0 ? ` · ${result.newCategories} danh mục mới` : ''}
+                {result.totalRows != null ? `${result.totalRows} ${t('dataSync.rowsInFile', 'dòng trong file')} · ` : ''}
+                {result.importedRows ?? result.success} {t('dataSync.rowsProcessed', 'dòng đã xử lý')}
+                {result.uniqueOrders != null ? ` · ${result.uniqueOrders} ${t('dataSync.orders', 'đơn')}` : ''}
+                {result.changedOrders != null ? ` · ${result.changedOrders} ${t('dataSync.ordersWithNewData', 'đơn có dữ liệu mới')}` : ''}
+                {' · '}{result.skippedRows ?? result.skipped} {t('dataSync.rowsSkipped', 'dòng bỏ qua')}
+                {result.newCategories > 0 ? ` · ${result.newCategories} ${t('dataSync.newCategories', 'danh mục mới')}` : ''}
               </p>
               {result.dwMessage && (
                 <div className="mt-2 pt-2 border-t text-xs flex items-center gap-1.5" style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>
-                  <span className="icon text-sm" style={{ color: 'var(--primary-500)' }}>sync</span>
+                   <span className="icon text-sm" style={{ color: 'var(--primary-500)' }}>sync</span>
                   <span>{result.dwMessage}</span>
                 </div>
               )}
               {result.skipped > 0 && result.skippedDetails?.length > 0 && (
                 <details className="mt-1">
                   <summary className="text-xs cursor-pointer font-medium" style={{ color: 'var(--text-secondary)' }}>
-                    Xem chi tiết {result.skippedRows ?? result.skipped} dòng bỏ qua
+                    {t('dataSync.viewSkippedDetails', 'Xem chi tiết {{count}} dòng bỏ qua', { count: result.skippedRows ?? result.skipped })}
                   </summary>
                   <div className="mt-2 space-y-1">
                     {result.skippedDetails.map((s, i) => (
                       <p key={i} className="text-xs pl-2" style={{ color: 'var(--text-tertiary)', borderLeft: '2px solid var(--border)' }}>
-                        Dòng {s.row}{s.orderCode ? ` (${s.orderCode})` : ''}: {s.reason}
+                        {t('dataSync.skippedRowDetail', 'Dòng {{row}}', { row: s.row })}{s.orderCode ? ` (${s.orderCode})` : ''}: {s.reason}
                       </p>
                     ))}
                   </div>
@@ -992,12 +1006,12 @@ function ImportTab() {
               )}
               {result.errors?.length > 0 && (
                 <p className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
-                  Đang cập nhật dữ liệu báo cáo...
+                  {t('dataSync.updatingReportData', 'Đang cập nhật dữ liệu báo cáo...')}
                 </p>
               )}
               {result.errors?.slice(0, 5).map((e, i) => (
                 <p key={i} className="text-xs" style={{ color: '#EF4444' }}>
-                  Dòng {e.row}: {e.message}
+                  {t('dataSync.skippedRowDetail', 'Dòng {{row}}', { row: e.row })}: {e.message}
                 </p>
               ))}
             </div>
@@ -1010,6 +1024,7 @@ function ImportTab() {
 
 // ── Facebook Connection Card ──────────────────────────────────────────────────
 function FacebookConnectCard() {
+  const { t, i18n } = useTranslation()
   const [status,        setStatus]        = useState(null)   // null | { connected, pageId, pageName, ... }
   const [loading,       setLoading]       = useState(true)
   const [pageId,        setPageId]        = useState('')
@@ -1037,17 +1052,17 @@ function FacebookConnectCard() {
 
   const handleConnect = async () => {
     if (!pageId.trim() || !token.trim()) {
-      setError('Vui lòng nhập đầy đủ Page ID và Page Access Token.')
+      setError(t('dataSync.facebookInputRequired', 'Vui lòng nhập đầy đủ Page ID và Page Access Token.'))
       return
     }
     setConnecting(true); setError('')
     try {
       await connectFacebook(pageId.trim(), token.trim())
-      showToast('Kết nối Facebook thành công!', 'success')
+      showToast(t('dataSync.facebookConnectSuccess', 'Kết nối Facebook thành công!'), 'success')
       setPageId(''); setToken('')
       await loadStatus()
     } catch (e) {
-      setError(e.response?.data?.message ?? e.message ?? 'Lỗi kết nối')
+      setError(e.response?.data?.message ?? e.message ?? t('dataSync.connectionError', 'Lỗi kết nối'))
     } finally {
       setConnecting(false)
     }
@@ -1060,10 +1075,10 @@ function FacebookConnectCard() {
   const doDisconnectFacebook = async () => {
     try {
       await disconnectFacebook()
-      showToast('Đã ngắt kết nối Facebook.', 'info')
+      showToast(t('dataSync.facebookDisconnectSuccess', 'Đã ngắt kết nối Facebook.'), 'info')
       await loadStatus()
     } catch (e) {
-      showToast(e.response?.data?.message ?? 'Lỗi ngắt kết nối', 'error')
+      showToast(e.response?.data?.message ?? t('dataSync.facebookDisconnectError', 'Lỗi ngắt kết nối'), 'error')
     }
   }
 
@@ -1085,7 +1100,7 @@ function FacebookConnectCard() {
       const r = await validateFacebookToken()
       setValidateResult(r)
     } catch (e) {
-      setValidateResult({ valid: false, message: e.response?.data?.message ?? 'Lỗi kiểm tra token' })
+      setValidateResult({ valid: false, message: e.response?.data?.message ?? t('dataSync.connectionError', 'Lỗi kiểm tra token') })
     } finally {
       setValidating(false)
     }
@@ -1104,8 +1119,8 @@ function FacebookConnectCard() {
     <>
     <ConfirmDialog
       open={fbConfirmDlg}
-      title="Ngắt kết nối Facebook"
-      message="Bạn chắc chắn muốn ngắt kết nối Facebook Page này?"
+      title={t('dataSync.disconnectFacebookTitle', 'Ngắt kết nối Facebook')}
+      message={t('dataSync.disconnectFacebookConfirm', 'Bạn chắc chắn muốn ngắt kết nối Facebook Page này?')}
       icon="link_off"
       danger
       onClose={() => setFbConfirmDlg(false)}
@@ -1121,7 +1136,7 @@ function FacebookConnectCard() {
         <div>
           <h2 className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>Facebook Page</h2>
           <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
-            Thu thập bài đăng, bình luận và phân tích cảm xúc khách hàng
+            {t('dataSync.facebookDesc', 'Thu thập bài đăng, bình luận và phân tích cảm xúc khách hàng')}
           </p>
         </div>
         <div className="ml-auto">
@@ -1133,7 +1148,7 @@ function FacebookConnectCard() {
                 }}>
             <span className="w-1.5 h-1.5 rounded-full"
                   style={{ background: status?.connected ? 'var(--accent-500)' : '#94A3B8' }} />
-            {status?.connected ? 'Đã kết nối' : 'Chưa kết nối'}
+            {status?.connected ? t('dataSync.connected', 'Đã kết nối') : t('dataSync.notConnected', 'Chưa kết nối')}
           </span>
         </div>
       </div>
@@ -1153,14 +1168,14 @@ function FacebookConnectCard() {
               </div>
               {status.connectedAt && (
                 <div>
-                  <span className="font-medium">Kết nối lúc:</span>{' '}
-                  {new Date(status.connectedAt).toLocaleString('vi-VN')}
+                  <span className="font-medium">{t('dataSync.connectedAt', 'Kết nối lúc:')}</span>{' '}
+                  {new Date(status.connectedAt).toLocaleString(i18n.language === 'en' ? 'en-US' : 'vi-VN')}
                 </div>
               )}
               {status.lastSyncAt && (
                 <div>
-                  <span className="font-medium">Sync lần cuối:</span>{' '}
-                  {new Date(status.lastSyncAt).toLocaleString('vi-VN')}
+                  <span className="font-medium">{t('dataSync.lastSyncAt', 'Sync lần cuối:')}</span>{' '}
+                  {new Date(status.lastSyncAt).toLocaleString(i18n.language === 'en' ? 'en-US' : 'vi-VN')}
                 </div>
               )}
             </div>
@@ -1202,9 +1217,9 @@ function FacebookConnectCard() {
                  }}>
               {scrapeResult.success !== false ? (
                 <>
-                  <div className="font-semibold">Scrape hoàn tất</div>
+                  <div className="font-semibold">{t('dataSync.scrapeComplete', 'Scrape hoàn tất')}</div>
                   <div style={{ color: 'var(--text-secondary)' }}>
-                    {scrapeResult.total_scraped} bài đăng · {scrapeResult.inserted} mới · {scrapeResult.skipped} bỏ qua
+                    {scrapeResult.total_scraped} {t('dataSync.posts', 'bài đăng')} · {scrapeResult.inserted} {t('dataSync.new', 'mới')} · {scrapeResult.skipped} {t('dataSync.skipped', 'bỏ qua')}
                   </div>
                   {scrapeResult.message && scrapeResult.total_scraped === 0 && (
                     <div style={{ color: '#F59E0B' }}>{scrapeResult.message}</div>
@@ -1234,14 +1249,14 @@ function FacebookConnectCard() {
               ) : (
                 <span className="icon text-base">sync</span>
               )}
-              {scraping ? 'Đang scrape...' : 'Scrape ngay'}
+              {scraping ? t('dataSync.scraping', 'Đang scrape...') : t('dataSync.scrapeNow', 'Scrape ngay')}
             </button>
             <button
               onClick={handleValidate}
               disabled={validating}
               className="lbtn flex-shrink-0 px-3 disabled:opacity-50"
               style={{ height: 38, border: '1px solid rgba(245,158,11,0.35)', color: '#F59E0B', background: 'rgba(245,158,11,0.06)' }}
-              title="Kiểm tra token còn hợp lệ không"
+              title={t('dataSync.checkTokenTooltip', 'Kiểm tra token còn hợp lệ không')}
             >
               {validating ? (
                 <span className="w-4 h-4 border-2 rounded-full"
@@ -1249,7 +1264,7 @@ function FacebookConnectCard() {
               ) : (
                 <span className="icon text-base">verified_user</span>
               )}
-              Kiểm tra token
+              {t('dataSync.checkTokenBtn', 'Kiểm tra token')}
             </button>
             <button
               onClick={handleDisconnect}
@@ -1257,7 +1272,7 @@ function FacebookConnectCard() {
               style={{ height: 38, border: '1px solid rgba(239,68,68,0.30)', color: '#EF4444', background: 'rgba(239,68,68,0.06)' }}
             >
               <span className="icon text-base">link_off</span>
-              Ngắt kết nối
+              {t('dataSync.disconnectBtn', 'Ngắt kết nối')}
             </button>
           </div>
         </div>
@@ -1269,15 +1284,25 @@ function FacebookConnectCard() {
                style={{ background: 'rgba(59,130,246,0.07)', border: '1px solid rgba(59,130,246,0.20)', color: '#3B82F6' }}>
             <div className="font-semibold flex items-center gap-1.5 mb-1">
               <span className="icon" style={{ fontSize: 14 }}>info</span>
-              Cách lấy Page Access Token
+              {t('dataSync.howToGetToken', 'Cách lấy Page Access Token')}
             </div>
-            <ol className="space-y-0.5 list-decimal list-inside" style={{ color: 'var(--text-secondary)', lineHeight: 1.7 }}>
-              <li>Vào <strong>developers.facebook.com</strong> → Tạo App → Add Product → Facebook Login</li>
-              <li>Vào <strong>Graph API Explorer</strong> → chọn Page của bạn</li>
-              <li>Thêm quyền: <code style={{ background: 'var(--bg-elevated)', padding: '0 3px', borderRadius: 3 }}>pages_read_engagement</code>, <code style={{ background: 'var(--bg-elevated)', padding: '0 3px', borderRadius: 3 }}>pages_show_list</code></li>
-              <li>Nhấn <strong>Generate Access Token</strong> → copy token</li>
-              <li>Page ID lấy tại: Trang → Giới thiệu → Page ID</li>
-            </ol>
+            {i18n.language === 'en' ? (
+              <ol className="space-y-0.5 list-decimal list-inside" style={{ color: 'var(--text-secondary)', lineHeight: 1.7 }}>
+                <li>Go to <strong>developers.facebook.com</strong> → Create App → Add Product → Facebook Login</li>
+                <li>Go to <strong>Graph API Explorer</strong> → select your Page</li>
+                <li>Add permissions: <code style={{ background: 'var(--bg-elevated)', padding: '0 3px', borderRadius: 3 }}>pages_read_engagement</code>, <code style={{ background: 'var(--bg-elevated)', padding: '0 3px', borderRadius: 3 }}>pages_show_list</code></li>
+                <li>Click <strong>Generate Access Token</strong> → copy token</li>
+                <li>Get Page ID at: Page → About → Page ID</li>
+              </ol>
+            ) : (
+              <ol className="space-y-0.5 list-decimal list-inside" style={{ color: 'var(--text-secondary)', lineHeight: 1.7 }}>
+                <li>Vào <strong>developers.facebook.com</strong> → Tạo App → Add Product → Facebook Login</li>
+                <li>Vào <strong>Graph API Explorer</strong> → chọn Page của bạn</li>
+                <li>Thêm quyền: <code style={{ background: 'var(--bg-elevated)', padding: '0 3px', borderRadius: 3 }}>pages_read_engagement</code>, <code style={{ background: 'var(--bg-elevated)', padding: '0 3px', borderRadius: 3 }}>pages_show_list</code></li>
+                <li>Nhấn <strong>Generate Access Token</strong> → copy token</li>
+                <li>Page ID lấy tại: Trang → Giới thiệu → Page ID</li>
+              </ol>
+            )}
           </div>
 
           <div className="space-y-3">
@@ -1303,10 +1328,10 @@ function FacebookConnectCard() {
                 onChange={e => setToken(e.target.value)}
                 placeholder="EAABsbCS4IHUBO..."
                 className="lbtn w-full !h-9 !px-3 text-sm border font-mono"
-                style={{ background: 'var(--bg-elevated)', borderColor: 'var(--border-default)' }}
+                style={{ background: 'var(--bg-elevated)', borderColor: 'var(--border-default)', fontFamily: 'monospace' }}
               />
               <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
-                Token được mã hóa AES-256-GCM trước khi lưu, không bao giờ hiển thị lại.
+                {t('dataSync.tokenWarning', 'Token được mã hóa AES-256-GCM trước khi lưu, không bao giờ hiển thị lại.')}
               </p>
             </div>
           </div>
@@ -1330,7 +1355,7 @@ function FacebookConnectCard() {
             ) : (
               <span className="icon text-base">link</span>
             )}
-            {connecting ? 'Đang kết nối...' : 'Kết nối Facebook Page'}
+            {connecting ? t('dataSync.connecting', 'Đang kết nối...') : t('dataSync.connectFacebookPage', 'Kết nối Facebook Page')}
           </button>
         </div>
       )}
@@ -1341,6 +1366,7 @@ function FacebookConnectCard() {
 
 // ── Generic Connector Card ────────────────────────────────────────────────────
 function ConnectorCard({ channel, label, color, icon, guideUrl, guideText, fields, statusUrl, connectUrl, disconnectUrl }) {
+  const { t, i18n } = useTranslation()
   const [status,     setStatus]     = useState(null)
   const [loading,    setLoading]    = useState(true)
   const [form,       setForm]       = useState(() => Object.fromEntries(fields.map(f => [f.key, ''])))
@@ -1348,7 +1374,7 @@ function ConnectorCard({ channel, label, color, icon, guideUrl, guideText, field
   const [connecting, setConnecting] = useState(false)
   const [error,      setError]      = useState('')
   const [ccConfirmDlg, setCcConfirmDlg] = useState(false)
-
+  
   const loadStatus = async () => {
     setLoading(true)
     try { setStatus(await api.get(statusUrl).then(r => r.data)) }
@@ -1360,14 +1386,14 @@ function ConnectorCard({ channel, label, color, icon, guideUrl, guideText, field
 
   const handleConnect = async () => {
     const empty = fields.filter(f => f.required && !form[f.key]?.trim())
-    if (empty.length) { setError(`Vui lòng nhập: ${empty.map(f => f.label).join(', ')}`); return }
+    if (empty.length) { setError(`${t('dataSync.pleaseEnter', 'Vui lòng nhập:')} ${empty.map(f => f.label).join(', ')}`); return }
     setConnecting(true); setError('')
     try {
       await api.post(connectUrl, form)
-      showToast(`Kết nối ${label} thành công!`, 'success')
+      showToast(t('dataSync.channelConnectSuccess', 'Kết nối {{label}} thành công!', { label }), 'success')
       await loadStatus()
     } catch (e) {
-      setError(e.response?.data?.message ?? e.message ?? 'Lỗi kết nối')
+      setError(e.response?.data?.message ?? e.message ?? t('dataSync.connectError', 'Lỗi kết nối'))
     } finally { setConnecting(false) }
   }
 
@@ -1378,9 +1404,9 @@ function ConnectorCard({ channel, label, color, icon, guideUrl, guideText, field
   const doDisconnect = async () => {
     try {
       await api.delete(disconnectUrl)
-      showToast(`Đã ngắt kết nối ${label}.`, 'info')
+      showToast(t('dataSync.channelDisconnectSuccess', 'Đã ngắt kết nối {{label}}.', { label }), 'info')
       await loadStatus()
-    } catch (e) { showToast(e.response?.data?.message ?? 'Lỗi', 'error') }
+    } catch (e) { showToast(e.response?.data?.message ?? t('common.error', 'Lỗi'), 'error') }
   }
 
   if (loading) return (
@@ -1394,8 +1420,8 @@ function ConnectorCard({ channel, label, color, icon, guideUrl, guideText, field
     <>
     <ConfirmDialog
       open={ccConfirmDlg}
-      title={`Ngắt kết nối ${label}`}
-      message={`Bạn chắc chắn muốn ngắt kết nối ${label}?`}
+      title={t('dataSync.disconnectTitle', 'Ngắt kết nối {{label}}', { label })}
+      message={t('dataSync.disconnectConfirm', 'Bạn chắc chắn muốn ngắt kết nối {{label}}?', { label })}
       icon="link_off"
       danger
       onClose={() => setCcConfirmDlg(false)}
@@ -1413,7 +1439,7 @@ function ConnectorCard({ channel, label, color, icon, guideUrl, guideText, field
           {guideUrl && (
             <a href={guideUrl} target="_blank" rel="noopener noreferrer"
                className="text-xs underline" style={{ color }}>
-              {guideText ?? 'Hướng dẫn lấy credentials'}
+              {guideText ?? t('dataSync.guideText', 'Hướng dẫn lấy credentials')}
             </a>
           )}
         </div>
@@ -1425,7 +1451,7 @@ function ConnectorCard({ channel, label, color, icon, guideUrl, guideText, field
               }}>
           <span className="w-1.5 h-1.5 rounded-full"
                 style={{ background: status?.connected ? 'var(--accent-500)' : '#94A3B8' }} />
-          {status?.connected ? 'Đã kết nối' : 'Chưa kết nối'}
+          {status?.connected ? t('dataSync.connected', 'Đã kết nối') : t('dataSync.disconnected', 'Chưa kết nối')}
         </span>
       </div>
 
@@ -1441,8 +1467,8 @@ function ConnectorCard({ channel, label, color, icon, guideUrl, guideText, field
               {status.accountId && <div><span className="font-medium">ID:</span> {status.accountId}</div>}
               {status.connectedAt && (
                 <div>
-                  <span className="font-medium">Kết nối lúc:</span>{' '}
-                  {new Date(status.connectedAt).toLocaleString('vi-VN')}
+                  <span className="font-medium">{t('dataSync.connectedAt', 'Kết nối lúc:')}</span>{' '}
+                  {new Date(status.connectedAt).toLocaleString(i18n.language === 'en' ? 'en-US' : 'vi-VN')}
                 </div>
               )}
             </div>
@@ -1451,7 +1477,7 @@ function ConnectorCard({ channel, label, color, icon, guideUrl, guideText, field
                   className="lbtn w-full justify-center"
                   style={{ height: 38, border: '1px solid rgba(239,68,68,0.30)', color: '#EF4444', background: 'rgba(239,68,68,0.06)' }}>
             <span className="icon text-base">link_off</span>
-            Ngắt kết nối
+            {t('dataSync.disconnectBtn', 'Ngắt kết nối')}
           </button>
         </div>
       ) : (
@@ -1480,7 +1506,7 @@ function ConnectorCard({ channel, label, color, icon, guideUrl, guideText, field
                   {f.secret && (
                     <button onClick={() => setShowPwd(p => ({ ...p, [f.key]: !p[f.key] }))}
                             className="absolute right-2 top-1/2 -translate-y-1/2"
-                            title={showPwd[f.key] ? 'Ẩn' : 'Hiện'}>
+                            title={showPwd[f.key] ? t('common.hide', 'Ẩn') : t('common.show', 'Hiện')}>
                       <span className="icon text-base" style={{ color: 'var(--text-tertiary)' }}>
                         {showPwd[f.key] ? 'visibility_off' : 'visibility'}
                       </span>
@@ -1508,7 +1534,7 @@ function ConnectorCard({ channel, label, color, icon, guideUrl, guideText, field
               ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full"
                       style={{ animation: 'spin 0.7s linear infinite' }} />
               : <span className="icon text-base">link</span>}
-            {connecting ? 'Đang kết nối...' : `Kết nối ${label}`}
+            {connecting ? t('dataSync.connecting', 'Đang kết nối...') : t('dataSync.connectTo', 'Kết nối {{label}}', { label })}
           </button>
         </div>
       )}
@@ -1525,18 +1551,20 @@ const SENTIMENT_CFG = {
 }
 
 function SentimentBadge({ type }) {
+  const { t } = useTranslation()
   const cfg = SENTIMENT_CFG[type] ?? SENTIMENT_CFG.neutral
   return (
     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
           style={{ background: cfg.bg, color: cfg.color }}>
       <span className="icon" style={{ fontSize: 13 }}>{cfg.icon}</span>
-      {cfg.label}
+      {t('sentiment.' + type, cfg.label)}
     </span>
   )
 }
 
 // ── Facebook Posts Modal ──────────────────────────────────────────────────────
 function FacebookPostsModal({ onClose }) {
+  const { t, i18n } = useTranslation()
   const [posts,    setPosts]    = useState([])
   const [total,    setTotal]    = useState(0)
   const [page,     setPage]     = useState(1)
@@ -1554,7 +1582,7 @@ function FacebookPostsModal({ onClose }) {
       setTotal(r.data.total ?? 0)
       setPage(pg)
     } catch (e) {
-      setError(e.response?.data?.message ?? 'Không thể tải bài đăng')
+      setError(e.response?.data?.message ?? t('dataSync.facebook.cannotLoadPosts', 'Không thể tải bài đăng'))
     } finally { setLoading(false) }
   }
 
@@ -1564,23 +1592,23 @@ function FacebookPostsModal({ onClose }) {
 
   const formatDate = iso => {
     if (!iso) return ''
-    return new Date(iso).toLocaleString('vi-VN', {
+    return new Date(iso).toLocaleString(i18n.language === 'en' ? 'en-US' : 'vi-VN', {
       day: '2-digit', month: '2-digit', year: 'numeric',
       hour: '2-digit', minute: '2-digit',
     })
   }
 
-  const drawerSubtitle = total > 0 ? `${total} bài đăng đã thu thập` : undefined
+  const drawerSubtitle = total > 0 ? t('dataSync.facebook.postsCollected', '{{count}} bài đăng đã thu thập', { count: total }) : undefined
   const drawerFooter = totalPages > 1 ? (
     <div className="flex items-center justify-between w-full">
       <button onClick={() => load(page - 1)} disabled={page <= 1 || loading}
               className="lbtn !h-8 !px-3 text-xs disabled:opacity-40">
-        <span className="icon text-sm">chevron_left</span> Trước
+        <span className="icon text-sm">chevron_left</span> {t('common.prev', 'Trước')}
       </button>
       <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>{page} / {totalPages}</span>
       <button onClick={() => load(page + 1)} disabled={page >= totalPages || loading}
               className="lbtn !h-8 !px-3 text-xs disabled:opacity-40">
-        Sau <span className="icon text-sm">chevron_right</span>
+        {t('common.next', 'Sau')} <span className="icon text-sm">chevron_right</span>
       </button>
     </div>
   ) : null
@@ -1589,7 +1617,7 @@ function FacebookPostsModal({ onClose }) {
     <DetailDrawer
       open={true}
       onClose={onClose}
-      title="Bài đăng Facebook"
+      title={t('dataSync.facebook.postsTitle', 'Bài đăng Facebook')}
       subtitle={drawerSubtitle}
       width={580}
       footer={drawerFooter}
@@ -1603,14 +1631,14 @@ function FacebookPostsModal({ onClose }) {
             <span className="icon text-white text-sm">group</span>
           </div>
           <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
-            Facebook · Đã thu thập
+            {t('dataSync.facebook.facebookCollected', 'Facebook · Đã thu thập')}
           </span>
         </div>
         <button onClick={() => load(page)}
                 className="lbtn !h-7 !px-2.5 text-xs gap-1"
                 style={{ color: 'var(--text-secondary)', border: '1px solid var(--border-default)' }}>
           <span className="icon text-sm">refresh</span>
-          Làm mới
+          {t('common.refresh', 'Làm mới')}
         </button>
       </div>
 
@@ -1626,9 +1654,8 @@ function FacebookPostsModal({ onClose }) {
           ) : posts.length === 0 ? (
             <div className="text-center py-12">
               <span className="icon text-5xl mb-3" style={{ color: 'var(--border-strong)', display: 'block' }}>article</span>
-              <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>
-                Chưa có bài đăng nào. Bấm <strong>"Scrape ngay"</strong> để thu thập.
-              </p>
+              <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}
+                 dangerouslySetInnerHTML={{ __html: t('dataSync.facebook.emptyPosts', 'Chưa có bài đăng nào. Bấm <strong>"Scrape ngay"</strong> để thu thập.') }} />
             </div>
           ) : posts.map(post => {
             const isExp  = expanded[post.postId]
@@ -1673,7 +1700,7 @@ function FacebookPostsModal({ onClose }) {
                   <button onClick={() => setExpanded(p => ({ ...p, [post.postId]: !isExp }))}
                           className="text-xs font-medium"
                           style={{ color: '#1877F2', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-                    {isExp ? 'Thu gọn ▲' : 'Xem thêm ▼'}
+                    {isExp ? `${t('common.collapse', 'Thu gọn')} ▲` : `${t('common.readMore', 'Xem thêm')} ▼`}
                   </button>
                 )}
 
@@ -1686,9 +1713,9 @@ function FacebookPostsModal({ onClose }) {
                       {negative > 0 && <div style={{ flex: negative, background: '#EF4444' }} />}
                     </div>
                     <div className="flex gap-3 text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                      {positive > 0 && <span style={{ color: '#10B981' }}>😊 {positive} tích cực</span>}
-                      {neutral  > 0 && <span>😐 {neutral} trung lập</span>}
-                      {negative > 0 && <span style={{ color: '#EF4444' }}>😞 {negative} tiêu cực</span>}
+                      {positive > 0 && <span style={{ color: '#10B981' }}>😊 {positive} {t('dataSync.facebook.positiveLabel', 'tích cực')}</span>}
+                      {neutral  > 0 && <span>😐 {neutral} {t('dataSync.facebook.neutralLabel', 'trung lập')}</span>}
+                      {negative > 0 && <span style={{ color: '#EF4444' }}>😞 {negative} {t('dataSync.facebook.negativeLabel', 'tiêu cực')}</span>}
                     </div>
                   </div>
                 )}
@@ -1718,7 +1745,7 @@ function FacebookPostsModal({ onClose }) {
                               ? { background: 'rgba(24,119,242,0.12)', color: '#1877F2' }
                               : { background: 'var(--bg-card)', color: 'var(--text-secondary)', border: '1px solid var(--border-default)' }}>
                       <span className="icon text-sm">{showCm ? 'expand_less' : 'expand_more'}</span>
-                      {showCm ? 'Ẩn bình luận' : 'Xem chi tiết'}
+                      {showCm ? t('dataSync.facebook.hideComments', 'Ẩn bình luận') : t('dataSync.facebook.viewDetails', 'Xem chi tiết')}
                     </button>
                   )}
                 </div>
@@ -1758,6 +1785,7 @@ function FacebookPostsModal({ onClose }) {
 
 // ── Facebook Feed trigger button (dùng trong FacebookConnectCard) ─────────────
 function FacebookFeed() {
+  const { t } = useTranslation()
   const [open,  setOpen]  = useState(false)
   const [count, setCount] = useState(null)  // null = chưa biết, 0 = không có
 
@@ -1780,7 +1808,7 @@ function FacebookFeed() {
         }}
       >
         <span className="icon text-base">article</span>
-        Xem bài đăng đã thu thập
+        {t('dataSync.facebook.viewPostsBtn', 'Xem bài đăng đã thu thập')}
         {count !== null && count > 0 && (
           <span className="px-1.5 py-0.5 rounded-full text-xs font-semibold"
                 style={{ background: '#1877F2', color: '#fff' }}>
@@ -1795,6 +1823,7 @@ function FacebookFeed() {
 
 // ── Google scraped URLs drawer ────────────────────────────────────────────────
 function GoogleResultsModal({ onClose }) {
+  const { t, i18n } = useTranslation()
   const [items, setItems] = useState([])
   const [stats, setStats] = useState(null)
   const [total, setTotal] = useState(0)
@@ -1819,18 +1848,18 @@ function GoogleResultsModal({ onClose }) {
       setTotal(r.data.total ?? 0)
       setPage(pg)
     } catch (e) {
-      setError(e.response?.data?.message ?? 'Không thể tải URL Google đã thu thập')
+      setError(e.response?.data?.message ?? t('dataSync.cannotLoadUrls', 'Không thể tải URL Google đã thu thập'))
     } finally { setLoading(false) }
   }
 
   useEffect(() => { load(1) }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const totalPages = Math.ceil(total / PAGE_SIZE)
-  const fmtDate = iso => iso ? new Date(iso).toLocaleString('vi-VN', {
+  const fmtDate = iso => iso ? new Date(iso).toLocaleString(i18n.language === 'en' ? 'en-US' : 'vi-VN', {
     day: '2-digit', month: '2-digit', year: 'numeric',
     hour: '2-digit', minute: '2-digit',
   }) : '—'
-  const fmtMoney = n => n == null ? null : `${Math.round(Number(n)).toLocaleString('vi-VN')}₫`
+  const fmtMoney = n => n == null ? null : `${Math.round(Number(n)).toLocaleString(i18n.language === 'en' ? 'en-US' : 'vi-VN')} ₫`
   const getDomain = item => {
     if (item.sourceDomain) return item.sourceDomain
     try { return new URL(item.url).hostname.replace(/^www\./, '') } catch { return '—' }
@@ -1844,12 +1873,12 @@ function GoogleResultsModal({ onClose }) {
     <div className="flex items-center justify-between w-full">
       <button onClick={() => load(page - 1)} disabled={page <= 1 || loading}
               className="lbtn !h-8 !px-3 text-xs disabled:opacity-40">
-        <span className="icon text-sm">chevron_left</span> Trước
+        <span className="icon text-sm">chevron_left</span> {t('common.prev', 'Trước')}
       </button>
-      <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>{page} / {totalPages}</span>
+      <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>{t('common.pageInfo', { page, total: totalPages })}</span>
       <button onClick={() => load(page + 1)} disabled={page >= totalPages || loading}
               className="lbtn !h-8 !px-3 text-xs disabled:opacity-40">
-        Sau <span className="icon text-sm">chevron_right</span>
+        {t('common.next', 'Sau')} <span className="icon text-sm">chevron_right</span>
       </button>
     </div>
   ) : null
@@ -1858,8 +1887,8 @@ function GoogleResultsModal({ onClose }) {
     <DetailDrawer
       open={true}
       onClose={onClose}
-      title="URL Google đã thu thập"
-      subtitle={total > 0 ? `${total} URL trong kho dữ liệu thị trường` : undefined}
+      title={t('dataSync.googleUrlsCollected', 'URL Google đã thu thập')}
+      subtitle={total > 0 ? t('dataSync.urlsInMarketDb', '{{count}} URL trong kho dữ liệu thị trường', { count: total }) : undefined}
       width={680}
       footer={footer}
     >
@@ -1871,14 +1900,14 @@ function GoogleResultsModal({ onClose }) {
             <span className="icon text-sm" style={{ color: '#4285F4' }}>travel_explore</span>
           </div>
           <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
-            Google Search · Audit nguồn
+            {t('dataSync.googleSearchAudit', 'Google Search · Audit nguồn')}
           </span>
         </div>
         <button onClick={() => load(page)}
                 className="lbtn !h-7 !px-2.5 text-xs gap-1"
                 style={{ color: 'var(--text-secondary)', border: '1px solid var(--border-default)' }}>
           <span className="icon text-sm">refresh</span>
-          Làm mới
+          {t('common.refresh', 'Làm mới')}
         </button>
       </div>
 
@@ -1886,10 +1915,10 @@ function GoogleResultsModal({ onClose }) {
         {stats && (
           <div className="grid grid-cols-4 gap-2">
             {[
-              ['URL', stats.total ?? 0, 'link'],
-              ['Domain', stats.domains ?? 0, 'public'],
-              ['Đã xử lý', stats.processed ?? 0, 'task_alt'],
-              ['Hết hạn', stats.expired ?? 0, 'event_busy'],
+              [t('dataSync.statsUrl', 'URL'), stats.total ?? 0, 'link'],
+              [t('dataSync.statsDomain', 'Domain'), stats.domains ?? 0, 'public'],
+              [t('dataSync.statsProcessed', 'Đã xử lý'), stats.processed ?? 0, 'task_alt'],
+              [t('dataSync.statsExpired', 'Hết hạn'), stats.expired ?? 0, 'event_busy'],
             ].map(([label, value, icon]) => (
               <div key={label} className="rounded-xl px-3 py-2"
                    style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)' }}>
@@ -1905,18 +1934,18 @@ function GoogleResultsModal({ onClose }) {
 
         <div className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_150px_auto] gap-2">
           <input value={keyword} onChange={e => setKeyword(e.target.value)}
-                 className="linput text-sm" placeholder="Lọc theo từ khóa" />
+                 className="linput text-sm" placeholder={t('dataSync.filterByKeyword', 'Lọc theo từ khóa')} />
           <input value={domain} onChange={e => setDomain(e.target.value)}
-                 className="linput text-sm" placeholder="Lọc theo domain" />
+                 className="linput text-sm" placeholder={t('dataSync.filterByDomain', 'Lọc theo domain')} />
           <select value={processed} onChange={e => setProcessed(e.target.value)}
                   className="linput text-sm">
-            <option value="all">Tất cả trạng thái</option>
-            <option value="processed">Đã xử lý</option>
-            <option value="raw">Chưa xử lý</option>
+            <option value="all">{t('dataSync.allStatus', 'Tất cả trạng thái')}</option>
+            <option value="processed">{t('dataSync.processed', 'Đã xử lý')}</option>
+            <option value="raw">{t('dataSync.unprocessed', 'Chưa xử lý')}</option>
           </select>
           <button onClick={() => load(1)} className="lbtn lbtn-primary !h-10 !px-4 text-sm">
             <span className="icon text-base">filter_alt</span>
-            Lọc
+            {t('common.filter', 'Lọc')}
           </button>
         </div>
 
@@ -1933,7 +1962,7 @@ function GoogleResultsModal({ onClose }) {
         ) : items.length === 0 ? (
           <div className="py-12 text-center" style={{ color: 'var(--text-tertiary)' }}>
             <span className="icon block mb-2" style={{ fontSize: 36, opacity: 0.45 }}>travel_explore</span>
-            <p className="text-sm">Chưa có URL Google phù hợp bộ lọc.</p>
+            <p className="text-sm">{t('dataSync.noGoogleUrls', 'Chưa có URL Google phù hợp bộ lọc.')}</p>
           </div>
         ) : (
           <div className="space-y-3">
@@ -1963,17 +1992,17 @@ function GoogleResultsModal({ onClose }) {
                         )}
                         <span className="px-2 py-0.5 rounded-full text-xs"
                               style={{ background: item.isProcessed ? 'rgba(16,185,129,0.10)' : 'rgba(245,158,11,0.10)', color: item.isProcessed ? '#10B981' : '#F59E0B' }}>
-                          {item.isProcessed ? 'Đã xử lý' : 'Chưa xử lý'}
+                          {item.isProcessed ? t('dataSync.processed', 'Đã xử lý') : t('dataSync.unprocessed', 'Chưa xử lý')}
                         </span>
                         {expired && (
                           <span className="px-2 py-0.5 rounded-full text-xs"
                                 style={{ background: 'rgba(239,68,68,0.10)', color: '#EF4444' }}>
-                            Hết hạn
+                            {t('dataSync.expired', 'Hết hạn')}
                           </span>
                         )}
                       </div>
                       <h3 className="font-semibold text-sm line-clamp-2" style={{ color: 'var(--text-primary)' }}>
-                        {item.title || item.url || 'Không có tiêu đề'}
+                        {item.title || item.url || t('dataSync.noTitle', 'Không có tiêu đề')}
                       </h3>
                       <p className="text-xs mt-1 break-all" style={{ color: 'var(--text-tertiary)' }}>
                         {domainName}{item.url ? ` · ${item.url}` : ''}
@@ -1981,7 +2010,7 @@ function GoogleResultsModal({ onClose }) {
                     </div>
                     <button onClick={() => openSource(item.url)}
                             disabled={!item.url}
-                            title="Mở link gốc"
+                            title={t('dataSync.openOriginalLink', 'Mở link gốc')}
                             className="lbtn !h-8 !px-2.5 text-xs disabled:opacity-40"
                             style={{ color: '#4285F4', border: '1px solid rgba(66,133,244,0.25)' }}>
                       <span className="icon text-sm">open_in_new</span>
@@ -2000,11 +2029,11 @@ function GoogleResultsModal({ onClose }) {
                       <span className="icon text-sm">schedule</span>
                       {fmtDate(item.scrapedAt)}
                     </span>
-                    {item.productName && <span>Sản phẩm: {item.productName}</span>}
-                    {item.category && <span>Danh mục: {item.category}</span>}
-                    {price && <span>Giá: {price}</span>}
-                    {(item.salesCount ?? 0) > 0 && <span>Đã bán: {item.salesCount}</span>}
-                    {(item.relevanceScore ?? 0) > 0 && <span>Điểm liên quan: {item.relevanceScore}</span>}
+                    {item.productName && <span>{t('dataSync.productLabel', 'Sản phẩm: {{name}}', { name: item.productName })}</span>}
+                    {item.category && <span>{t('dataSync.categoryLabel', 'Danh mục: {{category}}', { category: item.category })}</span>}
+                    {price && <span>{t('dataSync.priceLabel', 'Giá: {{price}}', { price })}</span>}
+                    {(item.salesCount ?? 0) > 0 && <span>{t('dataSync.soldLabel', 'Đã bán: {{count}}', { count: item.salesCount })}</span>}
+                    {(item.relevanceScore ?? 0) > 0 && <span>{t('dataSync.relevanceLabel', 'Điểm liên quan: {{score}}', { score: item.relevanceScore })}</span>}
                   </div>
                 </div>
               )
@@ -2017,6 +2046,7 @@ function GoogleResultsModal({ onClose }) {
 }
 
 function GoogleResultsFeed({ refreshKey = 0 }) {
+  const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [count, setCount] = useState(null)
 
@@ -2039,7 +2069,7 @@ function GoogleResultsFeed({ refreshKey = 0 }) {
         }}
       >
         <span className="icon text-base">manage_search</span>
-        Xem URL đã thu thập
+        {t('dataSync.viewCollectedUrls', 'Xem URL đã thu thập')}
         {count !== null && count > 0 && (
           <span className="px-1.5 py-0.5 rounded-full text-xs font-semibold"
                 style={{ background: '#4285F4', color: '#fff' }}>
@@ -2054,6 +2084,7 @@ function GoogleResultsFeed({ refreshKey = 0 }) {
 
 // ── Google Scraper Card ───────────────────────────────────────────────────────
 function GoogleScraperCard() {
+  const { t } = useTranslation()
   const [scraping, setScraping] = useState(false)
   const [result,   setResult]   = useState(null)
   const [resultsRefreshKey, setResultsRefreshKey] = useState(0)
@@ -2082,16 +2113,16 @@ function GoogleScraperCard() {
         </div>
         <div className="flex-1">
           <h2 className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>
-            Google Search Scraper
+            {t('dataSync.googleSearchScraper', 'Google Search Scraper')}
           </h2>
           <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
-            Thu thập xu hướng thị trường — không cần credentials
+            {t('dataSync.googleScraperDesc', 'Thu thập xu hướng thị trường — không cần credentials')}
           </p>
         </div>
         <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium"
               style={{ background: 'rgba(16,185,129,0.10)', color: 'var(--accent-500)', border: '1px solid rgba(16,185,129,0.30)' }}>
           <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--accent-500)' }} />
-          Sẵn sàng
+          {t('dataSync.ready', 'Sẵn sàng')}
         </span>
       </div>
 
@@ -2110,10 +2141,10 @@ function GoogleScraperCard() {
             <>
               <div className="font-semibold flex items-center gap-1.5">
                 <span className="icon" style={{ fontSize: 14 }}>check_circle</span>
-                Scrape hoàn tất
+                {t('dataSync.scrapeComplete', 'Scrape hoàn tất')}
               </div>
               <div style={{ color: 'var(--text-secondary)' }}>
-                {result.total_scraped} kết quả · {result.inserted} mới · {result.skipped} bỏ qua
+                {result.total_scraped} {t('dataSync.results', 'kết quả')} · {result.inserted} {t('dataSync.new', 'mới')} · {result.skipped} {t('dataSync.skipped', 'bỏ qua')}
               </div>
               {result.total_scraped === 0 && result.message && (
                 <div style={{ color: '#F59E0B' }}>{result.message}</div>
@@ -2121,7 +2152,7 @@ function GoogleScraperCard() {
             </>
           ) : (
             <>
-              <div className="font-semibold">Scrape thất bại</div>
+              <div className="font-semibold">{t('dataSync.scrapeFailed', 'Scrape thất bại')}</div>
               <div>{result.message}</div>
               {result.hint && <div style={{ color: 'var(--text-tertiary)' }}>{result.hint}</div>}
             </>
@@ -2139,12 +2170,12 @@ function GoogleScraperCard() {
           <>
             <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full"
                   style={{ animation: 'spin 0.7s linear infinite' }} />
-            Đang scrape Google...
+            {t('dataSync.scrapingGoogle', 'Đang scrape Google...')}
           </>
         ) : (
           <>
             <span className="icon text-base">search</span>
-            Scrape Google ngay
+            {t('dataSync.scrapeGoogleNow', 'Scrape Google ngay')}
           </>
         )}
       </button>

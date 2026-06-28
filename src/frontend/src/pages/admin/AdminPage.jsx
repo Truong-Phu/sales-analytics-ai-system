@@ -114,53 +114,79 @@ const KPI_COPY = {
   },
 }
 
-const getKpiCopy = role => KPI_COPY[role] ?? KPI_COPY.Staff_Sales
-const getKpiGapText = s => {
-  const copy = getKpiCopy(s.role)
+const getKpiCopy = (role, t) => {
+  if (t) {
+    return {
+      primary: t(`admin.kpiCopy.${role}.primary`),
+      progress: t(`admin.kpiCopy.${role}.progress`),
+      secondary: t(`admin.kpiCopy.${role}.secondary`),
+      tertiary: t(`admin.kpiCopy.${role}.tertiary`),
+      primaryInput: t(`admin.kpiCopy.${role}.primaryInput`),
+      secondaryInput: t(`admin.kpiCopy.${role}.secondaryInput`),
+      tertiaryInput: t(`admin.kpiCopy.${role}.tertiaryInput`),
+      actualPrimary: t(`admin.kpiCopy.${role}.actualPrimary`),
+      actualSecondary: t(`admin.kpiCopy.${role}.actualSecondary`),
+      actualTertiary: t(`admin.kpiCopy.${role}.actualTertiary`),
+    }
+  }
+  return KPI_COPY[role] ?? KPI_COPY.Staff_Sales
+}
+const getKpiGapText = (s, t) => {
+  const copy = getKpiCopy(s.role, t)
   const gaps = []
   if (s.revTarget) {
     const missing = Math.max(0, Number(s.revTarget) - Number(s.actualRevenue ?? s.revenue ?? 0))
-    if (missing > 0) gaps.push(`${copy.actualPrimary}: thiếu ${fmtMoneyExact(missing)}`)
+    if (missing > 0) gaps.push(`${copy.actualPrimary}: ${t ? t('admin.kpiGap.missingMoney', { amount: fmtMoneyExact(missing) }) : `thiếu ${fmtMoneyExact(missing)}`}`)
   }
   if (s.ordTarget) {
     const missing = Math.max(0, Number(s.ordTarget) - Number(s.actualOrders ?? s.orderCount ?? 0))
-    if (missing > 0) gaps.push(`${copy.actualSecondary}: thiếu ${missing}`)
+    if (missing > 0) gaps.push(`${copy.actualSecondary}: ${t ? t('admin.kpiGap.missingOrders', { count: missing }) : `thiếu ${missing}`}`)
   }
   if (s.custTarget) {
     const missing = Math.max(0, Number(s.custTarget) - Number(s.actualNewCustomers ?? s.newCustomers ?? 0))
-    if (missing > 0) gaps.push(`${copy.actualTertiary}: thiếu ${missing}`)
+    if (missing > 0) gaps.push(`${copy.actualTertiary}: ${t ? t('admin.kpiGap.missingCustomers', { count: missing }) : `thiếu ${missing}`}`)
   }
   return gaps.join(' · ')
 }
 
 // ─── Shared sub-components ────────────────────────────────────────────────────
 function RoleBadge({ role }) {
+  const { t } = useTranslation()
   const c = ROLE_COLOR[role] ?? ROLE_COLOR.Viewer
   return (
     <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
           style={{ background: c.bg, border: `1px solid ${c.border}`, color: c.color }}>
-      {ROLE_LABEL[role] ?? role}
+      {t('admin.roles.' + role, ROLE_LABEL[role] ?? role)}
     </span>
   )
 }
 
 function StatusDot({ status }) {
+  const { t } = useTranslation()
   const c = STATUS_CFG[status] ?? STATUS_CFG.inactive
   return (
     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
           style={{ background: c.bg, border: `1px solid ${c.border}`, color: c.color }}>
       <span className="w-1.5 h-1.5 rounded-full" style={{ background: c.dot }} />
-      {c.label}
+      {t('admin.userStatus.' + status, c.label)}
     </span>
   )
 }
 
+const AUDIT_STATUS_LABEL = {
+  SUCCESS:      'Thành công',
+  FAILED:       'Thất bại',
+  UNAUTHORIZED: 'Từ chối',
+}
+
 function AuditStatusBadge({ status }) {
-  const c = AUDIT_STATUS_CFG[status] ?? AUDIT_STATUS_CFG.FAILED
+  const { t } = useTranslation()
+  const upper = String(status || '').toUpperCase()
+  const c = AUDIT_STATUS_CFG[upper] ?? AUDIT_STATUS_CFG.FAILED
   return (
-    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
+    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap"
           style={{ background: c.bg, border: `1px solid ${c.border}`, color: c.color }}>
-      {status}
+      {t('admin.auditStatus.' + upper, AUDIT_STATUS_LABEL[upper] ?? upper)}
     </span>
   )
 }
@@ -209,6 +235,7 @@ function AlertMsg({ msg, type = 'error' }) {
 
 // ─── Drawer Thêm người dùng ───────────────────────────────────────────────────
 function CreateUserDrawer({ open, onClose, onCreated }) {
+  const { t } = useTranslation()
   const [form, setForm]     = useState({ fullName: '', email: '', tempPassword: '', role: 'Staff_Sales', sendInvite: true })
   const [saving, setSaving] = useState(false)
   const [error,  setError]  = useState('')
@@ -218,48 +245,48 @@ function CreateUserDrawer({ open, onClose, onCreated }) {
 
   const handleSubmit = async () => {
     if (!form.fullName.trim() || !form.email.trim() || !form.tempPassword.trim()) {
-      setError('Vui lòng điền đầy đủ các trường bắt buộc.'); return
+      setError(t('admin.validation.requiredFields')); return
     }
-    if (form.tempPassword.length < 6) { setError('Mật khẩu tạm phải có ít nhất 6 ký tự.'); return }
+    if (form.tempPassword.length < 6) { setError(t('admin.validation.passwordMinLength')); return }
     setSaving(true); setError(''); setSuccess('')
     try {
       const res = await createUser({ fullName: form.fullName.trim(), email: form.email.trim(), tempPassword: form.tempPassword, role: form.role, sendInvite: form.sendInvite })
-      const emailMsg = res?.invited ? ' · Email mời đã gửi.' : ''
-      setSuccess(`Đã tạo tài khoản thành công.${emailMsg}`)
+      const emailMsg = res?.invited ? t('admin.msg.emailSent') : ''
+      setSuccess(`${t('admin.msg.createSuccess')}${emailMsg}`)
       setTimeout(() => { onCreated(); onClose() }, 1200)
     } catch (err) {
-      setError(err?.response?.data?.message ?? 'Tạo người dùng thất bại. Kiểm tra email đã tồn tại chưa.')
+      setError(err?.response?.data?.message ?? t('admin.msg.createFailed'))
     } finally { setSaving(false) }
   }
 
   return (
     <DetailDrawer
       open={open} onClose={onClose}
-      title="Thêm người dùng mới"
+      title={t('admin.createUserTitle')}
       width={560}
       footer={
         <>
-          <button onClick={onClose} className="lbtn lbtn-secondary flex-1 justify-center" disabled={saving}>Hủy</button>
+          <button onClick={onClose} className="lbtn lbtn-secondary flex-1 justify-center" disabled={saving}>{t('common.cancel')}</button>
           <button onClick={handleSubmit} className="lbtn lbtn-primary flex-1 justify-center" disabled={saving}>
-            {saving ? <><Spinner size={4} /><span className="ml-2">Đang tạo...</span></> : 'Tạo người dùng'}
+            {saving ? <><Spinner size={4} /><span className="ml-2">{t('admin.creating')}</span></> : t('admin.createUser')}
           </button>
         </>
       }
     >
       <div className="p-5 space-y-4">
         {[
-          { label: 'Họ và tên', key: 'fullName', type: 'text',     placeholder: 'Nguyễn Văn A', required: true },
-          { label: 'Email',     key: 'email',    type: 'email',    placeholder: 'user@company.com', required: true },
-          { label: 'Mật khẩu tạm', key: 'tempPassword', type: 'password', placeholder: 'Tối thiểu 6 ký tự', required: true },
+          { label: t('admin.fullName'), key: 'fullName', type: 'text',     placeholder: t('admin.fullName') === 'Full Name' ? 'John Doe' : 'Nguyễn Văn A', required: true },
+          { label: t('admin.email'),     key: 'email',    type: 'email',    placeholder: 'user@company.com', required: true },
+          { label: t('admin.tempPassword'), key: 'tempPassword', type: 'password', placeholder: t('admin.validation.passwordMinLength'), required: true },
         ].map(({ label, key, type, placeholder, required }) => (
           <Field key={key} label={label} required={required}>
             <input type={type} className="linput w-full" placeholder={placeholder} value={form[key]} onChange={set(key)} />
           </Field>
         ))}
 
-        <Field label="Vai trò" required>
+        <Field label={t('admin.role')} required>
           <select className="linput w-full" value={form.role} onChange={set('role')}>
-            {ROLE_CREATEABLE.map(r => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
+            {ROLE_CREATEABLE.map(r => <option key={r} value={r}>{t('admin.roles.' + r, ROLE_LABEL[r])}</option>)}
           </select>
         </Field>
 
@@ -267,8 +294,8 @@ function CreateUserDrawer({ open, onClose, onCreated }) {
                style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)' }}>
           <input type="checkbox" className="w-4 h-4 accent-primary" checked={form.sendInvite} onChange={set('sendInvite')} />
           <div>
-            <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Gửi email mời đăng nhập</span>
-            <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>Nhân viên nhận email có thông tin đăng nhập và mật khẩu tạm</p>
+            <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{t('admin.sendInvite')}</span>
+            <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>{t('admin.sendInviteDesc')}</p>
           </div>
         </label>
 
@@ -281,6 +308,7 @@ function CreateUserDrawer({ open, onClose, onCreated }) {
 
 // ─── Drawer Sửa người dùng ───────────────────────────────────────────────────
 function EditUserDrawer({ open, user: u, onClose, onSaved }) {
+  const { t } = useTranslation()
   const [form, setForm]     = useState({
     fullName:    u?.fullName ?? '',
     role:        u?.role ?? 'Staff_Sales',
@@ -294,48 +322,48 @@ function EditUserDrawer({ open, user: u, onClose, onSaved }) {
   const isOwnerUser = u?.role === 'Owner'
 
   const handleSubmit = async () => {
-    if (!form.fullName.trim()) { setError('Họ tên không được để trống.'); return }
+    if (!form.fullName.trim()) { setError(t('admin.validation.fullNameEmpty')); return }
     setSaving(true); setError(''); setSuccess('')
     try {
       await updateUser(u.id, { fullName: form.fullName.trim(), role: form.role, isActive: form.isActive, notifyEmail: form.notifyEmail })
-      const emailMsg = form.notifyEmail ? ' · Đã gửi email thông báo.' : ''
-      setSuccess(`Đã cập nhật thành công.${emailMsg}`)
+      const emailMsg = form.notifyEmail ? t('admin.msg.notifySent') : ''
+      setSuccess(`${t('admin.msg.updateSuccess')}${emailMsg}`)
       setTimeout(() => { onSaved(); onClose() }, 1200)
     } catch (err) {
-      setError(err?.response?.data?.message ?? 'Cập nhật thất bại. Vui lòng thử lại.')
+      setError(err?.response?.data?.message ?? t('admin.msg.updateFailed'))
     } finally { setSaving(false) }
   }
 
   return (
     <DetailDrawer
       open={open} onClose={onClose}
-      title="Sửa thông tin người dùng"
+      title={t('admin.editUserTitle')}
       subtitle={u?.email}
       width={560}
       footer={
         <>
-          <button onClick={onClose} className="lbtn lbtn-secondary flex-1 justify-center" disabled={saving}>Hủy</button>
+          <button onClick={onClose} className="lbtn lbtn-secondary flex-1 justify-center" disabled={saving}>{t('common.cancel')}</button>
           <button onClick={handleSubmit} className="lbtn lbtn-primary flex-1 justify-center" disabled={saving}>
-            {saving ? <><Spinner size={4} /><span className="ml-2">Đang lưu...</span></> : 'Lưu thay đổi'}
+            {saving ? <><Spinner size={4} /><span className="ml-2">{t('admin.saving')}</span></> : t('admin.saveChanges')}
           </button>
         </>
       }
     >
       <div className="p-5 space-y-4">
-        <Field label="Họ và tên" required>
+        <Field label={t('admin.fullName')} required>
           <input className="linput w-full" value={form.fullName}
                  onChange={e => setForm(f => ({ ...f, fullName: e.target.value }))} />
         </Field>
 
-        <Field label="Vai trò">
+        <Field label={t('admin.role')}>
           {isOwnerUser ? (
             <div className="px-3 py-2.5 rounded-lg text-xs" style={{ background: 'var(--bg-elevated)', color: 'var(--text-tertiary)' }}>
-              Không thể thay đổi vai trò Owner
+              {t('admin.ownerRoleWarning')}
             </div>
           ) : (
             <select className="linput w-full" value={form.role}
                     onChange={e => setForm(f => ({ ...f, role: e.target.value }))}>
-              {ROLE_CREATEABLE.map(r => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
+              {ROLE_CREATEABLE.map(r => <option key={r} value={r}>{t('admin.roles.' + r, ROLE_LABEL[r])}</option>)}
             </select>
           )}
         </Field>
@@ -345,7 +373,7 @@ function EditUserDrawer({ open, user: u, onClose, onSaved }) {
                  style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)' }}>
             <input type="checkbox" className="w-4 h-4 accent-primary"
                    checked={form.isActive} onChange={e => setForm(f => ({ ...f, isActive: e.target.checked }))} />
-            <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>Tài khoản đang hoạt động</span>
+            <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>{t('admin.activeAccount')}</span>
           </label>
         )}
 
@@ -355,8 +383,8 @@ function EditUserDrawer({ open, user: u, onClose, onSaved }) {
             <input type="checkbox" className="w-4 h-4 accent-primary"
                    checked={form.notifyEmail} onChange={e => setForm(f => ({ ...f, notifyEmail: e.target.checked }))} />
             <div>
-              <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Gửi email thông báo thay đổi</span>
-              <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>Nhân viên nhận email khi vai trò hoặc trạng thái thay đổi</p>
+              <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{t('admin.sendNotify')}</span>
+              <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>{t('admin.sendNotifyDesc')}</p>
             </div>
           </label>
         )}
@@ -370,6 +398,7 @@ function EditUserDrawer({ open, user: u, onClose, onSaved }) {
 
 // ─── Drawer Cài lương nhân viên ──────────────────────────────────────────────
 function PayrollDrawer({ open, staff, year, month, onClose, onSaved }) {
+  const { t } = useTranslation()
   const [form, setForm] = useState({
     baseSalary:    String(staff?.baseSalary    ?? ''),
     bonusAmount:   '',
@@ -406,7 +435,7 @@ function PayrollDrawer({ open, staff, year, month, onClose, onSaved }) {
     const base    = parseFloat(form.baseSalary)    || 0
     const bonus   = parseFloat(form.bonusAmount)   || 0
     const penalty = parseFloat(form.penaltyAmount) || 0
-    if (base < 0 || bonus < 0 || penalty < 0) { setErr('Giá trị không được âm'); return }
+    if (base < 0 || bonus < 0 || penalty < 0) { setErr(t('admin.validation.negativeValue')); return }
     setSaving(true); setErr(''); setSuccess('')
     try {
       const res = await upsertPayroll({
@@ -417,27 +446,27 @@ function PayrollDrawer({ open, staff, year, month, onClose, onSaved }) {
       // Gửi phiếu lương nếu được chọn
       let emailMsg = ''
       if (form.sendPayslipEmail && res?.payrollId) {
-        try { await sendPayslip(res.payrollId); emailMsg = ' · Phiếu lương đã gửi.' }
-        catch { emailMsg = ' · Gửi phiếu lương thất bại.' }
+        try { await sendPayslip(res.payrollId); emailMsg = t('admin.msg.payslipSent') }
+        catch { emailMsg = t('admin.msg.payslipFailed') }
       }
-      setSuccess(`Đã lưu lương thành công.${emailMsg}`)
+      setSuccess(`${t('admin.msg.payrollSuccess')}${emailMsg}`)
       setTimeout(() => { onSaved() }, 1200)
     } catch (e) {
-      setErr(e?.response?.data?.error ?? 'Lưu thất bại')
+      setErr(e?.response?.data?.error ?? t('admin.msg.payrollFailed'))
     } finally { setSaving(false) }
   }
 
   return (
     <DetailDrawer
       open={open} onClose={onClose}
-      title={`Chốt lương — ${staff?.fullName ?? ''}`}
-      subtitle={`Tháng ${month}/${year}`}
+      title={t('admin.payroll.title', { name: staff?.fullName ?? '' })}
+      subtitle={t('admin.payroll.subtitle', { month, year })}
       width={560}
       footer={
         <>
-          <button onClick={onClose} className="lbtn lbtn-secondary flex-1 justify-center" disabled={saving}>Hủy</button>
+          <button onClick={onClose} className="lbtn lbtn-secondary flex-1 justify-center" disabled={saving}>{t('common.cancel')}</button>
           <button onClick={handleSave} className="lbtn lbtn-primary flex-1 justify-center" disabled={saving}>
-            {saving ? <><Spinner size={4} /><span className="ml-2">Đang lưu...</span></> : 'Lưu / chốt lương'}
+            {saving ? <><Spinner size={4} /><span className="ml-2">{t('admin.saving')}</span></> : t('admin.payroll.savePayroll')}
           </button>
         </>
       }
@@ -454,17 +483,17 @@ function PayrollDrawer({ open, staff, year, month, onClose, onSaved }) {
           </span>
           <span style={{ color: !staff?.hasAnyTarget ? '#94A3B8' : staff?.isKpiAchieved ? '#10B981' : '#F59E0B', fontWeight: 600 }}>
             {!staff?.hasAnyTarget
-              ? 'Chưa đặt KPI — thưởng sẽ không được cộng tự động'
+              ? t('admin.payroll.noKpiTarget')
               : staff?.isKpiAchieved
-                ? 'KPI đạt — chủ doanh nghiệp nhập thưởng KPI để cộng vào kỳ lương'
-                : 'KPI chưa đạt — có thể ghi nhận thưởng, nhưng chưa cộng vào tổng lương'}
+                ? t('admin.payroll.kpiAchieved')
+                : t('admin.payroll.kpiNotAchieved')}
           </span>
         </div>
 
         {[
-          { label: 'Lương cố định (₫)',  key: 'baseSalary',    ph: 'VD: 8000000' },
-          { label: 'Thưởng KPI chốt cuối kỳ (₫)', key: 'bonusAmount', ph: 'VD: 2000000' },
-          { label: 'Khấu trừ (₫)',      key: 'penaltyAmount', ph: 'VD: 0'       },
+          { label: t('admin.payroll.baseSalary'),  key: 'baseSalary',    ph: 'VD: 8000000' },
+          { label: t('admin.payroll.kpiBonus'), key: 'bonusAmount', ph: 'VD: 2000000' },
+          { label: t('admin.payroll.deduction'),      key: 'penaltyAmount', ph: 'VD: 0'       },
         ].map(fd => (
           <Field key={fd.key} label={fd.label}>
             <input type="number" min="0" step="100000" value={form[fd.key]}
@@ -476,22 +505,22 @@ function PayrollDrawer({ open, staff, year, month, onClose, onSaved }) {
 
         {staff?.baseSalaryInherited && (
           <p className="text-xs -mt-2" style={{ color: 'var(--text-tertiary)' }}>
-            Lương cố định đang lấy từ kỳ lương gần nhất. Chỉ sửa ô này khi nhân viên thay đổi mức lương.
+            {t('admin.payroll.baseSalaryDesc')}
           </p>
         )}
 
-        <Field label="Ghi chú">
+        <Field label={t('admin.payroll.note')}>
           <input type="text" value={form.note} onChange={e => f('note', e.target.value)}
-                 placeholder="Ghi chú (tuỳ chọn)" className="linput !h-9 text-sm w-full" />
+                 placeholder={t('admin.payroll.notePlaceholder')} className="linput !h-9 text-sm w-full" />
         </Field>
 
         {/* Tổng lương dự kiến — card nổi bật */}
         <div className="rounded-xl p-4 flex items-center justify-between"
              style={{ background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.25)' }}>
           <div>
-            <p className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>Tổng lương dự kiến</p>
+            <p className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>{t('admin.payroll.expectedSalary')}</p>
             <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
-              {staff?.isKpiAchieved ? 'Lương cố định + Thưởng KPI − Khấu trừ' : 'Lương cố định − Khấu trừ (KPI chưa đạt)'}
+              {staff?.isKpiAchieved ? t('admin.payroll.expectedSalaryAchieved') : t('admin.payroll.expectedSalaryNotAchieved')}
             </p>
           </div>
           <span className="text-xl font-bold font-mono" style={{ color: '#6366F1' }}>
@@ -505,8 +534,8 @@ function PayrollDrawer({ open, staff, year, month, onClose, onSaved }) {
           <input type="checkbox" className="w-4 h-4 accent-primary"
                  checked={form.sendPayslipEmail} onChange={e => f('sendPayslipEmail', e.target.checked)} />
           <div>
-            <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Gửi phiếu lương qua email</span>
-            <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>Nhân viên nhận email có chi tiết lương tháng này</p>
+            <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{t('admin.payroll.sendPayslip')}</span>
+            <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>{t('admin.payroll.sendPayslipDesc')}</p>
           </div>
         </label>
 
@@ -519,8 +548,9 @@ function PayrollDrawer({ open, staff, year, month, onClose, onSaved }) {
 
 // ─── Drawer Đặt KPI nhân viên ────────────────────────────────────────────────
 function SetKpiDrawer({ open, staff, period, onClose, onSaved }) {
+  const { t } = useTranslation()
   const [year, month] = (period ?? '').split('-').map(Number)
-  const copy = getKpiCopy(staff?.role)
+  const copy = getKpiCopy(staff?.role, t)
   const [rev,  setRev]       = useState(String(staff?.revTarget  ?? ''))
   const [ord,  setOrd]       = useState(String(staff?.ordTarget  ?? ''))
   const [cust, setCust]      = useState(String(staff?.custTarget ?? ''))
@@ -552,25 +582,25 @@ function SetKpiDrawer({ open, staff, period, onClose, onSaved }) {
         notifyEmail,
         note: note || null,
       })
-      const emailMsg = notifyEmail ? ' · Email KPI đã gửi cho nhân viên.' : ''
-      setSuccess(`Đã lưu KPI tháng ${month}/${year}.${emailMsg}`)
+      const emailMsg = notifyEmail ? t('admin.msg.kpiEmailSent') : ''
+      setSuccess(`${t('admin.msg.kpiSuccess', { month, year })}${emailMsg}`)
       setTimeout(() => { onSaved() }, 1200)
     } catch (e) {
-      setErr(e?.response?.data?.message ?? 'Lỗi lưu KPI target')
+      setErr(e?.response?.data?.message ?? t('admin.msg.kpiFailed'))
     } finally { setSaving(false) }
   }
 
   return (
     <DetailDrawer
       open={open} onClose={onClose}
-      title={`Đặt KPI — ${staff?.fullName ?? ''}`}
-      subtitle={`Tháng ${month}/${year}`}
+      title={t('admin.kpi.title', { name: staff?.fullName ?? '' })}
+      subtitle={t('admin.kpi.subtitle', { month, year })}
       width={560}
       footer={
         <>
-          <button onClick={onClose} className="lbtn lbtn-secondary flex-1 justify-center" disabled={saving}>Hủy</button>
+          <button onClick={onClose} className="lbtn lbtn-secondary flex-1 justify-center" disabled={saving}>{t('common.cancel')}</button>
           <button onClick={handleSave} className="lbtn lbtn-primary flex-1 justify-center" disabled={saving}>
-            {saving ? <><Spinner size={4} /><span className="ml-2">Đang lưu...</span></> : 'Lưu KPI'}
+            {saving ? <><Spinner size={4} /><span className="ml-2">{t('admin.saving')}</span></> : t('admin.kpi.saveKpi')}
           </button>
         </>
       }
@@ -580,7 +610,7 @@ function SetKpiDrawer({ open, staff, period, onClose, onSaved }) {
         {(staff?.actualRevenue != null || staff?.actualOrders != null) && (
           <div className="rounded-xl p-4 space-y-2"
                style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)' }}>
-            <p className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>KPI thực tế tháng {month}/{year}</p>
+            <p className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>{t('admin.kpi.actualTitle', { month, year })}</p>
             <div className="grid grid-cols-3 gap-3">
               {[
                 { label: copy.actualPrimary, val: staff?.actualRevenue != null ? fmtMoneyExact(staff.actualRevenue) : '—' },
@@ -607,9 +637,9 @@ function SetKpiDrawer({ open, staff, period, onClose, onSaved }) {
           </Field>
         ))}
 
-        <Field label="Ghi chú">
+        <Field label={t('admin.payroll.note')}>
           <input type="text" value={note} onChange={e => setNote(e.target.value)}
-                 placeholder="Ghi chú cho nhân viên (tuỳ chọn)" className="linput !h-9 text-sm w-full" />
+                 placeholder={t('admin.payroll.notePlaceholder')} className="linput !h-9 text-sm w-full" />
         </Field>
 
         {/* Email notification */}
@@ -618,8 +648,8 @@ function SetKpiDrawer({ open, staff, period, onClose, onSaved }) {
           <input type="checkbox" className="w-4 h-4 accent-primary"
                  checked={notifyEmail} onChange={e => setNotifyEmail(e.target.checked)} />
           <div>
-            <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Gửi email thông báo KPI</span>
-            <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>Nhân viên nhận email với mục tiêu KPI tháng {month}/{year}</p>
+            <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{t('admin.sendKpiNotify')}</span>
+            <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>{t('admin.sendKpiNotifyDesc', { month, year })}</p>
           </div>
         </label>
 
@@ -653,17 +683,19 @@ const withoutKpiBonus = (row) => {
 }
 
 function PayrollStatusBadge({ status }) {
+  const { t } = useTranslation()
   const c = PAYROLL_STATUS_CFG[status] ?? PAYROLL_STATUS_CFG.Draft
   return (
-    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold"
+    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold whitespace-nowrap"
           style={{ background: c.bg, color: c.color }}>
-      {c.label}
+      {t('admin.payrollStatus.' + status, c.label)}
     </span>
   )
 }
 
 // ─── Modal cài lương nhân viên ───────────────────────────────────────────────
 function PayrollModal({ staff, year, month, onClose, onSaved }) {
+  const { t } = useTranslation()
   const [form, setForm] = useState({
     baseSalary:    String(staff.baseSalary    ?? ''),
     bonusAmount:   '',
@@ -679,7 +711,7 @@ function PayrollModal({ staff, year, month, onClose, onSaved }) {
     const base    = parseFloat(form.baseSalary)    || 0
     const bonus   = parseFloat(form.bonusAmount)   || 0
     const penalty = parseFloat(form.penaltyAmount) || 0
-    if (base < 0 || bonus < 0 || penalty < 0) { setErr('Giá trị không được âm'); return }
+    if (base < 0 || bonus < 0 || penalty < 0) { setErr(t('admin.validation.positiveNumber', 'Giá trị không được âm')); return }
 
     setSaving(true); setErr('')
     try {
@@ -690,7 +722,7 @@ function PayrollModal({ staff, year, month, onClose, onSaved }) {
       })
       onSaved()
     } catch (e) {
-      setErr(e?.response?.data?.error ?? 'Lưu thất bại')
+      setErr(e?.response?.data?.error ?? t('admin.msg.payrollFailed', 'Lưu thất bại'))
     } finally { setSaving(false) }
   }
 
@@ -705,28 +737,28 @@ function PayrollModal({ staff, year, month, onClose, onSaved }) {
       <div className="lcard w-full max-w-sm p-6 space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>
-            Chốt lương — {staff.fullName}
+            {t('payroll.title', { name: staff.fullName })}
           </h3>
           <button onClick={onClose} className="icon text-xl" style={{ color: 'var(--text-tertiary)' }}>close</button>
         </div>
         <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-          Tháng {month}/{year} ·{' '}
+          {t('payroll.subtitle', { month, year })} ·{' '}
           <span style={{
             color: !staff.hasAnyTarget ? '#94A3B8' : staff.isKpiAchieved ? '#10B981' : '#F59E0B',
             fontWeight: 600
           }}>
             {!staff.hasAnyTarget
-              ? '— Chưa đặt KPI (thưởng sẽ không tự động)'
+              ? t('payroll.noKpiTarget', '— Chưa đặt KPI (thưởng sẽ không tự động)')
               : staff.isKpiAchieved
-                ? '✓ KPI đạt — chủ doanh nghiệp nhập thưởng KPI để cộng vào kỳ lương'
-                : '⚠ KPI chưa đạt — có thể ghi nhận thưởng, nhưng chưa cộng vào tổng lương'}
+                ? t('payroll.kpiAchieved', '✓ KPI đạt — chủ doanh nghiệp nhập thưởng KPI để cộng vào kỳ lương')
+                : t('payroll.kpiNotAchieved', '⚠ KPI chưa đạt — có thể ghi nhận thưởng, nhưng chưa cộng vào tổng lương')}
           </span>
         </p>
 
         {[
-          { label: 'Lương cố định (₫)',  key: 'baseSalary',    ph: 'VD: 8000000' },
-          { label: 'Thưởng KPI chốt cuối kỳ (₫)', key: 'bonusAmount', ph: 'VD: 2000000' },
-          { label: 'Khấu trừ (₫)',      key: 'penaltyAmount', ph: 'VD: 0' },
+          { label: t('payroll.baseSalary', 'Lương cố định (₫)'),  key: 'baseSalary',    ph: 'VD: 8000000' },
+          { label: t('payroll.kpiBonus', 'Thưởng KPI chốt cuối kỳ (₫)'), key: 'bonusAmount', ph: 'VD: 2000000' },
+          { label: t('payroll.deduction', 'Khấu trừ (₫)'),      key: 'penaltyAmount', ph: 'VD: 0' },
         ].map(fd => (
           <div key={fd.key}>
             <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>{fd.label}</label>
@@ -738,20 +770,20 @@ function PayrollModal({ staff, year, month, onClose, onSaved }) {
 
         {staff?.baseSalaryInherited && (
           <p className="text-xs -mt-2" style={{ color: 'var(--text-tertiary)' }}>
-            Lương cố định đang lấy từ kỳ lương gần nhất. Chỉ sửa ô này khi nhân viên thay đổi mức lương.
+            {t('payroll.baseSalaryDesc', 'Lương cố định đang lấy từ kỳ lương gần nhất. Chỉ sửa ô này khi nhân viên thay đổi mức lương.')}
           </p>
         )}
 
         <div>
-          <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>Ghi chú</label>
+          <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>{t('payroll.note', 'Ghi chú')}</label>
           <input type="text" value={form.note} onChange={e => f('note', e.target.value)}
-                 placeholder="Ghi chú (tuỳ chọn)" className="linput !h-9 text-sm w-full" />
+                 placeholder={t('payroll.notePlaceholder', 'Ghi chú (tuỳ chọn)')} className="linput !h-9 text-sm w-full" />
         </div>
 
         {/* Preview tổng lương */}
         <div className="rounded-lg px-3 py-2 flex items-center justify-between"
              style={{ background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.2)' }}>
-          <span className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>Tổng lương dự kiến</span>
+          <span className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>{t('payroll.expectedSalary', 'Tổng lương dự kiến')}</span>
           <span className="text-base font-bold font-mono" style={{ color: '#6366F1' }}>
             {totalPreview.toLocaleString('vi-VN')} ₫
           </span>
@@ -759,9 +791,9 @@ function PayrollModal({ staff, year, month, onClose, onSaved }) {
 
         {err && <p className="text-xs" style={{ color: '#EF4444' }}>{err}</p>}
         <div className="flex gap-2 pt-1">
-          <button onClick={onClose} className="lbtn lbtn-secondary flex-1">Hủy</button>
+          <button onClick={onClose} className="lbtn lbtn-secondary flex-1">{t('common.cancel', 'Hủy')}</button>
           <button onClick={handleSave} disabled={saving} className="lbtn lbtn-primary flex-1">
-            {saving ? 'Đang lưu...' : 'Lưu lương'}
+            {saving ? t('common.saving', 'Đang lưu...') : t('payroll.savePayroll', 'Lưu lương')}
           </button>
         </div>
       </div>
@@ -771,7 +803,8 @@ function PayrollModal({ staff, year, month, onClose, onSaved }) {
 
 // ─── KPI Progress bar ────────────────────────────────────────────────────────
 function KpiBar({ actual, target, color = 'var(--primary-500)' }) {
-  if (!target) return <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Chưa đặt mục tiêu</span>
+  const { t } = useTranslation()
+  if (!target) return <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{t('admin.kpi.notSet')}</span>
   const pct = Math.min(100, Math.round((actual / target) * 100))
   const barColor = pct >= 100 ? '#10B981' : pct >= 70 ? 'var(--primary-500)' : '#F59E0B'
   return (
@@ -786,8 +819,9 @@ function KpiBar({ actual, target, color = 'var(--primary-500)' }) {
 
 // ─── Set KPI Target Modal ────────────────────────────────────────────────────
 function SetTargetModal({ staff, period, onClose, onSaved }) {
+  const { t } = useTranslation()
   const [year, month] = period.split('-').map(Number)
-  const copy = getKpiCopy(staff?.role)
+  const copy = getKpiCopy(staff?.role, t)
   const [rev,  setRev]  = useState(String(staff.revTarget ?? ''))
   const [ord,  setOrd]  = useState(String(staff.ordTarget ?? ''))
   const [cust, setCust] = useState(String(staff.custTarget ?? ''))
@@ -806,7 +840,7 @@ function SetTargetModal({ staff, period, onClose, onSaved }) {
       })
       onSaved()
     } catch (e) {
-      setErr(e?.response?.data?.message ?? 'Lỗi lưu KPI target')
+      setErr(e?.response?.data?.message ?? t('admin.msg.kpiFailed'))
     } finally { setSaving(false) }
   }
 
@@ -815,11 +849,11 @@ function SetTargetModal({ staff, period, onClose, onSaved }) {
       <div className="lcard w-full max-w-sm p-6 space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="font-semibold" style={{ color: 'var(--text-primary)' }}>
-            Đặt KPI — {staff.fullName}
+            {t('admin.kpi.title', { name: staff.fullName })}
           </h3>
           <button onClick={onClose} className="icon text-xl" style={{ color: 'var(--text-tertiary)' }}>close</button>
         </div>
-        <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Tháng {month}/{year}</p>
+        <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{t('admin.kpi.subtitle', { month, year })}</p>
 
         {[
           { label: copy.primaryInput, val: rev, set: setRev, ph: staff?.role === 'Staff_Warehouse' ? 'VD: 500' : 'VD: 50000000' },
@@ -829,15 +863,15 @@ function SetTargetModal({ staff, period, onClose, onSaved }) {
           <div key={f.label} className="flex flex-col gap-1">
             <label className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>{f.label}</label>
             <input type="number" value={f.val} onChange={e => f.set(e.target.value)}
-                   placeholder={f.placeholder} className="linput !h-9 text-sm" />
+                   placeholder={f.ph} className="linput !h-9 text-sm" />
           </div>
         ))}
 
         {err && <p className="text-xs" style={{ color: '#EF4444' }}>{err}</p>}
         <div className="flex gap-2 pt-2">
-          <button onClick={onClose} className="lbtn lbtn-secondary flex-1">Hủy</button>
+          <button onClick={onClose} className="lbtn lbtn-secondary flex-1">{t('common.cancel')}</button>
           <button onClick={handleSave} disabled={saving} className="lbtn lbtn-primary flex-1">
-            {saving ? 'Đang lưu...' : 'Lưu KPI'}
+            {saving ? t('admin.saving') : t('admin.kpi.saveKpi')}
           </button>
         </div>
       </div>
@@ -847,6 +881,7 @@ function SetTargetModal({ staff, period, onClose, onSaved }) {
 
 // ─── KPI Tab ─────────────────────────────────────────────────────────────────
 function KpiTab() {
+  const { t } = useTranslation()
   const today    = new Date()
   const [period, setPeriod] = useState(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2,'0')}`)
   const [data,   setData]   = useState([])
@@ -870,23 +905,23 @@ function KpiTab() {
 
   return (
     <div className="space-y-3">
-      <SetKpiDrawer
+      <SetTargetModal
         open={!!target} staff={target} period={period}
         onClose={() => setTarget(null)}
         onSaved={() => { setTarget(null); fetch() }}
       />
       <div className="lcard p-3 flex flex-wrap gap-3 items-center">
         <div className="flex flex-col gap-1">
-          <label className="text-xs" style={{ color: 'var(--text-secondary)' }}>Kỳ (tháng/năm)</label>
+          <label className="text-xs" style={{ color: 'var(--text-secondary)' }}>{t('admin.period')}</label>
           <input type="month" value={period} onChange={e => setPeriod(e.target.value)}
                  className="linput !h-8 text-xs" />
         </div>
         <button onClick={fetch} className="lbtn lbtn-secondary !h-8 !px-4 text-xs" disabled={loading}>
           <span className="icon" style={{ fontSize: 14, ...(loading && { animation: 'spin 1s linear infinite' }) }}>refresh</span>
-          Tải lại
+          {t('common.refresh')}
         </button>
         <p className="text-xs ml-auto" style={{ color: 'var(--text-tertiary)' }}>
-          {data.length} nhân viên — {period}
+          {t('admin.employeeCount', { count: data.length, period })}
         </p>
       </div>
 
@@ -899,27 +934,36 @@ function KpiTab() {
         ) : error ? (
           <div className="p-10 text-center">
             <span className="icon text-3xl mb-2 block" style={{ color: '#EF4444' }}>error_outline</span>
-            <p className="text-sm" style={{ color: '#EF4444' }}>Không thể tải dữ liệu KPI</p>
-            <button onClick={fetch} className="lbtn lbtn-secondary !h-8 !px-4 text-xs mt-3">Thử lại</button>
+            <p className="text-sm" style={{ color: '#EF4444' }}>{t('admin.kpi.loadFailed')}</p>
+            <button onClick={fetch} className="lbtn lbtn-secondary !h-8 !px-4 text-xs mt-3">{t('common.retry')}</button>
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-elevated)' }}>
-                  {['Nhân viên','Vai trò','Doanh thu / Mục tiêu','Tiến độ DT','Đơn / Mục tiêu','KH mới / Mục tiêu','KPI',''].map(h => (
-                    <th key={h} className="text-left px-4 py-2.5 text-xs font-semibold"
-                        style={{ color: 'var(--text-tertiary)' }}>{h}</th>
+                  {[
+                    { label: t('admin.kpi.employee'), width: '20%' },
+                    { label: t('admin.roleCol'),  width: '12%' },
+                    { label: t('admin.kpi.revenueTarget'), width: '15%' },
+                    { label: t('admin.kpi.revenueProgress'), width: '15%' },
+                    { label: t('admin.kpi.orderTarget'), width: '13%' },
+                    { label: t('admin.kpi.customerTarget'), width: '13%' },
+                    { label: t('admin.kpi.kpiStatus'), width: '12%' },
+                    { label: '', width: '10%' }
+                  ].map(h => (
+                    <th key={h.label} className="text-left px-4 py-2.5 text-xs font-semibold"
+                        style={{ color: 'var(--text-tertiary)', width: h.width }}>{h.label}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {data.length === 0 ? (
                   <tr><td colSpan={8} className="py-12 text-center text-sm" style={{ color: 'var(--text-tertiary)' }}>
-                    Chưa có dữ liệu nhân viên cho kỳ này
+                    {t('admin.kpi.noData')}
                   </td></tr>
                 ) : data.map(s => {
-                  const copy = getKpiCopy(s.role)
+                  const copy = getKpiCopy(s.role, t)
                   const actualPrimary = Number(s.revenue ?? s.actualRevenue ?? 0)
                   const actualSecondary = Number(s.orderCount ?? s.actualOrders ?? 0)
                   const actualTertiary = Number(s.newCustomers ?? s.actualNewCustomers ?? 0)
@@ -952,7 +996,7 @@ function KpiTab() {
                       </td>
                       <td className="px-4 py-2.5">
                         {!hasAnyTarget ? (
-                          <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Chưa đặt KPI</span>
+                          <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{t('admin.kpi.notSetShort')}</span>
                         ) : (
                           <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
                                 style={{ background: kpiOk ? 'rgba(16,185,129,0.1)' : 'rgba(245,158,11,0.1)',
@@ -1010,7 +1054,7 @@ function PayrollTab() {
   const [confirmDlg, setConfirmDlg] = useState(null)
 
   const act = async (payrollId, fn, label) => {
-    setConfirmDlg({ title: 'Xác nhận thao tác', msg: `${label}?`, icon: 'warning', danger: false, action: async () => {
+    setConfirmDlg({ title: t('admin.confirmDialog', 'Xác nhận thao tác'), msg: `${label}?`, icon: 'warning', danger: false, action: async () => {
       setActing(a => ({ ...a, [payrollId]: true }))
       try { await fn(); await load() }
       catch (e) { setError(e?.response?.data?.error ?? `${label} thất bại`) }
@@ -1043,13 +1087,13 @@ function PayrollTab() {
       <div className="lcard p-3 flex flex-wrap gap-3 items-center">
         <div className="flex items-center gap-2">
           <div className="flex flex-col gap-1">
-            <label className="text-xs" style={{ color: 'var(--text-secondary)' }}>Tháng</label>
+            <label className="text-xs" style={{ color: 'var(--text-secondary)' }}>{t('common.month', 'Tháng')}</label>
             <select value={month} onChange={e => setMonth(+e.target.value)} className="linput !h-8 text-xs" style={{ width: 90 }}>
               {MONTHS.map((m, i) => <option key={i+1} value={i+1}>{m}</option>)}
             </select>
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-xs" style={{ color: 'var(--text-secondary)' }}>Năm</label>
+            <label className="text-xs" style={{ color: 'var(--text-secondary)' }}>{t('common.year', 'Năm')}</label>
             <select value={year} onChange={e => setYear(+e.target.value)} className="linput !h-8 text-xs" style={{ width: 80 }}>
               {[2024,2025,2026,2027].map(y => <option key={y} value={y}>{y}</option>)}
             </select>
@@ -1063,7 +1107,7 @@ function PayrollTab() {
         {data.length > 0 && (
           <div className="ml-auto flex items-center gap-2 px-3 py-1.5 rounded-lg"
                style={{ background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.2)' }}>
-            <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>Tổng lương tháng {month}/{year}</span>
+            <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>{t('payroll.expectedSalary', 'Tổng lương')} {t('common.month', 'tháng').toLowerCase()} {month}/{year}</span>
             <span className="font-bold font-mono text-sm" style={{ color: '#6366F1' }}>
               {totalPayroll.toLocaleString('vi-VN')} ₫
             </span>
@@ -1089,9 +1133,20 @@ function PayrollTab() {
             <table className="w-full text-sm">
               <thead>
                 <tr style={{ borderBottom: '2px solid var(--border)', background: 'var(--bg-elevated)' }}>
-                  {['Nhân viên','Vai trò','KPI','Lương cố định','Thưởng KPI','Khấu trừ','Tổng lương','Trạng thái','Email','Hành động'].map(h => (
-                    <th key={h} className="text-left px-3 py-2.5 text-xs font-semibold whitespace-nowrap"
-                        style={{ color: 'var(--text-tertiary)' }}>{h}</th>
+                  {[
+                    { label: t('admin.kpi.employee', 'Nhân viên'), width: '16%' },
+                    { label: t('admin.roleCol', 'Vai trò'), width: '10%' },
+                    { label: t('admin.kpiEmployee', 'KPI'), width: '10%' },
+                    { label: t('payroll.baseSalaryShort', 'Lương cố định'), width: '12%' },
+                    { label: t('payroll.kpiBonusShort', 'Thưởng KPI'), width: '10%' },
+                    { label: t('payroll.deductionShort', 'Khấu trừ'), width: '10%' },
+                    { label: t('payroll.totalSalaryShort', 'Tổng lương'), width: '12%' },
+                    { label: t('common.status', 'Trạng thái'), width: '10%' },
+                    { label: 'Email', width: '5%' },
+                    { label: t('common.actions', 'Hành động'), width: '5%' }
+                  ].map(h => (
+                    <th key={h.label} className="text-left px-3 py-2.5 text-xs font-semibold whitespace-nowrap"
+                        style={{ color: 'var(--text-tertiary)', width: h.width }}>{h.label}</th>
                   ))}
                 </tr>
               </thead>
@@ -1099,7 +1154,7 @@ function PayrollTab() {
                 {data.length === 0 ? (
                   <tr><td colSpan={10} className="py-12 text-center text-sm" style={{ color: 'var(--text-tertiary)' }}>
                     <span className="icon text-3xl block mb-2">payments</span>
-                    Chưa có dữ liệu lương cho kỳ này
+                    {t('payroll.noData', 'Chưa có dữ liệu lương cho kỳ này')}
                   </td></tr>
                 ) : data.map(s => {
                   const pid      = s.payrollId
@@ -1113,12 +1168,12 @@ function PayrollTab() {
                       <td className="px-3 py-2.5"><RoleBadge role={s.role} /></td>
                       <td className="px-3 py-2.5">
                         {!s.hasAnyTarget ? (
-                          <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Chưa đặt</span>
+                          <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{t('admin.kpi.notSetShort', 'Chưa đặt')}</span>
                         ) : (
                           <span className="text-xs font-semibold px-1.5 py-0.5 rounded-full"
                                 style={{ background: s.isKpiAchieved ? 'rgba(16,185,129,0.1)' : 'rgba(245,158,11,0.1)',
                                          color: s.isKpiAchieved ? '#10B981' : '#F59E0B' }}>
-                            {s.isKpiAchieved ? '✓ Đạt' : `⚠ ${s.overallPct == null ? '—' : Math.min(100, Number(s.overallPct))}%`}
+                            {s.isKpiAchieved ? t('kpi.achieved', '✓ Đạt') : `⚠ ${s.overallPct == null ? '—' : Math.min(100, Number(s.overallPct))}%`}
                           </span>
                         )}
                       </td>
@@ -1129,16 +1184,16 @@ function PayrollTab() {
                           <>
                             <div>{s.bonusAmount > 0 ? fmtVNDShort(s.bonusAmount) : '—'}</div>
                             {s.bonusAmount > 0 && !s.isKpiAchieved && (
-                              <div className="mt-0.5 text-[10px] font-sans" style={{ color: '#F59E0B' }}>Chưa cộng</div>
+                              <div className="mt-0.5 text-[10px] font-sans" style={{ color: '#F59E0B' }}>{t('payroll.notAddedYet', 'Chưa cộng')}</div>
                             )}
                           </>
-                        ) : 'Chưa nhập'}
+                        ) : t('payroll.notEntered', 'Chưa nhập')}
                       </td>
                       <td className="px-3 py-2.5 font-mono text-xs" style={{ color: s.penaltyAmount > 0 ? '#EF4444' : 'var(--text-tertiary)' }}>
                         {s.penaltyAmount > 0 ? `-${fmtVNDShort(s.penaltyAmount)}` : '—'}
                       </td>
                       <td className="px-3 py-2.5 font-mono font-bold text-sm" style={{ color: '#6366F1' }}>
-                        {s.baseSalary > 0 ? `${fmtVNDShort(s.totalSalary)}` : <span style={{ color: 'var(--text-tertiary)', fontWeight: 400 }}>Chưa cài</span>}
+                        {s.baseSalary > 0 ? `${fmtVNDShort(s.totalSalary)}` : <span style={{ color: 'var(--text-tertiary)', fontWeight: 400 }}>{t('payroll.notSet', 'Chưa cài')}</span>}
                       </td>
                       <td className="px-3 py-2.5">
                         {s.status ? <PayrollStatusBadge status={s.status} /> : (
@@ -1147,8 +1202,8 @@ function PayrollTab() {
                       </td>
                       <td className="px-3 py-2.5 text-xs">
                         {s.emailSentAt ? (
-                          <span style={{ color: '#10B981' }}>✓ Đã gửi</span>
-                        ) : <span style={{ color: 'var(--text-tertiary)' }}>Chưa gửi</span>}
+                          <span style={{ color: '#10B981' }}>{t('admin.payroll.sent', '✓ Đã gửi')}</span>
+                        ) : <span style={{ color: 'var(--text-tertiary)' }}>{t('admin.payroll.notSent', 'Chưa gửi')}</span>}
                       </td>
                       <td className="px-3 py-2.5">
                         <div className="flex gap-1 items-center">
@@ -1205,11 +1260,11 @@ function PayrollTab() {
            style={{ background: 'rgba(99,102,241,0.04)', borderColor: 'rgba(99,102,241,0.15)' }}>
         <span className="icon text-sm shrink-0 mt-0.5" style={{ color: 'var(--primary-500)' }}>info</span>
         <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-          Khi bấm "Trả lương", tổng lương từng nhân viên sẽ tự động được ghi vào{' '}
+          {t('admin.payroll.footerNote', 'Khi bấm "Trả lương", tổng lương từng nhân viên sẽ tự động được ghi vào')}{' '}
           <a href="/finance/operating-expenses" className="underline" style={{ color: 'var(--primary-500)' }}>
-            Finance → Chi phí vận hành (Salary)
+            Finance → {t('nav.financeOpEx', 'Chi phí vận hành')} (Salary)
           </a>.
-          Không cần nhập thủ công.
+          {t('admin.payroll.noManualInput', 'Không cần nhập thủ công.')}
         </p>
       </div>
     </div>
@@ -1218,7 +1273,7 @@ function PayrollTab() {
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 export default function AdminPage() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const { user: me } = useAuth()
   const [users,   setUsers]   = useState([])
   const [loading, setLoading] = useState(true)
@@ -1290,7 +1345,7 @@ export default function AdminPage() {
   const statCards = [
     { label: t('admin.totalUsers'),    value: users.length,                                      icon: 'group',           color: 'var(--primary-500)' },
     { label: t('admin.activeUsers'),   value: users.filter(u => u.status === 'active').length,   icon: 'check_circle',    color: 'var(--accent-500)'  },
-    { label: 'Quản lý',               value: managerCount,                                       icon: 'manage_accounts', color: '#3B82F6'             },
+    { label: t('admin.roles.Manager'), value: managerCount,                                       icon: 'manage_accounts', color: '#3B82F6'             },
     { label: t('admin.inactiveUsers'), value: users.filter(u => u.status === 'inactive').length, icon: 'block',           color: '#EF4444'             },
   ]
 
@@ -1300,8 +1355,8 @@ export default function AdminPage() {
       <EditUserDrawer   open={!!editUser} user={editUser ?? {}} onClose={() => setEditUser(null)} onSaved={fetchUsers} />
       <ConfirmDialog
         open={!!userConfirmDlg}
-        title="Xác nhận xóa người dùng"
-        message={userConfirmDlg ? `Xóa người dùng "${userConfirmDlg.user?.fullName}"?` : ''}
+        title={t('admin.deleteUserTitle')}
+        message={userConfirmDlg ? t('admin.deleteUserConfirm', { name: userConfirmDlg.user?.fullName }) : ''}
         icon="delete_forever"
         danger
         onClose={() => setUserConfirmDlg(null)}
@@ -1315,7 +1370,7 @@ export default function AdminPage() {
           {tab === 'all' && (
             <button onClick={() => setShowCreate(true)} className="lbtn lbtn-primary !h-9 gap-1.5">
               <span className="icon text-base">person_add</span>
-              <span className="hidden sm:inline">Thêm người dùng</span>
+              <span className="hidden sm:inline">{t('admin.addUser')}</span>
             </button>
           )}
           <button onClick={tab === 'audit' ? () => fetchAuditLogs(1) : fetchUsers}
@@ -1346,15 +1401,15 @@ export default function AdminPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex" style={{ borderBottom: '1px solid var(--border)' }}>
+      <div className="flex overflow-x-auto gap-1" style={{ borderBottom: '1px solid var(--border)', scrollbarWidth: 'none' }}>
         {[
-          { key: 'all',     label: t('admin.allUsers'),  suffix: '' },
-          { key: 'kpi',     label: 'KPI Nhân viên',      suffix: '' },
-          { key: 'payroll', label: 'Bảng lương',          suffix: '' },
-          { key: 'audit',   label: 'Lịch sử hoạt động', suffix: auditTotal > 0 ? ` (${auditTotal})` : '' },
+          { key: 'all',     label: t('admin.allUsers'),    suffix: '' },
+          { key: 'kpi',     label: t('admin.kpiEmployee'),  suffix: '' },
+          { key: 'payroll', label: t('admin.payroll'),      suffix: '' },
+          { key: 'audit',   label: t('admin.auditLogs'),    suffix: auditTotal > 0 ? ` (${auditTotal})` : '' },
         ].map(tb => (
           <button key={tb.key} onClick={() => setTab(tb.key)}
-                  className="pb-3 px-4 text-sm font-medium transition-all"
+                  className="pb-3 px-4 text-sm font-medium transition-all whitespace-nowrap"
                   style={{
                     borderBottom: `2px solid ${tab === tb.key ? 'var(--primary-500)' : 'transparent'}`,
                     color: tab === tb.key ? 'var(--primary-500)' : 'var(--text-secondary)',
@@ -1375,9 +1430,15 @@ export default function AdminPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-elevated)' }}>
-                    {[t('admin.fullName'), t('admin.email'), t('admin.roleCol'), t('common.status'), t('common.actions')].map(h => (
-                      <th key={h} className="text-left px-4 py-3 text-xs font-semibold tracking-wide"
-                          style={{ color: 'var(--text-tertiary)' }}>{h}</th>
+                    {[
+                      { label: t('admin.fullName'), width: '25%' },
+                      { label: t('admin.email'),    width: '30%' },
+                      { label: t('admin.roleCol'),  width: '15%' },
+                      { label: t('common.status'),  width: '15%' },
+                      { label: t('common.actions'), width: '15%' }
+                    ].map(h => (
+                      <th key={h.label} className="text-left px-4 py-3 text-xs font-semibold tracking-wide"
+                          style={{ color: 'var(--text-tertiary)', width: h.width }}>{h.label}</th>
                     ))}
                   </tr>
                 </thead>
@@ -1402,7 +1463,7 @@ export default function AdminPage() {
                             {isSelf && (
                               <span className="text-xs px-1.5 py-0.5 rounded font-normal"
                                     style={{ background: 'rgba(99,102,241,0.1)', color: 'var(--primary-500)' }}>
-                                bạn
+                                {t('common.you', 'bạn')}
                               </span>
                             )}
                           </div>
@@ -1416,7 +1477,7 @@ export default function AdminPage() {
                               <>
                                 {/* Sửa */}
                                 <IconBtn
-                                  icon="edit" title="Sửa thông tin"
+                                  icon="edit" title={t('admin.editUser', 'Sửa thông tin')}
                                   color="var(--primary-500)"
                                   bg="rgba(99,102,241,0.08)" hoverBg="rgba(99,102,241,0.16)"
                                   onClick={() => setEditUser(u)}
@@ -1426,7 +1487,7 @@ export default function AdminPage() {
                                 {!isSelf && !isUserOwner && (
                                   <IconBtn
                                     icon={u.status === 'active' ? 'lock' : 'lock_open'}
-                                    title={u.status === 'active' ? 'Vô hiệu hóa' : 'Kích hoạt'}
+                                    title={u.status === 'active' ? t('admin.deactivate', 'Vô hiệu hóa') : t('admin.activate', 'Kích hoạt')}
                                     color={u.status === 'active' ? '#F59E0B' : 'var(--accent-500)'}
                                     bg={u.status === 'active' ? 'rgba(245,158,11,0.08)' : 'rgba(16,185,129,0.08)'}
                                     hoverBg={u.status === 'active' ? 'rgba(245,158,11,0.16)' : 'rgba(16,185,129,0.16)'}
@@ -1437,7 +1498,7 @@ export default function AdminPage() {
                                 {/* Xóa – chỉ Owner thấy, không xóa chính mình / Owner khác */}
                                 {isOwner && !isSelf && !isUserOwner && (
                                   <IconBtn
-                                    icon="delete" title="Xóa người dùng"
+                                    icon="delete" title={t('admin.deleteUser', 'Xóa người dùng')}
                                     color="#EF4444"
                                     bg="rgba(239,68,68,0.08)" hoverBg="rgba(239,68,68,0.16)"
                                     onClick={() => handleDelete(u)}
@@ -1469,28 +1530,30 @@ export default function AdminPage() {
           {/* Filter bar */}
           <div className="lcard p-3 flex flex-wrap gap-3 items-end">
             <div className="flex flex-col gap-1">
-              <label className="text-xs" style={{ color: 'var(--text-secondary)' }}>Loại hành động</label>
+              <label className="text-xs" style={{ color: 'var(--text-secondary)' }}>{t('admin.auditTable.action')}</label>
               <select value={filterAction} onChange={e => setFilterAction(e.target.value)}
                       className="linput !h-8 text-xs" style={{ minWidth: 160 }}>
-                <option value="">Tất cả</option>
-                {Object.entries(ACTION_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                <option value="">{t('common.all')}</option>
+                {Object.entries(ACTION_LABELS).map(([k, v]) => (
+                  <option key={k} value={k}>{t('admin.auditActions.' + k, v)}</option>
+                ))}
               </select>
             </div>
             <div className="flex flex-col gap-1">
-              <label className="text-xs" style={{ color: 'var(--text-secondary)' }}>Từ ngày</label>
+              <label className="text-xs" style={{ color: 'var(--text-secondary)' }}>{t('admin.auditTable.from')}</label>
               <input type="date" value={filterFrom} onChange={e => setFilterFrom(e.target.value)} className="linput !h-8 text-xs" />
             </div>
             <div className="flex flex-col gap-1">
-              <label className="text-xs" style={{ color: 'var(--text-secondary)' }}>Đến ngày</label>
+              <label className="text-xs" style={{ color: 'var(--text-secondary)' }}>{t('admin.auditTable.to')}</label>
               <input type="date" value={filterTo} onChange={e => setFilterTo(e.target.value)} className="linput !h-8 text-xs" />
             </div>
             <button onClick={() => fetchAuditLogs(1)} className="lbtn lbtn-primary !h-8 !px-4 text-xs" disabled={auditLoading}>
               <span className="icon" style={{ fontSize: 14 }}>search</span>
-              Tìm kiếm
+              {t('common.search')}
             </button>
             <button onClick={() => { setFilterAction(''); setFilterFrom(''); setFilterTo('') }}
                     className="lbtn lbtn-secondary !h-8 !px-3 text-xs" disabled={auditLoading}>
-              Xóa lọc
+              {t('common.reset')}
             </button>
           </div>
 
@@ -1501,9 +1564,9 @@ export default function AdminPage() {
             ) : auditError ? (
               <div className="p-12 text-center">
                 <span className="icon text-3xl mb-2 block" style={{ color: '#EF4444' }}>error_outline</span>
-                <p className="text-sm font-medium" style={{ color: '#EF4444' }}>Không thể kết nối API</p>
+                <p className="text-sm font-medium" style={{ color: '#EF4444' }}>{t('admin.auditTable.apiError')}</p>
                 <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
-                  Kiểm tra backend đang chạy và bảng audit_logs đã được tạo (09_audit_log.sql).
+                  {t('admin.auditTable.apiErrorTip')}
                 </p>
                 <button onClick={() => fetchAuditLogs(1)} className="lbtn lbtn-secondary !h-8 !px-4 text-xs mt-3">
                   {t('common.retry')}
@@ -1514,9 +1577,15 @@ export default function AdminPage() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-elevated)' }}>
-                      {['Thời gian', 'Người dùng', 'Hành động', 'Đối tượng', 'Trạng thái'].map(h => (
-                        <th key={h} className="text-left px-4 py-3 text-xs font-semibold tracking-wide"
-                            style={{ color: 'var(--text-tertiary)' }}>{h}</th>
+                      {[
+                        { key: 'time',   label: t('admin.auditTable.time'),   width: '20%' },
+                        { key: 'user',   label: t('admin.auditTable.user'),   width: '30%' },
+                        { key: 'action', label: t('admin.auditTable.action'), width: '20%' },
+                        { key: 'target', label: t('admin.auditTable.target'), width: '15%' },
+                        { key: 'status', label: t('admin.auditTable.status'), width: '15%' }
+                      ].map(h => (
+                        <th key={h.key} className="text-left px-4 py-3 text-xs font-semibold tracking-wide"
+                            style={{ color: 'var(--text-tertiary)', width: h.width }}>{h.label}</th>
                       ))}
                     </tr>
                   </thead>
@@ -1524,7 +1593,7 @@ export default function AdminPage() {
                     {auditLogs.length === 0 ? (
                       <tr>
                         <td colSpan={5} className="py-12 text-center text-sm" style={{ color: 'var(--text-tertiary)' }}>
-                          Chưa có dữ liệu lịch sử hoạt động
+                          {t('admin.auditTable.noData')}
                         </td>
                       </tr>
                     ) : auditLogs.map(log => (
@@ -1533,24 +1602,31 @@ export default function AdminPage() {
                           onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
                           onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                         <td className="px-4 py-2.5 text-xs font-mono whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>
-                          {new Date(log.createdAt).toLocaleString('vi-VN')}
+                          {new Date(log.createdAt).toLocaleString(i18n.language === 'en' ? 'en-US' : 'vi-VN')}
                         </td>
-                        <td className="px-4 py-2.5 text-xs font-medium" style={{ color: 'var(--text-primary)' }}>
-                          {log.username ?? '—'}
+                        <td className="px-4 py-2.5 text-xs font-medium">
+                          <div style={{ color: 'var(--text-primary)', fontWeight: 600 }}>
+                            {log.userFullName ?? log.username ?? '—'}
+                          </div>
+                          {log.userRole && (
+                            <div className="mt-1">
+                              <RoleBadge role={log.userRole} />
+                            </div>
+                          )}
                         </td>
                         <td className="px-4 py-2.5 text-xs">
                           <span className="font-mono px-1.5 py-0.5 rounded text-xs"
                                 style={{ background: 'var(--bg-elevated)', color: 'var(--primary-500)', border: '1px solid var(--border)' }}>
-                            {ACTION_LABELS[log.action] ?? log.action}
+                            {t('admin.auditActions.' + log.action, ACTION_LABELS[log.action] ?? log.action)}
                           </span>
                         </td>
                         <td className="px-4 py-2.5 text-xs" style={{ color: 'var(--text-secondary)' }}>
                           {log.entityType ? `${log.entityType}${log.entityId ? ` #${log.entityId}` : ''}` : '—'}
                         </td>
                         <td className="px-4 py-2.5">
-                          <div className="flex flex-col gap-1">
+                          <div className="flex flex-col items-start gap-1">
                             <AuditStatusBadge status={log.status} />
-                            {log.errorMessage && <span className="text-xs" style={{ color: '#EF4444' }}>{log.errorMessage}</span>}
+                            {log.errorMessage && <span className="text-[10px] block max-w-[150px] break-words mt-1 leading-normal" style={{ color: '#EF4444' }} title={log.errorMessage}>{log.errorMessage}</span>}
                           </div>
                         </td>
                       </tr>
@@ -1563,14 +1639,14 @@ export default function AdminPage() {
             {/* Pagination */}
             {auditTotal > 50 && (
               <div className="px-4 py-3 flex items-center justify-between" style={{ borderTop: '1px solid var(--border)' }}>
-                <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Tổng {auditTotal} bản ghi</span>
+                <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{t('admin.auditTable.totalLogs', 'Tổng {{count}} bản ghi', { count: auditTotal })}</span>
                 <div className="flex gap-2">
                   <button onClick={() => fetchAuditLogs(auditPage - 1)}
                           disabled={auditPage <= 1 || auditLoading} className="lbtn lbtn-secondary !h-7 !px-3 text-xs">
                     <span className="icon" style={{ fontSize: 14 }}>chevron_left</span>
                   </button>
                   <span className="text-xs flex items-center px-2" style={{ color: 'var(--text-secondary)' }}>
-                    Trang {auditPage}
+                    {t('common.page', 'Trang')} {auditPage}
                   </span>
                   <button onClick={() => fetchAuditLogs(auditPage + 1)}
                           disabled={auditPage * 50 >= auditTotal || auditLoading} className="lbtn lbtn-secondary !h-7 !px-3 text-xs">

@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import AiEmptyState from '../../components/ui/AiEmptyState'
@@ -374,6 +374,196 @@ export default function RecommendationsPage() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
 
+  const renderActionButton = (rec) => {
+    const title = rec.message || ''
+    const cat = rec.category || ''
+
+    // 1. Nhập hàng
+    if (cat === 'Tồn kho' || cat === 'Sản phẩm' || title.includes('Sắp hết hàng')) {
+      const getProductNameFromTitle = (t) => {
+        if (t.startsWith("Sắp hết hàng: ")) return t.replace("Sắp hết hàng: ", "").trim()
+        if (t.startsWith("Top sản phẩm: ")) return t.replace("Top sản phẩm: ", "").trim()
+        return ""
+      }
+      const prodName = getProductNameFromTitle(title)
+      return (
+        <button
+          onClick={() => navigate(`/purchase-orders?productName=${encodeURIComponent(prodName)}`)}
+          className="mt-3 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all"
+          style={{ borderColor: 'rgba(16,185,129,0.4)', color: '#059669', background: 'rgba(16,185,129,0.06)', cursor: 'pointer' }}
+          onMouseEnter={e => {
+            e.currentTarget.style.background = '#10B981'
+            e.currentTarget.style.color = 'white'
+            e.currentTarget.style.borderColor = '#10B981'
+          }}
+          onMouseLeave={e => {
+            e.currentTarget.style.background = 'rgba(16,185,129,0.06)'
+            e.currentTarget.style.color = '#059669'
+            e.currentTarget.style.borderColor = 'rgba(16,185,129,0.4)'
+          }}
+        >
+          <span className="icon" style={{ fontSize: 13 }}>local_shipping</span>
+          Nhập hàng ngay
+          <span className="icon" style={{ fontSize: 13 }}>arrow_forward</span>
+        </button>
+      )
+    }
+
+    // 2. Giữ chân khách hàng
+    if (cat === 'CUSTOMER' || title.includes('khách hàng At Risk') || title.includes('rời bỏ') || title.includes('ngừng mua')) {
+      return (
+        <button
+          onClick={() => navigate('/churn')}
+          className="mt-3 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all"
+          style={{ borderColor: 'rgba(239,68,68,0.4)', color: '#EF4444', background: 'rgba(239,68,68,0.06)', cursor: 'pointer' }}
+          onMouseEnter={e => {
+            e.currentTarget.style.background = '#EF4444'
+            e.currentTarget.style.color = 'white'
+            e.currentTarget.style.borderColor = '#EF4444'
+          }}
+          onMouseLeave={e => {
+            e.currentTarget.style.background = 'rgba(239,68,68,0.06)'
+            e.currentTarget.style.color = '#EF4444'
+            e.currentTarget.style.borderColor = 'rgba(239,68,68,0.4)'
+          }}
+        >
+          <span className="icon" style={{ fontSize: 13 }}>campaign</span>
+          Chạy chiến dịch giữ chân
+          <span className="icon" style={{ fontSize: 13 }}>arrow_forward</span>
+        </button>
+      )
+    }
+
+    // 3. Tạo combo (Marketing / Basket / Mua kèm / Bundle)
+    if (
+      (cat === 'MARKETING' && (title.includes('Combo') || title.includes('mua kèm') || title.includes('mua cùng') || title.toLowerCase().includes('bundle') || title.includes('→') || title.includes('→'))) ||
+      title.toLowerCase().includes('bundle') ||
+      title.includes('→')
+    ) {
+      return (
+        <button
+          onClick={() => navigate('/basket')}
+          className="mt-3 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all"
+          style={{ borderColor: 'rgba(236,72,153,0.4)', color: '#EC4899', background: 'rgba(236,72,153,0.06)', cursor: 'pointer' }}
+          onMouseEnter={e => {
+            e.currentTarget.style.background = '#EC4899'
+            e.currentTarget.style.color = 'white'
+            e.currentTarget.style.borderColor = '#EC4899'
+          }}
+          onMouseLeave={e => {
+            e.currentTarget.style.background = 'rgba(236,72,153,0.06)'
+            e.currentTarget.style.color = '#EC4899'
+            e.currentTarget.style.borderColor = 'rgba(236,72,153,0.4)'
+          }}
+        >
+          <span className="icon" style={{ fontSize: 13 }}>celebration</span>
+          Tạo chiến dịch Combo
+          <span className="icon" style={{ fontSize: 13 }}>arrow_forward</span>
+        </button>
+      )
+    }
+
+    // 4. Bất thường (Anomaly / Bất thường / Bất ngờ)
+    if (cat === 'ANOMALY' || cat === 'Bất thường' || title.toLowerCase().includes('bất thường') || title.toLowerCase().includes('bất ngờ')) {
+      return (
+        <button
+          onClick={() => navigate('/anomaly')}
+          className="mt-3 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all"
+          style={{ borderColor: 'rgba(245,158,11,0.4)', color: '#D97706', background: 'rgba(245,158,11,0.06)', cursor: 'pointer' }}
+          onMouseEnter={e => {
+            e.currentTarget.style.background = '#F59E0B'
+            e.currentTarget.style.color = 'white'
+            e.currentTarget.style.borderColor = '#F59E0B'
+          }}
+          onMouseLeave={e => {
+            e.currentTarget.style.background = 'rgba(245,158,11,0.06)'
+            e.currentTarget.style.color = '#D97706'
+            e.currentTarget.style.borderColor = 'rgba(245,158,11,0.4)'
+          }}
+        >
+          <span className="icon" style={{ fontSize: 13 }}>warning</span>
+          Phân tích bất thường
+          <span className="icon" style={{ fontSize: 13 }}>arrow_forward</span>
+        </button>
+      )
+    }
+
+    // 5. Dự báo doanh thu
+    if (cat === 'FORECAST' || cat === 'REVENUE' || cat === 'Doanh thu') {
+      return (
+        <button
+          onClick={() => navigate('/forecast')}
+          className="mt-3 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all"
+          style={{ borderColor: 'rgba(99,102,241,0.4)', color: 'var(--primary-600)', background: 'rgba(99,102,241,0.06)', cursor: 'pointer' }}
+          onMouseEnter={e => {
+            e.currentTarget.style.background = 'var(--primary-500)'
+            e.currentTarget.style.color = 'white'
+            e.currentTarget.style.borderColor = 'var(--primary-500)'
+          }}
+          onMouseLeave={e => {
+            e.currentTarget.style.background = 'rgba(99,102,241,0.06)'
+            e.currentTarget.style.color = 'var(--primary-600)'
+            e.currentTarget.style.borderColor = 'rgba(99,102,241,0.4)'
+          }}
+        >
+          <span className="icon" style={{ fontSize: 13 }}>trending_up</span>
+          Xem dự báo doanh thu
+          <span className="icon" style={{ fontSize: 13 }}>arrow_forward</span>
+        </button>
+      )
+    }
+
+    // 6. Tối ưu kênh bán
+    if (cat === 'CHANNEL' || cat === 'Kênh bán hàng') {
+      return (
+        <button
+          onClick={() => navigate('/attribution')}
+          className="mt-3 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all"
+          style={{ borderColor: 'rgba(16,185,129,0.4)', color: '#059669', background: 'rgba(16,185,129,0.06)', cursor: 'pointer' }}
+          onMouseEnter={e => {
+            e.currentTarget.style.background = '#10B981'
+            e.currentTarget.style.color = 'white'
+            e.currentTarget.style.borderColor = '#10B981'
+          }}
+          onMouseLeave={e => {
+            e.currentTarget.style.background = 'rgba(16,185,129,0.06)'
+            e.currentTarget.style.color = '#059669'
+            e.currentTarget.style.borderColor = 'rgba(16,185,129,0.4)'
+          }}
+        >
+          <span className="icon" style={{ fontSize: 13 }}>store</span>
+          Tối ưu kênh bán
+          <span className="icon" style={{ fontSize: 13 }}>arrow_forward</span>
+        </button>
+      )
+    }
+
+    // Mặc định fallback
+    const link = TYPE_LINK[rec.type]
+    if (!link) return null
+    return (
+      <button
+        onClick={() => navigate(link.path)}
+        className="mt-3 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all"
+        style={{ borderColor: 'rgba(99,102,241,0.4)', color: 'var(--primary-600)', background: 'rgba(99,102,241,0.06)', cursor: 'pointer' }}
+        onMouseEnter={e => {
+          e.currentTarget.style.background = 'var(--primary-500)'
+          e.currentTarget.style.color = 'white'
+          e.currentTarget.style.borderColor = 'var(--primary-500)'
+        }}
+        onMouseLeave={e => {
+          e.currentTarget.style.background = 'rgba(99,102,241,0.06)'
+          e.currentTarget.style.color = 'var(--primary-600)'
+          e.currentTarget.style.borderColor = 'rgba(99,102,241,0.4)'
+        }}
+      >
+        <span className="icon" style={{ fontSize: 13 }}>{link.icon}</span>
+        {link.label}
+        <span className="icon" style={{ fontSize: 13 }}>arrow_forward</span>
+      </button>
+    )
+  }
+
   // 2 main tabs: 'chat' = Hỏi AI | 'auto' = Gợi ý AI
   const [mainTab, setMainTab] = useState(() => searchParams.get('tab') === 'auto' ? 'auto' : 'chat')
 
@@ -566,23 +756,7 @@ export default function RecommendationsPage() {
                       {rec.detail && (
                         <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>{rec.detail}</p>
                       )}
-                      {(() => {
-                        const link = CATEGORY_LINK[rec.category] ?? TYPE_LINK[rec.type]
-                        if (!link) return null
-                        return (
-                          <button
-                            onClick={() => navigate(link.path)}
-                            className="mt-2 flex items-center gap-1 text-xs font-medium transition-colors"
-                            style={{ color: 'var(--primary-500)' }}
-                            onMouseEnter={e => e.currentTarget.style.color = 'var(--primary-700)'}
-                            onMouseLeave={e => e.currentTarget.style.color = 'var(--primary-500)'}
-                          >
-                            <span className="icon" style={{ fontSize: 13 }}>{link.icon}</span>
-                            {link.label}
-                            <span className="icon" style={{ fontSize: 13 }}>arrow_forward</span>
-                          </button>
-                        )
-                      })()}
+                      {renderActionButton(rec)}
                     </div>
                   </div>
                 ))}

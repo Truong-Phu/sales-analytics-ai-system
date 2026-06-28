@@ -382,13 +382,13 @@ export default function CustomersPage() {
           {canEdit && (
             <button className="lbtn lbtn-primary !h-9" onClick={openCreate}>
               <span className="icon text-base">person_add</span>
-              Thêm khách hàng
+              {t('customers.addCustomer', 'Thêm khách hàng')}
             </button>
           )}
           <button className="lbtn lbtn-secondary !h-9" onClick={() => handleExport(items)}
-                  title="Xuất CSV trang hiện tại">
+                  title={t('customers.exportCsvTitle', 'Xuất CSV trang hiện tại')}>
             <span className="icon text-base">download</span>
-            <span className="hidden sm:inline">Xuất CSV</span>
+            <span className="hidden sm:inline">{t('customers.exportCsv', 'Xuất CSV')}</span>
           </button>
           <button onClick={fetchData} className="lbtn lbtn-secondary !h-9" disabled={loading}>
             <span className="icon text-base" style={{ ...(loading && { animation: 'spin 1s linear infinite' }) }}>refresh</span>
@@ -401,7 +401,7 @@ export default function CustomersPage() {
         <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm"
              style={{ background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.25)' }}>
           <span className="font-medium" style={{ color: 'var(--primary-600)' }}>
-            Đã chọn {checkedIds.size} khách hàng
+            {t('customers.selectedCount', 'Đã chọn {{count}} khách hàng', { count: checkedIds.size })}
           </span>
           <div className="flex gap-2 ml-auto">
             {canEdit && (
@@ -409,12 +409,12 @@ export default function CustomersPage() {
                       className="lbtn !h-8 !px-3 text-xs font-medium"
                       style={{ background: 'rgba(239,68,68,0.1)', color: '#EF4444', border: '1px solid rgba(239,68,68,0.3)' }}>
                 <span className="icon text-sm">visibility_off</span>
-                Ẩn {checkedIds.size} KH
+                {t('customers.hideCount', 'Ẩn {{count}} KH', { count: checkedIds.size })}
               </button>
             )}
             <button onClick={() => setCheckedIds(new Set())}
                     className="lbtn lbtn-secondary !h-8 !px-3 text-xs">
-              Bỏ chọn
+              {t('customers.deselect', 'Bỏ chọn')}
             </button>
           </div>
         </div>
@@ -451,7 +451,9 @@ export default function CustomersPage() {
           style={{ width: 160 }}
         >
           {CUSTOMER_TIME_OPTIONS.map(opt => (
-            <option key={opt.value} value={opt.value}>{opt.label}</option>
+            <option key={opt.value} value={opt.value}>
+              {t(`customers.timeOptions.${opt.value}`, opt.label)}
+            </option>
           ))}
         </select>
         {timeMode === 'custom' && (
@@ -480,7 +482,7 @@ export default function CustomersPage() {
           min="0"
           value={minSpent}
           onChange={e => { setMinSpent(e.target.value); setPage(1) }}
-          placeholder="Chi tiêu từ ₫"
+          placeholder={t('customers.minSpentPlaceholder', 'Chi tiêu từ ₫')}
           className="linput text-sm"
           style={{ width: 130 }}
         />
@@ -489,7 +491,7 @@ export default function CustomersPage() {
           min="0"
           value={maxSpent}
           onChange={e => { setMaxSpent(e.target.value); setPage(1) }}
-          placeholder="Chi tiêu đến ₫"
+          placeholder={t('customers.maxSpentPlaceholder', 'Chi tiêu đến ₫')}
           className="linput text-sm"
           style={{ width: 140 }}
         />
@@ -497,7 +499,7 @@ export default function CustomersPage() {
           type="text"
           value={province}
           onChange={e => { setProvince(e.target.value); setPage(1) }}
-          placeholder="Khu vực"
+          placeholder={t('customers.provincePlaceholder', 'Khu vực')}
           className="linput text-sm"
           style={{ width: 140 }}
         />
@@ -529,7 +531,7 @@ export default function CustomersPage() {
                   </th>
                   {[t('customers.fullName'), t('customers.province'),
                     t('customers.totalOrders'), t('customers.totalRevenue'),
-                    'TB/đơn', 'Điểm tích lũy', 'Kênh chính', t('customers.lastOrder'), t('customers.segmentLabel'), ''].map(h => (
+                    t('customers.avgPerOrder', 'TB/đơn'), t('customers.loyaltyPoints', 'Điểm tích lũy'), t('customers.primaryChannel', 'Kênh chính'), t('customers.lastOrder'), t('customers.segmentLabel'), ''].map(h => (
                     <th key={h} className="text-left px-4 py-3 text-sm font-semibold tracking-wide"
                         style={{ color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
@@ -581,7 +583,7 @@ export default function CustomersPage() {
                     </td>
                     <td className="px-4 py-3 text-sm tabular-nums" style={{ color: 'var(--text-secondary)' }}>
                       {(c.last_order_at ?? c.last_order_date ?? c.lastOrderAt)
-                        ? new Date(c.last_order_at ?? c.last_order_date ?? c.lastOrderAt).toLocaleDateString('vi-VN')
+                        ? new Date(c.last_order_at ?? c.last_order_date ?? c.lastOrderAt).toLocaleDateString(i18n.language === 'en' ? 'en-US' : 'vi-VN')
                         : '—'}
                     </td>
                     <td className="px-4 py-3">
@@ -643,12 +645,12 @@ export default function CustomersPage() {
         const footer = canEdit ? (
           <>
             <button onClick={() => openEdit(selected)} className="lbtn lbtn-secondary flex-1 justify-center">
-              <span className="icon text-base">edit</span>Sửa
+              <span className="icon text-base">edit</span>{t('common.edit', 'Sửa')}
             </button>
             <button onClick={() => handleDeactivate(selected)}
                     className="lbtn flex-1 justify-center"
                     style={{ background: 'rgba(239,68,68,0.1)', color: '#EF4444', border: '1px solid rgba(239,68,68,0.3)' }}>
-              <span className="icon text-base">person_off</span>Ẩn
+              <span className="icon text-base">person_off</span>{t('common.hide', 'Ẩn')}
             </button>
           </>
         ) : null
@@ -691,13 +693,13 @@ export default function CustomersPage() {
               {/* Thông tin liên hệ */}
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wider mb-3"
-                   style={{ color: 'var(--text-tertiary)' }}>Thông tin liên hệ</p>
+                   style={{ color: 'var(--text-tertiary)' }}>{t('customers.contactInfo', 'Thông tin liên hệ')}</p>
                 <div className="space-y-2.5">
                   {[
                     { icon: 'email',       label: email ?? '—' },
                     { icon: 'phone',       label: phone ?? '—' },
                     { icon: 'location_on', label: [selected.address, selected.district, selected.ward, selected.province].filter(v => v && v !== '—').join(', ') || address || '—' },
-                    ...(primaryChan ? [{ icon: CHANNEL_ICON[primaryChan] ?? 'store', label: `Kênh chính: ${primaryChan}` }] : []),
+                    ...(primaryChan ? [{ icon: CHANNEL_ICON[primaryChan] ?? 'store', label: t('customers.primaryChannelColon', 'Kênh chính: {{channel}}', { channel: primaryChan }) }] : []),
                   ].map(item => (
                     <div key={item.icon} className="flex items-center gap-3 text-sm">
                       <span className="icon text-base shrink-0" style={{ color: 'var(--text-tertiary)' }}>{item.icon}</span>
@@ -710,13 +712,13 @@ export default function CustomersPage() {
               {/* Số liệu mua hàng */}
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wider mb-3"
-                   style={{ color: 'var(--text-tertiary)' }}>Số liệu mua hàng{from || to ? ' trong kỳ lọc' : ''}</p>
+                   style={{ color: 'var(--text-tertiary)' }}>{t('customers.purchaseMetrics', 'Số liệu mua hàng')}{from || to ? t('customers.inFilterPeriod', ' trong kỳ lọc') : ''}</p>
                 <div className="grid grid-cols-2 gap-3">
                   {[
-                    ['Tổng đơn hàng',  fmt(selected.total_orders ?? selected.totalOrders),                               'shopping_cart'],
-                    ['Tổng chi tiêu',  fmtCurrency(selected.total_spent ?? selected.total_revenue ?? selected.totalSpent), 'payments'],
-                    ['TB mỗi đơn',     fmtCurrency(selected.avg_order_value ?? selected.avgOrderValue),                   'receipt'],
-                    ['Điểm tích lũy',  (selected.loyalty_points ?? selected.loyaltyPoints) != null ? `${fmt(selected.loyalty_points ?? selected.loyaltyPoints)} đ` : '—', 'star'],
+                    [t('customers.totalOrdersMetric', 'Tổng đơn hàng'),  fmt(selected.total_orders ?? selected.totalOrders),                               'shopping_cart'],
+                    [t('customers.totalSpentMetric', 'Tổng chi tiêu'),  fmtCurrency(selected.total_spent ?? selected.total_revenue ?? selected.totalSpent), 'payments'],
+                    [t('customers.avgOrderMetric', 'TB mỗi đơn'),     fmtCurrency(selected.avg_order_value ?? selected.avgOrderValue),                   'receipt'],
+                    [t('customers.loyaltyPointsMetric', 'Điểm tích lũy'),  (selected.loyalty_points ?? selected.loyaltyPoints) != null ? `${fmt(selected.loyalty_points ?? selected.loyaltyPoints)} ${t('customers.pointsUnit', 'đ')}` : '—', 'star'],
                   ].map(([label, value, icon]) => (
                     <div key={label} className="rounded-xl px-4 py-3"
                          style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)' }}>
@@ -730,15 +732,19 @@ export default function CustomersPage() {
                 </div>
                 {firstOrderAt && (
                   <p className="text-xs mt-2" style={{ color: 'var(--text-secondary)' }}>
-                    Đơn đầu tiên: <span style={{ fontWeight: 500 }}>{new Date(firstOrderAt).toLocaleDateString('vi-VN')}</span>
+                    {t('customers.firstOrder', 'Đơn đầu tiên:')} <span style={{ fontWeight: 500 }}>{new Date(firstOrderAt).toLocaleDateString(i18n.language === 'en' ? 'en-US' : 'vi-VN')}</span>
                   </p>
                 )}
                 {lastOrderDays != null && (
                   <p className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>
-                    Lần cuối mua:{' '}
+                    {t('customers.lastOrderMetric', 'Lần cuối mua:')}{' '}
                     <span style={{ fontWeight: 500 }}>
-                      {lastOrderDays === 0 ? 'Hôm nay' : lastOrderDays === 1 ? 'Hôm qua' : `${lastOrderDays} ngày trước`}
-                      {' '}({new Date(lastOrderAt).toLocaleDateString('vi-VN')})
+                      {lastOrderDays === 0
+                        ? t('common.today', 'Hôm nay')
+                        : lastOrderDays === 1
+                          ? t('common.yesterday', 'Hôm qua')
+                          : t('customers.daysAgo', '{{count}} ngày trước', { count: lastOrderDays })}
+                      {' '}({new Date(lastOrderAt).toLocaleDateString(i18n.language === 'en' ? 'en-US' : 'vi-VN')})
                     </span>
                   </p>
                 )}

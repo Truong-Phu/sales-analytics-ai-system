@@ -11,7 +11,7 @@ const CHANNEL_CFG = {
   'SHOPEE':      { icon: '🛒', label: 'Shopee',    color: '#EE4D2D' },
   'TIKTOK_SHOP': { icon: '🎵', label: 'TikTok Shop', color: '#555555' },
   'LAZADA':      { icon: '🛍️', label: 'Lazada',    color: '#0F146D' },
-  'OFFLINE':     { icon: '🏪', label: 'Cửa hàng',  color: '#10B981' },
+  'OFFLINE':     { icon: '🏪', label: 'Cửa hàng',  labelKey: 'dashboard.channel.offline', color: '#10B981' },
   'FACEBOOK':    { icon: '📘', label: 'Facebook',   color: '#1877F2' },
   'WEBSITE':     { icon: '🌐', label: 'Website',    color: '#6366F1' },
 }
@@ -57,17 +57,24 @@ const fallbackVouchers = [
   { id: 'v-ship', code: 'FREESHIP', type: 'FREESHIP', value: 0 },
 ]
 
-const getVoucherLabel = (v) => {
+const getVoucherLabel = (v, t) => {
+  const discountWord = t('churn.discount', 'Giảm')
+  const codeWord = t('churn.code', 'Mã')
+  const minOrderWord = t('churn.minOrder', 'Đơn tối thiểu')
+  const freeShipWord = t('churn.freeShip', 'Miễn phí vận chuyển')
+  
   if (v.type === 'PERCENT') {
-    return `Giảm ${v.value}% (Mã: ${v.code}${v.minOrderValue ? `, Đơn tối thiểu: ${new Intl.NumberFormat('vi-VN').format(v.minOrderValue)}₫` : ''})`;
+    return `${discountWord} ${v.value}% (${codeWord}: ${v.code}${v.minOrderValue ? `, ${minOrderWord}: ${new Intl.NumberFormat('vi-VN').format(v.minOrderValue)}₫` : ''})`;
   }
   if (v.type === 'FIXED') {
-    return `Giảm ${new Intl.NumberFormat('vi-VN').format(v.value)}₫ (Mã: ${v.code}${v.minOrderValue ? `, Đơn tối thiểu: ${new Intl.NumberFormat('vi-VN').format(v.minOrderValue)}₫` : ''})`;
+    return `${discountWord} ${new Intl.NumberFormat('vi-VN').format(v.value)}₫ (${codeWord}: ${v.code}${v.minOrderValue ? `, ${minOrderWord}: ${new Intl.NumberFormat('vi-VN').format(v.minOrderValue)}₫` : ''})`;
   }
-  return `Miễn phí vận chuyển (Mã: ${v.code}${v.minOrderValue ? `, Đơn tối thiểu: ${new Intl.NumberFormat('vi-VN').format(v.minOrderValue)}₫` : ''})`;
+  return `${freeShipWord} (${codeWord}: ${v.code}${v.minOrderValue ? `, ${minOrderWord}: ${new Intl.NumberFormat('vi-VN').format(v.minOrderValue)}₫` : ''})`;
 }
 
 function ActionExecutionDrawer({ config, onClose, onSuccess }) {
+  const { t, i18n } = useTranslation()
+  const currentLang = i18n.language
   const [sending, setSending] = useState(false)
   const [method, setMethod] = useState('SMS')
   const [vouchers, setVouchers] = useState([])
@@ -94,17 +101,31 @@ function ActionExecutionDrawer({ config, onClose, onSuccess }) {
 
   useEffect(() => {
     if (!selectedVoucher) return
-    const discountText = selectedVoucher.type === 'PERCENT' 
-      ? `giảm giá ${selectedVoucher.value}% [${selectedVoucher.code}]`
-      : selectedVoucher.type === 'FIXED'
-        ? `giảm giá ${new Intl.NumberFormat('vi-VN').format(selectedVoucher.value)}₫ [${selectedVoucher.code}]`
-        : `miễn phí vận chuyển [${selectedVoucher.code}]`
+    let discountText = ''
+    if (selectedVoucher.type === 'PERCENT') {
+      discountText = t('churn.discountTextPercent', { val: selectedVoucher.value, code: selectedVoucher.code })
+    } else if (selectedVoucher.type === 'FIXED') {
+      discountText = t('churn.discountTextFixed', { val: `${new Intl.NumberFormat('vi-VN').format(selectedVoucher.value)}₫`, code: selectedVoucher.code })
+    } else {
+      discountText = t('churn.discountTextFreeShip', { code: selectedVoucher.code })
+    }
 
     if (config.action === 'retain') {
-      const channelName = config.channel === 'SHOPEE' ? 'Shopee' : config.channel === 'TIKTOK_SHOP' ? 'TikTok Shop' : config.channel === 'LAZADA' ? 'Lazada' : config.channel === 'FACEBOOK' ? 'Facebook' : config.channel === 'WEBSITE' ? 'Website' : 'cửa hàng';
-      setMessage(`Chào anh/chị ${config.customer}, ${channelName} gửi tặng anh/chị mã ${discountText} cho đơn hàng tiếp theo. Áp dụng đến hết tháng này. Cảm ơn anh/chị đã đồng hành cùng cửa hàng!`)
+      let channelName = ''
+      if (config.channel === 'SHOPEE') channelName = 'Shopee'
+      else if (config.channel === 'TIKTOK_SHOP') channelName = 'TikTok Shop'
+      else if (config.channel === 'LAZADA') channelName = 'Lazada'
+      else if (config.channel === 'FACEBOOK') channelName = 'Facebook'
+      else if (config.channel === 'WEBSITE') channelName = 'Website'
+      else channelName = t('churn.channelFallbackStore', 'store')
+      
+      if (currentLang === 'en') {
+        setMessage(`Dear ${config.customer}, ${channelName} would like to gift you a ${discountText} coupon for your next order. Valid until the end of this month. Thank you for your continued support!`)
+      } else {
+        setMessage(`Chào anh/chị ${config.customer}, ${channelName} gửi tặng anh/chị mã ${discountText} cho đơn hàng tiếp theo. Áp dụng đến hết tháng này. Cảm ơn anh/chị đã đồng hành cùng cửa hàng!`)
+      }
     }
-  }, [config, selectedVoucher])
+  }, [config, selectedVoucher, currentLang])
 
   const handleSend = () => {
     setSending(true)
@@ -132,24 +153,24 @@ function ActionExecutionDrawer({ config, onClose, onSuccess }) {
         console.error(e)
       }
 
-      onSuccess(`Đã kích hoạt thành công chiến dịch giữ chân cho khách hàng ${config.customer}!`)
+      onSuccess(t('churn.successExecution', { name: config.customer }))
       onClose()
     }, 1500)
   }
 
-  const title = 'Thực thi chiến dịch giữ chân'
-  const subtitle = `Khách hàng: ${config.customer} (Rủi ro: ${config.risk})`
+  const title = t('churn.executionTitle', 'Thực thi chiến dịch giữ chân')
+  const subtitle = t('churn.executionSubtitle', { name: config.customer, risk: t(`churn.risk.${config.risk.toLowerCase()}`, config.risk) })
 
   const drawerFooter = (
     <div className="flex justify-end gap-2 w-full">
       <button onClick={onClose} disabled={sending} className="lbtn lbtn-secondary text-xs !h-9 !px-3">
-        Hủy bỏ
+        {t('churn.cancelBtn', 'Hủy bỏ')}
       </button>
       <button onClick={handleSend} disabled={sending} className="lbtn lbtn-primary text-xs !h-9 !px-4">
         {sending ? (
           <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
         ) : (
-          'Gửi ưu đãi ngay'
+          t('churn.sendOfferBtn', 'Gửi ưu đãi ngay')
         )}
       </button>
     </div>
@@ -166,22 +187,22 @@ function ActionExecutionDrawer({ config, onClose, onSuccess }) {
     >
       <div className="p-5 space-y-4 text-xs text-secondary" style={{ color: 'var(--text-secondary)' }}>
         <div className="bg-red-50 dark:bg-red-950/20 p-3.5 rounded-xl border border-red-100 dark:border-red-900/30 space-y-1">
-          <p>Khách hàng: <strong className="text-foreground" style={{ color: 'var(--text-primary)' }}>{config.customer}</strong></p>
-          <p>Xác suất rời bỏ: <strong style={{ color: '#EF4444' }}>{config.prob}% ({config.risk})</strong></p>
-          <p>Kênh tiếp cận gợi ý: <strong className="text-foreground" style={{ color: 'var(--text-primary)' }}>{config.channel || 'Tất cả'}</strong></p>
+          <p>{t('churn.colCustomer')}: <strong className="text-foreground" style={{ color: 'var(--text-primary)' }}>{config.customer}</strong></p>
+          <p>{t('churn.probLabel', 'Xác suất rời bỏ:')} <strong style={{ color: '#EF4444' }}>{config.prob}% ({t(`churn.risk.${config.risk.toLowerCase()}`, config.risk)})</strong></p>
+          <p>{t('churn.suggestedChannelLabel', 'Kênh tiếp cận gợi ý:')} <strong className="text-foreground" style={{ color: 'var(--text-primary)' }}>{config.channel || t('common.all', 'Tất cả')}</strong></p>
         </div>
 
         <div className="space-y-4 pt-2">
           <div>
-            <label className="block font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>Phương thức gửi ưu đãi</label>
+            <label className="block font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>{t('churn.methodLabel', 'Phương thức gửi ưu đãi')}</label>
             <select value={method} onChange={e => setMethod(e.target.value)} className="linput text-xs w-full">
-              <option value="SMS">Gửi SMS Brandname tự động (qua SĐT)</option>
-              <option value="Email">Gửi Email Marketing cá nhân hóa (qua Gmail)</option>
+              <option value="SMS">{t('churn.smsOption', 'Gửi SMS Brandname tự động (qua SĐT)')}</option>
+              <option value="Email">{t('churn.emailOption', 'Gửi Email Marketing cá nhân hóa (qua Gmail)')}</option>
             </select>
           </div>
           
           <div>
-            <label className="block font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>Mức ưu đãi / Voucher</label>
+            <label className="block font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>{t('churn.voucherLabel', 'Mức ưu đãi / Voucher')}</label>
             <select 
               value={selectedVoucher?.id || ''} 
               onChange={e => {
@@ -191,13 +212,13 @@ function ActionExecutionDrawer({ config, onClose, onSuccess }) {
               className="linput text-xs w-full"
             >
               {vouchers.map(v => (
-                <option key={v.id} value={v.id}>{getVoucherLabel(v)}</option>
+                <option key={v.id} value={v.id}>{getVoucherLabel(v, t)}</option>
               ))}
             </select>
           </div>
 
           <div>
-            <label className="block font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>Nội dung thông điệp</label>
+            <label className="block font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>{t('churn.messageLabel', 'Nội dung thông điệp')}</label>
             <textarea
               value={message}
               onChange={e => setMessage(e.target.value)}
@@ -212,7 +233,7 @@ function ActionExecutionDrawer({ config, onClose, onSuccess }) {
 }
 
 export default function ChurnPage() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const navigate = useNavigate()
   const [data,    setData]    = useState(null)
   const [loading, setLoading] = useState(true)
@@ -220,6 +241,30 @@ export default function ChurnPage() {
   const [filter,  setFilter]  = useState('ALL')
   const [executionDrawer, setExecutionDrawer] = useState(null)
   const [toastMsg, setToastMsg] = useState(null)
+
+  const translateActionText = (text) => {
+    if (!text || i18n.language !== 'en') return text
+    const regex = /Không mua\s+(\d+)\s+ngày trên\s+(.+?)\s*-\s*(.+)/i
+    const match = text.match(regex)
+    if (match) {
+      const days = match[1]
+      const rawChannel = match[2].trim()
+      const action = match[3].trim()
+      
+      let channel = rawChannel
+      if (rawChannel.toLowerCase() === 'cửa hàng') {
+        channel = t('dashboard.channel.offline', 'In-store / POS')
+      }
+      
+      let translatedAction = action
+      if (action.includes('Ưu tiên tái kích hoạt') || action.includes('uu tien tai kich hoat')) {
+        translatedAction = t('churn.priorityReactivate', 'Reactivation Priority')
+      }
+      
+      return t('churn.actionTemplate', { days, channel, action: translatedAction })
+    }
+    return text
+  }
 
   const load = async () => {
     setLoading(true)
@@ -360,7 +405,7 @@ export default function ChurnPage() {
                         <div className="flex items-center gap-1.5 text-xs whitespace-nowrap">
                           <span>{cfg.icon}</span>
                           <span className="font-medium" style={{ color: isTop ? cfg.color : 'var(--text-secondary)' }}>
-                            {cfg.label}
+                            {cfg.labelKey ? t(cfg.labelKey) : cfg.label}
                           </span>
                           {isTop && (
                             <span className="text-[9px] px-1 rounded"
@@ -400,7 +445,7 @@ export default function ChurnPage() {
 
                     <td className="px-3 py-2 text-xs"
                       style={{ verticalAlign: 'middle', color: 'var(--text-tertiary)', maxWidth: 220 }}>
-                      {ch.action ?? c.action}
+                      {translateActionText(ch.action ?? c.action)}
                     </td>
 
                     {ci === 0 && (

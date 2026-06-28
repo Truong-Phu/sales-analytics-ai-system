@@ -6,6 +6,7 @@ import AiEmptyState from '../../components/ui/AiEmptyState'
 import { getNarrative } from '../../api/aiApi'
 import DateRangeFilter from '../../components/ui/DateRangeFilter'
 import { fmtMoneyExact } from '../../utils/format'
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 
 const dateKey = (date) => {
   const y = date.getFullYear()
@@ -60,7 +61,12 @@ export default function NarrativePage() {
           <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>{t('narrative.title')}</h1>
           <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>{t('narrative.subtitle')}</p>
         </div>
-        <DateRangeFilter from={from} to={to} onChange={(f, tVal) => { setFrom(f); setTo(tVal) }} />
+        <DateRangeFilter
+          from={from}
+          to={to}
+          presets={['last7days', 'mtd', 'last_month', 'qtd', 'last_quarter', 'ytd', 'last_year', 'custom']}
+          onChange={(f, tVal) => { setFrom(f); setTo(tVal) }}
+        />
       </div>
 
       {!data && !loading && <AiEmptyState title={t('narrative.emptyState')} />}
@@ -99,6 +105,85 @@ export default function NarrativePage() {
                 <div className="text-xl font-bold mt-1" style={{ color: k.color }}>{k.value}</div>
               </div>
             ))}
+          </div>
+
+          {/* Biểu đồ so sánh doanh thu và đơn hàng với kỳ trước */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="lcard p-5 space-y-4">
+              <h3 className="text-sm font-semibold" style={{ color: 'var(--text-secondary)' }}>
+                So sánh Doanh thu (Kỳ này vs Kỳ trước)
+              </h3>
+              <div className="h-[200px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={[
+                      { name: 'Kỳ trước', 'Doanh thu': data.key_metrics?.prev_revenue ?? 0, fill: '#94A3B8' },
+                      { name: 'Kỳ này', 'Doanh thu': data.key_metrics?.current_revenue ?? 0, fill: 'var(--primary-500)' }
+                    ]}
+                    margin={{ top: 10, right: 10, left: 10, bottom: 5 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                    <XAxis dataKey="name" stroke="var(--text-tertiary)" tickLine={false} />
+                    <YAxis 
+                      stroke="var(--text-tertiary)" 
+                      tickLine={false} 
+                      tickFormatter={(val) => val >= 1e6 ? `${(val / 1e6).toFixed(0)}M` : val}
+                    />
+                    <Tooltip 
+                      formatter={(val) => [fmtMoneyExact(val), 'Doanh thu']}
+                      contentStyle={{ background: 'var(--bg-elevated)', borderColor: 'var(--border)' }}
+                      labelStyle={{ color: 'var(--text-primary)' }}
+                    />
+                    <Bar dataKey="Doanh thu" radius={[4, 4, 0, 0]}>
+                      {
+                        [
+                          { fill: '#94A3B8' },
+                          { fill: 'var(--primary-500)' }
+                        ].map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.fill} />
+                        ))
+                      }
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            <div className="lcard p-5 space-y-4">
+              <h3 className="text-sm font-semibold" style={{ color: 'var(--text-secondary)' }}>
+                So sánh Đơn hàng (Kỳ này vs Kỳ trước)
+              </h3>
+              <div className="h-[200px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={[
+                      { name: 'Kỳ trước', 'Đơn hàng': data.key_metrics?.prev_orders ?? 0, fill: '#94A3B8' },
+                      { name: 'Kỳ này', 'Đơn hàng': data.key_metrics?.current_orders ?? 0, fill: '#22C55E' }
+                    ]}
+                    margin={{ top: 10, right: 10, left: 10, bottom: 5 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                    <XAxis dataKey="name" stroke="var(--text-tertiary)" tickLine={false} />
+                    <YAxis stroke="var(--text-tertiary)" tickLine={false} />
+                    <Tooltip 
+                      formatter={(val) => [`${val} đơn`, 'Đơn hàng']}
+                      contentStyle={{ background: 'var(--bg-elevated)', borderColor: 'var(--border)' }}
+                      labelStyle={{ color: 'var(--text-primary)' }}
+                    />
+                    <Bar dataKey="Đơn hàng" radius={[4, 4, 0, 0]}>
+                      {
+                        [
+                          { fill: '#94A3B8' },
+                          { fill: '#22C55E' }
+                        ].map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.fill} />
+                        ))
+                      }
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
           </div>
 
           <div className="lcard p-5">

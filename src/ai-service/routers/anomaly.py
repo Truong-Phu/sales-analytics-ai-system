@@ -104,19 +104,19 @@ def _channel_breakdown(date_str: str, expected: float, company_id: str = None) -
           {cmp_filter}
         GROUP BY ch.channel_name ORDER BY revenue DESC
     """
-    # Doanh thu trung bình theo kênh (30 ngày trước đó)
+    # Doanh thu trung bình theo kênh (14 ngày trước đó)
     avg_sql = f"""
-        SELECT ch.channel_name AS channel, AVG(daily_rev) AS avg_revenue
+        SELECT sub.channel_name AS channel, AVG(daily_rev) AS avg_revenue
         FROM (
             SELECT DATE(o.order_date) AS d, ch.channel_name, SUM(oi.subtotal) AS daily_rev
             FROM public.orders o
             JOIN public.order_items oi ON oi.order_id = o.order_id
             JOIN public.sales_channels ch ON o.channel_id = ch.channel_id
-            WHERE o.order_date BETWEEN (%(date)s::date - INTERVAL '30 days') AND (%(date)s::date - INTERVAL '1 day')
+            WHERE o.order_date BETWEEN (%(date)s::date - INTERVAL '14 days') AND (%(date)s::date - INTERVAL '1 day')
               AND o.status NOT IN ('CANCELLED','RETURNED')
               {cmp_filter}
             GROUP BY DATE(o.order_date), ch.channel_name
-        ) sub GROUP BY ch.channel_name
+        ) sub GROUP BY sub.channel_name
     """
     df_day = query_df(day_sql, params)
     df_avg = query_df(avg_sql, params)
@@ -127,11 +127,14 @@ def _channel_breakdown(date_str: str, expected: float, company_id: str = None) -
     total_day = float(df_day["revenue"].sum())
     total_delta = total_day - expected if expected > 0 else total_day
 
-    avg_map = {} if df_avg.empty else dict(zip(df_avg["channel"], df_avg["avg_revenue"]))
+    avg_map = {} if df_avg.empty else {
+        str(k).replace(" Phú Thịnh", ""): float(v)
+        for k, v in zip(df_avg["channel"], df_avg["avg_revenue"])
+    }
 
     result = []
     for _, row in df_day.iterrows():
-        ch  = str(row["channel"])
+        ch  = str(row["channel"]).replace(" Phú Thịnh", "")
         rev = float(row["revenue"])
         avg = float(avg_map.get(ch, rev))
         vs_avg = round((rev - avg) / avg * 100, 1) if avg > 0 else 0
@@ -157,7 +160,7 @@ def _product_breakdown(date_str: str, company_id: str = None, top_n: int = 5) ->
             FROM public.order_items oi2
             JOIN public.orders o2 ON o2.order_id = oi2.order_id
             WHERE DATE(o2.order_date) != %(date)s::date
-              AND o2.order_date >= (%(date)s::date - INTERVAL '30 days')
+              AND o2.order_date >= (%(date)s::date - INTERVAL '14 days')
             GROUP BY oi2.product_id
         ) avg_sub ON avg_sub.product_id = oi.product_id
         WHERE DATE(o.order_date) = %(date)s

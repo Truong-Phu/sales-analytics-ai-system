@@ -41,11 +41,23 @@ const STATUS_CFG = {
   CANCELLED:           { label: 'Đã hủy',        bg: 'rgba(239,68,68,0.1)',   text: '#EF4444' },
 }
 
+const STATUS_MAP = {
+  DRAFT: 'statusDraft',
+  PENDING: 'statusPending',
+  APPROVED: 'statusApproved',
+  PARTIALLY_RECEIVED: 'statusPartial',
+  RECEIVED: 'statusReceived',
+  CANCELLED: 'statusCancelled',
+}
+ 
 function StatusBadge({ status }) {
+  const { t } = useTranslation()
   const c = STATUS_CFG[status] ?? { label: status, bg: 'rgba(100,116,139,0.1)', text: '#64748B' }
+  const key = STATUS_MAP[status] ?? 'statusDraft'
+  const label = t('purchaseOrders.' + key, c.label)
   return (
-    <span className="text-xs px-2 py-0.5 rounded-full font-medium"
-          style={{ background: c.bg, color: c.text }}>{c.label}</span>
+    <span className="text-xs px-2 py-0.5 rounded-full font-medium whitespace-nowrap"
+          style={{ background: c.bg, color: c.text }}>{label}</span>
   )
 }
 
@@ -156,18 +168,40 @@ function CreateDrawer({ open, onClose, onSaved, defaultProductId = '', defaultPr
     setProdSuppliersMap({})
   }, [open, defaultProductId, defaultItems])
 
-  // Sau khi allProducts load, auto-fill giá cho defaultProductId
+  // Sau khi allProducts load, auto-fill giá cho defaultProductId hoặc defaultProductName
   useEffect(() => {
-    if (!defaultProductId || !allProducts.length) return
-    const prod = allProducts.find(p => String(p.productId) === String(defaultProductId))
-    if (!prod) return
-    const autoPrice = prod.importPrice > 0 ? prod.importPrice : prod.costPrice > 0 ? prod.costPrice : 0
-    if (!autoPrice) return
-    setItems(its => its.map((it, i) =>
-      i === 0 && String(it.productId) === String(defaultProductId) && it.importPrice === 0
-        ? { ...it, importPrice: autoPrice } : it
-    ))
-  }, [allProducts, defaultProductId])
+    if (!allProducts.length) return
+    let targetPid = defaultProductId
+    let matchedProd = null
+
+    if (targetPid) {
+      matchedProd = allProducts.find(p => String(p.productId) === String(targetPid))
+    } else if (defaultProductName) {
+      // Tìm sản phẩm có tên khớp nhất (không phân biệt hoa thường)
+      matchedProd = allProducts.find(p => 
+        p.productName.toLowerCase().includes(defaultProductName.toLowerCase()) || 
+        defaultProductName.toLowerCase().includes(p.productName.toLowerCase())
+      )
+      if (matchedProd) {
+        targetPid = String(matchedProd.productId)
+      }
+    }
+
+    if (!matchedProd) return
+
+    const autoPrice = matchedProd.importPrice > 0 ? matchedProd.importPrice : matchedProd.costPrice > 0 ? matchedProd.costPrice : 0
+    
+    setItems(its => its.map((it, i) => {
+      if (i === 0) {
+        return {
+          ...it,
+          productId: targetPid,
+          importPrice: it.importPrice === 0 ? autoPrice : it.importPrice
+        }
+      }
+      return it
+    }))
+  }, [allProducts, defaultProductId, defaultProductName])
 
   useEffect(() => {
     if (!open || defaultItems.length === 0) return
@@ -704,7 +738,7 @@ export default function PurchaseOrdersPage() {
           <input
             type="text"
             className="linput !pl-9 text-sm"
-            placeholder="Tìm mã phiếu, nhà cung cấp..."
+            placeholder={t('purchaseOrders.searchPlaceholder', 'Tìm mã phiếu, nhà cung cấp...')}
             value={search}
             onChange={e => { setSearch(e.target.value); setPage(1) }}
           />
@@ -715,9 +749,9 @@ export default function PurchaseOrdersPage() {
           className="linput text-sm"
           style={{ width: 180 }}
         >
-          <option value="">Tất cả trạng thái</option>
+          <option value="">{t('purchaseOrders.filterAll', 'Tất cả trạng thái')}</option>
           {['DRAFT', 'PENDING', 'APPROVED', 'PARTIALLY_RECEIVED', 'RECEIVED', 'CANCELLED'].map(s => (
-            <option key={s} value={s}>{STATUS_CFG[s]?.label ?? s}</option>
+            <option key={s} value={s}>{t('purchaseOrders.' + STATUS_MAP[s], STATUS_CFG[s]?.label ?? s)}</option>
           ))}
         </select>
         {(search || filterStatus) && (

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, createContext, useContext, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 
@@ -92,6 +93,7 @@ export function useCmdK() {
 
 // ── Modal ─────────────────────────────────────────────────────────────────────
 function CommandPaletteModal({ onClose }) {
+  const { t }                 = useTranslation()
   const [query, setQuery]     = useState('')
   const [cursor, setCursor]   = useState(0)
   const navigate              = useNavigate()
@@ -109,9 +111,11 @@ function CommandPaletteModal({ onClose }) {
   const filtered = query.trim()
     ? visibleItems.filter(item => {
         const q = removeAccents(query)
+        const translatedLabel = t(`search.items.${item.id}.label`, item.label)
+        const translatedDesc = t(`search.items.${item.id}.desc`, item.desc)
         return (
-          removeAccents(item.label).includes(q) ||
-          removeAccents(item.desc).includes(q)
+          removeAccents(translatedLabel).includes(q) ||
+          removeAccents(translatedDesc).includes(q)
         )
       })
     : visibleItems
@@ -170,7 +174,7 @@ function CommandPaletteModal({ onClose }) {
             value={query}
             onChange={e => setQuery(e.target.value)}
             onKeyDown={handleKey}
-            placeholder="Tìm kiếm trang, tính năng..."
+            placeholder={t('search.placeholder')}
             className="flex-1 bg-transparent border-none outline-none text-base"
             style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-sans)' }}
           />
@@ -191,7 +195,7 @@ function CommandPaletteModal({ onClose }) {
         >
           {filtered.length === 0 ? (
             <div className="px-4 py-8 text-center text-sm" style={{ color: 'var(--text-tertiary)' }}>
-              Không tìm thấy kết quả
+              {t('search.noResults')}
             </div>
           ) : (
             filtered.map((item, i) => (
@@ -216,8 +220,8 @@ function CommandPaletteModal({ onClose }) {
                   {item.icon}
                 </span>
                 <div>
-                  <div className="text-sm font-medium">{item.label}</div>
-                  <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{item.desc}</div>
+                  <div className="text-sm font-medium">{t(`search.items.${item.id}.label`, item.label)}</div>
+                  <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{t(`search.items.${item.id}.desc`, item.desc)}</div>
                 </div>
               </button>
             ))
@@ -229,11 +233,11 @@ function CommandPaletteModal({ onClose }) {
           className="flex items-center gap-3 px-4 py-2.5 border-t text-xs"
           style={{ borderColor: 'var(--border)', color: 'var(--text-tertiary)' }}
         >
-          <span><kbd className="font-mono">Esc</kbd> đóng</span>
+          <span><kbd className="font-mono">Esc</kbd> {t('search.escClose')}</span>
           <span>·</span>
-          <span><kbd className="font-mono">↑↓</kbd> di chuyển</span>
+          <span><kbd className="font-mono">↑↓</kbd> {t('search.arrowsMove')}</span>
           <span>·</span>
-          <span><kbd className="font-mono">Enter</kbd> mở</span>
+          <span><kbd className="font-mono">Enter</kbd> {t('search.enterOpen')}</span>
         </div>
       </div>
     </>

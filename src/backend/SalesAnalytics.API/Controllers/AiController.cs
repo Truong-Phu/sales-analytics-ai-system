@@ -41,6 +41,17 @@ public class AiController(AiProxyService ai, ITenantContext tenant, IConfigurati
         return Ok(result);
     }
 
+    /// <summary>Phân tích nguyên nhân gốc rễ của ngày bất thường</summary>
+    [HttpGet("anomaly/root-cause")]
+    public async Task<IActionResult> AnomalyRootCause([FromQuery] string date)
+    {
+        if (string.IsNullOrEmpty(date)) return BadRequest(new { message = "Thiếu tham số date." });
+        var companyId = tenant.IsSuperAdmin ? (Guid?)null : tenant.CompanyId;
+        var result = await ai.GetAnomalyRootCauseAsync(date, companyId);
+        if (result is null) return StatusCode(503, new { message = "AI Service không khả dụng." });
+        return Ok(result);
+    }
+
     /// <summary>Phân tích xu hướng</summary>
     [HttpGet("trend")]
     public async Task<IActionResult> Trend(

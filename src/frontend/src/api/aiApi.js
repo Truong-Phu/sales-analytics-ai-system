@@ -2,11 +2,21 @@ import api from './axios'
 
 // FastAPI categories → frontend type keys (used for icons and filters)
 const CATEGORY_TO_TYPE = {
+  // Tiếng Anh (chuẩn từ backend hoặc AI chatbot)
   REVENUE:   'revenue',
+  FORECAST:  'revenue',
   CHANNEL:   'channel',
   INVENTORY: 'product',
   MARKETING: 'general',
   ANOMALY:   'anomaly',
+  CUSTOMER:  'general',
+
+  // Tiếng Việt (các module rule-based sinh ra)
+  'Tồn kho':        'product',
+  'Sản phẩm':       'product',
+  'Doanh thu':      'revenue',
+  'Bất thường':     'anomaly',
+  'Kênh bán hàng':  'channel',
 }
 
 // 'all' → không truyền param channel (FastAPI hiểu null = tất cả kênh)
@@ -57,6 +67,13 @@ export const getAnomaly = async (days = 90, channel = 'all') => {
 }
 
 /**
+ * Phân tích nguyên nhân gốc rễ của ngày bất thường (RCA).
+ */
+export const getAnomalyRootCause = async (date) => {
+  return await api.get('/api/ai/anomaly/root-cause', { params: { date } }).then(r => r.data)
+}
+
+/**
  * Phân tích xu hướng.
  * FastAPI trả về { trend_direction, growth_rate_pct, ma7_latest, summary, ... }
  * ForecastPage cần { direction, growthRate, ma7, summary }
@@ -91,6 +108,7 @@ export const getRecommendations = async () => {
       message:  r.title  ?? '',
       detail:   r.detail ?? '',
       action:   r.action ?? '',
+      category: r.category ?? '',
     })),
   }
 }

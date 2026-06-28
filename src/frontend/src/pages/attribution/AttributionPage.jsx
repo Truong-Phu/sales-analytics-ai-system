@@ -10,18 +10,61 @@ import { fmtMoneyExact } from '../../utils/format'
 
 const COLORS = ['#6366F1','#22C55E','#F59E0B','#EF4444','#8B5CF6','#06B6D4']
 
-function getChannelDisplayName(name = '') {
-  const raw = String(name || '').trim()
-  const key = raw.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, '')
-  if (key.includes('shopee')) return 'Shopee'
-  if (key.includes('lazada')) return 'Lazada'
-  if (key.includes('tiktok')) return 'TikTok Shop'
-  if (key.includes('offline') || key.includes('pos') || key.includes('banquay')) return 'Bán tại quầy'
-  return raw || 'Khác'
-}
-
 export default function AttributionPage() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
+  const currentLang = i18n.language
+
+  const getChannelDisplayName = (name = '') => {
+    const raw = String(name || '').trim()
+    const key = raw.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, '')
+    if (key.includes('shopee')) return 'Shopee'
+    if (key.includes('lazada')) return 'Lazada'
+    if (key.includes('tiktok')) return 'TikTok Shop'
+    if (key.includes('offline') || key.includes('pos') || key.includes('banquay')) {
+      return t('dashboard.channel.offline', 'Offline / POS')
+    }
+    if (key.includes('khac') || key.includes('other')) {
+      return t('common.other', 'Other')
+    }
+    return raw
+  }
+
+  const translateRecommendation = (rec) => {
+    if (!rec) return ''
+    if (currentLang !== 'en') return rec
+    const raw = String(rec).trim().toLowerCase()
+    if (raw.includes('chua co du lieu') || raw.includes('chưa có dữ liệu')) {
+      return t('attribution.recNoAdCost')
+    }
+    if (raw.includes('roi xuat sac') || raw.includes('roi xuất sắc')) {
+      return t('attribution.recExcellentRoi')
+    }
+    if (raw.includes('roi tot') || raw.includes('roi tốt')) {
+      return t('attribution.recGoodRoi')
+    }
+    if (raw.includes('roi chap nhan duoc') || raw.includes('roi chấp nhận được')) {
+      return t('attribution.recAcceptableRoi')
+    }
+    if (raw.includes('roi thap') || raw.includes('roi thấp')) {
+      return t('attribution.recLowRoi')
+    }
+    return rec
+  }
+
+  const getInsightText = () => {
+    if (!data) return ''
+    if (currentLang !== 'en') return data.insight
+    const topCh = getChannelDisplayName(data.top_channel)
+    const topPct = data.channels?.[0]?.attribution_pct ?? 0
+    const worstRoiCh = data.worst_roi_channel ? getChannelDisplayName(data.worst_roi_channel) : ''
+    
+    let text = t('attribution.insightTopChannel', { channel: topCh, pct: topPct })
+    if (worstRoiCh) {
+      text += ' ' + t('attribution.insightWorstRoi', { channel: worstRoiCh })
+    }
+    return text
+  }
+
   const [data,   setData]   = useState(null)
   const [loading,setLoading]= useState(true)
   const [isMock, setIsMock] = useState(false)
@@ -72,7 +115,7 @@ export default function AttributionPage() {
           {data?.insight && (
             <div className="rounded-xl p-4 text-sm"
               style={{ background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.25)', color: 'var(--primary-700)' }}>
-              💡 {data.insight}
+              💡 {getInsightText()}
             </div>
           )}
 
@@ -160,7 +203,7 @@ export default function AttributionPage() {
                       <td className="p-3 font-bold" style={{ color: roiColor(c.roi_pct) }}>
                         {c.roi_pct > 0 ? `${c.roi_pct.toFixed(0)}%` : '—'}
                       </td>
-                      <td className="p-3 text-xs max-w-xs" style={{ color: 'var(--text-tertiary)' }}>{c.recommendation}</td>
+                      <td className="p-3 text-xs max-w-xs" style={{ color: 'var(--text-tertiary)' }}>{translateRecommendation(c.recommendation)}</td>
                     </tr>
                   ))}
                 </tbody>

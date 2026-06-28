@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
+import i18n from '../../i18n'
 import { fmtMoneyExact, tickFmt, splitFmt } from '../../utils/format'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
@@ -115,7 +116,7 @@ function MiniWidget({ title, icon, href, loading, children }) {
                 style={{ color: 'var(--primary-600)', background: 'rgba(99,102,241,0.08)' }}
                 onMouseEnter={e => e.currentTarget.style.background = 'rgba(99,102,241,0.16)'}
                 onMouseLeave={e => e.currentTarget.style.background = 'rgba(99,102,241,0.08)'}>
-          Xem đầy đủ
+          {i18n.t('common.viewDetails', 'Xem đầy đủ')}
           <span className="icon text-sm">arrow_forward</span>
         </button>
       </div>
@@ -157,8 +158,10 @@ function getChannelDisplayName(name = '') {
   if (key.includes('shopee')) return 'Shopee'
   if (key.includes('lazada')) return 'Lazada'
   if (key.includes('tiktok')) return 'TikTok Shop'
-  if (key.includes('offline') || key.includes('pos') || key.includes('banquay')) return 'Bán tại quầy'
-  return raw || 'Khác'
+  if (key.includes('offline') || key.includes('pos') || key.includes('banquay')) {
+    return i18n.t('dashboard.channel.offline', 'Bán tại quầy')
+  }
+  return raw || i18n.t('common.other', 'Khác')
 }
 
 function resolvePreset(p) {
@@ -178,90 +181,92 @@ function SectionTitle({ children, tooltip, className = '' }) {
   )
 }
 
+const isEn = () => i18n.language === 'en'
+
 const CHART_TOOLTIPS = {
   revenueTrend: {
-    title: 'Xu hướng doanh thu và lợi nhuận',
-    description: 'Theo dõi doanh thu thuần và lợi nhuận theo thời gian trong bộ lọc hiện tại. Dùng để nhận biết ngày tăng/giảm bất thường và xu hướng kinh doanh.',
-    formula: 'Mỗi điểm = tổng doanh thu/lợi nhuận của ngày tương ứng',
-    source: 'Dashboard API, theo filter ngày và kênh',
+    get title() { return isEn() ? 'Revenue and Profit Trend' : 'Xu hướng doanh thu và lợi nhuận' },
+    get description() { return isEn() ? 'Track net revenue and profit over time within the current filter. Used to identify anomalous days and business trends.' : 'Theo dõi doanh thu thuần và lợi nhuận theo thời gian trong bộ lọc hiện tại. Dùng để nhận biết ngày tăng/giảm bất thường và xu hướng kinh doanh.' },
+    get formula() { return isEn() ? 'Each point = total revenue/profit of the corresponding day' : 'Mỗi điểm = tổng doanh thu/lợi nhuận của ngày tương ứng' },
+    get source() { return isEn() ? 'Dashboard API, by date and channel filter' : 'Dashboard API, theo filter ngày và kênh' },
   },
   channelShare: {
-    title: 'Tỷ trọng doanh thu theo kênh',
-    description: 'Cho biết mỗi kênh đóng góp bao nhiêu phần trăm doanh thu trong kỳ đang chọn. Click vào kênh để xem danh sách đơn hàng liên quan.',
-    formula: 'Tỷ trọng = doanh thu kênh / tổng doanh thu các kênh',
-    source: 'Dashboard API, dữ liệu doanh thu theo kênh',
+    get title() { return isEn() ? 'Revenue Share by Channel' : 'Tỷ trọng doanh thu theo kênh' },
+    get description() { return isEn() ? 'Shows the percentage contribution of each channel to total revenue in the selected period. Click a channel to view related orders.' : 'Cho biết mỗi kênh đóng góp bao nhiêu phần trăm doanh thu trong kỳ đang chọn. Click vào kênh để xem danh sách đơn hàng liên quan.' },
+    get formula() { return isEn() ? 'Proportion = channel revenue / total revenue' : 'Tỷ trọng = doanh thu kênh / tổng doanh thu các kênh' },
+    get source() { return isEn() ? 'Dashboard API, channel revenue data' : 'Dashboard API, dữ liệu doanh thu theo kênh' },
   },
   paretoProducts: {
-    title: 'Biểu đồ Pareto top sản phẩm',
-    description: 'Xếp sản phẩm theo doanh thu giảm dần và đường % tích lũy cho biết nhóm sản phẩm đầu đang đóng góp bao nhiêu trong tổng doanh thu của các sản phẩm hiển thị.',
-    formula: '% tích lũy = tổng doanh thu từ sản phẩm đầu đến sản phẩm hiện tại / tổng doanh thu top sản phẩm',
-    source: 'Dashboard API, top sản phẩm theo filter hiện tại',
+    get title() { return isEn() ? 'Pareto Chart of Top Products' : 'Biểu đồ Pareto top sản phẩm' },
+    get description() { return isEn() ? 'Sorts products by revenue in descending order. The cumulative % line shows how much the top products contribute to total revenue.' : 'Xếp sản phẩm theo doanh thu giảm dần và đường % tích lũy cho biết nhóm sản phẩm đầu đang đóng góp bao nhiêu trong tổng doanh thu của các sản phẩm hiển thị.' },
+    get formula() { return isEn() ? 'Cumulative % = sum of revenue from first to current product / total revenue of top products' : '% tích lũy = tổng doanh thu từ sản phẩm đầu đến sản phẩm hiện tại / tổng doanh thu top sản phẩm' },
+    get source() { return isEn() ? 'Dashboard API, top products under current filter' : 'Dashboard API, top sản phẩm theo filter hiện tại' },
   },
   productsByChannel: {
-    title: 'Top sản phẩm theo kênh',
-    description: 'So sánh các sản phẩm bán chạy nhất trong từng kênh. Cột thể hiện doanh thu, đường thể hiện lợi nhuận gộp để nhận ra sản phẩm doanh thu cao nhưng biên lợi nhuận thấp.',
-    formula: 'Doanh thu = tổng giá trị bán; Lợi nhuận gộp = doanh thu - giá vốn',
-    source: 'Dashboard API, dữ liệu sản phẩm theo kênh',
+    get title() { return isEn() ? 'Top Products by Channel' : 'Top sản phẩm theo kênh' },
+    get description() { return isEn() ? 'Compares best-selling products in each channel. Bars show revenue, line shows gross profit to help identify high-revenue but low-margin products.' : 'So sánh các sản phẩm bán chạy nhất trong từng kênh. Cột thể hiện doanh thu, đường thể hiện lợi nhuận gộp để nhận ra sản phẩm doanh thu cao nhưng biên lợi nhuận thấp.' },
+    get formula() { return isEn() ? 'Revenue = total sales value; Gross Profit = revenue - COGS' : 'Doanh thu = tổng giá trị bán; Lợi nhuận gộp = doanh thu - giá vốn' },
+    get source() { return isEn() ? 'Dashboard API, product data by channel' : 'Dashboard API, dữ liệu sản phẩm theo kênh' },
   },
   orderFunnel: {
-    title: 'Phễu xử lý đơn hàng',
-    description: 'Theo dõi số đơn ở từng trạng thái xử lý để phát hiện đơn bị kẹt ở bước chờ xử lý, đang giao hoặc hoàn/hủy.',
-    formula: 'Mỗi cột = số đơn ở trạng thái tương ứng trong kỳ',
-    source: 'Orders API, theo filter ngày và kênh',
+    get title() { return isEn() ? 'Order Processing Funnel' : 'Phễu xử lý đơn hàng' },
+    get description() { return isEn() ? 'Track order counts at each stage to detect orders stuck in pending, shipping, or returned/cancelled.' : 'Theo dõi số đơn ở từng trạng thái xử lý để phát hiện đơn bị kẹt ở bước chờ xử lý, đang giao hoặc hoàn/hủy.' },
+    get formula() { return isEn() ? 'Each bar = number of orders in the corresponding status in the period' : 'Mỗi cột = số đơn ở trạng thái tương ứng trong kỳ' },
+    get source() { return isEn() ? 'Orders API, by date and channel filter' : 'Orders API, theo filter ngày và kênh' },
   },
   channelMonthly: {
-    title: 'Doanh thu kênh theo tháng',
-    description: 'So sánh doanh thu các kênh theo từng tháng, giúp nhìn nhanh kênh nào đóng góp chính trong từng giai đoạn.',
-    formula: 'Mỗi phần cột = doanh thu của một kênh trong tháng',
-    source: 'Dashboard API, doanh thu tháng theo kênh',
+    get title() { return isEn() ? 'Channel Revenue by Month' : 'Doanh thu kênh theo tháng' },
+    get description() { return isEn() ? 'Compares channel revenue by month, showing the primary contributing channel in each phase.' : 'So sánh doanh thu các kênh theo từng tháng, giúp nhìn nhanh kênh nào đóng góp chính trong từng giai đoạn.' },
+    get formula() { return isEn() ? 'Each column section = revenue of a channel in the month' : 'Mỗi phần cột = doanh thu của một kênh trong tháng' },
+    get source() { return isEn() ? 'Dashboard API, monthly revenue by channel' : 'Dashboard API, doanh thu tháng theo kênh' },
   },
   channelTrend: {
-    title: 'Xu hướng doanh thu từng kênh theo tháng',
-    description: 'Hiển thị đường doanh thu riêng của từng kênh qua các tháng để so sánh tốc độ tăng/giảm giữa các kênh.',
-    formula: 'Mỗi điểm = doanh thu kênh trong tháng',
-    source: 'Dashboard API, doanh thu tháng theo kênh',
+    get title() { return isEn() ? 'Monthly Channel Revenue Trend' : 'Xu hướng doanh thu từng kênh theo tháng' },
+    get description() { return isEn() ? 'Displays individual channel revenue lines over months to compare growth rates.' : 'Hiển thị đường doanh thu riêng của từng kênh qua các tháng để so sánh tốc độ tăng/giảm giữa các kênh.' },
+    get formula() { return isEn() ? 'Each point = channel revenue in the month' : 'Mỗi điểm = doanh thu kênh trong tháng' },
+    get source() { return isEn() ? 'Dashboard API, monthly revenue by channel' : 'Dashboard API, doanh thu tháng theo kênh' },
   },
   channelGrowth: {
-    title: 'Tỷ trọng và tăng trưởng kênh',
-    description: 'Tóm tắt tỷ trọng doanh thu, mức tăng trưởng, số đơn và ROAS của từng kênh để đánh giá hiệu quả đa kênh.',
-    formula: 'Tăng trưởng = kỳ này so với kỳ trước; ROAS = doanh thu / chi phí QC',
-    source: 'Dashboard API và chi phí quảng cáo',
+    get title() { return isEn() ? 'Channel Share & Growth' : 'Tỷ trọng và tăng trưởng kênh' },
+    get description() { return isEn() ? 'Summarizes revenue share, growth rate, order count, and ROAS for each channel to evaluate multi-channel performance.' : 'Tóm tắt tỷ trọng doanh thu, mức tăng trưởng, số đơn và ROAS của từng kênh để đánh giá hiệu quả đa kênh.' },
+    get formula() { return isEn() ? 'Growth = current vs. previous period; ROAS = revenue / ad cost' : 'Tăng trưởng = kỳ này so với kỳ trước; ROAS = doanh thu / chi phí QC' },
+    get source() { return isEn() ? 'Dashboard API and Ad Spend API' : 'Dashboard API và chi phí quảng cáo' },
   },
   customerClv: {
-    title: 'CLV theo phân khúc khách hàng',
-    description: 'Ước tính giá trị vòng đời khách hàng theo từng phân khúc để ưu tiên chăm sóc và giữ chân nhóm có giá trị cao.',
-    formula: 'CLV = giá trị mua trung bình x tần suất mua x thời gian duy trì',
-    source: 'Customers/Dashboard API',
+    get title() { return isEn() ? 'CLV by Customer Segment' : 'CLV theo phân khúc khách hàng' },
+    get description() { return isEn() ? 'Estimates Customer Lifetime Value (CLV) by segment to prioritize retention and care for high-value groups.' : 'Ước tính giá trị vòng đời khách hàng theo từng phân khúc để ưu tiên chăm sóc và giữ chân nhóm có giá trị cao.' },
+    get formula() { return isEn() ? 'CLV = average purchase value x purchase frequency x customer lifespan' : 'CLV = giá trị mua trung bình x tần suất mua x thời gian duy trì' },
+    get source() { return isEn() ? 'Customers/Dashboard API' : 'Customers/Dashboard API' },
   },
   heatmap: {
-    title: 'Heatmap hoạt động khách hàng',
-    description: 'Cho biết thời điểm khách hàng phát sinh đơn hoặc tương tác nhiều nhất theo ngày/giờ, hỗ trợ chọn khung giờ bán hàng và chăm sóc.',
-    formula: 'Mỗi ô = số đơn hoặc lượt hoạt động trong ngày/giờ tương ứng',
-    source: 'Orders/Customers API',
+    get title() { return isEn() ? 'Customer Activity Heatmap' : 'Heatmap hoạt động khách hàng' },
+    get description() { return isEn() ? 'Shows customer purchase or interaction density by day/hour to support timing of sales and outreach.' : 'Cho biết thời điểm khách hàng phát sinh đơn hoặc tương tác nhiều nhất theo ngày/giờ, hỗ trợ chọn khung giờ bán hàng và chăm sóc.' },
+    get formula() { return isEn() ? 'Each cell = number of orders or activities in the corresponding day/hour' : 'Mỗi ô = số đơn hoặc lượt hoạt động trong ngày/giờ tương ứng' },
+    get source() { return isEn() ? 'Orders/Customers API' : 'Orders/Customers API' },
   },
   marketingCombo: {
-    title: 'Hiệu quả Marketing',
-    description: 'So sánh doanh thu, chi phí quảng cáo và hiệu quả theo thời gian để xem chi phí QC có tạo ra doanh thu tương xứng không.',
-    formula: 'ROAS = doanh thu / chi phí QC; ACOS = chi phí QC / doanh thu',
-    source: 'Dashboard API và Ad Spend API',
+    get title() { return isEn() ? 'Marketing Performance' : 'Hiệu quả Marketing' },
+    get description() { return isEn() ? 'Compares revenue, ad spend, and efficiency over time to see if ad costs generate proportional revenue.' : 'So sánh doanh thu, chi phí quảng cáo và hiệu quả theo thời gian để xem chi phí QC có tạo ra doanh thu tương xứng không.' },
+    get formula() { return isEn() ? 'ROAS = revenue / ad cost; ACOS = ad cost / revenue' : 'ROAS = doanh thu / chi phí QC; ACOS = chi phí QC / doanh thu' },
+    get source() { return isEn() ? 'Dashboard API and Ad Spend API' : 'Dashboard API và Ad Spend API' },
   },
   roas: {
-    title: 'ROAS theo kênh',
-    description: 'Đánh giá mỗi kênh quảng cáo tạo ra bao nhiêu doanh thu trên mỗi đồng chi phí.',
-    formula: 'ROAS = doanh thu / chi phí quảng cáo',
-    source: 'Dashboard API và Ad Spend API',
+    get title() { return isEn() ? 'ROAS by Channel' : 'ROAS theo kênh' },
+    get description() { return isEn() ? 'Evaluates how much revenue each advertising channel generates per unit cost.' : 'Đánh giá mỗi kênh quảng cáo tạo ra bao nhiêu doanh thu trên mỗi đồng chi phí.' },
+    get formula() { return isEn() ? 'ROAS = revenue / ad spend' : 'ROAS = doanh thu / chi phí quảng cáo' },
+    get source() { return isEn() ? 'Dashboard API and Ad Spend API' : 'Dashboard API và Ad Spend API' },
   },
   inventoryForecast: {
-    title: 'Tồn kho so với dự báo',
-    description: 'So sánh tồn kho hiện tại với nhu cầu dự báo để nhận biết sản phẩm có nguy cơ thiếu hàng hoặc tồn quá nhiều.',
-    formula: 'Chênh lệch = tồn kho hiện tại - nhu cầu dự báo',
-    source: 'Inventory API và dữ liệu bán hàng',
+    get title() { return isEn() ? 'Stock vs. Forecast' : 'Tồn kho so với dự báo' },
+    get description() { return isEn() ? 'Compares current stock with forecasted demand to identify understock or overstock risks.' : 'So sánh tồn kho hiện tại với nhu cầu dự báo để nhận biết sản phẩm có nguy cơ thiếu hàng hoặc tồn quá nhiều.' },
+    get formula() { return isEn() ? 'Difference = current stock - demand forecast' : 'Chênh lệch = tồn kho hiện tại - nhu cầu dự báo' },
+    get source() { return isEn() ? 'Inventory API and sales data' : 'Inventory API và dữ liệu bán hàng' },
   },
   returnRate: {
-    title: 'Tỷ lệ hoàn/hủy theo kênh',
-    description: 'Theo dõi tỷ lệ đơn hoàn hoặc hủy ở từng kênh để phát hiện vấn đề về vận hành, chất lượng sản phẩm hoặc kỳ vọng khách hàng.',
-    formula: 'Tỷ lệ = số đơn hoàn/hủy / tổng số đơn của kênh',
-    source: 'Orders API',
+    get title() { return isEn() ? 'Return/Cancellation Rate by Channel' : 'Tỷ lệ hoàn/hủy theo kênh' },
+    get description() { return isEn() ? 'Monitors return or cancellation rates across channels to detect operational or product quality issues.' : 'Theo dõi tỷ lệ đơn hoàn hoặc hủy ở từng kênh để phát hiện vấn đề về vận hành, chất lượng sản phẩm hoặc kỳ vọng khách hàng.' },
+    get formula() { return isEn() ? 'Rate = returned/cancelled orders / total channel orders' : 'Tỷ lệ = số đơn hoàn/hủy / tổng số đơn của kênh' },
+    get source() { return isEn() ? 'Orders API' : 'Orders API' },
   },
 }
 
@@ -670,7 +675,7 @@ function AiInsightsCard({ insights = null, loading = false, autoRecs = null }) {
 
 // ── Tab: 1 — Overview ─────────────────────────────────────────────────────────
 function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd = {}, wl = {}, dateRange = {}, leaderboardKey = 'leaderboard' }) {
-  const { t }  = useTranslation()
+  const { t, i18n }  = useTranslation()
   const kpi    = data.kpi
 
   // Drill-down state (click biểu đồ doanh thu theo ngày / click kênh)
@@ -713,12 +718,12 @@ function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd 
   }
 
   const drillCols = [
-    { key: 'orderId',     label: 'Mã đơn' },
-    { key: 'date',        label: 'Ngày' },
-    { key: 'channel',     label: 'Kênh' },
-    { key: 'productName', label: 'Sản phẩm' },
-    { key: 'qty',         label: 'SL' },
-    { key: 'revenue',     label: 'Doanh thu', render: v => Number(v).toLocaleString('vi-VN') + ' ₫' },
+    { key: 'orderId',     label: t('common.orderId', 'Mã đơn') },
+    { key: 'date',        label: t('common.date', 'Ngày') },
+    { key: 'channel',     label: t('common.channel', 'Kênh') },
+    { key: 'productName', label: t('common.product', 'Sản phẩm') },
+    { key: 'qty',         label: t('common.qty', 'SL') },
+    { key: 'revenue',     label: t('common.revenue', 'Doanh thu'), render: v => Number(v).toLocaleString(i18n.language === 'en' ? 'en-US' : 'vi-VN') + ' ₫' },
   ]
   const sp     = data.sparklines || {}
   const lbData       = wd[leaderboardKey] ?? wd.leaderboard ?? null
@@ -765,11 +770,13 @@ function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd 
   const leaderboardSections = (() => {
     const firstEntry = entries => Array.isArray(entries) && entries.length > 0 ? entries[0] : null
     const asMoney = value => Number(value ?? 0)
+    const currentLang = i18n.language || 'vi'
     const makeSection = (key, label, options = {}) => {
       const entry = firstEntry(lbData?.[key]?.entries)
       if (!entry) return null
       const value = asMoney(entry.value ?? entry.revenue ?? entry.total_revenue)
       const activity = entry.orders ?? entry.activity_count
+      const fmtLang = currentLang === 'en' ? 'en-US' : 'vi-VN'
       return {
         label,
         name: key === 'channel'
@@ -777,21 +784,22 @@ function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd 
           : (entry.name ?? entry.product_name ?? entry.channel ?? '—'),
         value,
         valueLabel: options.valueLabel?.(entry, value) ?? fmtMoneyExact(value),
-        meta: options.meta?.(entry) ?? (activity != null ? `${Number(activity).toLocaleString('vi-VN')} đơn` : ''),
+        meta: options.meta?.(entry) ?? (activity != null ? `${Number(activity).toLocaleString(fmtLang)} ${t('dashboard.leaderboard.ordersCount', 'đơn')}` : ''),
       }
     }
 
+    const fmtLang = currentLang === 'en' ? 'en-US' : 'vi-VN'
     return [
-      makeSection('product', 'Sản phẩm'),
-      makeSection('customer', 'Khách hàng'),
-      makeSection('channel', 'Kênh bán'),
-      makeSection('staff', 'NV bán hàng'),
-      makeSection('staff_warehouse', 'NV kho', {
-        valueLabel: (_, value) => Number(value).toLocaleString('vi-VN'),
-        meta: entry => entry.orders != null ? `${Number(entry.orders).toLocaleString('vi-VN')} thao tác` : '',
+      makeSection('product', t('dashboard.leaderboard.product', 'Sản phẩm')),
+      makeSection('customer', t('dashboard.leaderboard.customer', 'Khách hàng')),
+      makeSection('channel', t('dashboard.leaderboard.channel', 'Kênh bán')),
+      makeSection('staff', t('dashboard.leaderboard.salesStaff', 'NV bán hàng')),
+      makeSection('staff_warehouse', t('dashboard.leaderboard.warehouseStaff', 'NV kho'), {
+        valueLabel: (_, value) => Number(value).toLocaleString(fmtLang),
+        meta: entry => entry.orders != null ? `${Number(entry.orders).toLocaleString(fmtLang)} ${t('dashboard.leaderboard.actionsCount', 'thao tác')}` : '',
       }),
-      makeSection('staff_marketing', 'NV marketing', {
-        meta: entry => entry.orders != null ? `${Number(entry.orders).toLocaleString('vi-VN')} dòng QC` : '',
+      makeSection('staff_marketing', t('dashboard.leaderboard.marketingStaff', 'NV marketing'), {
+        meta: entry => entry.orders != null ? `${Number(entry.orders).toLocaleString(fmtLang)} ${t('dashboard.leaderboard.adsCount', 'dòng QC')}` : '',
       }),
     ].filter(Boolean)
   })()
@@ -829,7 +837,7 @@ function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd 
         />
         <KpiCard compact
           label={t('dashboard.kpi.orders')}
-          value={kpi.totalOrders.toLocaleString('vi-VN')}
+          value={kpi.totalOrders.toLocaleString(i18n.language === 'en' ? 'en-US' : 'vi-VN')}
           trend={kpi.ordersGrowthPct}
           trendLabel={t('dashboard.compare')}
           icon="shopping_cart"
@@ -844,8 +852,8 @@ function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd 
           helpDef={KPI_DEFINITIONS.aov}
         />
         <KpiCard compact
-          label="Khách mới"
-          value={kpi.newCustomers.toLocaleString('vi-VN')}
+          label={t('dashboard.kpi.newCustomers', 'Khách mới')}
+          value={kpi.newCustomers.toLocaleString(i18n.language === 'en' ? 'en-US' : 'vi-VN')}
           trend={kpi.customersGrowthPct}
           trendLabel={t('dashboard.compare')}
           icon="person_add"
@@ -856,24 +864,24 @@ function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd 
           label={t('dashboard.kpi.profit')}
           value={fmtMoneyExact(kpi.totalProfit)}
           trend={parseFloat(grossMarginPct)}
-          trendLabel="biên LN"
+          trendLabel={t('dashboard.kpi.marginLabel', 'biên LN')}
           icon="percent"
           color="#8B5CF6"
           valueColor={kpi.totalProfit >= 0 ? 'var(--profit-positive)' : 'var(--profit-negative)'}
           helpDef={KPI_DEFINITIONS.grossProfit}
         />
         <KpiCard compact
-          label="LN vận hành"
+          label={t('dashboard.kpi.operatingProfit', 'LN vận hành')}
           value={opProfit != null ? fmtMoneyExact(opProfit) : (financeLoading ? '...' : '—')}
           icon="account_balance_wallet"
           color="#6366F1"
           valueColor={opProfit != null ? (opProfit >= 0 ? 'var(--profit-positive)' : 'var(--profit-negative)') : undefined}
           helpDef={KPI_DEFINITIONS.operatingProfit}
           unavailable={opProfit == null && !financeLoading}
-          placeholderText={opProfit == null && !financeLoading ? 'Trang Tài chính' : undefined}
+          placeholderText={opProfit == null && !financeLoading ? t('dashboard.kpi.placeholderFinance', 'Trang Tài chính') : undefined}
         />
         <KpiCard compact
-          label="ROAS"
+          label={t('dashboard.kpi.roas', 'ROAS')}
           value={avgRoasVal != null ? `${avgRoasVal}×` : '—'}
           icon="ads_click"
           color="#10B981"
@@ -882,10 +890,10 @@ function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd 
             : undefined}
           helpDef={KPI_DEFINITIONS.roas}
           unavailable={avgRoasVal == null}
-          placeholderText={avgRoasVal == null ? 'Nhập chi phí QC' : undefined}
+          placeholderText={avgRoasVal == null ? t('dashboard.kpi.placeholderAdSpend', 'Nhập chi phí QC') : undefined}
         />
         <KpiCard compact
-          label="ACOS"
+          label={t('dashboard.kpi.acos', 'ACOS')}
           value={acosVal != null ? `${acosVal}%` : '—'}
           icon="savings"
           color="#EC4899"
@@ -894,7 +902,7 @@ function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd 
             : undefined}
           helpDef={KPI_DEFINITIONS.acos}
           unavailable={acosVal == null}
-          placeholderText={acosVal == null ? 'Nhập chi phí QC' : undefined}
+          placeholderText={acosVal == null ? t('dashboard.kpi.placeholderAdSpend', 'Nhập chi phí QC') : undefined}
         />
       </div>
 
@@ -1010,7 +1018,7 @@ function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd 
         </div>
 
       {/* ── Leaderboard mini-widget ── */}
-      <MiniWidget title="Bảng xếp hạng hiệu suất" icon="leaderboard" href="/leaderboard" loading={lbLoading}>
+      <MiniWidget title={t('dashboard.leaderboardTitle', 'Bảng xếp hạng hiệu suất')} icon="leaderboard" href="/leaderboard" loading={lbLoading}>
         {leaderboardSections.length > 0 ? (
           <div className="space-y-1.5">
             {leaderboardSections.map((p, i) => (
@@ -1032,7 +1040,7 @@ function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd 
             ))}
           </div>
         ) : (
-          <p className="text-xs text-center py-2" style={{ color: 'var(--text-tertiary)' }}>Chưa có dữ liệu</p>
+          <p className="text-xs text-center py-2" style={{ color: 'var(--text-tertiary)' }}>{t('common.noData', 'Chưa có dữ liệu')}</p>
         )}
       </MiniWidget>
       </div>
@@ -1118,12 +1126,12 @@ function TabSales({ data, compareMode = false, prevData = null, from, to }) {
   }
 
   const funnelCols = [
-    { key: 'orderId',     label: 'Mã đơn' },
-    { key: 'date',        label: 'Ngày' },
-    { key: 'channel',     label: 'Kênh' },
-    { key: 'productName', label: 'Sản phẩm' },
-    { key: 'qty',         label: 'SL' },
-    { key: 'revenue',     label: 'Doanh thu', render: v => Number(v).toLocaleString('vi-VN') + ' ₫' },
+    { key: 'orderId',     label: t('common.orderId', 'Mã đơn') },
+    { key: 'date',        label: t('common.date', 'Ngày') },
+    { key: 'channel',     label: t('common.channel', 'Kênh') },
+    { key: 'productName', label: t('common.product', 'Sản phẩm') },
+    { key: 'qty',         label: t('common.qty', 'SL') },
+    { key: 'revenue',     label: t('common.revenue', 'Doanh thu'), render: v => Number(v).toLocaleString(i18n.language === 'en' ? 'en-US' : 'vi-VN') + ' ₫' },
   ]
   const funnelSummary = (() => {
     const stages = data.funnel ?? []
@@ -1235,49 +1243,50 @@ function TabSales({ data, compareMode = false, prevData = null, from, to }) {
     return { rows }
   })()
   const channelTopSortOptions = [
-    { value: 'revenue', label: 'Doanh thu' },
-    { value: 'quantitySold', label: 'SL bán' },
-    { value: 'orders', label: 'Số đơn' },
-    { value: 'grossProfit', label: 'LN gộp' },
-    { value: 'marginPct', label: 'Biên LN' },
+    { value: 'revenue', label: t('dashboard.colRevenue', 'Doanh thu') },
+    { value: 'quantitySold', label: t('dashboard.sales.qtySold', 'SL bán') },
+    { value: 'orders', label: t('dashboard.colOrders', 'Số đơn') },
+    { value: 'grossProfit', label: t('dashboard.kpi.profit', 'LN gộp') },
+    { value: 'marginPct', label: t('dashboard.kpi.marginLabel', 'Biên LN') },
   ]
-  const channelTopSortLabel = channelTopSortOptions.find(opt => opt.value === channelTopSort)?.label ?? 'Doanh thu'
+  const channelTopSortLabel = channelTopSortOptions.find(opt => opt.value === channelTopSort)?.label ?? t('dashboard.colRevenue', 'Doanh thu')
 
   function ChannelTopTooltip({ active, payload }) {
     if (!active || !payload?.length) return null
     const row = payload[0].payload
+    const fmtLang = i18n.language === 'en' ? 'en-US' : 'vi-VN'
     return (
       <div className="lcard px-3 py-2" style={{ boxShadow: 'var(--shadow-md)', minWidth: 240 }}>
         <p className="text-xs font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>
-          {row.channelName} · Top {row.rank} theo {channelTopSortLabel}
+          {row.channelName} · Top {row.rank} {t('dashboard.sales.by', 'theo')} {channelTopSortLabel}
         </p>
         <p className="text-[11px] mb-2 max-w-[280px]" style={{ color: 'var(--text-secondary)' }}>
           {row.productName}
         </p>
         <div className="space-y-1 text-[11px] font-mono">
           <div className="flex justify-between gap-4">
-            <span style={{ color: 'var(--text-tertiary)' }}>Doanh thu</span>
+            <span style={{ color: 'var(--text-tertiary)' }}>{t('dashboard.colRevenue', 'Doanh thu')}</span>
             <span style={{ color: 'var(--text-primary)' }}>{fmtMoneyExact(row.revenue)}</span>
           </div>
           <div className="flex justify-between gap-4">
-            <span style={{ color: 'var(--text-tertiary)' }}>LN gộp</span>
+            <span style={{ color: 'var(--text-tertiary)' }}>{t('dashboard.kpi.profit', 'LN gộp')}</span>
             <span style={{ color: row.grossProfit >= 0 ? 'var(--profit-positive)' : 'var(--profit-negative)' }}>
               {fmtMoneyExact(row.grossProfit)}
             </span>
           </div>
           <div className="flex justify-between gap-4">
-            <span style={{ color: 'var(--text-tertiary)' }}>Biên LN</span>
+            <span style={{ color: 'var(--text-tertiary)' }}>{t('dashboard.kpi.marginLabel', 'Biên LN')}</span>
             <span style={{ color: row.marginPct >= 0 ? 'var(--profit-positive)' : 'var(--profit-negative)' }}>
               {row.marginPct.toFixed(1)}%
             </span>
           </div>
           <div className="flex justify-between gap-4">
-            <span style={{ color: 'var(--text-tertiary)' }}>Số đơn</span>
-            <span style={{ color: 'var(--text-primary)' }}>{row.orders.toLocaleString('vi-VN')}</span>
+            <span style={{ color: 'var(--text-tertiary)' }}>{t('dashboard.colOrders', 'Số đơn')}</span>
+            <span style={{ color: 'var(--text-primary)' }}>{row.orders.toLocaleString(fmtLang)}</span>
           </div>
           <div className="flex justify-between gap-4">
-            <span style={{ color: 'var(--text-tertiary)' }}>SL bán</span>
-            <span style={{ color: 'var(--text-primary)' }}>{row.quantitySold.toLocaleString('vi-VN')}</span>
+            <span style={{ color: 'var(--text-tertiary)' }}>{t('dashboard.sales.qtySold', 'SL bán')}</span>
+            <span style={{ color: 'var(--text-primary)' }}>{row.quantitySold.toLocaleString(fmtLang)}</span>
           </div>
         </div>
       </div>
@@ -1331,12 +1340,12 @@ function TabSales({ data, compareMode = false, prevData = null, from, to }) {
   }
 
   const drillColumns = [
-    { key: 'orderId',     label: 'Mã đơn' },
-    { key: 'date',        label: 'Ngày' },
-    { key: 'channel',     label: 'Kênh' },
-    { key: 'productName', label: 'Sản phẩm' },
-    { key: 'qty',         label: 'SL' },
-    { key: 'revenue',     label: 'Doanh thu', render: v => Number(v).toLocaleString('vi-VN') + ' ₫' },
+    { key: 'orderId',     label: t('common.orderId', 'Mã đơn') },
+    { key: 'date',        label: t('common.date', 'Ngày') },
+    { key: 'channel',     label: t('common.channel', 'Kênh') },
+    { key: 'productName', label: t('common.product', 'Sản phẩm') },
+    { key: 'qty',         label: t('common.qty', 'SL') },
+    { key: 'revenue',     label: t('common.revenue', 'Doanh thu'), render: v => Number(v).toLocaleString(i18n.language === 'en' ? 'en-US' : 'vi-VN') + ' ₫' },
   ]
 
   return (
@@ -1345,9 +1354,9 @@ function TabSales({ data, compareMode = false, prevData = null, from, to }) {
       <div className="lcard p-5">
         {/* Biểu đồ Pareto */}
         <div>
-          <SectionTitle tooltip={CHART_TOOLTIPS.paretoProducts}>Biểu đồ Pareto — Top sản phẩm</SectionTitle>
+          <SectionTitle tooltip={CHART_TOOLTIPS.paretoProducts}>{t('dashboard.chart.paretoProducts', 'Biểu đồ Pareto — Top sản phẩm')}</SectionTitle>
           <p className="text-caption mb-3" style={{ color: 'var(--text-tertiary)' }}>
-            Click vào cột để xem chi tiết đơn hàng
+            {t('dashboard.sales.clickBarToViewDetails', 'Click vào cột để xem chi tiết đơn hàng')}
           </p>
           <ResponsiveContainer width="100%" height={340}>
             <ComposedChart data={paretoData} margin={{ top: 20, right: 40, left: 0, bottom: 66 }}>
@@ -1402,17 +1411,17 @@ function TabSales({ data, compareMode = false, prevData = null, from, to }) {
       {/* Top sản phẩm theo kênh */}
       <div className="lcard p-5">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-          <SectionTitle tooltip={CHART_TOOLTIPS.productsByChannel} className="!mb-0">Top sản phẩm theo kênh</SectionTitle>
+          <SectionTitle tooltip={CHART_TOOLTIPS.productsByChannel} className="!mb-0">{t('dashboard.chart.productsByChannel', 'Top sản phẩm theo kênh')}</SectionTitle>
           <div className="flex flex-wrap items-center gap-2">
             <select
               value={channelTopSort}
               onChange={(e) => setChannelTopSort(e.target.value)}
               className="linput text-xs !h-8 !py-0"
               style={{ minWidth: 132 }}
-              title="Chọn tiêu chí xếp hạng top sản phẩm"
+              title={t('dashboard.sales.rankCriteria', 'Chọn tiêu chí xếp hạng top sản phẩm')}
             >
               {channelTopSortOptions.map(opt => (
-                <option key={opt.value} value={opt.value}>Theo {opt.label}</option>
+                <option key={opt.value} value={opt.value}>{t('dashboard.sales.by', 'Theo')} {opt.label}</option>
               ))}
             </select>
             <div className="inline-flex rounded-lg p-1" style={{ background: 'var(--bg-elevated)' }}>
@@ -1460,7 +1469,7 @@ function TabSales({ data, compareMode = false, prevData = null, from, to }) {
 
       {/* Phễu xử lý đơn hàng (PENDING → DELIVERED) */}
       <div className="lcard p-5">
-        <SectionTitle tooltip={CHART_TOOLTIPS.orderFunnel}>Phễu xử lý đơn hàng</SectionTitle>
+        <SectionTitle tooltip={CHART_TOOLTIPS.orderFunnel}>{t('dashboard.chart.orderFunnel', 'Phễu xử lý đơn hàng')}</SectionTitle>
         <p className="text-caption mb-3" style={{ color: 'var(--text-tertiary)' }}>
           Theo dõi đơn rơi ở bước nào trong quy trình xử lý — click vào từng bước để xem danh sách đơn
         </p>
@@ -1657,7 +1666,7 @@ function TabMultiChannel({ data, compareMode = false, prevData = null, wd = {}, 
           <div className="grid grid-cols-12 gap-4">
             {/* Line chart: xu hướng riêng từng kênh theo tháng */}
             <div className="lcard p-5 col-span-12 lg:col-span-7">
-              <SectionTitle tooltip={CHART_TOOLTIPS.channelTrend}>Xu hướng doanh thu từng kênh theo tháng</SectionTitle>
+              <SectionTitle tooltip={CHART_TOOLTIPS.channelTrend}>{t('dashboard.chart.channelTrend', 'Xu hướng doanh thu từng kênh theo tháng')}</SectionTitle>
               <p className="text-caption mb-3" style={{ color: 'var(--text-tertiary)' }}>
                 Mỗi đường = 1 kênh · Theo dõi tốc độ tăng trưởng riêng từng kênh
               </p>
@@ -1683,7 +1692,7 @@ function TabMultiChannel({ data, compareMode = false, prevData = null, wd = {}, 
 
             {/* Scorecard tỷ trọng kênh — không có ROAS (thuộc Marketing tab) */}
             <div className="lcard p-5 col-span-12 lg:col-span-5">
-              <SectionTitle tooltip={CHART_TOOLTIPS.channelGrowth}>Tỷ trọng & tăng trưởng kênh</SectionTitle>
+              <SectionTitle tooltip={CHART_TOOLTIPS.channelGrowth}>{t('dashboard.chart.channelGrowth', 'Tỷ trọng & tăng trưởng kênh')}</SectionTitle>
               <div className="space-y-3 mt-2">
                 {[...chData].sort((a, b) => b.revenue - a.revenue).map((ch, idx) => {
                   const growthUp = ch.growth >= 0
@@ -1727,12 +1736,19 @@ function TabMultiChannel({ data, compareMode = false, prevData = null, wd = {}, 
 
       {/* Bảng so sánh chi tiết theo kênh */}
       <div className="lcard p-5">
-        <SectionTitle>Bảng so sánh chi tiết theo kênh</SectionTitle>
+        <SectionTitle>{t('dashboard.channelComparisonTable', 'Bảng so sánh chi tiết theo kênh')}</SectionTitle>
         <div className="overflow-x-auto">
             <table className="w-full text-caption border-collapse">
               <thead>
                 <tr style={{ borderBottom: '2px solid var(--border)' }}>
-                  {['Kênh','Doanh thu','Tăng trưởng%','ROAS','Số đơn','Tỷ trọng%'].map(h => (
+                  {[
+                    t('common.channel', 'Kênh'),
+                    t('common.revenue', 'Doanh thu'),
+                    t('dashboard.growthPct', 'Tăng trưởng%'),
+                    'ROAS',
+                    t('dashboard.orders', 'Số đơn'),
+                    t('dashboard.revenuePct', 'Tỷ trọng%')
+                  ].map(h => (
                     <th key={h} className="text-right py-2 px-3 font-semibold first:text-left" style={{ color: 'var(--text-tertiary)' }}>{h}</th>
                   ))}
                 </tr>
@@ -2594,7 +2610,7 @@ function TabInventory({ data, compareMode = false, prevData = null, wd = {}, wl 
 
       {/* Biểu đồ tồn kho vs Dự báo với nhãn % chênh lệch */}
       <div className="lcard p-5">
-        <SectionTitle tooltip={CHART_TOOLTIPS.inventoryForecast}>{t('dashboard.chart.inventory')} — Tồn kho vs Dự báo</SectionTitle>
+        <SectionTitle tooltip={CHART_TOOLTIPS.inventoryForecast}>{t('dashboard.chart.stockVsForecast', 'Tồn kho vs Dự báo')}</SectionTitle>
         <p className="text-caption mb-3" style={{ color: 'var(--text-tertiary)' }}>
           Nhãn trên cột thể hiện % chênh lệch thực tế so với dự báo
         </p>

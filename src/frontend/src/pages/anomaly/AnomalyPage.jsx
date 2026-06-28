@@ -3,8 +3,9 @@ import { useTranslation } from 'react-i18next'
 import AiEmptyState from '../../components/ui/AiEmptyState'
 import InfoTooltip from '../../components/ui/InfoTooltip'
 import { MT } from '../../constants/metricTooltips'
-import { getAnomaly } from '../../api/aiApi'
+import { getAnomaly, getAnomalyRootCause } from '../../api/aiApi'
 import { fmtMoneyExact } from '../../utils/format'
+import DetailDrawer from '../../components/ui/DetailDrawer'
 
 const SEVERITY_COLOR = {
   high:   { bg: 'rgba(239,68,68,0.10)',   border: 'rgba(239,68,68,0.30)',   text: '#EF4444',  dot: '#EF4444'  },
@@ -44,12 +45,45 @@ function ZBar({ z }) {
   )
 }
 
+function renderFormattedText(text) {
+  if (!text) return null
+  const parts = text.split('**')
+  return parts.map((part, i) => {
+    if (i % 2 === 1) {
+      return <strong key={i} className="font-semibold">{part}</strong>
+    }
+    return part
+  })
+}
+
+function cleanChannelName(name) {
+  if (!name) return ''
+  return name.replace(/\s*Phú\s+Thịnh/gi, '')
+}
+
 export default function AnomalyPage() {
   const { t } = useTranslation()
   const [days,    setDays]    = useState(90)
   const [channel, setChannel] = useState('all')
   const [data,        setData]        = useState(null)
   const [loading,     setLoading]     = useState(true)
+
+  const [selectedDate, setSelectedDate] = useState(null)
+  const [rcaData,      setRcaData]      = useState(null)
+  const [rcaLoading,   setRcaLoading]   = useState(false)
+
+  // Tải dữ liệu RCA tự động khi chọn ngày
+  useEffect(() => {
+    if (!selectedDate) {
+      setRcaData(null)
+      return
+    }
+    setRcaLoading(true)
+    getAnomalyRootCause(selectedDate)
+      .then(res => setRcaData(res))
+      .catch(() => setRcaData(null))
+      .finally(() => setRcaLoading(false))
+  }, [selectedDate])
 
   const fetchData = async () => {
     setLoading(true)
@@ -212,6 +246,7 @@ export default function AnomalyPage() {
                         { h: t('anomaly.value'),    tip: MT.netRevenue },
                         { h: t('anomaly.zscore'),   tip: MT.zScore    },
                         { h: t('common.severity'),  tip: MT.anomaly   },
+                        { h: 'Thao tác',            tip: null         },
                       ].map(({ h, tip }) => (
                         <th key={h} className="text-left px-5 py-3 text-xs font-semibold tracking-wide"
                             style={{ color: 'var(--text-tertiary)' }}>
@@ -227,9 +262,10 @@ export default function AnomalyPage() {
                       <tr
                         key={i}
                         className="transition-colors"
-                        style={{ borderBottom: '1px solid var(--border)' }}
+                        style={{ borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
                         onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
                         onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                        onClick={() => setSelectedDate(a.date)}
                       >
                         <td className="px-5 py-3 font-mono text-xs" style={{ color: 'var(--text-primary)' }}>
                           {a.date}
@@ -239,7 +275,7 @@ export default function AnomalyPage() {
                             className="px-2 py-0.5 rounded-full text-xs font-medium capitalize"
                             style={{ background: 'var(--bg-elevated)', color: 'var(--text-secondary)' }}
                           >
-                            {a.channel}
+                            {cleanChannelName(a.channel)}
                           </span>
                         </td>
                         <td className="px-5 py-3 font-mono text-xs" style={{ color: 'var(--text-primary)' }}>
@@ -251,6 +287,18 @@ export default function AnomalyPage() {
                         <td className="px-5 py-3">
                           <SeverityBadge level={a.severity} />
                         </td>
+                        <td className="px-5 py-3">
+                          <button
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all"
+                            style={{ borderColor: 'rgba(99,102,241,0.35)', color: 'var(--primary-600)', background: 'rgba(99,102,241,0.06)', cursor: 'pointer' }}
+                            onMouseEnter={e => { e.currentTarget.style.background='var(--primary-500)'; e.currentTarget.style.color='white' }}
+                            onMouseLeave={e => { e.currentTarget.style.background='rgba(99,102,241,0.06)'; e.currentTarget.style.color='var(--primary-600)' }}
+                            onClick={(e) => { e.stopPropagation(); setSelectedDate(a.date) }}
+                          >
+                            <span className="icon" style={{ fontSize: 13 }}>analytics</span>
+                            Phân tích
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -260,6 +308,134 @@ export default function AnomalyPage() {
           )}
         </>
       )}
+
+      {/* Drawer trượt phân tích nguyên nhân gốc rễ */}
+      <DetailDrawer
+        open={!!selectedDate}
+        onClose={() => setSelectedDate(null)}
+        title="Phân tích nguyên nhân gốc rễ"
+        subtitle={`Ngày phát hiện bất thường: ${selectedDate}`}
+        width={560}
+      >
+        {rcaLoading ? (
+          <div className="flex flex-col items-center justify-center py-20 gap-3 text-sm" style={{ color: 'var(--text-tertiary)' }}>
+            <span className="w-7 h-7 border-2 rounded-full"
+                  style={{ borderColor: 'var(--border)', borderTopColor: 'var(--primary-500)', animation: 'spin 0.7s linear infinite' }} />
+            <span>Đang truy vấn dữ liệu & phân tích...</span>
+          </div>
+        ) : !rcaData ? (
+          <div className="py-10 text-center text-sm" style={{ color: 'var(--text-tertiary)' }}>
+            Không thể tải dữ liệu phân tích nguyên nhân cho ngày {selectedDate}.
+          </div>
+        ) : (
+          <div className="p-5 space-y-6 overflow-y-auto flex-1">
+            {/* Tóm tắt AI */}
+            <div className="p-4 rounded-xl space-y-2" style={{ background: rcaData.direction === 'HIGH' ? 'rgba(16,185,129,0.06)' : 'rgba(239,68,68,0.06)', border: `1px solid ${rcaData.direction === 'HIGH' ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)'}` }}>
+              <div className="flex items-center gap-1.5 font-bold text-sm" style={{ color: rcaData.direction === 'HIGH' ? '#10B981' : '#EF4444' }}>
+                <span className="icon" style={{ fontSize: 16 }}>{rcaData.direction === 'HIGH' ? 'trending_up' : 'trending_down'}</span>
+                AI Phân Tích
+              </div>
+              <p className="text-sm leading-relaxed" style={{ color: 'var(--text-primary)' }}>
+                {renderFormattedText(rcaData.root_cause_summary)}
+              </p>
+            </div>
+
+            {/* Nguyên nhân khả nghi */}
+            {rcaData.possible_causes?.length > 0 && (
+              <div className="space-y-2">
+                <h4 className="text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--text-tertiary)' }}>Nguyên nhân có thể xảy ra</h4>
+                <ul className="space-y-1.5">
+                  {rcaData.possible_causes.map((c, idx) => (
+                    <li key={idx} className="text-sm flex items-start gap-2" style={{ color: 'var(--text-secondary)' }}>
+                      <span className="icon text-amber-500 shrink-0 mt-0.5" style={{ fontSize: 14 }}>info</span>
+                      {c}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* Đóng góp theo Kênh */}
+            {rcaData.channel_breakdown?.length > 0 && (
+              <div className="space-y-2">
+                <h4 className="text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--text-tertiary)' }}>Biến động theo Kênh bán hàng</h4>
+                <div className="border rounded-xl overflow-hidden" style={{ borderColor: 'var(--border)' }}>
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr style={{ background: 'var(--bg-elevated)', borderBottom: '1px solid var(--border)' }}>
+                        <th className="text-left px-3 py-2" style={{ color: 'var(--text-tertiary)' }}>Kênh</th>
+                        <th className="text-right px-3 py-2" style={{ color: 'var(--text-tertiary)' }}>Doanh thu</th>
+                        <th className="text-right px-3 py-2" style={{ color: 'var(--text-tertiary)' }}>Biến động</th>
+                        <th className="text-right px-3 py-2" style={{ color: 'var(--text-tertiary)' }}>Đóng góp</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rcaData.channel_breakdown.map((ch, idx) => (
+                        <tr key={idx} style={{ borderBottom: idx < rcaData.channel_breakdown.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                          <td className="px-3 py-2 font-medium" style={{ color: 'var(--text-primary)' }}>{cleanChannelName(ch.channel)}</td>
+                          <td className="px-3 py-2 text-right font-mono" style={{ color: 'var(--text-secondary)' }}>{fmtMoneyExact(ch.revenue)}</td>
+                          <td className="px-3 py-2 text-right font-mono" style={{ color: ch.vs_avg > 0 ? '#10B981' : ch.vs_avg < 0 ? '#EF4444' : 'var(--text-tertiary)' }}>
+                            {ch.vs_avg > 0 ? '+' : ''}{ch.vs_avg}%
+                          </td>
+                          <td className="px-3 py-2 text-right font-mono" style={{ color: 'var(--text-secondary)' }}>{ch.contribution}%</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Biến động theo Sản phẩm */}
+            {rcaData.product_breakdown?.length > 0 && (
+              <div className="space-y-2">
+                <h4 className="text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--text-tertiary)' }}>Top sản phẩm biến động doanh số</h4>
+                <div className="border rounded-xl overflow-hidden" style={{ borderColor: 'var(--border)' }}>
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr style={{ background: 'var(--bg-elevated)', borderBottom: '1px solid var(--border)' }}>
+                        <th className="text-left px-3 py-2" style={{ color: 'var(--text-tertiary)' }}>Sản phẩm</th>
+                        <th className="text-right px-3 py-2" style={{ color: 'var(--text-tertiary)' }}>Doanh thu</th>
+                        <th className="text-right px-3 py-2" style={{ color: 'var(--text-tertiary)' }}>Số lượng</th>
+                        <th className="text-right px-3 py-2" style={{ color: 'var(--text-tertiary)' }}>So với TB</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rcaData.product_breakdown.map((prod, idx) => (
+                        <tr key={idx} style={{ borderBottom: idx < rcaData.product_breakdown.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                          <td className="px-3 py-2 font-medium truncate max-w-[200px]" style={{ color: 'var(--text-primary)' }} title={prod.product_name}>{prod.product_name}</td>
+                          <td className="px-3 py-2 text-right font-mono" style={{ color: 'var(--text-secondary)' }}>{fmtMoneyExact(prod.revenue)}</td>
+                          <td className="px-3 py-2 text-right font-mono" style={{ color: 'var(--text-secondary)' }}>{prod.qty_sold}</td>
+                          <td className="px-3 py-2 text-right font-mono" style={{ color: prod.vs_avg > 0 ? '#10B981' : prod.vs_avg < 0 ? '#EF4444' : 'var(--text-tertiary)' }}>
+                            {prod.vs_avg > 0 ? '+' : ''}{prod.vs_avg}%
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Khuyến nghị hành động */}
+            {rcaData.actions?.length > 0 && (
+              <div className="space-y-2 pt-3" style={{ borderTop: '1px solid var(--border)' }}>
+                <h4 className="text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--text-tertiary)' }}>Hành động khuyến nghị</h4>
+                <div className="flex flex-col gap-2">
+                  {rcaData.actions.map((act, idx) => (
+                    <div key={idx} className="flex items-start gap-2.5 p-3 rounded-lg border text-sm" style={{ background: 'var(--bg-elevated)', borderColor: 'var(--border)' }}>
+                      <span className="icon text-indigo-500 shrink-0 mt-0.5" style={{ fontSize: 16 }}>lightbulb</span>
+                      <div className="flex-1 text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+                        {act}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </DetailDrawer>
     </div>
   )
 }

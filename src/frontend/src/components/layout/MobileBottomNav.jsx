@@ -1,16 +1,18 @@
 import { NavLink } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
+import { useTranslation } from 'react-i18next'
 
 const NAV = [
-  { href: '/dashboard',  icon: 'dashboard',    label: 'Home' },
-  { href: '/orders',     icon: 'receipt_long', label: 'Bán hàng' },
-  { href: '/forecast',   icon: 'trending_up',  label: 'AI' },
-  { href: '/report',     icon: 'picture_as_pdf', label: 'Báo cáo' },
-  { href: '/settings',   icon: 'settings',     label: 'Cài đặt' },
+  { href: '/dashboard',  icon: 'dashboard',    key: 'nav.dashboard', defaultLabel: 'Home' },
+  { href: '/orders',     icon: 'receipt_long', key: 'nav.sales',     defaultLabel: 'Bán hàng' },
+  { href: '/forecast',   icon: 'trending_up',  key: 'nav.aiShort',   defaultLabel: 'AI' },
+  { href: '/report',     icon: 'picture_as_pdf', key: 'nav.report',    defaultLabel: 'Báo cáo' },
+  { href: '/settings',   icon: 'settings',     key: 'nav.settings',  defaultLabel: 'Cài đặt' },
 ]
 
 export default function MobileBottomNav() {
   const { user } = useAuth()
+  const { t } = useTranslation()
   const role = user?.role ?? ''
 
   const visible = NAV.filter(item => {
@@ -46,7 +48,7 @@ export default function MobileBottomNav() {
                 className="text-[10px]"
                 style={{ color: isActive ? 'var(--primary-500)' : 'var(--text-tertiary)' }}
               >
-                {item.label}
+                {t(item.key, item.defaultLabel)}
               </span>
             </>
           )}

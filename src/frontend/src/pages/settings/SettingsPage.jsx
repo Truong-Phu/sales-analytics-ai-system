@@ -11,6 +11,7 @@ import ConfirmDialog from '../../components/ui/ConfirmDialog'
 const PWD_WARNING_KEY = 'msas_pwd_warning_dismissed'
 
 function PasswordWarningBanner() {
+  const { t } = useTranslation()
   const [dismissed, setDismissed] = useState(
     () => localStorage.getItem(PWD_WARNING_KEY) === 'true'
   )
@@ -23,22 +24,22 @@ function PasswordWarningBanner() {
       <span className="icon shrink-0 mt-0.5" style={{ fontSize: 20, color: '#D97706' }}>warning</span>
       <div className="flex-1 min-w-0">
         <p className="text-sm font-semibold" style={{ color: '#92400E' }}>
-          Bạn đang dùng mật khẩu mặc định
+          {t('settings.defaultPasswordWarning')}
         </p>
         <p className="text-xs mt-0.5" style={{ color: '#B45309' }}>
-          Mật khẩu mặc định <b>12345678</b> không an toàn. Hãy đổi ngay để bảo vệ tài khoản.
+          {t('settings.defaultPasswordWarningDesc')}
         </p>
       </div>
       <div className="flex items-center gap-2 shrink-0">
         <Link to="/change-password"
               className="lbtn lbtn-primary !h-8 !px-3 text-xs">
-          Đổi ngay
+          {t('settings.changeNow')}
         </Link>
         <button
           onClick={() => { localStorage.setItem(PWD_WARNING_KEY, 'true'); setDismissed(true) }}
           className="w-7 h-7 flex items-center justify-center rounded-lg"
           style={{ color: '#B45309' }}
-          title="Bỏ qua">
+          title={t('settings.ignore')}>
           <span className="icon" style={{ fontSize: 16 }}>close</span>
         </button>
       </div>
@@ -60,9 +61,9 @@ function AvatarSection({ user, avatarUrl, onAvatarChange, onContextUpdate }) {
   const handleFile = async e => {
     const file = e.target.files[0]
     if (!file) return
-    if (file.size > 2 * 1024 * 1024) { setUploadErr('Ảnh tối đa 2MB'); return }
+    if (file.size > 2 * 1024 * 1024) { setUploadErr(t('settings.avatarSizeError', 'Ảnh tối đa 2MB')); return }
     const allowed = ['image/png', 'image/jpeg', 'image/webp']
-    if (!allowed.includes(file.type)) { setUploadErr('Chỉ chấp nhận PNG/JPG/WEBP'); return }
+    if (!allowed.includes(file.type)) { setUploadErr(t('settings.avatarTypeError', 'Chỉ chấp nhận PNG/JPG/WEBP')); return }
 
     setUploadErr('')
     // Hiển thị preview ngay
@@ -82,7 +83,7 @@ function AvatarSection({ user, avatarUrl, onAvatarChange, onContextUpdate }) {
       onContextUpdate?.({ avatarUrl: freshAvatarUrl, fullName: profile.data.fullName ?? profile.data.full_name })
       setPreview(null) // xóa blob preview, dùng URL thật từ API
     } catch (err) {
-      setUploadErr(err.response?.data?.message ?? 'Upload thất bại')
+      setUploadErr(err.response?.data?.message ?? t('settings.uploadFailed', 'Upload thất bại'))
       setPreview(null)
     } finally {
       setUploading(false)
@@ -109,7 +110,7 @@ function AvatarSection({ user, avatarUrl, onAvatarChange, onContextUpdate }) {
           <span className="icon icon-sm">upload</span>
           {t('settings.changeAvatar')}
         </button>
-        <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>PNG · JPG · WEBP · Tối đa 2MB</p>
+        <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{t('settings.avatarHint', 'PNG · JPG · WEBP · Tối đa 2MB')}</p>
         {uploadErr && <p className="text-xs" style={{ color: '#EF4444' }}>{uploadErr}</p>}
       </div>
       <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={handleFile} />
@@ -152,7 +153,7 @@ export default function SettingsPage() {
     ...(user?.role === 'Owner'
       ? [{ key: 'subscription', icon: 'workspace_premium', label: t('subscription.title', 'Gói dịch vụ') }]
       : []),
-    { key: 'policy',        icon: 'gavel',            label: 'Điều khoản & Chính sách' },
+    { key: 'policy',        icon: 'gavel',            label: t('settings.policy') },
   ]
 
   const [searchParams] = useSearchParams()
@@ -242,9 +243,10 @@ export default function SettingsPage() {
       // Cập nhật user context để navbar/header hiển thị tên mới ngay
       updateUser({ name: profile.fullName, lang: profile.langPref })
       i18n.changeLanguage(profile.langPref)
+      localStorage.setItem('lang', profile.langPref)
       flash()
     } catch (err) {
-      flash(err.response?.data?.message ?? 'Không thể lưu thông tin. Vui lòng thử lại.')
+      flash(err.response?.data?.message ?? t('settings.saveError', 'Không thể lưu thông tin. Vui lòng thử lại.'))
     }
   }
 
@@ -253,7 +255,7 @@ export default function SettingsPage() {
       await axios.put('/api/users/notification-preferences', notif)
       flash()
     } catch (err) {
-      flash(err.response?.data?.message ?? 'Lỗi lưu tùy chọn thông báo')
+      flash(err.response?.data?.message ?? t('settings.notifSaveError', 'Lỗi lưu tùy chọn thông báo'))
     }
   }
 
@@ -266,7 +268,7 @@ export default function SettingsPage() {
       await axios.post('/api/users/logout-all')
       logout()
     } catch (err) {
-      flash(err.response?.data?.message ?? 'Lỗi đăng xuất')
+      flash(err.response?.data?.message ?? t('settings.logoutError', 'Lỗi đăng xuất'))
     }
   }
 
@@ -274,8 +276,8 @@ export default function SettingsPage() {
     <>
     <ConfirmDialog
       open={logoutConfirmDlg}
-      title="Đăng xuất tất cả thiết bị"
-      message="Bạn sẽ cần đăng nhập lại trên tất cả thiết bị."
+      title={t('settings.logoutAllDevices')}
+      message={t('settings.logoutAllDevicesConfirm')}
       icon="logout"
       danger={false}
       onClose={() => setLogoutConfirmDlg(false)}
@@ -340,7 +342,7 @@ export default function SettingsPage() {
           {/* ── PROFILE ── */}
           {section === 'profile' && (
             <div className="lcard p-5 space-y-5">
-              <h2 className="text-subtitle font-semibold" style={{ color: 'var(--text-primary)' }}>Thông tin tài khoản</h2>
+              <h2 className="text-subtitle font-semibold" style={{ color: 'var(--text-primary)' }}>{t('settings.profileInfo')}</h2>
 
               {/* Avatar */}
               <AvatarSection
@@ -354,10 +356,10 @@ export default function SettingsPage() {
               {/* Form */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {[
-                  { label: 'Họ và tên',  key: 'fullName',  type: 'text',     placeholder: 'Nguyễn Văn A' },
-                  { label: 'Email',      key: 'email',     type: 'email',    placeholder: 'user@example.com', disabled: true },
-                  { label: 'Số điện thoại', key: 'phone', type: 'tel',      placeholder: '09xxxxxxxx' },
-                  { label: 'Ngày sinh',  key: 'birthdate', type: 'date',     placeholder: '' },
+                  { label: t('settings.fullName'),  key: 'fullName',  type: 'text',     placeholder: t('settings.fullNamePlaceholder', 'Nguyễn Văn A') },
+                  { label: t('auth.email', 'Email'),      key: 'email',     type: 'email',    placeholder: 'user@example.com', disabled: true },
+                  { label: t('settings.phoneNumber'), key: 'phone', type: 'tel',      placeholder: t('settings.phonePlaceholder', '09xxxxxxxx') },
+                  { label: t('settings.birthdate'),  key: 'birthdate', type: 'date',     placeholder: '' },
                 ].map(f => (
                   <div key={f.key}>
                     <label className="block text-caption font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>{f.label}</label>
@@ -372,7 +374,7 @@ export default function SettingsPage() {
 
                 {/* Timezone */}
                 <div>
-                  <label className="block text-caption font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>Múi giờ</label>
+                  <label className="block text-caption font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>{t('settings.timezone')}</label>
                   <select value={profile.timezone} onChange={e => setProfile(p => ({ ...p, timezone: e.target.value }))} className="linput text-sm">
                     <option value="Asia/Ho_Chi_Minh">Asia/Ho_Chi_Minh (GMT+7)</option>
                     <option value="Asia/Bangkok">Asia/Bangkok (GMT+7)</option>
@@ -383,7 +385,7 @@ export default function SettingsPage() {
 
                 {/* Language preference */}
                 <div>
-                  <label className="block text-caption font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>Ngôn ngữ mặc định</label>
+                  <label className="block text-caption font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>{t('settings.defaultLanguage')}</label>
                   <select value={profile.langPref} onChange={e => setProfile(p => ({ ...p, langPref: e.target.value }))} className="linput text-sm">
                     <option value="vi">🇻🇳 Tiếng Việt</option>
                     <option value="en">🇺🇸 English</option>
@@ -395,7 +397,7 @@ export default function SettingsPage() {
               <div className="flex items-center gap-3 p-3 rounded-xl" style={{ background: 'var(--bg-elevated)' }}>
                 <span className="icon" style={{ fontSize: 20, color: 'var(--text-tertiary)' }}>badge</span>
                 <div>
-                  <div className="text-caption" style={{ color: 'var(--text-tertiary)' }}>Vai trò hệ thống</div>
+                  <div className="text-caption" style={{ color: 'var(--text-tertiary)' }}>{t('settings.systemRole', 'Vai trò hệ thống')}</div>
                   <div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
                     {t(`admin.roles.${user?.role}`, user?.role)}
                   </div>
@@ -404,7 +406,7 @@ export default function SettingsPage() {
 
               <button onClick={saveProfile} className="lbtn lbtn-primary" style={{ height: 40 }}>
                 <span className="icon icon-sm">save</span>
-                Lưu thông tin
+                {t('settings.saveInfo')}
               </button>
             </div>
           )}
@@ -416,7 +418,7 @@ export default function SettingsPage() {
               <PasswordWarningBanner />
 
               <div className="lcard p-5 space-y-3">
-                <h2 className="text-subtitle font-semibold" style={{ color: 'var(--text-primary)' }}>Bảo mật</h2>
+                <h2 className="text-subtitle font-semibold" style={{ color: 'var(--text-primary)' }}>{t('settings.securityInfo')}</h2>
                 <Link to="/change-password"
                   className="flex items-center justify-between p-4 rounded-xl transition-all border"
                   style={{ borderColor: 'var(--border)', background: 'var(--bg-elevated)' }}
@@ -427,8 +429,8 @@ export default function SettingsPage() {
                     <span className="icon w-9 h-9 flex items-center justify-center rounded-xl"
                       style={{ fontSize: 20, background: 'rgba(99,102,241,0.10)', color: 'var(--primary-500)' }}>lock</span>
                     <div>
-                      <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Đổi mật khẩu</div>
-                      <div className="text-caption" style={{ color: 'var(--text-tertiary)' }}>Thay đổi mật khẩu đăng nhập</div>
+                      <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{t('settings.changePassword')}</div>
+                      <div className="text-caption" style={{ color: 'var(--text-tertiary)' }}>{t('settings.changePasswordDesc')}</div>
                     </div>
                   </div>
                   <span className="icon" style={{ fontSize: 20, color: 'var(--text-tertiary)' }}>chevron_right</span>
@@ -444,8 +446,8 @@ export default function SettingsPage() {
                     <span className="icon w-9 h-9 flex items-center justify-center rounded-xl"
                       style={{ fontSize: 20, background: 'rgba(239,68,68,0.10)', color: 'var(--color-error)' }}>logout</span>
                     <div>
-                      <div className="text-sm font-medium" style={{ color: 'var(--color-error)' }}>Đăng xuất tất cả thiết bị</div>
-                      <div className="text-caption" style={{ color: 'var(--text-tertiary)' }}>Kết thúc tất cả phiên đăng nhập đang hoạt động</div>
+                      <div className="text-sm font-medium" style={{ color: 'var(--color-error)' }}>{t('settings.logoutAllDevices')}</div>
+                      <div className="text-caption" style={{ color: 'var(--text-tertiary)' }}>{t('settings.logoutAllDevicesDesc')}</div>
                     </div>
                   </div>
                   <span className="icon" style={{ fontSize: 20, color: 'var(--text-tertiary)' }}>chevron_right</span>
@@ -454,14 +456,14 @@ export default function SettingsPage() {
 
               {/* Login history */}
               <div className="lcard p-5">
-                <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>Lịch sử đăng nhập gần đây</h3>
+                <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>{t('settings.recentLoginHistory')}</h3>
                 {histLoading ? (
                   <div className="flex justify-center py-6">
                     <span className="w-5 h-5 border-2 rounded-full"
                           style={{ borderColor: 'var(--border-strong)', borderTopColor: 'var(--primary-500)', animation: 'spin 0.8s linear infinite' }} />
                   </div>
                 ) : loginHistory.length === 0 ? (
-                  <p className="text-xs py-4 text-center" style={{ color: 'var(--text-tertiary)' }}>Chưa có lịch sử đăng nhập</p>
+                  <p className="text-xs py-4 text-center" style={{ color: 'var(--text-tertiary)' }}>{t('settings.noLoginHistory')}</p>
                 ) : (
                   <div className="space-y-2">
                     {loginHistory.map((log, i) => (
@@ -475,15 +477,15 @@ export default function SettingsPage() {
                         </span>
                         <div className="flex-1 min-w-0">
                           <div className="text-xs font-mono truncate" style={{ color: 'var(--text-secondary)' }}>
-                            {log.userAgent ?? 'Thiết bị không rõ'}
+                            {log.userAgent ?? t('settings.unknownDevice')}
                           </div>
                           <div className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
-                            IP: {log.ip ?? '—'} · {log.time ? new Date(log.time).toLocaleString('vi-VN') : '—'}
+                            IP: {log.ip ?? '—'} · {log.time ? new Date(log.time).toLocaleString(i18n.language?.startsWith('en') ? 'en-US' : 'vi-VN') : '—'}
                           </div>
                         </div>
                         <span className="text-xs font-medium shrink-0"
                               style={{ color: log.status === 'SUCCESS' ? 'var(--accent-500)' : '#EF4444' }}>
-                          {log.status === 'SUCCESS' ? 'Thành công' : 'Thất bại'}
+                          {log.status === 'SUCCESS' ? t('admin.auditStatus.SUCCESS', 'Thành công') : t('admin.auditStatus.FAILED', 'Thất bại')}
                         </span>
                       </div>
                     ))}
@@ -503,45 +505,45 @@ export default function SettingsPage() {
             const isStaff    = ['Owner','Manager','Staff_Sales','Staff_Warehouse','Staff_Marketing'].includes(role)
             return (
               <div className="lcard p-5 space-y-1">
-                <h2 className="text-subtitle font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>Tùy chọn thông báo</h2>
+                <h2 className="text-subtitle font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>{t('settings.notif.title')}</h2>
                 <p className="text-xs mb-3" style={{ color: 'var(--text-tertiary)' }}>
-                  Tùy chọn được lưu cho tài khoản của bạn. Email chỉ được gửi khi "Nhận thông báo qua email" được bật.
+                  {t('settings.notif.desc')}
                 </p>
 
                 {/* ── Cảnh báo & Phân tích ── */}
                 <p className="text-xs font-semibold uppercase tracking-wide pb-1 pt-2"
-                   style={{ color: 'var(--text-tertiary)' }}>Cảnh báo &amp; Phân tích</p>
-                <NotifToggle label="Nhận thông báo qua email"
-                  desc="Bật/tắt toàn bộ email thông báo từ hệ thống"
+                   style={{ color: 'var(--text-tertiary)' }}>{t('settings.notif.groups.alerts')}</p>
+                <NotifToggle label={t('settings.notif.items.emailNotify')}
+                  desc={t('settings.notif.items.emailNotifyDesc')}
                   value={notif.emailNotify} onChange={v => setNotif(n => ({ ...n, emailNotify: v }))} />
                 {isManager && (
-                  <NotifToggle label="Phát hiện doanh thu bất thường"
-                    desc="Thông báo khi AI phát hiện ngày có doanh thu tăng/giảm đột biến so với xu hướng thường ngày"
+                  <NotifToggle label={t('settings.notif.items.anomalyAlert')}
+                    desc={t('settings.notif.items.anomalyAlertDesc')}
                     value={notif.anomalyAlert} onChange={v => setNotif(n => ({ ...n, anomalyAlert: v }))} />
                 )}
                 {isWarehouse && (
-                  <NotifToggle label="Cảnh báo sắp hết hàng"
-                    desc="Thông báo khi sản phẩm tồn kho dưới ngưỡng an toàn (dưới 10 đơn vị)"
+                  <NotifToggle label={t('settings.notif.items.lowStockAlert')}
+                    desc={t('settings.notif.items.lowStockAlertDesc')}
                     value={notif.lowStockAlert} onChange={v => setNotif(n => ({ ...n, lowStockAlert: v }))} />
                 )}
                 {isManager && (
-                  <NotifToggle label="Gợi ý AI &amp; Khuyến nghị kinh doanh"
-                    desc="Thông báo khi AI tạo gợi ý mới về chiến lược bán hàng, tồn kho hoặc khách hàng"
+                  <NotifToggle label={t('settings.notif.items.aiRecommendAlert')}
+                    desc={t('settings.notif.items.aiRecommendAlertDesc')}
                     value={notif.aiRecommendAlert} onChange={v => setNotif(n => ({ ...n, aiRecommendAlert: v }))} />
                 )}
                 {isStaff && (
-                  <NotifToggle label="Đơn hàng mới"
-                    desc="Thông báo khi có đơn hàng mới được tạo hoặc đơn đang chờ xử lý quá lâu"
+                  <NotifToggle label={t('settings.notif.items.newOrderNotify')}
+                    desc={t('settings.notif.items.newOrderNotifyDesc')}
                     value={notif.newOrderNotify} onChange={v => setNotif(n => ({ ...n, newOrderNotify: v }))} />
                 )}
                 {isDataIT && (
-                  <NotifToggle label="Lỗi đồng bộ dữ liệu"
-                    desc="Thông báo khi pipeline ETL gặp lỗi hoặc kênh đồng bộ bị gián đoạn"
+                  <NotifToggle label={t('settings.notif.items.syncErrorNotify')}
+                    desc={t('settings.notif.items.syncErrorNotifyDesc')}
                     value={notif.syncErrorNotify} onChange={v => setNotif(n => ({ ...n, syncErrorNotify: v }))} />
                 )}
                 {isOwner && (
-                  <NotifToggle label="Gói dịch vụ &amp; Thanh toán"
-                    desc="Nhắc nhở sắp hết hạn gói Pro, xác nhận thanh toán và hóa đơn"
+                  <NotifToggle label={t('settings.notif.items.subscriptionNotify')}
+                    desc={t('settings.notif.items.subscriptionNotifyDesc')}
                     value={notif.subscriptionNotify} onChange={v => setNotif(n => ({ ...n, subscriptionNotify: v }))} />
                 )}
 
@@ -549,27 +551,27 @@ export default function SettingsPage() {
                 {isManager && (
                   <>
                     <p className="text-xs font-semibold uppercase tracking-wide py-1 pt-4"
-                       style={{ color: 'var(--text-tertiary)' }}>Báo cáo định kỳ qua email</p>
-                    <NotifToggle label="Tóm tắt doanh thu hàng ngày"
-                      desc="Nhận email tóm tắt doanh thu, số đơn và so sánh hôm qua mỗi sáng 8:00"
+                       style={{ color: 'var(--text-tertiary)' }}>{t('settings.notif.groups.reports')}</p>
+                    <NotifToggle label={t('settings.notif.items.dailyReport')}
+                      desc={t('settings.notif.items.dailyReportDesc')}
                       value={notif.dailyReport} onChange={v => setNotif(n => ({ ...n, dailyReport: v }))} />
-                    <NotifToggle label="Báo cáo tổng hợp hàng tuần"
-                      desc="Nhận báo cáo phân tích tuần vào mỗi sáng thứ Hai (kênh, sản phẩm, khách hàng)"
+                    <NotifToggle label={t('settings.notif.items.weeklyReport')}
+                      desc={t('settings.notif.items.weeklyReportDesc')}
                       value={notif.weeklyReport} onChange={v => setNotif(n => ({ ...n, weeklyReport: v }))} />
                   </>
                 )}
 
                 {/* ── Mobile ── */}
                 <p className="text-xs font-semibold uppercase tracking-wide py-1 pt-4"
-                   style={{ color: 'var(--text-tertiary)' }}>Ứng dụng di động</p>
-                <NotifToggle label="Thông báo đẩy trên điện thoại"
-                  desc="Nhận thông báo đẩy khi dùng app MSAS trên điện thoại (cần đăng nhập app mobile)"
+                   style={{ color: 'var(--text-tertiary)' }}>{t('settings.notif.groups.mobile')}</p>
+                <NotifToggle label={t('settings.notif.items.pushNotify')}
+                  desc={t('settings.notif.items.pushNotifyDesc')}
                   value={notif.pushNotify} onChange={v => setNotif(n => ({ ...n, pushNotify: v }))} />
 
                 <div className="pt-4">
                   <button onClick={saveNotif} className="lbtn lbtn-primary" style={{ height: 40 }}>
                     <span className="icon icon-sm">save</span>
-                    Lưu tùy chọn
+                    {t('settings.notif.saveBtn')}
                   </button>
                 </div>
               </div>
@@ -581,10 +583,10 @@ export default function SettingsPage() {
             <div className="space-y-4">
               {/* Theme */}
               <div className="lcard p-5 space-y-3">
-                <h2 className="text-subtitle font-semibold" style={{ color: 'var(--text-primary)' }}>Giao diện</h2>
+                <h2 className="text-subtitle font-semibold" style={{ color: 'var(--text-primary)' }}>{t('settings.theme.title')}</h2>
                 {[
-                  { dark: false, label: 'Sáng (Light)', icon: 'light_mode', sub: 'Nền trắng, thích hợp ban ngày' },
-                  { dark: true,  label: 'Tối (Dark)',   icon: 'dark_mode',  sub: 'Nền tối, thích hợp ban đêm' },
+                  { dark: false, label: t('settings.theme.light'), icon: 'light_mode', sub: t('settings.theme.lightDesc') },
+                  { dark: true,  label: t('settings.theme.dark'),   icon: 'dark_mode',  sub: t('settings.theme.darkDesc') },
                 ].map(opt => {
                   const active = isDark === opt.dark
                   return (
@@ -607,14 +609,17 @@ export default function SettingsPage() {
 
               {/* Language */}
               <div className="lcard p-5 space-y-3">
-                <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Ngôn ngữ hiển thị</h3>
+                <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{t('settings.theme.language')}</h3>
                 {[
                   { code: 'vi', label: 'Tiếng Việt', flag: '🇻🇳', sub: 'Vietnamese' },
-                  { code: 'en', label: 'English',    flag: '🇺🇸', sub: 'Tiếng Anh' },
+                  { code: 'en', label: 'English',    flag: '🇺🇸', sub: i18n.language?.startsWith('vi') ? 'Tiếng Anh' : 'English' },
                 ].map(lang => {
                   const active = i18n.language?.startsWith(lang.code)
                   return (
-                    <button key={lang.code} onClick={() => i18n.changeLanguage(lang.code)}
+                    <button key={lang.code} onClick={() => {
+                      i18n.changeLanguage(lang.code)
+                      localStorage.setItem('lang', lang.code)
+                    }}
                       className="w-full flex items-center gap-4 p-4 rounded-xl border-2 transition-all text-left"
                       style={{ borderColor: active ? 'var(--primary-500)' : 'var(--border)', background: active ? 'var(--primary-50, rgba(99,102,241,0.06))' : 'var(--bg-elevated)' }}>
                       <span style={{ fontSize: 28 }}>{lang.flag}</span>
@@ -672,6 +677,7 @@ function AccordionItem({ title, children }) {
 
 // ── Điều khoản & Chính sách ─────────────────────────────────────────────────
 function PolicySection() {
+  const { t } = useTranslation()
   return (
     <div className="space-y-4">
 
@@ -681,10 +687,10 @@ function PolicySection() {
           <span className="icon text-2xl mt-0.5" style={{ color: 'var(--primary-500)' }}>gavel</span>
           <div>
             <h2 className="text-subtitle font-semibold" style={{ color: 'var(--text-primary)' }}>
-              Điều khoản &amp; Chính sách MSAS
+              {t('settings.policyDetail.title')}
             </h2>
             <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
-              Cập nhật lần cuối: 01/06/2026 · Áp dụng cho tất cả người dùng hệ thống MSAS
+              {t('settings.policyDetail.lastUpdated')}
             </p>
           </div>
         </div>
@@ -693,52 +699,52 @@ function PolicySection() {
       {/* Điều khoản dịch vụ */}
       <div className="lcard p-5">
         <h3 className="text-sm font-bold mb-3" style={{ color: 'var(--text-primary)' }}>
-          1. Điều khoản sử dụng dịch vụ
+          {t('settings.policyDetail.terms.title')}
         </h3>
         <div className="text-sm leading-relaxed space-y-3" style={{ color: 'var(--text-secondary)' }}>
-          <p>Bằng cách đăng ký và sử dụng MSAS, bạn xác nhận đã đọc, hiểu và đồng ý với các điều khoản dưới đây.</p>
-          <p><b>Phạm vi dịch vụ:</b> MSAS cung cấp nền tảng phân tích dữ liệu bán hàng đa kênh tích hợp AI, bao gồm thu thập dữ liệu, phân tích BI, dự báo doanh thu và xuất báo cáo. Dịch vụ vận hành theo mô hình SaaS với hai gói: Free và Pro.</p>
-          <p><b>Tài khoản và bảo mật:</b> Mỗi tài khoản chỉ được sử dụng bởi một cá nhân. Bạn chịu trách nhiệm bảo mật thông tin đăng nhập và toàn bộ hoạt động phát sinh từ tài khoản của mình. Thông báo ngay cho chúng tôi nếu phát hiện truy cập trái phép.</p>
-          <p><b>Sử dụng hợp lệ:</b> Nghiêm cấm sử dụng MSAS cho mục đích bất hợp pháp, cố ý làm suy giảm hiệu năng hệ thống, hoặc truy cập dữ liệu của công ty khác ngoài phạm vi được cấp quyền.</p>
-          <p><b>Quyền sở hữu dữ liệu:</b> Toàn bộ dữ liệu kinh doanh bạn nhập vào hoặc đồng bộ qua MSAS thuộc sở hữu của bạn. MSAS chỉ xử lý dữ liệu đó nhằm cung cấp dịch vụ đã thỏa thuận.</p>
-          <p><b>Thay đổi điều khoản:</b> Khi có cập nhật quan trọng, chúng tôi thông báo qua email trước ít nhất 14 ngày. Tiếp tục sử dụng sau thời điểm đó đồng nghĩa với việc chấp nhận điều khoản mới.</p>
-          <p><b>Chấm dứt dịch vụ:</b> Tài khoản vi phạm điều khoản có thể bị tạm ngừng. Sau khi chấm dứt, dữ liệu được lưu thêm 30 ngày để bạn có thể xuất ra trước khi xóa vĩnh viễn.</p>
+          <p>{t('settings.policyDetail.terms.intro')}</p>
+          <p><b>{t('settings.policyDetail.terms.scopeTitle')}</b> {t('settings.policyDetail.terms.scopeContent')}</p>
+          <p><b>{t('settings.policyDetail.terms.securityTitle')}</b> {t('settings.policyDetail.terms.securityContent')}</p>
+          <p><b>{t('settings.policyDetail.terms.usageTitle')}</b> {t('settings.policyDetail.terms.usageContent')}</p>
+          <p><b>{t('settings.policyDetail.terms.ownershipTitle')}</b> {t('settings.policyDetail.terms.ownershipContent')}</p>
+          <p><b>{t('settings.policyDetail.terms.changeTitle')}</b> {t('settings.policyDetail.terms.changeContent')}</p>
+          <p><b>{t('settings.policyDetail.terms.terminationTitle')}</b> {t('settings.policyDetail.terms.terminationContent')}</p>
         </div>
       </div>
 
       {/* Chính sách bảo mật */}
       <div className="lcard p-5">
         <h3 className="text-sm font-bold mb-3" style={{ color: 'var(--text-primary)' }}>
-          2. Chính sách bảo mật &amp; quyền riêng tư
+          {t('settings.policyDetail.privacy.title')}
         </h3>
         <div className="text-sm leading-relaxed space-y-3" style={{ color: 'var(--text-secondary)' }}>
-          <p><b>Dữ liệu thu thập:</b> Thông tin tài khoản (họ tên, email, số điện thoại), dữ liệu kinh doanh bạn nhập vào hoặc đồng bộ từ các kênh bán hàng, và nhật ký hoạt động phục vụ bảo mật và hỗ trợ kỹ thuật.</p>
-          <p><b>Lưu trữ và bảo mật:</b> Dữ liệu lưu trên máy chủ tại Việt Nam. Dữ liệu khi lưu trữ được mã hóa bằng AES-256; khi truyền tải sử dụng giao thức bảo mật HTTPS/TLS. Mật khẩu được băm một chiều, không ai có thể xem lại.</p>
-          <p><b>Kiểm soát truy cập:</b> Hệ thống áp dụng phân quyền theo vai trò (Owner, Manager, Nhân viên, DataIT, Viewer) — mỗi người chỉ thấy dữ liệu phù hợp với vai trò. Chủ doanh nghiệp (Owner) có thể xem toàn bộ nhật ký hoạt động trong công ty.</p>
-          <p><b>Cam kết không bán dữ liệu:</b> MSAS không bán, cho thuê hoặc chia sẻ dữ liệu cá nhân và kinh doanh của bạn với bên thứ ba vì mục đích thương mại dưới bất kỳ hình thức nào.</p>
-          <p><b>Quyền của bạn:</b> Bạn có quyền yêu cầu xuất toàn bộ dữ liệu của mình, chỉnh sửa thông tin cá nhân trong phần Hồ sơ, hoặc yêu cầu xóa tài khoản (dữ liệu bị xóa vĩnh viễn sau 30 ngày kể từ ngày xác nhận).</p>
-          <p><b>Tuân thủ pháp luật:</b> MSAS tuân thủ Luật An ninh mạng 2018 (24/2018/QH14), Nghị định 13/2023/NĐ-CP về bảo vệ dữ liệu cá nhân, và Luật Giao dịch điện tử 2023 (20/2023/QH15).</p>
+          <p><b>{t('settings.policyDetail.privacy.collectTitle')}</b> {t('settings.policyDetail.privacy.collectContent')}</p>
+          <p><b>{t('settings.policyDetail.privacy.storageTitle')}</b> {t('settings.policyDetail.privacy.storageContent')}</p>
+          <p><b>{t('settings.policyDetail.privacy.accessTitle')}</b> {t('settings.policyDetail.privacy.accessContent')}</p>
+          <p><b>{t('settings.policyDetail.privacy.nosellTitle')}</b> {t('settings.policyDetail.privacy.nosellContent')}</p>
+          <p><b>{t('settings.policyDetail.privacy.rightsTitle')}</b> {t('settings.policyDetail.privacy.rightsContent')}</p>
+          <p><b>{t('settings.policyDetail.privacy.lawTitle')}</b> {t('settings.policyDetail.privacy.lawContent')}</p>
         </div>
       </div>
 
       {/* Chính sách hoàn tiền */}
       <div className="lcard p-5">
         <h3 className="text-sm font-bold mb-3" style={{ color: 'var(--text-primary)' }}>
-          3. Chính sách hoàn tiền
+          {t('settings.policyDetail.refund.title')}
         </h3>
         <div className="space-y-3">
           {[
             {
-              plan: 'Gói Miễn phí (Free)',
+              plan: t('settings.policyDetail.refund.freeTitle'),
               icon: 'card_membership',
               color: '#6B7280',
-              content: 'Gói miễn phí không áp dụng chính sách hoàn tiền vì không thu phí.',
+              content: t('settings.policyDetail.refund.freeDesc'),
             },
             {
-              plan: 'Gói Pro — 490.000đ/tháng hoặc 4.704.000đ/năm',
+              plan: t('settings.policyDetail.refund.proTitle'),
               icon: 'workspace_premium',
               color: 'var(--primary-500)',
-              content: 'Hỗ trợ hoàn tiền trong vòng 7 ngày kể từ ngày thanh toán nếu sự cố phát sinh từ phía MSAS (dịch vụ gián đoạn liên tục trên 24 giờ, mất dữ liệu do lỗi hệ thống...). Không hoàn tiền khi người dùng chủ động không sử dụng hoặc hủy gói.',
+              content: t('settings.policyDetail.refund.proDesc'),
             },
           ].map(item => (
             <div key={item.plan} className="flex gap-3 p-4 rounded-xl" style={{ background: 'var(--bg-elevated)' }}>
@@ -754,21 +760,19 @@ function PolicySection() {
           ))}
         </div>
         <p className="text-xs mt-4" style={{ color: 'var(--text-tertiary)' }}>
-          Yêu cầu hoàn tiền: gửi email đến{' '}
-          <a href="mailto:support@msas.vn" style={{ color: 'var(--primary-500)' }}>support@msas.vn</a>
-          {' '}với tiêu đề <b>"YÊU CẦU HOÀN TIỀN – [Tên công ty]"</b> kèm mô tả sự cố.
+          {t('settings.policyDetail.refund.requestText')}
         </p>
       </div>
 
       {/* Liên hệ */}
       <div className="lcard p-5">
         <h3 className="text-sm font-bold mb-3" style={{ color: 'var(--text-primary)' }}>
-          4. Liên hệ &amp; hỗ trợ
+          {t('settings.policyDetail.contact.title')}
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {[
-            { icon: 'email',    label: 'Hỗ trợ kỹ thuật', value: 'support@msas.vn',  href: 'mailto:support@msas.vn' },
-            { icon: 'schedule', label: 'Giờ làm việc',     value: 'Thứ 2–6, 8:00–17:00 (GMT+7)', href: null },
+            { icon: 'email',    label: t('settings.policyDetail.contact.techLabel'), value: 'support@msas.vn',  href: 'mailto:support@msas.vn' },
+            { icon: 'schedule', label: t('settings.policyDetail.contact.hoursLabel'), value: t('settings.policyDetail.contact.hoursValue'), href: null },
           ].map(c => (
             <div key={c.label} className="flex items-center gap-3 p-3 rounded-xl" style={{ background: 'var(--bg-elevated)' }}>
               <span className="icon text-lg" style={{ color: 'var(--primary-500)' }}>{c.icon}</span>

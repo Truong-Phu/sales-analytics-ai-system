@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
+import { useTranslation } from 'react-i18next'
 
 /**
  * InfoTooltip — icon ⓘ nhỏ, click để hiện popup giải thích KPI/thuật ngữ.
@@ -13,6 +14,7 @@ import { createPortal } from 'react-dom'
  *   className   — class bổ sung cho wrapper
  */
 export default function InfoTooltip({ title, description, formula, source, placement = 'top', def, className = '' }) {
+  const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [pos, setPos] = useState(null)
   const ref = useRef(null)
@@ -63,7 +65,7 @@ export default function InfoTooltip({ title, description, formula, source, place
           border:      `1px solid ${open ? 'var(--primary-400)' : 'var(--border)'}`,
           flexShrink:  0,
         }}
-        title={`Xem định nghĩa: ${_title}`}
+        title={t('common.viewDefinition', 'Xem định nghĩa: {{title}}', { title: _title })}
       >
         ⓘ
       </button>
@@ -89,19 +91,19 @@ export default function InfoTooltip({ title, description, formula, source, place
           <div className="space-y-1.5">
             {_desc && (
               <div>
-                <span className="font-semibold" style={{ color: 'var(--text-tertiary)' }}>Ý nghĩa: </span>
+                <span className="font-semibold" style={{ color: 'var(--text-tertiary)' }}>{t('common.meaning', 'Ý nghĩa')}: </span>
                 <span style={{ color: 'var(--text-secondary)' }}>{_desc}</span>
               </div>
             )}
             {_form && (
               <div>
-                <span className="font-semibold" style={{ color: 'var(--text-tertiary)' }}>Công thức: </span>
+                <span className="font-semibold" style={{ color: 'var(--text-tertiary)' }}>{t('common.formula', 'Công thức')}: </span>
                 <span className="font-mono" style={{ color: 'var(--primary-600)', fontSize: 11 }}>{_form}</span>
               </div>
             )}
             {_src && (
               <div className="pt-1.5 mt-1" style={{ borderTop: '1px solid var(--border)' }}>
-                <span className="font-semibold" style={{ color: 'var(--text-tertiary)' }}>Nguồn dữ liệu: </span>
+                <span className="font-semibold" style={{ color: 'var(--text-tertiary)' }}>{t('common.source', 'Nguồn dữ liệu')}: </span>
                 <span style={{ color: 'var(--text-secondary)', fontSize: 11 }}>{_src}</span>
               </div>
             )}

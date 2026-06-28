@@ -31,6 +31,13 @@ public class AiProxyService
         return await GetJsonAsync(url);
     }
 
+    public async Task<object?> GetAnomalyRootCauseAsync(string date, Guid? companyId = null)
+    {
+        var url = $"/anomaly/root-cause?date={Uri.EscapeDataString(date)}";
+        if (companyId.HasValue) url += $"&company_id={companyId.Value}";
+        return await GetJsonAsync(url);
+    }
+
     public async Task<object?> GetTrendAsync(int days = 30, string? channel = null, Guid? companyId = null)
     {
         var url = $"/trend?days={days}";
