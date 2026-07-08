@@ -820,13 +820,27 @@ function KpiBar({ actual, target, color = 'var(--primary-500)' }) {
 // ─── Set KPI Target Modal ────────────────────────────────────────────────────
 function SetTargetModal({ staff, period, onClose, onSaved }) {
   const { t } = useTranslation()
-  const [year, month] = period.split('-').map(Number)
+  const [year, month] = (period ?? '').split('-').map(Number)
   const copy = getKpiCopy(staff?.role, t)
-  const [rev,  setRev]  = useState(String(staff.revTarget ?? ''))
-  const [ord,  setOrd]  = useState(String(staff.ordTarget ?? ''))
-  const [cust, setCust] = useState(String(staff.custTarget ?? ''))
+  const [rev,  setRev]  = useState('')
+  const [ord,  setOrd]  = useState('')
+  const [cust, setCust] = useState('')
   const [saving, setSaving] = useState(false)
   const [err,    setErr]    = useState('')
+
+  useEffect(() => {
+    if (!staff) {
+      setRev('')
+      setOrd('')
+      setCust('')
+      setErr('')
+      return
+    }
+    setRev(String(staff.revTarget ?? ''))
+    setOrd(String(staff.ordTarget ?? ''))
+    setCust(String(staff.custTarget ?? ''))
+    setErr('')
+  }, [staff])
 
   const handleSave = async () => {
     setSaving(true); setErr('')
@@ -849,7 +863,7 @@ function SetTargetModal({ staff, period, onClose, onSaved }) {
       <div className="lcard w-full max-w-sm p-6 space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="font-semibold" style={{ color: 'var(--text-primary)' }}>
-            {t('admin.kpi.title', { name: staff.fullName })}
+            {t('admin.kpi.title', { name: staff?.fullName ?? '' })}
           </h3>
           <button onClick={onClose} className="icon text-xl" style={{ color: 'var(--text-tertiary)' }}>close</button>
         </div>
@@ -905,7 +919,7 @@ function KpiTab() {
 
   return (
     <div className="space-y-3">
-      <SetTargetModal
+      <SetKpiDrawer
         open={!!target} staff={target} period={period}
         onClose={() => setTarget(null)}
         onSaved={() => { setTarget(null); fetch() }}
@@ -1026,6 +1040,7 @@ function KpiTab() {
 
 // ─── Payroll Tab (Bảng lương) ─────────────────────────────────────────────────
 function PayrollTab() {
+  const { t } = useTranslation()
   const { user: me } = useAuth()
   const isOwner      = me?.role === 'Owner'
   const today        = new Date()
