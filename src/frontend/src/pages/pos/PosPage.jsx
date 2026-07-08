@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useNavigate } from 'react-router-dom'
 import api from '../../api/axios'
 import { showToast } from '../../utils/toast'
 
@@ -13,74 +14,14 @@ const createOrder = dto => api.post('/api/pos/orders', dto).then(r => r.data)
 
 const fmtVND = n => new Intl.NumberFormat('vi-VN').format(Math.round(n)) + 'đ'
 
-// ── Modal chọn biến thể ───────────────────────────────────────────────────────
-function VariationModal({ product, variations, onSelect, onClose }) {
-  const { t } = useTranslation()
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-         style={{ background: 'rgba(0,0,0,0.55)' }} onClick={onClose}>
-      <div className="lcard w-full max-w-sm p-5 space-y-4"
-           onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>
-              {t('pos.selectVariation')}
-            </h3>
-            <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>{product.name}</p>
-          </div>
-          <button onClick={onClose} className="w-7 h-7 flex items-center justify-center rounded-lg"
-                  style={{ color: 'var(--text-tertiary)' }}>
-            <span className="icon text-base">close</span>
-          </button>
-        </div>
-        <div className="space-y-2 max-h-72 overflow-y-auto">
-          {variations.map(v => {
-            const oos = (v.stockQuantity ?? 0) <= 0
-            return (
-              <button
-                key={v.variationId}
-                onClick={() => !oos && onSelect(v)}
-                disabled={oos}
-                className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl border text-sm transition-colors"
-                style={{
-                  borderColor: 'var(--border)',
-                  background: 'var(--bg-elevated)',
-                  opacity: oos ? 0.5 : 1,
-                  cursor: oos ? 'default' : 'pointer',
-                }}
-                onMouseEnter={e => !oos && (e.currentTarget.style.borderColor = 'var(--primary-500)')}
-                onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border)')}
-              >
-                <div className="text-left">
-                  <div className="font-medium" style={{ color: 'var(--text-primary)' }}>
-                    {v.variationName}
-                    {v.color ? ` · ${v.color}` : ''}
-                    {v.size  ? ` · ${v.size}`  : ''}
-                  </div>
-                  <div className="text-xs mt-0.5" style={{ color: oos ? '#EF4444' : 'var(--text-tertiary)' }}>
-                    {oos ? 'Hết hàng' : `Còn ${v.stockQuantity}`}
-                    {v.sku ? ` · SKU: ${v.sku}` : ''}
-                  </div>
-                </div>
-                <div className="font-bold shrink-0 ml-3" style={{ color: 'var(--primary-500)' }}>
-                  {fmtVND(v.salePrice ?? 0)}
-                </div>
-              </button>
-            )
-          })}
-        </div>
-      </div>
-    </div>
-  )
-}
+
 
 // ── Tìm kiếm sản phẩm với dropdown ──────────────────────────────────────────
 function ProductSearch({ onAdd }) {
-  const [q,          setQ]          = useState('')
-  const [results,    setResults]    = useState([])
-  const [loading,    setLoading]    = useState(false)
-  const [open,       setOpen]       = useState(false)
-  const [varModal,   setVarModal]   = useState(null) // { product, variations }
+  const [q,       setQ]       = useState('')
+  const [results, setResults] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [open,    setOpen]    = useState(false)
   const timer  = useRef(null)
   const wrapRef = useRef(null)
 
@@ -114,30 +55,26 @@ function ProductSearch({ onAdd }) {
   const pick = async (p) => {
     setOpen(false)
     try {
-      const vars = await api.get(`/api/products/${p.id}/variations`).then(r => r.data ?? [])
+      const vars = await api.get(`/api/products/${p.id}/variations`).then(r => r.data?.data ?? [])
       if (vars.length > 0) {
-        setVarModal({ product: p, variations: vars })
+        // Tìm biến thể còn hàng đầu tiên, nếu không có thì lấy biến thể đầu tiên
+        const defaultVar = vars.find(v => (v.stockQuantity ?? 0) > 0) ?? vars[0]
+        onAdd({
+          ...p,
+          salePrice:     defaultVar.salePrice ?? p.salePrice ?? p.price ?? 0,
+          variationId:   defaultVar.variationId,
+          variationName: defaultVar.variationName,
+          color:         defaultVar.color,
+          size:          defaultVar.size,
+          variations:    vars,
+          _cartKey:      `${p.id}-${defaultVar.variationId}`,
+        })
+        setQ('')
+        setResults([])
         return
       }
-    } catch { /* không có variations → thêm thẳng */ }
+    } catch { /* không có variations -> thêm thẳng */ }
     onAdd(p)
-    setQ('')
-    setResults([])
-  }
-
-  const handleVariationSelect = (variation) => {
-    const p = varModal.product
-    onAdd({
-      ...p,
-      price:         variation.salePrice ?? p.salePrice ?? p.price ?? 0,
-      variationId:   variation.variationId,
-      variationName: variation.variationName,
-      color:         variation.color,
-      size:          variation.size,
-      // key duy nhất = productId + variationId để phân biệt các biến thể khác nhau trong giỏ
-      _cartKey: `${p.id}-${variation.variationId}`,
-    })
-    setVarModal(null)
     setQ('')
     setResults([])
   }
@@ -150,15 +87,6 @@ function ProductSearch({ onAdd }) {
   }, [])
 
   return (
-    <>
-    {varModal && (
-      <VariationModal
-        product={varModal.product}
-        variations={varModal.variations}
-        onSelect={handleVariationSelect}
-        onClose={() => setVarModal(null)}
-      />
-    )}
     <div ref={wrapRef} className="relative">
       <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl border"
            style={{ borderColor: 'var(--border)', background: 'var(--bg-elevated)' }}>
@@ -221,26 +149,37 @@ function ProductSearch({ onAdd }) {
         </div>
       )}
     </div>
-    </>
   )
 }
 
 // ── Giỏ hàng ─────────────────────────────────────────────────────────────────
-function CartItem({ item, onQty, onRemove }) {
-  const variationLabel = [item.color, item.size].filter(Boolean).join(' · ') || item.variationName
+function CartItem({ item, onQty, onRemove, onVariationChange }) {
+  const hasVariations = item.variations && item.variations.length > 0
   return (
     <div className="flex items-center gap-3 py-2.5"
          style={{ borderBottom: '1px solid var(--border)' }}>
       <div className="flex-1 min-w-0">
         <div className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{item.name}</div>
-        <div className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
-          {variationLabel && (
-            <span className="mr-1.5 px-1.5 py-0.5 rounded"
-                  style={{ background: 'var(--bg-elevated)', color: 'var(--text-secondary)' }}>
-              {variationLabel}
-            </span>
+        <div className="text-xs mt-1.5 flex items-center gap-2 flex-wrap">
+          {hasVariations ? (
+            <select
+              value={item.variationId || ''}
+              onChange={(e) => onVariationChange(item._cartKey, Number(e.target.value))}
+              className="px-2 py-0.5 rounded border text-xs"
+              style={{ background: 'var(--bg-elevated)', color: 'var(--text-secondary)', borderColor: 'var(--border)', outline: 'none' }}
+            >
+              {item.variations.map(v => (
+                <option key={v.variationId} value={v.variationId} disabled={v.stockQuantity <= 0}>
+                  {[v.color, v.size].filter(Boolean).join(' · ') || v.variationName} {v.stockQuantity <= 0 ? '(Hết hàng)' : `(Còn ${v.stockQuantity})`}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <span style={{ color: 'var(--text-tertiary)' }}>Không có biến thể</span>
           )}
-          {fmtVND(item.price)} × {item.qty}
+          <span style={{ color: 'var(--text-tertiary)' }}>
+            {fmtVND(item.price)} × {item.qty}
+          </span>
         </div>
       </div>
       <div className="flex items-center gap-1 shrink-0">
@@ -280,6 +219,11 @@ export default function PosPage() {
   const [cusResults,  setCusResults]  = useState([])
   const [loyalty,     setLoyalty]     = useState(null)
   const [usePoints,   setUsePoints]   = useState(0)
+  const [newCusName,     setNewCusName]     = useState('')
+  const [newCusPhone,    setNewCusPhone]    = useState('')
+  const [newCusProvince, setNewCusProvince] = useState('')
+  const [newCusDistrict, setNewCusDistrict] = useState('')
+  const [showNewCus,     setShowNewCus]     = useState(false)
   const [voucherCode, setVoucherCode] = useState('')
   const [voucherInfo, setVoucherInfo] = useState(null)
   const [voucherErr,  setVoucherErr]  = useState('')
@@ -288,6 +232,8 @@ export default function PosPage() {
   const [note,        setNote]        = useState('')
   const [submitting,  setSubmitting]  = useState(false)
   const [lastOrder,   setLastOrder]   = useState(null)
+  const [bankModal,   setBankModal]   = useState(null) // { bankName, accountNumber, accountName, qrImage, total }
+  const navigate     = useNavigate()
   const cusTimer = useRef(null)
   const lastAutoAppliedCodeRef = useRef('')
   const lastValidatedSubtotalRef = useRef(0)
@@ -386,7 +332,46 @@ export default function PosPage() {
         variationName: product.variationName ?? null,
         color:         product.color         ?? null,
         size:          product.size          ?? null,
+        variations:    product.variations    ?? null,
       }]
+    })
+  }
+
+  const handleVariationChange = (cartKey, newVarId) => {
+    setCart(prev => {
+      const updated = prev.map(item => {
+        if (item._cartKey !== cartKey) return item
+        const newVar = item.variations?.find(v => v.variationId === newVarId)
+        if (!newVar) return item
+        const newCartKey = `${item.id}-${newVarId}`
+
+        const duplicate = prev.find(i => i._cartKey === newCartKey)
+        if (duplicate && duplicate._cartKey !== cartKey) {
+          return { ...item, _mergeWith: newCartKey }
+        }
+
+        return {
+          ...item,
+          _cartKey:      newCartKey,
+          price:         newVar.salePrice ?? item.price,
+          variationId:   newVarId,
+          variationName: newVar.variationName,
+          color:         newVar.color,
+          size:          newVar.size,
+        }
+      })
+
+      return updated.map((item, _, arr) => {
+        if (item._mergeWith) {
+          const target = arr.find(i => i._cartKey === item._mergeWith)
+          if (target) {
+            target.qty += item.qty
+          }
+          return null
+        }
+        return item
+      })
+      .filter(Boolean)
     })
   }
 
@@ -401,6 +386,7 @@ export default function PosPage() {
     setCart([]); setCustomer(null); setCusSearch(''); setLoyalty(null)
     setUsePoints(0); setVoucherCode(''); setVoucherInfo(null); setVoucherErr('')
     setNote(''); setPayMethod('CASH')
+    setNewCusName(''); setNewCusPhone(''); setNewCusProvince(''); setNewCusDistrict(''); setShowNewCus(false)
   }
 
   // ── Khách hàng ────────────────────────────────────────────────────────────
@@ -442,14 +428,16 @@ export default function PosPage() {
   const total         = Math.max(0, subtotal - pointsDiscount - voucherDiscount)
 
   // ── Đặt hàng ─────────────────────────────────────────────────────────────
-  const handleSubmit = async () => {
-    if (cart.length === 0) { showToast('Giỏ hàng trống', 'error'); return }
+  const executeSubmitOrder = async () => {
     setSubmitting(true)
+    setBankModal(null)
     try {
       const dto = {
-        customerId:    customer?.id ?? null,
-        customerName:  customer?.name ?? null,
-        customerPhone: customer?.phone ?? null,
+        customerId:        customer?.id ?? null,
+        customerName:      customer ? (customer.name ?? null)     : (newCusName.trim()     || null),
+        customerPhone:     customer ? (customer.phone ?? null)    : (newCusPhone.trim()    || null),
+        customerProvince:  customer ? (customer.province ?? null) : (newCusProvince.trim() || null),
+        customerDistrict:  customer ? (customer.district ?? null) : (newCusDistrict.trim() || null),
         items: cart.map(i => ({ productId: i.id, variationId: i.variationId ?? null, qty: i.qty, price: i.price })),
         paymentMethod: payMethod,
         voucherCode:   voucherInfo ? voucherCode.trim() : null,
@@ -458,11 +446,57 @@ export default function PosPage() {
       }
       const res = await createOrder(dto)
       setLastOrder(res)
-      showToast('Tạo đơn hàng thành công!', 'success')
-      clearCart()
+
+      // Nếu là VietQR → khởi tạo payment transaction rồi điều hướng sang trang QR
+      if (res.requiresQR) {
+        try {
+          const payRes = await api.post(`/api/payment/order/${res.orderId}/initiate`, {
+            method: 'VIETQR',
+          })
+          const txId = payRes.data?.data?.transactionId
+          clearCart()
+          if (txId) {
+            navigate(`/payment/vietqr?txId=${txId}`)
+          } else {
+            showToast('Đơn tạo thành công! Vui lòng vào trang VietQR để thanh toán.', 'success')
+          }
+        } catch {
+          clearCart()
+          showToast('Đơn tạo thành công! Không thể tạo mã QR, vui lòng thanh toán thủ công.', 'warning')
+        }
+      } else {
+        showToast('Tạo đơn hàng thành công!', 'success')
+        clearCart()
+      }
     } catch (e) {
       showToast(e?.response?.data?.message ?? 'Lỗi tạo đơn hàng', 'error')
     } finally { setSubmitting(false) }
+  }
+
+  const handleSubmit = async () => {
+    if (cart.length === 0) { showToast('Giỏ hàng trống', 'error'); return }
+
+    if (payMethod === 'BANK_TRANSFER') {
+      setSubmitting(true)
+      try {
+        const res = await api.get('/api/payment/bank-info')
+        const bankData = res.data?.data ?? {}
+        setBankModal({
+          bankName:      bankData.bank_name ?? '—',
+          accountNumber: bankData.account_number ?? '—',
+          accountName:   bankData.account_name ?? '—',
+          qrImage:       bankData.qr_image ?? null,
+          total:         total,
+        })
+        return
+      } catch (e) {
+        showToast('Không thể lấy thông tin tài khoản chuyển khoản.', 'error')
+        setSubmitting(false)
+        return
+      }
+    }
+
+    await executeSubmitOrder()
   }
 
   const PAYMENT_METHODS = payMethods.map(id => ({ id, ...(ALL_PAY_META[id] ?? { icon: 'payments', label: id }) }))
@@ -511,18 +545,54 @@ export default function PosPage() {
           ) : (
             <div className="flex-1 overflow-y-auto px-4 pb-4">
               {cart.map(item => (
-                <CartItem key={item._cartKey} item={item} onQty={setQty} onRemove={removeFromCart} />
+                <CartItem
+                  key={item._cartKey}
+                  item={item}
+                  onQty={setQty}
+                  onRemove={removeFromCart}
+                  onVariationChange={handleVariationChange}
+                />
               ))}
             </div>
           )}
         </div>
 
-        {/* Thông báo đơn cuối */}
+        {/* Thông báo đơn cuối (Success Modal) */}
         {lastOrder && (
-          <div className="rounded-xl p-3 text-sm"
-               style={{ background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.25)', color: '#059669' }}>
-            ✓ Đơn <strong>#{lastOrder.orderCode ?? lastOrder.id}</strong> đã tạo thành công —{' '}
-            <span style={{ color: 'var(--text-tertiary)' }}>{fmtVND(lastOrder.totalAmount ?? 0)}</span>
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+               style={{ background: 'rgba(0,0,0,0.55)' }}>
+            <div className="lcard w-full max-w-md p-6 text-center space-y-4"
+                 onClick={e => e.stopPropagation()}>
+              <div className="py-4">
+                <span className="icon text-6xl block mb-3 animate-bounce" style={{ color: '#10B981' }}>check_circle</span>
+                <h3 className="font-extrabold text-lg" style={{ color: '#10B981' }}>
+                  Thanh toán thành công!
+                </h3>
+                <p className="text-sm mt-2" style={{ color: 'var(--text-secondary)' }}>
+                  Đơn hàng <strong style={{ color: 'var(--text-primary)' }}>#{lastOrder.orderCode ?? lastOrder.id}</strong> đã được ghi nhận thanh toán và hoàn tất giao hàng.
+                </p>
+                <p className="text-lg font-bold mt-2" style={{ color: 'var(--primary-500)' }}>
+                  {fmtVND(lastOrder.totalAmount ?? lastOrder.total ?? 0)}
+                </p>
+              </div>
+
+              <div className="flex gap-3 pt-3 border-t" style={{ borderColor: 'var(--border)' }}>
+                <button
+                  onClick={() => { setLastOrder(null); }}
+                  className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold text-white transition-colors"
+                  style={{ background: 'var(--primary-500)' }}
+                >
+                  Tiếp tục bán hàng
+                </button>
+                <button
+                  onClick={() => { setLastOrder(null); navigate('/orders'); }}
+                  className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium border transition-colors"
+                  style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)', background: 'transparent' }}
+                >
+                  Xem danh sách đơn
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -544,15 +614,15 @@ export default function PosPage() {
               <div className="absolute z-20 w-full mt-1 rounded-xl shadow-lg overflow-hidden"
                    style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', maxHeight: 200, overflowY: 'auto' }}>
                 <button
-                  onClick={() => { setCustomer(null); setCusSearch(''); setCusResults([]); setLoyalty(null) }}
-                  className="w-full text-left px-4 py-2.5 text-sm"
-                  style={{ color: 'var(--text-tertiary)' }}
+                  onClick={() => { setShowNewCus(true); setNewCusName(cusSearch.trim()); setCusResults([]); }}
+                  className="w-full text-left px-4 py-2.5 text-sm font-medium"
+                  style={{ color: 'var(--primary-500)' }}
                   onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
                   onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                  Khách vãng lai
+                  + Thêm khách hàng mới
                 </button>
                 {cusResults.map(c => (
-                  <button key={c.id} onClick={() => pickCustomer(c)}
+                  <button key={c.id} onClick={() => { pickCustomer(c); setShowNewCus(false); setNewCusName(''); setNewCusPhone('') }}
                           className="w-full text-left px-4 py-2.5"
                           onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
                           onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
@@ -563,6 +633,43 @@ export default function PosPage() {
               </div>
             )}
           </div>
+          {/* Form nhập nhanh khách mới */}
+          {showNewCus && !customer && (
+            <div className="rounded-xl p-3 space-y-2" style={{ background: 'rgba(99,102,241,0.06)', border: '1px dashed rgba(99,102,241,0.3)' }}>
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold" style={{ color: 'var(--primary-500)' }}>Khách hàng mới</span>
+                <button onClick={() => { setShowNewCus(false); setNewCusName(''); setNewCusPhone(''); setNewCusProvince(''); setNewCusDistrict(''); setCusSearch('') }}
+                  className="text-sm leading-none" style={{ color: 'var(--text-tertiary)' }}>×</button>
+              </div>
+              <input
+                value={newCusName}
+                onChange={e => setNewCusName(e.target.value)}
+                placeholder="Họ tên khách..."
+                className="linput text-sm w-full !h-8"
+              />
+              <input
+                value={newCusPhone}
+                onChange={e => setNewCusPhone(e.target.value)}
+                placeholder="Số điện thoại *"
+                className="linput text-sm w-full !h-8"
+                type="tel"
+              />
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  value={newCusProvince}
+                  onChange={e => setNewCusProvince(e.target.value)}
+                  placeholder="Tỉnh/Thành phố"
+                  className="linput text-sm !h-8"
+                />
+                <input
+                  value={newCusDistrict}
+                  onChange={e => setNewCusDistrict(e.target.value)}
+                  placeholder="Quận/Huyện"
+                  className="linput text-sm !h-8"
+                />
+              </div>
+            </div>
+          )}
           {customer && (
             <div className="flex items-center gap-2 px-3 py-2 rounded-lg"
                  style={{ background: 'rgba(99,102,241,0.07)', border: '1px solid rgba(99,102,241,0.2)' }}>
@@ -572,7 +679,7 @@ export default function PosPage() {
                 {customer.phone && <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{customer.phone}</div>}
                 {loyalty && (
                   <div className="text-xs mt-0.5" style={{ color: '#F59E0B' }}>
-                    ⭐ {loyalty.currentPoints?.toLocaleString() ?? 0} điểm
+                    ⭐ {loyalty.balance?.toLocaleString() ?? 0} điểm
                   </div>
                 )}
               </div>
@@ -581,14 +688,14 @@ export default function PosPage() {
             </div>
           )}
           {/* Dùng điểm */}
-          {loyalty && loyalty.currentPoints > 0 && (
+          {loyalty && loyalty.balance > 0 && (
             <div className="flex items-center gap-2">
               <span className="text-xs flex-1" style={{ color: 'var(--text-secondary)' }}>
-                Đổi điểm (tối đa {loyalty.currentPoints})
+                Đổi điểm (tối đa {loyalty.balance})
               </span>
-              <input type="number" min={0} max={loyalty.currentPoints}
+              <input type="number" min={0} max={loyalty.balance}
                      value={usePoints}
-                     onChange={e => setUsePoints(Math.min(loyalty.currentPoints, Math.max(0, Number(e.target.value))))}
+                     onChange={e => setUsePoints(Math.min(loyalty.balance, Math.max(0, Number(e.target.value))))}
                      className="linput !h-8 w-28 text-sm text-right" />
             </div>
           )}
@@ -673,6 +780,72 @@ export default function PosPage() {
           </button>
         </div>
       </div>
+
+      {/* ── Modal xác nhận chuyển khoản ngân hàng ─────────────────────────── */}
+      {bankModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+             style={{ background: 'rgba(0,0,0,0.55)' }}>
+          <div className="lcard w-full max-w-md p-6 space-y-4"
+               onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b pb-3" style={{ borderColor: 'var(--border)' }}>
+              <h3 className="font-semibold text-base" style={{ color: 'var(--text-primary)' }}>
+                Thông tin chuyển khoản ngân hàng
+              </h3>
+              <button onClick={() => { setBankModal(null); setSubmitting(false); }} className="w-7 h-7 flex items-center justify-center rounded-lg"
+                      style={{ color: 'var(--text-tertiary)' }}>
+                <span className="icon text-base">close</span>
+              </button>
+            </div>
+
+            <div className="space-y-3 py-2 text-sm" style={{ color: 'var(--text-primary)' }}>
+              <div className="flex justify-between">
+                <span style={{ color: 'var(--text-tertiary)' }}>Ngân hàng:</span>
+                <span className="font-medium">{bankModal.bankName}</span>
+              </div>
+              <div className="flex justify-between">
+                <span style={{ color: 'var(--text-tertiary)' }}>Số tài khoản:</span>
+                <span className="font-bold text-base" style={{ color: 'var(--primary-500)' }}>{bankModal.accountNumber}</span>
+              </div>
+              <div className="flex justify-between">
+                <span style={{ color: 'var(--text-tertiary)' }}>Tên chủ tài khoản:</span>
+                <span className="font-medium uppercase">{bankModal.accountName}</span>
+              </div>
+              <div className="flex justify-between border-t pt-3" style={{ borderColor: 'var(--border)' }}>
+                <span className="font-semibold">Số tiền cần chuyển:</span>
+                <span className="font-extrabold text-lg" style={{ color: 'var(--primary-500)' }}>{fmtVND(bankModal.total)}</span>
+              </div>
+
+              {bankModal.qrImage && (
+                <div className="flex flex-col items-center justify-center pt-3 border-t" style={{ borderColor: 'var(--border)' }}>
+                  <p className="text-xs mb-2" style={{ color: 'var(--text-tertiary)' }}>Quét mã QR dưới đây để chuyển khoản nhanh</p>
+                  <img
+                    src={bankModal.qrImage.startsWith('data:') ? bankModal.qrImage : `data:image/png;base64,${bankModal.qrImage}`}
+                    alt="Static Bank QR"
+                    className="w-48 h-48 object-contain border rounded-xl p-2 bg-white"
+                  />
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-3 pt-3 border-t" style={{ borderColor: 'var(--border)' }}>
+              <button
+                onClick={() => { setBankModal(null); setSubmitting(false); }}
+                className="flex-1 px-4 py-2 rounded-xl text-sm font-medium border transition-colors"
+                style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)', background: 'transparent' }}
+              >
+                Hủy
+              </button>
+              <button
+                onClick={executeSubmitOrder}
+                className="flex-1 px-4 py-2 rounded-xl text-sm font-semibold text-white transition-colors"
+                style={{ background: 'var(--primary-500)' }}
+              >
+                Xác nhận đã nhận đủ tiền
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

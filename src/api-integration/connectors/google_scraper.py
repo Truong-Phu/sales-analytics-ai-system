@@ -1123,6 +1123,13 @@ class GoogleScraper:
         def _playwright_thread_target():
             from playwright.sync_api import sync_playwright
             with sync_playwright() as pw:
+                # Lấy default User Agent của Chromium và chuyển đổi sang Stealth UA (thay thế HeadlessChrome)
+                temp_browser = pw.chromium.launch(headless=True, args=["--no-sandbox"])
+                temp_page = temp_browser.new_page()
+                default_ua = temp_page.evaluate("navigator.userAgent")
+                temp_browser.close()
+                stealth_ua = default_ua.replace("HeadlessChrome/", "Chrome/")
+
                 browser = pw.chromium.launch(
                     headless=True,
                     args=["--no-sandbox", "--disable-setuid-sandbox",
@@ -1133,7 +1140,7 @@ class GoogleScraper:
                     viewport={"width": random.randint(1280, 1920),
                               "height": random.randint(800, 1080)},
                     locale="vi-VN",
-                    user_agent=self._random_ua(),
+                    user_agent=stealth_ua,
                     extra_http_headers={"Accept-Language": "vi-VN,vi;q=0.9,en-US;q=0.8"},
                 )
                 page = ctx.new_page()

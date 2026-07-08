@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import axios from '../../api/axios'
 
 const fmtDate = d => d ? new Date(d).toLocaleString('vi-VN') : '—'
@@ -15,6 +16,7 @@ const LEVELS = ['', 'INFO', 'WARN', 'ERROR', 'CRITICAL', 'DEBUG']
 const PHASES = ['', 'EXTRACT', 'TRANSFORM', 'QUALITY_CHECK', 'LOAD', 'GENERAL']
 
 export default function SaSyncMonitorPage() {
+  const { t } = useTranslation()
   const [logs,    setLogs]    = useState([])
   const [total,   setTotal]   = useState(0)
   const [loading, setLoading] = useState(true)
@@ -31,9 +33,9 @@ export default function SaSyncMonitorPage() {
     if (phaseFilter) params.set('phase', phaseFilter)
     axios.get(`/api/admin/sa/sync-logs?${params}`)
       .then(r => { setLogs(r.data.data ?? []); setTotal(r.data.total ?? 0) })
-      .catch(() => setError('Không thể tải nhật ký đồng bộ'))
+      .catch(() => setError(t('common.cannotLoadData')))
       .finally(() => setLoading(false))
-  }, [page, levelFilter, phaseFilter])
+  }, [page, levelFilter, phaseFilter, t])
 
   useEffect(() => { load() }, [load])
 
@@ -43,27 +45,27 @@ export default function SaSyncMonitorPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Giám sát đồng bộ</h1>
+          <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>{t('sa.sync.title')}</h1>
           <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
-            ETL & Sync logs – {total} bản ghi
+            {t('sa.sync.subtitle', { count: total })}
           </p>
         </div>
         <div className="flex gap-2 flex-wrap">
           <select value={levelFilter} onChange={e => { setLevelFilter(e.target.value); setPage(1) }}
             className="text-sm px-3 py-2 rounded-lg"
             style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}>
-            {LEVELS.map(l => <option key={l} value={l}>{l || 'Tất cả cấp độ'}</option>)}
+            {LEVELS.map(l => <option key={l} value={l}>{l || t('sa.sync.allLevels')}</option>)}
           </select>
           <select value={phaseFilter} onChange={e => { setPhaseFilter(e.target.value); setPage(1) }}
             className="text-sm px-3 py-2 rounded-lg"
             style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}>
-            {PHASES.map(p => <option key={p} value={p}>{p || 'Tất cả giai đoạn'}</option>)}
+            {PHASES.map(p => <option key={p} value={p}>{p || t('sa.sync.allPhases')}</option>)}
           </select>
           <button onClick={load}
             className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium"
             style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}>
             <span className={`icon text-base ${loading ? 'animate-spin' : ''}`}>refresh</span>
-            Làm mới
+            {t('sa.sync.refresh')}
           </button>
         </div>
       </div>
@@ -84,7 +86,15 @@ export default function SaSyncMonitorPage() {
           <table className="w-full text-sm">
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-elevated)' }}>
-                {['Mã log', 'Mã job', 'Giai đoạn', 'Cấp độ', 'Nội dung', 'Bản ghi', 'Thời gian'].map(h => (
+                {[
+                  t('sa.sync.colLogId'),
+                  t('sa.sync.colJobId'),
+                  t('sa.sync.colPhase'),
+                  t('sa.sync.colLevel'),
+                  t('sa.sync.colMessage'),
+                  t('sa.sync.colRecords'),
+                  t('sa.sync.colTime')
+                ].map(h => (
                   <th key={h} className="text-left px-4 py-3 font-medium"
                     style={{ color: 'var(--text-tertiary)', whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
@@ -131,7 +141,7 @@ export default function SaSyncMonitorPage() {
               })}
               {logs.length === 0 && (
                 <tr><td colSpan={7} className="px-4 py-10 text-center text-sm"
-                  style={{ color: 'var(--text-tertiary)' }}>Chưa có sync logs</td></tr>
+                  style={{ color: 'var(--text-tertiary)' }}>{t('sa.sync.noData')}</td></tr>
               )}
             </tbody>
           </table>
@@ -140,17 +150,17 @@ export default function SaSyncMonitorPage() {
 
       {totalPages > 1 && (
         <div className="flex items-center justify-between text-sm">
-          <span style={{ color: 'var(--text-tertiary)' }}>Trang {page}/{totalPages} · {total} bản ghi</span>
+          <span style={{ color: 'var(--text-tertiary)' }}>{t('sa.sync.pageInfo', { page, total: totalPages, count: total })}</span>
           <div className="flex gap-2">
             <button disabled={page <= 1} onClick={() => setPage(p => p - 1)}
               className="px-3 py-1.5 rounded-lg disabled:opacity-40"
               style={{ background: 'var(--bg-elevated)', color: 'var(--text-primary)', border: '1px solid var(--border)' }}>
-              ← Trước
+              {t('common.prev')}
             </button>
             <button disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}
               className="px-3 py-1.5 rounded-lg disabled:opacity-40"
               style={{ background: 'var(--bg-elevated)', color: 'var(--text-primary)', border: '1px solid var(--border)' }}>
-              Tiếp →
+              {t('common.next')}
             </button>
           </div>
         </div>

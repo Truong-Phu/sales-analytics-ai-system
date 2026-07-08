@@ -137,10 +137,10 @@ public class SubscriptionPaymentService
             sub.StartedAt       = DateTime.UtcNow;
             sub.ExpiresAt       = tx.Invoice.BillingPeriodEnd;
             sub.GraceEndsAt     = tx.Invoice.BillingPeriodEnd?.AddDays(3);
-            sub.AiEnabled       = true;
-            sub.AdvancedReports = true;
-            sub.MaxChannels     = -1;
-            sub.MaxUsers        = -1;
+            sub.AiEnabled       = tx.Invoice.Plan is "pro" or "enterprise";
+            sub.AdvancedReports = tx.Invoice.Plan is "pro" or "enterprise";
+            sub.MaxChannels     = tx.Invoice.Plan == "free" ? 1  : (tx.Invoice.Plan == "pro" ? 5 : -1);
+            sub.MaxUsers        = tx.Invoice.Plan == "free" ? 3  : (tx.Invoice.Plan == "pro" ? 20 : -1);
             sub.UpdatedAt       = DateTime.UtcNow;
 
             _logger.LogInformation("Kích hoạt gói Pro – company={Id} – hết hạn={Exp}",

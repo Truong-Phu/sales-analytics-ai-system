@@ -150,7 +150,7 @@ public class AuthService
                 Status          = "trial",
                 TrialEndsAt     = DateTime.UtcNow.AddDays(7),
                 MaxChannels     = 5,
-                MaxUsers        = 10,
+                MaxUsers        = 20,
                 AiEnabled       = true,
                 AdvancedReports = true,
             };

@@ -316,20 +316,22 @@ public class PosController(IConfiguration cfg, ITenantContext tenant) : Controll
                 await using var cuCmd = new NpgsqlCommand("""
                     INSERT INTO public.customers
                         (customer_code, full_name, phone, company_id,
-                         email, is_active, segment_label, created_at, updated_at)
+                         email, province, district, is_active, segment_label, created_at, updated_at)
                     VALUES
                         (@code, @name, @phone, @cid::uuid,
-                         @email, TRUE, 'NEW', NOW(), NOW())
+                         @email, @province, @district, TRUE, 'NEW', NOW(), NOW())
                     ON CONFLICT (customer_code) DO UPDATE
                         SET full_name  = EXCLUDED.full_name,
                             updated_at = NOW()
                     RETURNING customer_id
                     """, conn, tx);
-                cuCmd.Parameters.AddWithValue("code",  $"KH-POS-{phone[^6..]}");
-                cuCmd.Parameters.AddWithValue("name",  string.IsNullOrWhiteSpace(dto.CustomerName) ? "Khách lẻ" : dto.CustomerName);
-                cuCmd.Parameters.AddWithValue("phone", phone);
-                cuCmd.Parameters.AddWithValue("cid",   tenant.CompanyId!.Value.ToString());
-                cuCmd.Parameters.AddWithValue("email", (object?)dto.CustomerEmail ?? DBNull.Value);
+                cuCmd.Parameters.AddWithValue("code",     $"KH-POS-{phone[^6..]}");
+                cuCmd.Parameters.AddWithValue("name",     string.IsNullOrWhiteSpace(dto.CustomerName) ? "Khách lẻ" : dto.CustomerName);
+                cuCmd.Parameters.AddWithValue("phone",    phone);
+                cuCmd.Parameters.AddWithValue("cid",      tenant.CompanyId!.Value.ToString());
+                cuCmd.Parameters.AddWithValue("email",    (object?)dto.CustomerEmail    ?? DBNull.Value);
+                cuCmd.Parameters.AddWithValue("province", (object?)dto.CustomerProvince ?? DBNull.Value);
+                cuCmd.Parameters.AddWithValue("district", (object?)dto.CustomerDistrict ?? DBNull.Value);
 
                 var cuObj = await cuCmd.ExecuteScalarAsync();
                 if (cuObj is null or DBNull)
@@ -481,9 +483,13 @@ public class PosController(IConfiguration cfg, ITenantContext tenant) : Controll
                 }
             }
 
-            // 7. Tạo order (is_stock_deducted = TRUE vì sẽ trừ kho ngay bên dưới)
+            // 7. Tạo order — VIETQR cần đợi xác nhận nên không đánh dấu PAID ngay
             var orderCode = $"POS-{DateTime.Now:yyyyMMdd-HHmmss}";
             var userId2   = int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var uid2) ? uid2 : 0;
+
+            var isVietQR      = (dto.PaymentMethod ?? "").Equals("VIETQR", StringComparison.OrdinalIgnoreCase);
+            var orderStatus   = isVietQR ? "PENDING"   : "DELIVERED";
+            var paymentStatus = isVietQR ? "UNPAID"    : "PAID";
 
             await using var orCmd = new NpgsqlCommand("""
                 INSERT INTO public.orders
@@ -492,22 +498,24 @@ public class PosController(IConfiguration cfg, ITenantContext tenant) : Controll
                      payment_method, payment_status, shipping_status,
                      company_id, created_by_user_id, pos_note, is_stock_deducted, voucher_code, created_at, updated_at)
                 VALUES
-                    (@code, @cust, @chan, NOW(), 'DELIVERED',
+                    (@code, @cust, @chan, NOW(), @orderStatus,
                      @total, @disc, 0,
-                     @pay, 'PAID', 'NOT_SHIPPED',
+                     @pay, @paymentStatus, 'NOT_SHIPPED',
                      @cid::uuid, @createdBy, @note, TRUE, @vcode, NOW(), NOW())
                 RETURNING order_id
                 """, conn, tx);
-            orCmd.Parameters.AddWithValue("code",      orderCode);
-            orCmd.Parameters.AddWithValue("cust",      customerId);
-            orCmd.Parameters.AddWithValue("chan",      channelId);
-            orCmd.Parameters.AddWithValue("total",     total);
-            orCmd.Parameters.AddWithValue("disc",      discount);
-            orCmd.Parameters.AddWithValue("pay",       dto.PaymentMethod ?? "CASH");
-            orCmd.Parameters.AddWithValue("cid",       tenant.CompanyId!.Value.ToString());
-            orCmd.Parameters.AddWithValue("createdBy", userId2 > 0 ? userId2 : DBNull.Value);
-            orCmd.Parameters.AddWithValue("note",      (object?)(dto.Note) ?? DBNull.Value);
-            orCmd.Parameters.AddWithValue("vcode",     (object?)(dto.VoucherCode) ?? DBNull.Value);
+            orCmd.Parameters.AddWithValue("code",          orderCode);
+            orCmd.Parameters.AddWithValue("cust",          customerId);
+            orCmd.Parameters.AddWithValue("chan",          channelId);
+            orCmd.Parameters.AddWithValue("total",         total);
+            orCmd.Parameters.AddWithValue("disc",          discount);
+            orCmd.Parameters.AddWithValue("pay",           dto.PaymentMethod ?? "CASH");
+            orCmd.Parameters.AddWithValue("orderStatus",   orderStatus);
+            orCmd.Parameters.AddWithValue("paymentStatus", paymentStatus);
+            orCmd.Parameters.AddWithValue("cid",           tenant.CompanyId!.Value.ToString());
+            orCmd.Parameters.AddWithValue("createdBy",     userId2 > 0 ? userId2 : DBNull.Value);
+            orCmd.Parameters.AddWithValue("note",          (object?)(dto.Note) ?? DBNull.Value);
+            orCmd.Parameters.AddWithValue("vcode",         (object?)(dto.VoucherCode) ?? DBNull.Value);
             var orderId = Convert.ToInt32(await orCmd.ExecuteScalarAsync());
 
             // 8. Insert order_items + trừ tồn kho (đã validate ở bước 6, exact deduction)
@@ -550,7 +558,7 @@ public class PosController(IConfiguration cfg, ITenantContext tenant) : Controll
                 await using var stockCmd = new NpgsqlCommand("""
                     WITH upd AS (
                         UPDATE public.products
-                        SET stock_quantity = stock_quantity - @qty, updated_at = NOW()
+                        SET stock_quantity = GREATEST(0, stock_quantity - @qty), updated_at = NOW()
                         WHERE product_id = @pid AND company_id = @cid::uuid
                         RETURNING product_id, stock_quantity AS after_stock
                     )
@@ -636,6 +644,7 @@ public class PosController(IConfiguration cfg, ITenantContext tenant) : Controll
                 total      = Math.Round(total, 0),
                 pointsEarned,
                 remainingPoints = (int)remainPoints,
+                requiresQR  = isVietQR,
                 message    = $"Đơn hàng {orderCode} tạo thành công. Khách tích được {pointsEarned} điểm.",
             });
         }
@@ -844,6 +853,8 @@ public record CreateOfflineOrderDto(
     string? CustomerName,
     string? CustomerPhone,
     string? CustomerEmail,
+    string? CustomerProvince,
+    string? CustomerDistrict,
     List<PosOrderItem> Items,
     string? PaymentMethod,
     string? VoucherCode,

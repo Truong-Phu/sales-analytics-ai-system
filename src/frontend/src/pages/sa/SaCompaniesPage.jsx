@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import axios from '../../api/axios'
 
 const fmtDate = d => d ? new Date(d).toLocaleDateString('vi-VN') : '—'
@@ -9,13 +10,14 @@ const PLAN_CFG = {
   enterprise: { bg: '#FEF9C3', color: '#92400E' },
 }
 const STATUS_CFG = {
-  active:   { bg: '#D1FAE5', color: '#065F46' },
-  inactive: { bg: '#FEE2E2', color: '#991B1B' },
-  expired:  { bg: '#FEF9C3', color: '#854D0E' },
+  active:   { bg: 'var(--success-bg)', color: 'var(--profit-positive)' },
+  inactive: { bg: 'var(--error-bg)', color: 'var(--color-error)' },
+  expired:  { bg: 'var(--warning-bg)', color: 'var(--color-warning)' },
 }
 
 // Modal xác nhận khóa / mở khóa công ty
 function LockModal({ company, onClose, onConfirm }) {
+  const { t } = useTranslation()
   const [reason, setReason] = useState('')
   const [loading, setLoading] = useState(false)
   const isLocking = company.isActive
@@ -32,23 +34,23 @@ function LockModal({ company, onClose, onConfirm }) {
       <div className="w-full max-w-md rounded-2xl p-6"
         style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
         <h3 className="text-lg font-bold mb-1" style={{ color: 'var(--text-primary)' }}>
-          {isLocking ? 'Khóa công ty' : 'Mở khóa công ty'}
+          {isLocking ? t('sa.companies.modalLockTitle') : t('sa.companies.modalUnlockTitle')}
         </h3>
         <p className="text-sm mb-4" style={{ color: 'var(--text-secondary)' }}>
           {isLocking
-            ? `Công ty "${company.name}" sẽ bị khóa. Toàn bộ người dùng sẽ bị đăng xuất và không thể đăng nhập.`
-            : `Công ty "${company.name}" sẽ được mở khóa và hoạt động bình thường trở lại.`}
+            ? t('sa.companies.modalLockWarn', { name: company.name })
+            : t('sa.companies.modalUnlockWarn', { name: company.name })}
         </p>
 
         {isLocking && (
           <div className="mb-4">
             <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>
-              Lý do khóa <span style={{ color: 'var(--color-error)' }}>*</span>
+              {t('sa.companies.modalReasonLabel')} <span style={{ color: 'var(--color-error)' }}>*</span>
             </label>
             <textarea
               className="w-full p-3 rounded-xl text-sm resize-none"
               rows={3}
-              placeholder="Nhập lý do khóa công ty..."
+              placeholder={t('sa.companies.modalReasonPlaceholder')}
               value={reason}
               onChange={e => setReason(e.target.value)}
               style={{
@@ -64,7 +66,7 @@ function LockModal({ company, onClose, onConfirm }) {
         {!isLocking && company.lockReason && (
           <div className="mb-4 p-3 rounded-xl text-sm"
             style={{ background: 'rgba(239,68,68,0.07)', border: '1px solid rgba(239,68,68,0.2)' }}>
-            <span className="font-medium" style={{ color: 'var(--color-error)' }}>Lý do đã khóa: </span>
+            <span className="font-medium" style={{ color: 'var(--color-error)' }}>{t('sa.companies.modalPrevReason')} </span>
             <span style={{ color: 'var(--text-secondary)' }}>{company.lockReason}</span>
           </div>
         )}
@@ -74,17 +76,17 @@ function LockModal({ company, onClose, onConfirm }) {
             onClick={onClose}
             className="px-4 py-2 rounded-xl text-sm font-medium transition-colors"
             style={{ background: 'var(--bg-elevated)', color: 'var(--text-secondary)' }}>
-            Hủy
+            {t('sa.companies.modalCancel')}
           </button>
           <button
             onClick={handleConfirm}
             disabled={loading || (isLocking && !reason.trim())}
             className="px-4 py-2 rounded-xl text-sm font-medium transition-colors disabled:opacity-50"
             style={{
-              background: isLocking ? '#DC2626' : '#059669',
+              background: isLocking ? 'var(--color-error)' : 'var(--profit-positive)',
               color: 'white',
             }}>
-            {loading ? '...' : isLocking ? 'Xác nhận khóa' : 'Xác nhận mở khóa'}
+            {loading ? '...' : isLocking ? t('sa.companies.modalConfirmLock') : t('sa.companies.modalConfirmUnlock')}
           </button>
         </div>
       </div>
@@ -93,6 +95,7 @@ function LockModal({ company, onClose, onConfirm }) {
 }
 
 export default function SaCompaniesPage() {
+  const { t } = useTranslation()
   const [companies, setCompanies] = useState([])
   const [loading,   setLoading]   = useState(true)
   const [error,     setError]     = useState('')
@@ -103,9 +106,9 @@ export default function SaCompaniesPage() {
     setLoading(true)
     axios.get('/api/admin/sa/companies')
       .then(r => setCompanies(r.data))
-      .catch(() => setError('Không thể tải danh sách công ty'))
+      .catch(() => setError(t('common.cannotLoadData')))
       .finally(() => setLoading(false))
-  }, [])
+  }, [t])
 
   useEffect(() => { load() }, [load])
 
@@ -136,14 +139,14 @@ export default function SaCompaniesPage() {
 
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Quản lý Công ty</h1>
+          <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>{t('sa.companies.title')}</h1>
           <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
-            Quản lý tất cả công ty trong hệ thống
+            {t('sa.companies.subtitle')}
           </p>
         </div>
         <span className="text-sm px-3 py-1 rounded-full font-medium"
           style={{ background: 'var(--bg-elevated)', color: 'var(--text-secondary)' }}>
-          {companies.length} công ty
+          {t('sa.companies.count', { count: companies.length })}
         </span>
       </div>
 
@@ -168,7 +171,16 @@ export default function SaCompaniesPage() {
           <table className="w-full text-sm">
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-elevated)' }}>
-                {['Công ty', 'Email', 'Gói', 'Gói đăng ký', 'Thành viên', 'Ngày đăng ký', 'Trạng thái', ''].map(h => (
+                {[
+                  t('sa.companies.colCompany'),
+                  t('sa.companies.colEmail'),
+                  t('sa.companies.colPlan'),
+                  t('sa.companies.colSubscription'),
+                  t('sa.companies.colMembers'),
+                  t('sa.companies.colRegDate'),
+                  t('sa.companies.colStatus'),
+                  ''
+                ].map(h => (
                   <th key={h} className="text-left px-4 py-3 font-medium"
                     style={{ color: 'var(--text-tertiary)', whiteSpace: 'nowrap' }}>
                     {h}
@@ -221,7 +233,7 @@ export default function SaCompaniesPage() {
                       <div>
                         <span className="text-xs px-2 py-0.5 rounded-full font-medium"
                           style={{ background: companyCfg.bg, color: companyCfg.color }}>
-                          {c.isActive ? 'Đang hoạt động' : 'Đã khóa'}
+                          {c.isActive ? t('sa.companies.statusActive') : t('sa.companies.statusLocked')}
                         </span>
                         {!c.isActive && c.lockReason && (
                           <div className="text-xs mt-1 max-w-[140px] truncate"
@@ -237,10 +249,10 @@ export default function SaCompaniesPage() {
                         onClick={() => setModal(c)}
                         className="text-xs px-3 py-1.5 rounded-lg font-medium transition-all"
                         style={{
-                          background: c.isActive ? '#FEE2E2' : '#D1FAE5',
-                          color:      c.isActive ? '#991B1B' : '#065F46',
+                          background: c.isActive ? 'var(--error-bg)' : 'var(--success-bg)',
+                          color:      c.isActive ? 'var(--color-error)' : 'var(--color-success)',
                         }}>
-                        {c.isActive ? 'Khóa' : 'Mở khóa'}
+                        {c.isActive ? t('sa.companies.btnLock') : t('sa.companies.btnUnlock')}
                       </button>
                     </td>
                   </tr>
@@ -248,7 +260,7 @@ export default function SaCompaniesPage() {
               })}
               {companies.length === 0 && (
                 <tr><td colSpan={8} className="px-4 py-10 text-center text-sm"
-                  style={{ color: 'var(--text-tertiary)' }}>Chưa có công ty nào</td></tr>
+                  style={{ color: 'var(--text-tertiary)' }}>{t('sa.companies.noData')}</td></tr>
               )}
             </tbody>
           </table>

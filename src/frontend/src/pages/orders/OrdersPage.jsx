@@ -816,42 +816,48 @@ export default function OrdersPage() {
                             }
                             size="xs"
                           />
-                          {canPayment && !['cancelled', 'returned'].includes(order.status) && (
-                            <>
-                              {/* Chưa có transaction → nút khởi tạo */}
-                              {(!paymentTxCache[order.orderId] && (order.paymentStatus === 'UNPAID' || !order.paymentStatus)) && (
-                                <button
-                                  onClick={() => {
-                                    setPaymentOrder(order)
-                                    fetchOrderTx(order.orderId)
-                                  }}
-                                  className="px-2 py-0.5 rounded text-xs font-medium"
-                                  style={{ background: 'rgba(99,102,241,0.1)', color: 'var(--primary-500)', border: '1px solid rgba(99,102,241,0.2)' }}>
-                                  Thanh toán
-                                </button>
-                              )}
-                              {/* Có tx Pending Cash → nút xác nhận thủ công */}
-                              {paymentTxCache[order.orderId]?.status === 'Pending' &&
-                               paymentTxCache[order.orderId]?.paymentMethod === 'CASH' && (
-                                <button
-                                  onClick={() => setConfirmTx(paymentTxCache[order.orderId])}
-                                  className="px-2 py-0.5 rounded text-xs font-medium"
-                                  style={{ background: 'rgba(16,185,129,0.1)', color: '#10B981', border: '1px solid rgba(16,185,129,0.2)' }}>
-                                  Xác nhận
-                                </button>
-                              )}
-                              {/* Có tx Pending VietQR → nút xem QR */}
-                              {paymentTxCache[order.orderId]?.status === 'Pending' &&
-                               paymentTxCache[order.orderId]?.paymentMethod === 'VIETQR' && (
-                                <button
-                                  onClick={() => navigate(`/payment/vietqr?txId=${paymentTxCache[order.orderId].id}`)}
-                                  className="px-2 py-0.5 rounded text-xs font-medium"
-                                  style={{ background: 'rgba(99,102,241,0.1)', color: 'var(--primary-500)' }}>
-                                  Xem QR
-                                </button>
-                              )}
-                            </>
-                          )}
+                          {(() => {
+                            const chan = (order.channel || '').toLowerCase();
+                            const isOfflineOrder = chan.includes('quầy') || chan.includes('offline') || chan.includes('pos') || 
+                              (!chan.includes('shopee') && !chan.includes('lazada') && !chan.includes('tiktok'));
+
+                            return canPayment && isOfflineOrder && !['cancelled', 'returned'].includes(order.status) && (
+                              <>
+                                {/* Chưa có transaction → nút khởi tạo */}
+                                {(!paymentTxCache[order.orderId] && (order.paymentStatus === 'UNPAID' || !order.paymentStatus)) && (
+                                  <button
+                                    onClick={() => {
+                                      setPaymentOrder(order)
+                                      fetchOrderTx(order.orderId)
+                                    }}
+                                    className="px-2 py-0.5 rounded text-xs font-medium"
+                                    style={{ background: 'rgba(99,102,241,0.1)', color: 'var(--primary-500)', border: '1px solid rgba(99,102,241,0.2)' }}>
+                                    Thanh toán
+                                  </button>
+                                )}
+                                {/* Có tx Pending Cash → nút xác nhận thủ công */}
+                                {paymentTxCache[order.orderId]?.status === 'Pending' &&
+                                 paymentTxCache[order.orderId]?.paymentMethod === 'CASH' && (
+                                  <button
+                                    onClick={() => setConfirmTx(paymentTxCache[order.orderId])}
+                                    className="px-2 py-0.5 rounded text-xs font-medium"
+                                    style={{ background: 'rgba(16,185,129,0.1)', color: '#10B981', border: '1px solid rgba(16,185,129,0.2)' }}>
+                                    Xác nhận
+                                  </button>
+                                )}
+                                {/* Có tx Pending VietQR → nút xem QR */}
+                                {paymentTxCache[order.orderId]?.status === 'Pending' &&
+                                 paymentTxCache[order.orderId]?.paymentMethod === 'VIETQR' && (
+                                  <button
+                                    onClick={() => navigate(`/payment/vietqr?txId=${paymentTxCache[order.orderId].id}`)}
+                                    className="px-2 py-0.5 rounded text-xs font-medium"
+                                    style={{ background: 'rgba(99,102,241,0.1)', color: 'var(--primary-500)' }}>
+                                    Xem QR
+                                  </button>
+                                )}
+                              </>
+                            );
+                          })()}
                         </div>
                       </td>
                       <td className="px-4 py-3 text-sm" style={{ color: 'var(--text-secondary)' }}>

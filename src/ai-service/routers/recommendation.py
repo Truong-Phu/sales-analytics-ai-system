@@ -208,15 +208,18 @@ def _analyze_channel_performance() -> List[Recommendation]:
     recs = []
     sql = """
         SELECT
-            dc.channel_name,
-            SUM(fs.net_revenue)   AS revenue,
-            SUM(fs.order_count)   AS orders,
-            AVG(fs.profit_margin) AS avg_margin
-        FROM dw.fact_sales fs
-        JOIN dw.dim_date    dd ON fs.date_key    = dd.date_key
-        JOIN dw.dim_channel dc ON fs.channel_key = dc.channel_key
-        WHERE dd.full_date >= CURRENT_DATE - INTERVAL '30 days'
-        GROUP BY dc.channel_name
+            c.channel_name,
+            SUM(oi.subtotal)                 AS revenue,
+            COUNT(DISTINCT o.order_id)       AS orders,
+            COALESCE(AVG((oi.price - COALESCE(pv.original_price, p.cost_price, 0)) / NULLIF(oi.price, 0) * 100), 0) AS avg_margin
+        FROM public.orders o
+        JOIN public.order_items oi ON oi.order_id  = o.order_id
+        JOIN public.products p ON oi.product_id = p.product_id
+        LEFT JOIN public.product_variations pv ON pv.id = oi.variation_id
+        JOIN public.sales_channels c ON o.channel_id = c.channel_id
+        WHERE o.status NOT IN ('CANCELLED', 'RETURNED')
+          AND o.order_date >= CURRENT_DATE - INTERVAL '30 days'
+        GROUP BY c.channel_name
         ORDER BY revenue DESC
     """
     try:
@@ -231,6 +234,10 @@ def _analyze_channel_performance() -> List[Recommendation]:
             pct  = row["revenue"] / total_revenue * 100 if total_revenue else 0
             ch   = row["channel_name"]
             name = _DISPLAY.get(ch.lower(), ch.title())
+            # Nếu tên chứa Phú Thịnh thì rút gọn lại thành tên gốc
+            if "phú thịnh" in name.lower():
+                name = name.replace("Phú Thịnh", "").replace("phú thịnh", "").strip()
+
             # Kênh chiếm < 10% doanh thu
             if pct < 10:
                 recs.append(Recommendation(
@@ -283,19 +290,23 @@ def _analyze_top_products() -> List[Recommendation]:
     recs = []
     sql = """
         SELECT
+            p.product_id,
             p.product_name,
+            pv.variation_name,
+            pv.attribute_color,
+            pv.attribute_size,
+            COALESCE(pv.stock_quantity, p.stock_quantity, 0) AS stock,
             SUM(oi.quantity)   AS qty_sold,
-            SUM(oi.subtotal)   AS revenue,
-            COALESCE(MIN(pv.stock_quantity), 0) AS stock
+            SUM(oi.subtotal)   AS revenue
         FROM public.order_items oi
         JOIN public.orders   o  ON oi.order_id   = o.order_id
         JOIN public.products p  ON oi.product_id = p.product_id
-        LEFT JOIN public.product_variations pv ON pv.product_id = p.product_id AND pv.is_active
+        LEFT JOIN public.product_variations pv ON pv.id = oi.variation_id AND pv.is_active
         WHERE o.status NOT IN ('CANCELLED','RETURNED')
           AND o.order_date >= CURRENT_DATE - INTERVAL '7 days'
-        GROUP BY p.product_id, p.product_name
+        GROUP BY p.product_id, p.product_name, pv.id, pv.variation_name, pv.attribute_color, pv.attribute_size, pv.stock_quantity, p.stock_quantity
         ORDER BY qty_sold DESC
-        LIMIT 5
+        LIMIT 10
     """
     try:
         df = query_df(sql)
@@ -304,11 +315,25 @@ def _analyze_top_products() -> List[Recommendation]:
         for i, (_, row) in enumerate(df.iterrows()):
             stock = int(row.get("stock", 0))
             qty   = int(row["qty_sold"])
+            product_name = row["product_name"]
+            
+            var_name = row.get("variation_name")
+            color = row.get("attribute_color")
+            size = row.get("attribute_size")
+            var_desc = ""
+            if var_name:
+                var_desc = f" ({var_name})"
+            elif color or size:
+                parts = [c for c in [color, size] if c]
+                var_desc = f" ({' / '.join(parts)})"
+
+            full_name = f"{product_name}{var_desc}"
+
             if i == 0:
                 recs.append(Recommendation(
                     priority="MEDIUM",
                     category="Sản phẩm",
-                    title=f"Top sản phẩm: {row['product_name']}",
+                    title=f"Top sản phẩm: {full_name}",
                     detail=f"Bán {qty} sản phẩm trong 7 ngày qua – doanh thu {row['revenue']:,.0f} VNĐ.",
                     action="Đảm bảo tồn kho đủ để đáp ứng nhu cầu. Xem xét nhập thêm hàng.",
                 ))
@@ -317,7 +342,7 @@ def _analyze_top_products() -> List[Recommendation]:
                 recs.append(Recommendation(
                     priority="HIGH",
                     category="Tồn kho",
-                    title=f"Sắp hết hàng: {row['product_name']}",
+                    title=f"Sắp hết hàng: {full_name}",
                     detail=f"Đang bán nhanh ({qty} đơn/tuần) nhưng tồn kho chỉ còn {stock} sản phẩm.",
                     action="Đặt hàng ngay để tránh mất đơn hàng trong 1–2 ngày tới.",
                 ))
@@ -667,6 +692,41 @@ def _analyze_basket_opportunities(company_id: str = None) -> List[Recommendation
     return recs
 
 
+def _analyze_market_trends() -> List[Recommendation]:
+    """Phân tích xu hướng từ Google Search đã cào để gợi ý cơ hội kinh doanh."""
+    recs = []
+    sql = """
+        SELECT keyword, title, snippet
+        FROM public.raw_google_data
+        WHERE is_processed = true AND is_valid = true
+        ORDER BY scraped_at DESC
+        LIMIT 6
+    """
+    try:
+        df = query_df(sql)
+        if df.empty:
+            return recs
+        seen_kws = set()
+        for _, row in df.iterrows():
+            kw = row["keyword"]
+            title = row["title"]
+            snippet = row["snippet"] or ""
+            if kw in seen_kws:
+                continue
+            seen_kws.add(kw)
+            
+            recs.append(Recommendation(
+                priority="MEDIUM",
+                category="MARKETING",
+                title=f"Xu hướng thị trường: Từ khóa '{kw}'",
+                detail=f"Phát hiện xu hướng nổi bật từ Google Search: '{title}'. Mô tả: {snippet[:120]}...",
+                action=f"Cân nhắc tối ưu từ khóa SEO hoặc nhập thử sản phẩm liên quan đến '{kw}' để đón đầu xu hướng.",
+            ))
+    except Exception as e:
+        logger.warning("Market trend analyzer lỗi: %s", e)
+    return recs
+
+
 @router.get(
     "",
     response_model=RecommendationResponse,
@@ -691,6 +751,7 @@ def get_recommendations(company_id: Optional[str] = Query(default=None)):
         recs += _analyze_anomalies()           # Z-score ML — phát hiện bất thường
         recs += _analyze_rfm_segments()        # RFM clustering — phân khúc KH
         recs += _analyze_basket_opportunities(company_id)  # Apriori MBA — cơ hội bundle
+        recs += _analyze_market_trends()       # Gợi ý xu hướng thị trường Google
 
         # Sắp xếp theo priority rồi loại trùng title
         priority_order = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}

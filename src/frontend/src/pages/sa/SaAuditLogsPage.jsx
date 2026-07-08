@@ -1,4 +1,5 @@
-﻿import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import axios from '../../api/axios'
 
 const fmtDate = d => d ? new Date(d).toLocaleString('vi-VN') : '—'
@@ -17,6 +18,7 @@ const ACTIONS = [
 ]
 
 export default function SaAuditLogsPage() {
+  const { t } = useTranslation()
   const [logs,    setLogs]    = useState([])
   const [total,   setTotal]   = useState(0)
   const [loading, setLoading] = useState(true)
@@ -27,6 +29,27 @@ export default function SaAuditLogsPage() {
   const [dateTo,       setDateTo]       = useState('')
   const pageSize = 50
 
+  const getStatusLabel = (status) => {
+    switch (status) {
+      case 'SUCCESS': return t('sa.statusSuccess', 'SUCCESS')
+      case 'FAILED': return t('sa.statusFailed', 'FAILED')
+      case 'UNAUTHORIZED': return t('sa.statusUnauthorized', 'UNAUTHORIZED')
+      default: return status
+    }
+  }
+
+  const getErrorMessageLabel = (msg) => {
+    if (!msg) return '—'
+    switch (msg) {
+      case 'Sai tên đăng nhập hoặc mật khẩu':
+        return t('sa.audit.errInvalidCredentials', 'Sai tên đăng nhập hoặc mật khẩu')
+      case 'Mật khẩu cũ không đúng':
+        return t('sa.audit.errOldPasswordIncorrect', 'Mật khẩu cũ không đúng')
+      default:
+        return msg
+    }
+  }
+
   const load = useCallback(() => {
     setLoading(true)
     const params = new URLSearchParams({ page, pageSize })
@@ -35,9 +58,9 @@ export default function SaAuditLogsPage() {
     if (dateTo)       params.set('to',     new Date(dateTo + 'T23:59:59').toISOString())
     axios.get(`/api/admin/sa/audit-logs?${params}`)
       .then(r => { setLogs(r.data.data ?? []); setTotal(r.data.total ?? 0) })
-      .catch(() => setError('Không thể tải nhật ký kiểm toán'))
+      .catch(() => setError(t('common.cannotLoadData')))
       .finally(() => setLoading(false))
-  }, [page, actionFilter, dateFrom, dateTo])
+  }, [page, actionFilter, dateFrom, dateTo, t])
 
   useEffect(() => { load() }, [load])
 
@@ -46,31 +69,31 @@ export default function SaAuditLogsPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Nhật ký kiểm toán</h1>
+        <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>{t('sa.audit.title')}</h1>
         <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
-          Nhật ký hành động toàn hệ thống – {total} bản ghi
+          {t('sa.audit.subtitle', { count: total })}
         </p>
       </div>
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3 items-end">
         <div>
-          <label className="text-sm font-medium block mb-1" style={{ color: 'var(--text-secondary)' }}>Hành động</label>
+          <label className="text-sm font-medium block mb-1" style={{ color: 'var(--text-secondary)' }}>{t('sa.audit.colAction')}</label>
           <select value={actionFilter} onChange={e => { setActionFilter(e.target.value); setPage(1) }}
             className="text-sm px-3 py-2 rounded-lg"
             style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}>
-            {ACTIONS.map(a => <option key={a} value={a}>{a || 'Tất cả hành động'}</option>)}
+            {ACTIONS.map(a => <option key={a} value={a}>{a || t('sa.audit.allActions')}</option>)}
           </select>
         </div>
         <div>
-          <label className="text-sm font-medium block mb-1" style={{ color: 'var(--text-secondary)' }}>Từ ngày</label>
+          <label className="text-sm font-medium block mb-1" style={{ color: 'var(--text-secondary)' }}>{t('sa.audit.from')}</label>
           <input type="date" value={dateFrom}
             onChange={e => { setDateFrom(e.target.value); setPage(1) }}
             className="text-sm px-3 py-2 rounded-lg"
             style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', color: 'var(--text-primary)' }} />
         </div>
         <div>
-          <label className="text-sm font-medium block mb-1" style={{ color: 'var(--text-secondary)' }}>Đến ngày</label>
+          <label className="text-sm font-medium block mb-1" style={{ color: 'var(--text-secondary)' }}>{t('sa.audit.to')}</label>
           <input type="date" value={dateTo}
             onChange={e => { setDateTo(e.target.value); setPage(1) }}
             className="text-sm px-3 py-2 rounded-lg"
@@ -80,7 +103,7 @@ export default function SaAuditLogsPage() {
           <button onClick={() => { setActionFilter(''); setDateFrom(''); setDateTo(''); setPage(1) }}
             className="text-sm px-3 py-2 rounded-lg"
             style={{ background: 'var(--bg-elevated)', color: 'var(--text-secondary)', border: '1px solid var(--border)' }}>
-            Xóa filter
+            {t('sa.audit.clear')}
           </button>
         )}
       </div>
@@ -101,7 +124,15 @@ export default function SaAuditLogsPage() {
           <table className="w-full text-sm">
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-elevated)' }}>
-                {['Thời gian', 'Người dùng', 'Hành động', 'Đối tượng', 'Trạng thái', 'IP', 'Chi tiết'].map(h => (
+                {[
+                  t('sa.audit.colTime'),
+                  t('sa.audit.colUser'),
+                  t('sa.audit.colAction'),
+                  t('sa.audit.colTarget'),
+                  t('sa.audit.colStatus'),
+                  t('sa.audit.colIp'),
+                  t('sa.audit.colDetails')
+                ].map(h => (
                   <th key={h} className="text-left px-4 py-3 font-medium"
                     style={{ color: 'var(--text-tertiary)', whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
@@ -137,7 +168,7 @@ export default function SaAuditLogsPage() {
                     <td className="px-4 py-2.5">
                       <span className="text-xs px-2 py-0.5 rounded-full font-medium"
                         style={{ background: stCfg.bg, color: stCfg.color }}>
-                        {l.status}
+                        {getStatusLabel(l.status)}
                       </span>
                     </td>
                     <td className="px-4 py-2.5 font-mono text-xs" style={{ color: 'var(--text-tertiary)' }}>
@@ -145,7 +176,9 @@ export default function SaAuditLogsPage() {
                     </td>
                     <td className="px-4 py-2.5 text-xs max-w-xs">
                       {l.errorMessage && (
-                        <p className="truncate text-red-500" title={l.errorMessage}>{l.errorMessage}</p>
+                        <p className="truncate text-red-500" title={getErrorMessageLabel(l.errorMessage)}>
+                          {getErrorMessageLabel(l.errorMessage)}
+                        </p>
                       )}
                     </td>
                   </tr>
@@ -153,7 +186,7 @@ export default function SaAuditLogsPage() {
               })}
               {logs.length === 0 && (
                 <tr><td colSpan={7} className="px-4 py-10 text-center text-sm"
-                  style={{ color: 'var(--text-tertiary)' }}>Chưa có nhật ký kiểm toán</td></tr>
+                  style={{ color: 'var(--text-tertiary)' }}>{t('sa.audit.noData')}</td></tr>
               )}
             </tbody>
           </table>
@@ -162,17 +195,17 @@ export default function SaAuditLogsPage() {
 
       {totalPages > 1 && (
         <div className="flex items-center justify-between text-sm">
-          <span style={{ color: 'var(--text-tertiary)' }}>Trang {page}/{totalPages} · {total} bản ghi</span>
+          <span style={{ color: 'var(--text-tertiary)' }}>{t('sa.audit.pageInfo', { page, total: totalPages, count: total })}</span>
           <div className="flex gap-2">
             <button disabled={page <= 1} onClick={() => setPage(p => p - 1)}
               className="px-3 py-1.5 rounded-lg disabled:opacity-40"
               style={{ background: 'var(--bg-elevated)', color: 'var(--text-primary)', border: '1px solid var(--border)' }}>
-              ← Trước
+              {t('common.prev')}
             </button>
             <button disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}
               className="px-3 py-1.5 rounded-lg disabled:opacity-40"
               style={{ background: 'var(--bg-elevated)', color: 'var(--text-primary)', border: '1px solid var(--border)' }}>
-              Tiếp →
+              {t('common.next')}
             </button>
           </div>
         </div>

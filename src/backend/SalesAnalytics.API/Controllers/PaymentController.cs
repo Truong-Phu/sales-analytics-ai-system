@@ -66,6 +66,22 @@ public class PaymentController : ControllerBase
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // GET /api/payment/bank-info
+    // Trả về thông tin tài khoản chuyển khoản ngân hàng tĩnh
+    // ─────────────────────────────────────────────────────────────────────────
+    [HttpGet("bank-info")]
+    public async Task<IActionResult> GetBankInfo()
+    {
+        var account = await _db.SystemPaymentAccounts
+            .FirstOrDefaultAsync(a => a.Method == "bank_transfer" && a.IsActive);
+
+        if (account is null)
+            return NotFound(new { success = false, message = "Không tìm thấy thông tin tài khoản ngân hàng." });
+
+        return Ok(new { success = true, data = account.ConfigMasked, displayName = account.DisplayName });
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // POST /api/payment/order/{orderId}/initiate
     // Khởi tạo thanh toán cho đơn hàng
     // ─────────────────────────────────────────────────────────────────────────
@@ -172,7 +188,7 @@ public class PaymentController : ControllerBase
         if (tx is null)
             return NotFound(new { success = false, message = "Giao dịch không tồn tại" });
 
-        var qr = await _vietqr.GetVietQRAsync(tx.PaymentCode);
+        var qr = await _vietqr.GetVietQRAsync(tx.PaymentCode, tx.PaymentMethod.ToString());
         return Ok(new { success = true, data = qr, transaction = new {
             tx.Id, tx.PaymentCode, tx.Amount, tx.Status, tx.ExpiredAt
         }});

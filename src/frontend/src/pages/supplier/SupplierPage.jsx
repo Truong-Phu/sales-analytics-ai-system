@@ -209,7 +209,7 @@ export default function SupplierPage() {
       {worst && worst.status === 'CRITICAL' && (
         <div className="rounded-xl p-4 text-sm"
           style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', color: '#991B1B' }}>
-          {t('supplierPerf.warningAlert', { name: worst.supplier_name })} ({(worst.on_time_rate * 100).toFixed(0)}%)
+          {t('supplierPerf.warningAlert', { name: worst.supplier_name })} ({(worst.on_time_rate * 100).toFixed(1)}%)
         </div>
       )}
     </div>

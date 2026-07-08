@@ -112,11 +112,11 @@ function StatusBadge({ status, t }) {
 // ── Plan comparison table ──────────────────────────────────────────────────────
 function PlanCompare({ t }) {
   const rows = [
-    { key: 'channels',   free: 'freeChannels', pro: 'proChannels' },
-    { key: 'users',      free: 'freeUsers',    pro: 'proUsers' },
-    { key: 'ai',         free: 'freeAi',       pro: 'proAi' },
-    { key: 'reports',    free: 'freeReports',  pro: 'proReports' },
-    { key: 'support',    free: 'freeSupport',  pro: 'proSupport' },
+    { key: 'channels',   free: 'freeChannels', pro: 'proChannels', ent: 'entChannels' },
+    { key: 'users',      free: 'freeUsers',    pro: 'proUsers',    ent: 'entUsers' },
+    { key: 'ai',         free: 'freeAi',       pro: 'proAi',       ent: 'entAi' },
+    { key: 'reports',    free: 'freeReports',  pro: 'proReports',  ent: 'entReports' },
+    { key: 'support',    free: 'freeSupport',  pro: 'proSupport',  ent: 'entSupport' },
   ]
   return (
     <table className="w-full text-sm mt-4 border-collapse">
@@ -134,10 +134,14 @@ function PlanCompare({ t }) {
             style={{ borderBottom: '1px solid var(--border)', color: 'var(--primary-500)' }}>
             {t('subscription.compare.pro')}
           </th>
+          <th className="py-2 px-3 text-center font-semibold"
+            style={{ borderBottom: '1px solid var(--border)', color: '#D97706' }}>
+            {t('subscription.compare.enterprise')}
+          </th>
         </tr>
       </thead>
       <tbody>
-        {rows.map(({ key, free, pro }) => (
+        {rows.map(({ key, free, pro, ent }) => (
           <tr key={key} style={{ borderBottom: '1px solid var(--border)' }}>
             <td className="py-2 px-3" style={{ color: 'var(--text-secondary)' }}>
               {t(`subscription.compare.${key}`)}
@@ -148,6 +152,10 @@ function PlanCompare({ t }) {
             <td className="py-2 px-3 text-center text-xs font-medium"
               style={{ color: 'var(--primary-500)' }}>
               {t(`subscription.compare.${pro}`)}
+            </td>
+            <td className="py-2 px-3 text-center text-xs font-medium"
+              style={{ color: '#D97706' }}>
+              {t(`subscription.compare.${ent}`)}
             </td>
           </tr>
         ))}

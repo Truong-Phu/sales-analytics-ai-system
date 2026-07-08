@@ -586,8 +586,8 @@ public class AdminController(
             sub.Plan            = req.Plan;
             sub.AiEnabled       = req.Plan is "pro" or "enterprise";
             sub.AdvancedReports = req.Plan is "pro" or "enterprise";
-            sub.MaxChannels     = req.Plan == "free" ? 2  : -1;
-            sub.MaxUsers        = req.Plan == "free" ? 3  : -1;
+            sub.MaxChannels     = req.Plan == "free" ? 1  : (req.Plan == "pro" ? 5 : -1);
+            sub.MaxUsers        = req.Plan == "free" ? 3  : (req.Plan == "pro" ? 20 : -1);
         }
         if (!string.IsNullOrWhiteSpace(req.Status)) sub.Status    = req.Status;
         if (req.ExpiresAt.HasValue)                 sub.ExpiresAt = req.ExpiresAt;

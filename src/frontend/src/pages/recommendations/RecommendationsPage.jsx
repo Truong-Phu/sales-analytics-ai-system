@@ -388,7 +388,7 @@ export default function RecommendationsPage() {
       const prodName = getProductNameFromTitle(title)
       return (
         <button
-          onClick={() => navigate(`/purchase-orders?productName=${encodeURIComponent(prodName)}`)}
+          onClick={() => navigate(`/purchase-orders?productName=${encodeURIComponent(prodName)}&returnUrl=${encodeURIComponent('/recommendations?tab=auto')}`)}
           className="mt-3 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all"
           style={{ borderColor: 'rgba(16,185,129,0.4)', color: '#059669', background: 'rgba(16,185,129,0.06)', cursor: 'pointer' }}
           onMouseEnter={e => {

@@ -446,10 +446,10 @@ public class SubscriptionController : ControllerBase
         sub.StartedAt       = DateTime.UtcNow;
         sub.ExpiresAt       = invoice.BillingPeriodEnd;
         sub.GraceEndsAt     = invoice.BillingPeriodEnd?.AddDays(3);
-        sub.AiEnabled       = true;
-        sub.AdvancedReports = true;
-        sub.MaxChannels     = -1;
-        sub.MaxUsers        = -1;
+        sub.AiEnabled       = invoice.Plan is "pro" or "enterprise";
+        sub.AdvancedReports = invoice.Plan is "pro" or "enterprise";
+        sub.MaxChannels     = invoice.Plan == "free" ? 1  : (invoice.Plan == "pro" ? 5 : -1);
+        sub.MaxUsers        = invoice.Plan == "free" ? 3  : (invoice.Plan == "pro" ? 20 : -1);
         sub.UpdatedAt       = DateTime.UtcNow;
 
         _logger.LogInformation("Kích hoạt gói Pro cho company {CompanyId}, hết hạn {ExpiresAt}",

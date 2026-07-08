@@ -67,7 +67,9 @@ export default function AdminLayout() {
           </div>
           <div>
             <div className="text-white text-sm font-semibold leading-tight">Super Admin</div>
-            <div className="text-xs" style={{ color: 'rgba(255,255,255,0.60)' }}>Bảng điều khiển</div>
+            <div className="text-xs" style={{ color: 'rgba(255,255,255,0.60)' }}>
+              {currentLang === 'vi' ? 'Bảng điều khiển' : 'Control Panel'}
+            </div>
           </div>
         </div>
 
@@ -136,18 +138,9 @@ export default function AdminLayout() {
           })}
         </nav>
 
-        {/* User + back-to-app */}
-        <div className="px-3 py-4 space-y-2"
+        {/* User profile */}
+        <div className="px-3 py-4"
           style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-          <button
-            onClick={() => navigate('/dashboard')}
-            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all"
-            style={{ color: 'rgba(255,255,255,0.60)', background: 'transparent' }}
-            onMouseEnter={e => { e.currentTarget.style.color = '#fff'; e.currentTarget.style.background = 'rgba(255,255,255,0.05)' }}
-            onMouseLeave={e => { e.currentTarget.style.color = 'rgba(255,255,255,0.60)'; e.currentTarget.style.background = 'transparent' }}>
-            <span className="icon text-base">arrow_back</span>
-            {currentLang === 'vi' ? 'Về ứng dụng' : 'Back to App'}
-          </button>
           <div className="flex items-center gap-2 px-2 py-1">
             <div className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0"
               style={{ background: 'linear-gradient(135deg, #6366F1, #8B5CF6)' }}>

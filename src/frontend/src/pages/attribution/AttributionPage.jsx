@@ -53,16 +53,20 @@ export default function AttributionPage() {
 
   const getInsightText = () => {
     if (!data) return ''
-    if (currentLang !== 'en') return data.insight
+    let text = data.insight || ''
+    // Rút gọn chữ 'Phú Thịnh' trong insight tiếng Việt
+    text = text.replace(/Phú Thịnh/g, '').replace(/phú thịnh/g, '').replace(/\s+/g, ' ').trim()
+    if (currentLang !== 'en') return text
+
     const topCh = getChannelDisplayName(data.top_channel)
     const topPct = data.channels?.[0]?.attribution_pct ?? 0
     const worstRoiCh = data.worst_roi_channel ? getChannelDisplayName(data.worst_roi_channel) : ''
     
-    let text = t('attribution.insightTopChannel', { channel: topCh, pct: topPct })
+    let enText = t('attribution.insightTopChannel', { channel: topCh, pct: topPct })
     if (worstRoiCh) {
-      text += ' ' + t('attribution.insightWorstRoi', { channel: worstRoiCh })
+      enText += ' ' + t('attribution.insightWorstRoi', { channel: worstRoiCh })
     }
-    return text
+    return enText
   }
 
   const [data,   setData]   = useState(null)
@@ -126,7 +130,7 @@ export default function AttributionPage() {
               <ResponsiveContainer width="100%" height={220}>
                 <PieChart>
                   <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80}
-                    label={({ name, percent }) => `${name}: ${(percent*100).toFixed(0)}%`} labelLine={false}>
+                    label={({ name, percent }) => `${name}: ${(percent*100).toFixed(1)}%`} labelLine={false}>
                     {pieData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                   </Pie>
                   <Tooltip

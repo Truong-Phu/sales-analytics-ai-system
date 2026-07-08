@@ -15,17 +15,20 @@ public class PaymentService
 {
     private readonly AppDbContext   _db;
     private readonly VietQRService  _vietqr;
+    private readonly SubscriptionPaymentService _subPayment;
     private readonly ILogger<PaymentService> _logger;
 
     // Thời hạn hết hạn giao dịch QR/chuyển khoản: 30 phút
     private const int QR_EXPIRY_MINUTES = 30;
 
     public PaymentService(AppDbContext db, VietQRService vietqr,
+        SubscriptionPaymentService subPayment,
         ILogger<PaymentService> logger)
     {
-        _db     = db;
-        _vietqr = vietqr;
-        _logger = logger;
+        _db         = db;
+        _vietqr     = vietqr;
+        _subPayment = subPayment;
+        _logger     = logger;
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -83,7 +86,10 @@ public class PaymentService
         switch (method)
         {
             case PaymentMethod.VIETQR:
-                vietQrInfo = await _vietqr.GetVietQRAsync(paymentCode);
+                vietQrInfo = await _vietqr.GetVietQRAsync(paymentCode, "vietqr");
+                break;
+            case PaymentMethod.BANK_TRANSFER:
+                vietQrInfo = await _vietqr.GetVietQRAsync(paymentCode, "bank_transfer");
                 break;
             case PaymentMethod.MOMO:
                 mockUrl = $"/payment/mock-momo/{tx.Id}";
@@ -127,9 +133,7 @@ public class PaymentService
         // Cập nhật đơn hàng
         if (tx.Order is not null)
         {
-            tx.Order.PaymentStatus = "PAID";
-            tx.Order.PaidAt        = DateTime.UtcNow;
-            tx.Order.UpdatedAt     = DateTime.UtcNow;
+            MarkOrderAsPaid(tx.Order);
         }
 
         await _db.SaveChangesAsync();
@@ -187,16 +191,23 @@ public class PaymentService
             return false;
         }
 
-        tx.Status          = PaymentStatus.Paid;
-        tx.PaidAt          = DateTime.UtcNow;
-        tx.TransactionCode = transactionCode;
-        tx.GatewayResponse = JsonSerializer.Serialize(new { provider = "SEPAY", amount, transactionCode });
-
-        if (tx.Order is not null)
+        if (tx.InvoiceId is not null)
         {
-            tx.Order.PaymentStatus = "PAID";
-            tx.Order.PaidAt        = DateTime.UtcNow;
-            tx.Order.UpdatedAt     = DateTime.UtcNow;
+            await _subPayment.ActivateAsync(tx.Id);
+            tx.TransactionCode = transactionCode;
+            tx.GatewayResponse = JsonSerializer.Serialize(new { provider = "SEPAY", amount, transactionCode });
+        }
+        else
+        {
+            tx.Status          = PaymentStatus.Paid;
+            tx.PaidAt          = DateTime.UtcNow;
+            tx.TransactionCode = transactionCode;
+            tx.GatewayResponse = JsonSerializer.Serialize(new { provider = "SEPAY", amount, transactionCode });
+
+            if (tx.Order is not null)
+            {
+                MarkOrderAsPaid(tx.Order);
+            }
         }
 
         log.ProcessedStatus = "SUCCESS";
@@ -250,9 +261,7 @@ public class PaymentService
                 tx.GatewayResponse = JsonSerializer.Serialize(new { provider = "MOMO", result });
                 if (tx.Order is not null)
                 {
-                    tx.Order.PaymentStatus = "PAID";
-                    tx.Order.PaidAt        = DateTime.UtcNow;
-                    tx.Order.UpdatedAt     = DateTime.UtcNow;
+                    MarkOrderAsPaid(tx.Order);
                 }
                 log.ProcessedStatus = "SUCCESS";
                 break;
@@ -322,9 +331,7 @@ public class PaymentService
                 tx.GatewayResponse = JsonSerializer.Serialize(new { provider = "VNPAY", result });
                 if (tx.Order is not null)
                 {
-                    tx.Order.PaymentStatus = "PAID";
-                    tx.Order.PaidAt        = DateTime.UtcNow;
-                    tx.Order.UpdatedAt     = DateTime.UtcNow;
+                    MarkOrderAsPaid(tx.Order);
                 }
                 log.ProcessedStatus = "SUCCESS";
                 break;
@@ -393,17 +400,25 @@ public class PaymentService
             return false;
         }
 
-        tx.Status          = PaymentStatus.Paid;
-        tx.PaidAt          = DateTime.UtcNow;
-        tx.TransactionCode = referenceCode ?? sePayId;
-        tx.GatewayResponse = JsonSerializer.Serialize(
-            new { provider = "SEPAY", referenceCode, sePayId, amount });
-
-        if (tx.Order is not null)
+        if (tx.InvoiceId is not null)
         {
-            tx.Order.PaymentStatus = "PAID";
-            tx.Order.PaidAt        = DateTime.UtcNow;
-            tx.Order.UpdatedAt     = DateTime.UtcNow;
+            await _subPayment.ActivateAsync(tx.Id);
+            tx.TransactionCode = referenceCode ?? sePayId;
+            tx.GatewayResponse = JsonSerializer.Serialize(
+                new { provider = "SEPAY", referenceCode, sePayId, amount });
+        }
+        else
+        {
+            tx.Status          = PaymentStatus.Paid;
+            tx.PaidAt          = DateTime.UtcNow;
+            tx.TransactionCode = referenceCode ?? sePayId;
+            tx.GatewayResponse = JsonSerializer.Serialize(
+                new { provider = "SEPAY", referenceCode, sePayId, amount });
+
+            if (tx.Order is not null)
+            {
+                MarkOrderAsPaid(tx.Order);
+            }
         }
 
         log.ProcessedStatus = "SUCCESS";
@@ -455,6 +470,19 @@ public class PaymentService
     // ─────────────────────────────────────────────────────────────────────────
     // Helper
     // ─────────────────────────────────────────────────────────────────────────
+    private void MarkOrderAsPaid(Order order)
+    {
+        order.PaymentStatus = "PAID";
+        order.PaidAt        = DateTime.UtcNow;
+        order.UpdatedAt     = DateTime.UtcNow;
+
+        if (order.OrderCode.StartsWith("POS-", StringComparison.OrdinalIgnoreCase))
+        {
+            order.Status      = "DELIVERED";
+            order.DeliveredAt = DateTime.UtcNow;
+        }
+    }
+
     private static PaymentTransactionDto MapToDto(
         PaymentTransaction tx,
         VietQRInfoDto? vietQrInfo = null) => new(

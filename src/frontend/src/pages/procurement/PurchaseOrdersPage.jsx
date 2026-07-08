@@ -168,19 +168,25 @@ function CreateDrawer({ open, onClose, onSaved, defaultProductId = '', defaultPr
     setProdSuppliersMap({})
   }, [open, defaultProductId, defaultItems])
 
-  // Sau khi allProducts load, auto-fill giá cho defaultProductId hoặc defaultProductName
+  // Sau khi allProducts load, auto-fill giá cho defaultProductId hoặc defaultProductName (bao gồm cả phân tích biến thể)
   useEffect(() => {
     if (!allProducts.length) return
     let targetPid = defaultProductId
     let matchedProd = null
 
+    let prodNamePart = defaultProductName
+    const parseMatch = defaultProductName.match(/^(.*?)\s*\(([^)]+)\)$/)
+    if (parseMatch) {
+      prodNamePart = parseMatch[1].trim()
+    }
+
     if (targetPid) {
       matchedProd = allProducts.find(p => String(p.productId) === String(targetPid))
-    } else if (defaultProductName) {
-      // Tìm sản phẩm có tên khớp nhất (không phân biệt hoa thường)
+    } else if (prodNamePart) {
+      // Tìm sản phẩm có tên khớp nhất
       matchedProd = allProducts.find(p => 
-        p.productName.toLowerCase().includes(defaultProductName.toLowerCase()) || 
-        defaultProductName.toLowerCase().includes(p.productName.toLowerCase())
+        p.productName.toLowerCase().includes(prodNamePart.toLowerCase()) || 
+        prodNamePart.toLowerCase().includes(p.productName.toLowerCase())
       )
       if (matchedProd) {
         targetPid = String(matchedProd.productId)
@@ -203,16 +209,54 @@ function CreateDrawer({ open, onClose, onSaved, defaultProductId = '', defaultPr
     }))
   }, [allProducts, defaultProductId, defaultProductName])
 
+  // Tự động chọn biến thể (size/màu sắc) nếu thông tin được đính kèm trong productName dạng "Tên (Biến thể)"
   useEffect(() => {
-    if (!open || defaultItems.length === 0) return
-    const productIds = [...new Set(defaultItems.map(it => it.productId).filter(Boolean))]
+    if (!defaultProductName || !allProducts.length) return
+    const parseMatch = defaultProductName.match(/^(.*?)\s*\(([^)]+)\)$/)
+    if (!parseMatch) return
+    const varNamePart = parseMatch[2].trim().toLowerCase()
+
+    const prodNamePart = parseMatch[1].trim()
+    const matchedProd = allProducts.find(p => 
+      p.productName.toLowerCase().includes(prodNamePart.toLowerCase()) || 
+      prodNamePart.toLowerCase().includes(p.productName.toLowerCase())
+    )
+    if (!matchedProd) return
+    const pid = String(matchedProd.productId)
+
+    const vars = variationsMap[pid]
+    if (!vars || vars.length === 0) return
+
+    const matchedVar = vars.find(v => {
+      const parts = [v.color ?? v.attributeColor, v.size ?? v.attributeSize].filter(Boolean)
+      const label = parts.length > 0 ? parts.join(' / ') : (v.variationName || v.sku)
+      return label.toLowerCase() === varNamePart ||
+             (v.variationName && v.variationName.toLowerCase() === varNamePart)
+    })
+
+    if (matchedVar) {
+      setItems(its => its.map((it, i) => {
+        if (i === 0 && String(it.productId) === pid && !it.variationId) {
+          return {
+            ...it,
+            variationId: String(matchedVar.variationId ?? matchedVar.id)
+          }
+        }
+        return it
+      }))
+    }
+  }, [variationsMap, defaultProductName, allProducts])
+
+  useEffect(() => {
+    if (!open) return
+    const productIds = [...new Set(items.map(it => it.productId).filter(Boolean))]
     productIds.forEach(pid => {
       if (variationsMap[pid]) return
       api.get(`/api/products/${pid}/variations`)
          .then(r => setVariationsMap(m => ({ ...m, [pid]: r.data.data ?? [] })))
          .catch(() => setVariationsMap(m => ({ ...m, [pid]: [] })))
     })
-  }, [open, defaultItems, variationsMap])
+  }, [open, items, variationsMap])
 
   // Fetch nhà cung cấp đề xuất cho từng sản phẩm trong danh sách
   useEffect(() => {
@@ -629,8 +673,8 @@ export default function PurchaseOrdersPage() {
   const [isMock,        setIsMock]        = useState(false)
   const [filterStatus,  setFilterStatus]  = useState('')
   const [search,        setSearch]        = useState('')
-  // Tự mở drawer nếu URL có productId (navigate từ nút "Nhập hàng")
-  const [showCreate,    setShowCreate]    = useState(!!urlProductId || urlItems.length > 0)
+  // Tự mở drawer nếu URL có productId hoặc productName (navigate từ nút "Nhập hàng")
+  const [showCreate,    setShowCreate]    = useState(!!urlProductId || !!urlProductName || urlItems.length > 0)
   const [actionLoading, setActionLoading] = useState(null)
   const [confirmDlg, setConfirmDlg] = useState(null)
   const [expandedId,    setExpandedId]    = useState(null)

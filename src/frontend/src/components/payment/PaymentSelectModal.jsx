@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react'
 import api from '../../api/axios'
+import DetailDrawer from '../ui/DetailDrawer'
 
 const ALL_METHOD_OPTIONS = {
-  CASH:   { icon: '💵', label: 'Tiền mặt', desc: 'Nhận tiền trực tiếp, xác nhận thủ công'       },
-  VIETQR: { icon: '📱', label: 'VietQR',   desc: 'Quét QR hoặc chuyển khoản theo thông tin hiển thị' },
-  MOMO:   { icon: '🟣', label: 'MoMo',     desc: 'Ví điện tử MoMo'                               },
-  VNPAY:  { icon: '💳', label: 'VNPAY',    desc: 'Cổng thanh toán VNPAY'                          },
+  CASH:   { icon: 'payments',     label: 'Tiền mặt',  desc: 'Nhận tiền trực tiếp, xác nhận thủ công'            },
+  VIETQR: { icon: 'qr_code_2',   label: 'VietQR',    desc: 'Quét QR hoặc chuyển khoản theo thông tin hiển thị'  },
+  MOMO:   { icon: 'phone_iphone', label: 'MoMo',      desc: 'Ví điện tử MoMo'                                    },
+  VNPAY:  { icon: 'credit_card',  label: 'VNPAY',     desc: 'Cổng thanh toán VNPAY'                              },
 }
 
 const FALLBACK_METHODS = ['CASH', 'VIETQR']
@@ -16,13 +17,12 @@ function fmtVND(v) {
 }
 
 export default function PaymentSelectModal({ order, onClose, onSuccess }) {
-  const [methods,   setMethods]  = useState([])
-  const [selected,  setSelected] = useState('')
-  const [loading,   setLoading]  = useState(false)
-  const [fetching,  setFetching] = useState(true)
-  const [error,     setError]    = useState('')
+  const [methods,  setMethods]  = useState([])
+  const [selected, setSelected] = useState('')
+  const [loading,  setLoading]  = useState(false)
+  const [fetching, setFetching] = useState(true)
+  const [error,    setError]    = useState('')
 
-  // Fetch danh sách method được SA bật
   useEffect(() => {
     api.get('/api/payment/methods')
       .then(res => {
@@ -52,83 +52,150 @@ export default function PaymentSelectModal({ order, onClose, onSuccess }) {
     }
   }
 
+  const footer = (
+    <>
+      <button
+        onClick={onClose}
+        style={{
+          flex: 1,
+          padding: '10px 0',
+          borderRadius: 10,
+          fontSize: 14,
+          fontWeight: 500,
+          background: 'var(--bg-elevated)',
+          color: 'var(--text-secondary)',
+          border: '1px solid var(--border)',
+          cursor: 'pointer',
+        }}
+      >
+        Huỷ
+      </button>
+      <button
+        onClick={handleConfirm}
+        disabled={loading || fetching || !selected}
+        style={{
+          flex: 2,
+          padding: '10px 0',
+          borderRadius: 10,
+          fontSize: 14,
+          fontWeight: 600,
+          background: loading || fetching || !selected ? 'var(--bg-elevated)' : 'var(--primary-500)',
+          color: loading || fetching || !selected ? 'var(--text-tertiary)' : '#fff',
+          border: 'none',
+          cursor: loading || fetching || !selected ? 'not-allowed' : 'pointer',
+          opacity: loading || fetching || !selected ? 0.6 : 1,
+          transition: 'all 0.15s',
+        }}
+      >
+        {loading ? 'Đang xử lý...' : 'Xác nhận thanh toán'}
+      </button>
+    </>
+  )
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: 'rgba(0,0,0,0.5)' }}>
-      <div className="w-full max-w-md rounded-2xl p-6"
-        style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
+    <DetailDrawer
+      open={!!order}
+      onClose={onClose}
+      title="Chọn phương thức thanh toán"
+      subtitle={order ? `Đơn #${order.orderCode} — ${fmtVND(order.totalAmount)}` : ''}
+      width={420}
+      footer={footer}
+    >
+      <div style={{ padding: '20px' }}>
 
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-base font-bold" style={{ color: 'var(--text-primary)' }}>
-            Chọn phương thức thanh toán
-          </h3>
-          <button onClick={onClose} style={{ color: 'var(--text-tertiary)', background: 'none', border: 'none', cursor: 'pointer' }}>
-            <span className="icon text-xl">close</span>
-          </button>
+        {/* Thông tin đơn hàng */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+          padding: '14px 16px',
+          borderRadius: 12,
+          background: 'var(--bg-elevated)',
+          border: '1px solid var(--border)',
+          marginBottom: 20,
+        }}>
+          <span className="icon text-2xl" style={{ color: 'var(--primary-500)' }}>receipt_long</span>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>
+              #{order?.orderCode}
+            </div>
+            <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 2 }}>
+              Tổng cộng: <strong style={{ color: 'var(--text-primary)' }}>{fmtVND(order?.totalAmount)}</strong>
+            </div>
+          </div>
         </div>
 
-        <div className="mb-3 px-3 py-2 rounded-lg text-sm flex items-center gap-2"
-          style={{ background: 'var(--bg-elevated)', color: 'var(--text-secondary)' }}>
-          <span className="icon text-base">receipt_long</span>
-          <span>Đơn <strong style={{ color: 'var(--text-primary)' }}>#{order.orderCode}</strong> — {fmtVND(order.totalAmount)}</span>
-        </div>
-
+        {/* Error */}
         {error && (
-          <div className="mb-3 px-3 py-2 rounded-lg text-xs"
-            style={{ background: 'rgba(239,68,68,0.08)', color: '#EF4444', border: '1px solid rgba(239,68,68,0.2)' }}>
+          <div style={{
+            padding: '10px 14px',
+            borderRadius: 10,
+            marginBottom: 16,
+            fontSize: 13,
+            background: 'rgba(239,68,68,0.08)',
+            color: '#EF4444',
+            border: '1px solid rgba(239,68,68,0.2)',
+          }}>
             {error}
           </div>
         )}
 
+        {/* Danh sách phương thức */}
         {fetching ? (
-          <div className="space-y-2 mb-5">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {[1, 2, 3].map(i => (
-              <div key={i} className="h-14 rounded-xl skeleton" />
+              <div key={i} style={{ height: 72, borderRadius: 12, background: 'var(--bg-elevated)' }}
+                   className="skeleton" />
             ))}
           </div>
         ) : (
-          <div className="space-y-2 mb-5">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-tertiary)', marginBottom: 4, letterSpacing: '0.05em' }}>
+              PHƯƠNG THỨC
+            </div>
             {methods.map(key => {
               const m = ALL_METHOD_OPTIONS[key]
               if (!m) return null
+              const isSelected = selected === key
               return (
-                <label key={key}
-                  className="flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all"
+                <label
+                  key={key}
                   style={{
-                    border    : `1.5px solid ${selected === key ? 'var(--primary-500)' : 'var(--border)'}`,
-                    background: selected === key ? 'rgba(99,102,241,0.06)' : 'var(--bg-elevated)',
-                  }}>
-                  <input type="radio" name="method" value={key}
-                    checked={selected === key}
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 14,
+                    padding: '14px 16px',
+                    borderRadius: 12,
+                    cursor: 'pointer',
+                    border: `1.5px solid ${isSelected ? 'var(--primary-500)' : 'var(--border)'}`,
+                    background: isSelected ? 'rgba(99,102,241,0.07)' : 'var(--bg-elevated)',
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  <input type="radio" name="payMethod" value={key}
+                    checked={isSelected}
                     onChange={() => setSelected(key)}
-                    className="sr-only" />
-                  <span style={{ fontSize: 22 }}>{m.icon}</span>
-                  <div className="flex-1">
-                    <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{m.label}</div>
-                    <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{m.desc}</div>
+                    style={{ display: 'none' }} />
+                  <span className="icon" style={{
+                    fontSize: 26,
+                    color: isSelected ? 'var(--primary-500)' : 'var(--text-tertiary)',
+                    flexShrink: 0,
+                  }}>{m.icon}</span>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>{m.label}</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>{m.desc}</div>
                   </div>
-                  {selected === key && (
-                    <span className="icon text-base" style={{ color: 'var(--primary-500)' }}>check_circle</span>
+                  {isSelected && (
+                    <span className="icon" style={{ fontSize: 20, color: 'var(--primary-500)', flexShrink: 0 }}>
+                      check_circle
+                    </span>
                   )}
                 </label>
               )
             })}
           </div>
         )}
-
-        <div className="flex gap-2 justify-end">
-          <button onClick={onClose}
-            className="px-4 py-2 rounded-xl text-sm font-medium"
-            style={{ background: 'var(--bg-elevated)', color: 'var(--text-secondary)' }}>
-            Huỷ
-          </button>
-          <button onClick={handleConfirm} disabled={loading || fetching || !selected}
-            className="px-4 py-2 rounded-xl text-sm font-medium disabled:opacity-50"
-            style={{ background: 'var(--primary-500)', color: 'white' }}>
-            {loading ? 'Đang xử lý...' : 'Xác nhận'}
-          </button>
-        </div>
       </div>
-    </div>
+    </DetailDrawer>
   )
 }

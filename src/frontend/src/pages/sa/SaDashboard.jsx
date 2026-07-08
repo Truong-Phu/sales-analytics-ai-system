@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import axios from '../../api/axios'
 
 const fmtVnd = n =>
-  new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', notation: 'compact', maximumFractionDigits: 1 }).format(n)
+  n == null ? '—' : new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', notation: 'compact', maximumFractionDigits: 1 }).format(n)
 
 function KpiCard({ icon, label, value, sub, color = '#6366F1' }) {
   return (
@@ -28,6 +29,7 @@ const PLAN_COLORS = {
 }
 
 export default function SaDashboard() {
+  const { t } = useTranslation()
   const [data,    setData]    = useState(null)
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState('')
@@ -35,9 +37,9 @@ export default function SaDashboard() {
   useEffect(() => {
     axios.get('/api/admin/sa/dashboard')
       .then(r => setData(r.data.data))
-      .catch(() => setError('Không thể tải dữ liệu dashboard'))
+      .catch(() => setError(t('common.cannotLoadData')))
       .finally(() => setLoading(false))
-  }, [])
+  }, [t])
 
   if (loading) return (
     <div className="animate-pulse space-y-4">
@@ -53,19 +55,19 @@ export default function SaDashboard() {
   if (!data)  return null
 
   const kpis = [
-    { icon: 'business',         label: 'Tổng công ty',      value: data.totalCompanies,      color: '#6366F1' },
-    { icon: 'check_circle',     label: 'Đang hoạt động',    value: data.activeCompanies,     color: '#10B981' },
-    { icon: 'group',            label: 'Tổng người dùng',   value: data.totalUsers,          color: '#3B82F6' },
-    { icon: 'person_check',     label: 'Người dùng active', value: data.activeUsers,         color: '#0EA5E9' },
-    { icon: 'workspace_premium',label: 'Gói Pro active',    value: data.proSubscriptions,    color: '#F59E0B' },
-    { icon: 'payments',         label: 'Doanh thu tháng',   value: fmtVnd(data.monthlyRevenue), color: '#EF4444' },
+    { icon: 'business',         label: t('sa.dashboard.kpiCompanies'),      value: data.totalCompanies,      color: '#6366F1' },
+    { icon: 'check_circle',     label: t('sa.dashboard.kpiActiveCompanies'), value: data.activeCompanies,     color: '#10B981' },
+    { icon: 'group',            label: t('sa.dashboard.kpiUsers'),          value: data.totalUsers,          color: '#3B82F6' },
+    { icon: 'person_check',     label: t('sa.dashboard.kpiActiveUsers'),     value: data.activeUsers,         color: '#0EA5E9' },
+    { icon: 'workspace_premium',label: t('sa.dashboard.kpiPro'),            value: data.proSubscriptions,    color: '#F59E0B' },
+    { icon: 'payments',         label: t('sa.dashboard.kpiRevenue'),        value: fmtVnd(data.monthlyRevenue), color: '#EF4444' },
   ]
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Bảng điều khiển hệ thống</h1>
-        <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>Tổng quan toàn hệ thống</p>
+        <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>{t('sa.dashboard.title')}</h1>
+        <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>{t('sa.dashboard.subtitle')}</p>
       </div>
 
       {/* KPI Cards */}
@@ -78,10 +80,10 @@ export default function SaDashboard() {
         <div className="rounded-xl p-5"
           style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
           <h2 className="text-sm font-semibold mb-4" style={{ color: 'var(--text-primary)' }}>
-            Công ty đăng ký theo tháng
+            {t('sa.dashboard.registrationsChart')}
           </h2>
           {data.registrationsByMonth.length === 0 ? (
-            <p className="text-sm text-center py-8" style={{ color: 'var(--text-tertiary)' }}>Chưa có dữ liệu</p>
+            <p className="text-sm text-center py-8" style={{ color: 'var(--text-tertiary)' }}>{t('common.noData')}</p>
           ) : (
             <div className="space-y-2">
               {data.registrationsByMonth.map(m => {
@@ -110,7 +112,7 @@ export default function SaDashboard() {
         <div className="rounded-xl p-5"
           style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
           <h2 className="text-sm font-semibold mb-4" style={{ color: 'var(--text-primary)' }}>
-            Công ty mới nhất
+            {t('sa.dashboard.latestCompanies')}
           </h2>
           <div className="space-y-3">
             {data.topCompanies.map(c => {
@@ -126,7 +128,7 @@ export default function SaDashboard() {
                       {c.name}
                     </div>
                     <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                      {c.userCount} người dùng
+                      {t('sa.dashboard.userCount', { count: c.userCount })}
                     </div>
                   </div>
                   <span className="text-xs px-2 py-0.5 rounded-full font-medium"
@@ -137,7 +139,7 @@ export default function SaDashboard() {
               )
             })}
             {data.topCompanies.length === 0 && (
-              <p className="text-sm text-center py-6" style={{ color: 'var(--text-tertiary)' }}>Chưa có công ty nào</p>
+              <p className="text-sm text-center py-6" style={{ color: 'var(--text-tertiary)' }}>{t('sa.dashboard.noCompanies')}</p>
             )}
           </div>
         </div>

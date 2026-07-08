@@ -37,7 +37,8 @@ public enum PaymentMethod
     CASH,    // Tiền mặt – xác nhận thủ công
     VIETQR,  // VietQR – sinh QR thật + hiện thông tin CK, xác nhận qua SePay mock
     MOMO,    // Ví MoMo – mock callback nội bộ
-    VNPAY    // VNPAY – mock callback nội bộ
+    VNPAY,   // VNPAY – mock callback nội bộ
+    BANK_TRANSFER // Chuyển khoản ngân hàng – xác nhận thủ công
 }
 
 /// <summary>Trạng thái giao dịch thanh toán</summary>

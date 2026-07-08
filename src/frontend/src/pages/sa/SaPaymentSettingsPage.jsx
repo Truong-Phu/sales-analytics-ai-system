@@ -1,12 +1,14 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import api from '../../api/axios'
 
 // Các phương thức thật người dùng nhìn thấy
 const REAL_METHODS = [
-  { key: 'CASH',   label: 'Tiền mặt', icon: '💵' },
-  { key: 'VIETQR', label: 'VietQR',   icon: '📱' },
-  { key: 'MOMO',   label: 'MoMo',     icon: '🟣' },
-  { key: 'VNPAY',  label: 'VNPAY',    icon: '💳' },
+  { key: 'CASH',         label: 'Tiền mặt',              icon: '💵' },
+  { key: 'VIETQR',       label: 'VietQR',                icon: '📱' },
+  { key: 'BANK_TRANSFER',label: 'Chuyển khoản ngân hàng', icon: '🏦' },
+  { key: 'MOMO',         label: 'MoMo',                  icon: '🟣' },
+  { key: 'VNPAY',        label: 'VNPAY',                 icon: '💳' },
 ]
 
 // Mock providers – chỉ dùng nội bộ dev/demo
@@ -54,6 +56,7 @@ function Toggle({ checked, onChange, label, desc }) {
 }
 
 function ConfigSection({ methodKey, config, onSave }) {
+  const { t } = useTranslation()
   const fields = METHOD_FIELDS[methodKey] ?? []
   const [values,   setValues]   = useState({})
   const [saving,   setSaving]   = useState(false)
@@ -75,10 +78,23 @@ function ConfigSection({ methodKey, config, onSave }) {
     try {
       // Lấy enabled từ component cha (đã lưu riêng) – chỉ cập nhật config JSON
       await onSave(methodKey, values)
-      setFlash('Đã lưu')
+      setFlash(t('sa.paymentSettings.badgeSaved'))
       setTimeout(() => setFlash(''), 2000)
     } catch { /* lỗi hiện ở trên */ } finally {
       setSaving(false)
+    }
+  }
+
+  const getFieldLabel = (fieldKey, defaultLabel) => {
+    switch (fieldKey) {
+      case 'partnerCode': return t('paymentField.partnerCode', 'Partner Code');
+      case 'accessKey': return t('paymentField.accessKey', 'Access Key');
+      case 'secretKey': return t('paymentField.secretKey', 'Secret Key');
+      case 'tmnCode': return t('paymentField.tmnCode', 'TMN Code');
+      case 'hashSecret': return t('paymentField.hashSecret', 'Hash Secret');
+      case 'apiKey': return t('paymentField.apiKey', 'API Key (tương lai)');
+      case 'webhookUrl': return t('paymentField.webhookUrl', 'Webhook URL (tương lai)');
+      default: return defaultLabel;
     }
   }
 
@@ -92,8 +108,8 @@ function ConfigSection({ methodKey, config, onSave }) {
             <label className="block text-xs font-medium mb-1" style={{
               color: f.future ? 'var(--text-tertiary)' : 'var(--text-secondary)'
             }}>
-              {f.label}
-              {f.future && <span className="ml-1 text-xs font-normal" style={{ color: 'var(--text-tertiary)' }}>(chuẩn bị cho tương lai)</span>}
+              {getFieldLabel(f.key, f.label)}
+              {f.future && <span className="ml-1 text-xs font-normal" style={{ color: 'var(--text-tertiary)' }}>{t('sa.paymentSettings.sandboxHint')}</span>}
             </label>
             <input
               type={f.secret ? 'password' : 'text'}
@@ -115,7 +131,7 @@ function ConfigSection({ methodKey, config, onSave }) {
         <button onClick={handleSave} disabled={saving}
           className="px-3 py-1.5 rounded-lg text-xs font-medium disabled:opacity-50"
           style={{ background: 'var(--primary-500)', color: 'white' }}>
-          {saving ? 'Đang lưu...' : 'Lưu cấu hình'}
+          {saving ? t('sa.paymentSettings.saving') : t('sa.paymentSettings.btnSaveConfig')}
         </button>
         {flash && <span className="text-xs" style={{ color: '#10B981' }}>{flash}</span>}
       </div>
@@ -124,6 +140,7 @@ function ConfigSection({ methodKey, config, onSave }) {
 }
 
 export default function SaPaymentSettingsPage() {
+  const { t } = useTranslation()
   const [configs,  setConfigs]  = useState({})   // { METHOD_KEY: { enabled, config } }
   const [loading,  setLoading]  = useState(true)
   const [error,    setError]    = useState('')
@@ -138,11 +155,11 @@ export default function SaPaymentSettingsPage() {
       }
       setConfigs(map)
     } catch {
-      setError('Không thể tải cấu hình thanh toán')
+      setError(t('common.cannotLoadData'))
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [t])
 
   useEffect(() => { load() }, [load])
 
@@ -157,9 +174,9 @@ export default function SaPaymentSettingsPage() {
         configJson,
       })
       setConfigs(prev => ({ ...prev, [methodKey]: { ...existing, enabled: newVal } }))
-      showFlash(`Đã ${newVal ? 'bật' : 'tắt'} ${methodKey}`)
+      showFlash(t('sa.paymentSettings.toastStatus', { method: methodKey, status: newVal ? t('sa.companies.statusActive').toLowerCase() : t('sa.companies.statusLocked').toLowerCase() }))
     } catch {
-      showFlash('Lỗi cập nhật')
+      showFlash(t('sa.paymentSettings.toastSaveError'))
     }
   }
 
@@ -171,7 +188,36 @@ export default function SaPaymentSettingsPage() {
       configJson,
     })
     setConfigs(prev => ({ ...prev, [methodKey]: { ...existing, config: values } }))
-    showFlash('Đã lưu cấu hình')
+    showFlash(t('sa.paymentSettings.toastSaved'))
+  }
+
+  const getRealMethodLabel = (key) => {
+    switch (key) {
+      case 'CASH': return t('paymentMethod.cash', 'Tiền mặt');
+      case 'VIETQR': return t('paymentMethod.vietqr', 'VietQR');
+      case 'BANK_TRANSFER': return t('paymentMethod.bank_transfer', 'Chuyển khoản ngân hàng');
+      case 'MOMO': return t('paymentMethod.momo', 'MoMo');
+      case 'VNPAY': return t('paymentMethod.vnpay', 'VNPAY');
+      default: return key;
+    }
+  }
+
+  const getMockProviderLabel = (key) => {
+    switch (key) {
+      case 'MOCK_SEPAY': return t('paymentMock.sepayLabel', 'Mock SePay Webhook');
+      case 'MOCK_MOMO': return t('paymentMock.momoLabel', 'Mock MoMo Callback');
+      case 'MOCK_VNPAY': return t('paymentMock.vnpayLabel', 'Mock VNPAY Callback');
+      default: return key;
+    }
+  }
+
+  const getMockProviderDesc = (key) => {
+    switch (key) {
+      case 'MOCK_SEPAY': return t('paymentMock.sepayDesc', 'Giả lập webhook SePay để tự động xác nhận VietQR/chuyển khoản');
+      case 'MOCK_MOMO': return t('paymentMock.momoDesc', 'Giả lập callback MoMo (success/failed/cancelled)');
+      case 'MOCK_VNPAY': return t('paymentMock.vnpayDesc', 'Giả lập callback VNPAY (success/failed/cancelled)');
+      default: return '';
+    }
   }
 
   if (loading) return (
@@ -186,10 +232,10 @@ export default function SaPaymentSettingsPage() {
     <div className="space-y-5">
       <div>
         <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
-          Cấu hình thanh toán
+          {t('sa.paymentSettings.title')}
         </h1>
         <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
-          Quản lý phương thức và tham số thanh toán cho toàn hệ thống
+          {t('sa.paymentSettings.subtitle')}
         </p>
       </div>
 
@@ -205,7 +251,7 @@ export default function SaPaymentSettingsPage() {
       {/* ── 1. Phương thức thật ── */}
       <section>
         <h2 className="text-sm font-bold mb-3" style={{ color: 'var(--text-secondary)' }}>
-          Phương thức thanh toán
+          {t('sa.paymentSettings.secMethods')}
         </h2>
         <div className="space-y-3">
           {REAL_METHODS.map(m => {
@@ -214,7 +260,7 @@ export default function SaPaymentSettingsPage() {
               <div key={m.key} className="p-4 rounded-2xl"
                 style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
                 <Toggle
-                  label={<span><span style={{ marginRight: 6 }}>{m.icon}</span>{m.label}</span>}
+                  label={<span><span style={{ marginRight: 6 }}>{m.icon}</span>{getRealMethodLabel(m.key)}</span>}
                   checked={cfg.enabled ?? false}
                   onChange={() => toggleEnabled(m.key, !(cfg.enabled ?? false))}
                 />
@@ -223,13 +269,20 @@ export default function SaPaymentSettingsPage() {
                     style={{ borderTop: '1px solid var(--border)', color: 'var(--text-tertiary)' }}>
                     <span className="icon text-sm mt-0.5" style={{ color: 'var(--primary-400)' }}>info</span>
                     <span>
-                      Thông tin ngân hàng VietQR được cấu hình tại{' '}
-                      <strong style={{ color: 'var(--primary-500)' }}>Tài khoản thanh toán</strong>
-                      {' '}→ Thêm tài khoản với phương thức <em>VietQR</em> và đặt làm mặc định.
+                      {t('sa.paymentSettings.vietqrGuide')}
                     </span>
                   </div>
                 )}
-                {(cfg.enabled ?? false) && m.key !== 'VIETQR' && (
+                {(cfg.enabled ?? false) && m.key === 'BANK_TRANSFER' && (
+                  <div className="mt-3 pt-3 flex items-start gap-2 text-xs"
+                    style={{ borderTop: '1px solid var(--border)', color: 'var(--text-tertiary)' }}>
+                    <span className="icon text-sm mt-0.5" style={{ color: 'var(--primary-400)' }}>info</span>
+                    <span>
+                      {t('sa.paymentSettings.bankTransferGuide', 'Thông tin ngân hàng chuyển khoản được cấu hình tại Tài khoản thanh toán — Thêm tài khoản với phương thức Chuyển khoản ngân hàng và đặt làm mặc định.')}
+                    </span>
+                  </div>
+                )}
+                {(cfg.enabled ?? false) && m.key !== 'VIETQR' && m.key !== 'BANK_TRANSFER' && (
                   <ConfigSection
                     methodKey={m.key}
                     config={cfg.config}
@@ -245,10 +298,10 @@ export default function SaPaymentSettingsPage() {
       {/* ── 2. Mock Providers ── */}
       <section>
         <h2 className="text-sm font-bold mb-1" style={{ color: 'var(--text-secondary)' }}>
-          Mock Providers
+          {t('sa.paymentSettings.secMock')}
         </h2>
         <p className="text-xs mb-3" style={{ color: 'var(--text-tertiary)' }}>
-          Chỉ dùng trong development/demo. Không hiển thị cho người dùng thường.
+          {t('sa.paymentSettings.mockGuide')}
         </p>
         <div className="p-4 rounded-2xl space-y-3"
           style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
@@ -256,15 +309,15 @@ export default function SaPaymentSettingsPage() {
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium w-fit"
             style={{ background: '#FEF3C7', color: '#92400E', border: '1px solid #FDE68A' }}>
             <span className="icon text-sm">science</span>
-            Development / Demo Mode
+            {t('sa.paymentSettings.devBadge')}
           </div>
           {MOCK_PROVIDERS.map(p => {
             const cfg = configs[p.key] ?? {}
             return (
               <div key={p.key}>
                 <Toggle
-                  label={p.label}
-                  desc={p.desc}
+                  label={getMockProviderLabel(p.key)}
+                  desc={getMockProviderDesc(p.key)}
                   checked={cfg.enabled ?? false}
                   onChange={() => toggleEnabled(p.key, !(cfg.enabled ?? false))}
                 />
@@ -284,19 +337,19 @@ export default function SaPaymentSettingsPage() {
       {/* ── 3. Hướng phát triển ── */}
       <section>
         <h2 className="text-sm font-bold mb-1" style={{ color: 'var(--text-secondary)' }}>
-          Hướng phát triển
+          {t('sa.paymentSettings.secRoadmap')}
         </h2>
         <div className="p-4 rounded-2xl space-y-2"
           style={{ background: 'var(--bg-elevated)', border: '1px dashed var(--border)' }}>
           <p className="text-xs font-semibold mb-2" style={{ color: 'var(--text-tertiary)' }}>
-            Nâng cấp từ mock → sandbox/production (không cần thay đổi database):
+            {t('sa.paymentSettings.roadmapDesc')}
           </p>
           {[
-            'Tích hợp SePay thật để tự động đối soát chuyển khoản ngân hàng',
-            'Tích hợp MoMo sandbox/production (điền partnerCode, accessKey, secretKey)',
-            'Tích hợp VNPAY sandbox/production (điền tmnCode, hashSecret)',
-            'Triển khai webhook thật qua ngrok hoặc deploy backend public',
-            'Mở rộng thanh toán quốc tế bằng Stripe/PayPal nếu phát triển SaaS production',
+            t('sa.paymentSettings.roadmapItem1'),
+            t('sa.paymentSettings.roadmapItem2'),
+            t('sa.paymentSettings.roadmapItem3'),
+            t('sa.paymentSettings.roadmapItem4'),
+            t('sa.paymentSettings.roadmapItem5')
           ].map((item, i) => (
             <div key={i} className="flex items-start gap-2 text-xs" style={{ color: 'var(--text-tertiary)' }}>
               <span className="icon text-sm mt-0.5" style={{ color: 'var(--primary-400)' }}>arrow_forward</span>

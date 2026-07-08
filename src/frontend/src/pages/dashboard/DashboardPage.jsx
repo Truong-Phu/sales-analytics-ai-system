@@ -1009,7 +1009,7 @@ function TabOverview({ data, compareMode, prevData, canViewAnalytics = true, wd 
                   onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                   <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: getChannelColor(ch.channelName) }} />
                   <span className="flex-1 truncate" style={{ color: 'var(--text-secondary)' }}>{ch.channelName}</span>
-                  <span className="font-mono font-semibold" style={{ color: 'var(--text-primary)' }}>{ch.revenuePct.toFixed(0)}%</span>
+                  <span className="font-mono font-semibold" style={{ color: 'var(--text-primary)' }}>{ch.revenuePct.toFixed(1)}%</span>
                   <span className="icon shrink-0" style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>chevron_right</span>
                 </div>
               ))}

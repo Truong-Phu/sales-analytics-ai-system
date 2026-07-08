@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import axios from '../../api/axios'
 
 const METHOD_LABELS = {
@@ -44,7 +45,11 @@ function buildInitialFields(method, existingConfig) {
   const fields = {}
   const defs = METHOD_CONFIG[method] ?? []
   defs.forEach(f => {
-    if (f.type === 'file') return
+    if (f.type === 'file') {
+      const existing = existingConfig?.[f.key]
+      if (existing) fields[f.key] = existing
+      return
+    }
     const existing = existingConfig?.[f.key]
     // Nếu field là masked (*****) hoặc không có → dùng default hoặc rỗng
     fields[f.key] = (existing && existing !== '*****') ? String(existing) : (f.defaultVal ?? '')
@@ -53,6 +58,7 @@ function buildInitialFields(method, existingConfig) {
 }
 
 function AccountFormModal({ initial, onClose, onSave }) {
+  const { t } = useTranslation()
   const isEdit = !!initial
   const [method,      setMethod]      = useState(initial?.method      ?? 'vnpay')
   const [displayName, setDisplayName] = useState(initial?.displayName ?? '')
@@ -64,16 +70,45 @@ function AccountFormModal({ initial, onClose, onSave }) {
     buildInitialFields(initial?.method ?? 'vnpay', initial?.config)
   )
   const [showPass,  setShowPass]  = useState({}) // key → boolean
-  const [qrPreview, setQrPreview] = useState(null)
+  const [qrPreview, setQrPreview] = useState(initial?.config?.qr_image ?? null)
   const [loading,   setLoading]   = useState(false)
   const [error,     setError]     = useState('')
   const qrRef = useRef(null)
+
+  const getMethodLabel = (methodKey) => {
+    switch (methodKey) {
+      case 'bank_transfer': return t('paymentMethod.bank_transfer', 'Chuyển khoản ngân hàng');
+      case 'vietqr': return t('paymentMethod.vietqr', 'VietQR');
+      case 'momo': return t('paymentMethod.momo', 'MoMo');
+      case 'vnpay': return t('paymentMethod.vnpay', 'VNPay');
+      default: return methodKey;
+    }
+  }
+
+  const getFieldLabel = (fieldKey, defaultLabel) => {
+    switch (fieldKey) {
+      case 'bank_name': return t('paymentField.bank_name', 'Tên ngân hàng');
+      case 'account_number': return t('paymentField.account_number', 'Số tài khoản');
+      case 'account_name': return t('paymentField.account_name', 'Tên chủ tài khoản');
+      case 'branch': return t('paymentField.branch', 'Chi nhánh');
+      case 'qr_image': return t('paymentField.qr_image', 'Ảnh QR Code');
+      case 'bank_bin': return t('paymentField.bank_bin', 'Bank BIN');
+      case 'partner_code': return t('paymentField.partner_code', 'Partner Code');
+      case 'access_key': return t('paymentField.access_key', 'Access Key');
+      case 'secret_key': return t('paymentField.secret_key', 'Secret Key');
+      case 'endpoint': return t('paymentField.endpoint', 'Endpoint');
+      case 'tmn_code': return t('paymentField.tmn_code', 'TMN Code');
+      case 'hash_secret': return t('paymentField.hash_secret', 'Hash Secret');
+      case 'payment_url': return t('paymentField.payment_url', 'Payment URL');
+      default: return defaultLabel;
+    }
+  }
 
   // Reset config fields khi đổi method
   useEffect(() => {
     setConfigFields(buildInitialFields(method, isEdit ? initial?.config : null))
     setShowPass({})
-    setQrPreview(null)
+    setQrPreview((isEdit && method === initial?.method) ? initial?.config?.qr_image : null)
   }, [method]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const setField = key => e => {
@@ -96,12 +131,12 @@ function AccountFormModal({ initial, onClose, onSave }) {
   }
 
   const handleSave = async () => {
-    if (!displayName.trim()) { setError('Tên hiển thị là bắt buộc'); return }
+    if (!displayName.trim()) { setError(t('sa.paymentAccounts.errDisplayName')); return }
 
     const defs = METHOD_CONFIG[method] ?? []
     for (const f of defs) {
       if (f.required && f.type !== 'file' && !configFields[f.key]) {
-        setError(`"${f.label}" là bắt buộc`); return
+        setError(t('sa.paymentAccounts.errFieldRequired', { label: getFieldLabel(f.key, f.label) })); return
       }
     }
 
@@ -123,7 +158,7 @@ function AccountFormModal({ initial, onClose, onSave }) {
         sortOrder: parseInt(sortOrder) || 0,
       })
     } catch (err) {
-      setError(err.response?.data?.message ?? 'Có lỗi xảy ra')
+      setError(err.response?.data?.message ?? t('common.saveError'))
     } finally {
       setLoading(false)
     }
@@ -137,7 +172,7 @@ function AccountFormModal({ initial, onClose, onSave }) {
       <div className="w-full max-w-lg rounded-2xl p-6 max-h-[90vh] overflow-y-auto"
         style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
         <h3 className="text-lg font-bold mb-4" style={{ color: 'var(--text-primary)' }}>
-          {isEdit ? 'Chỉnh sửa tài khoản thanh toán' : 'Thêm tài khoản thanh toán'}
+          {isEdit ? t('sa.paymentAccounts.modalEditTitle') : t('sa.paymentAccounts.modalCreateTitle')}
         </h3>
 
         {error && (
@@ -152,21 +187,21 @@ function AccountFormModal({ initial, onClose, onSave }) {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>
-                Phương thức <span style={{ color: '#EF4444' }}>*</span>
+                {t('sa.paymentAccounts.modalMethod')} <span style={{ color: '#EF4444' }}>*</span>
               </label>
               <select className="linput text-sm" value={method}
                 onChange={e => setMethod(e.target.value)}>
                 {METHODS.map(m => (
-                  <option key={m} value={m}>{METHOD_LABELS[m].icon} {METHOD_LABELS[m].label}</option>
+                  <option key={m} value={m}>{METHOD_LABELS[m].icon} {getMethodLabel(m)}</option>
                 ))}
               </select>
             </div>
             <div>
               <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>
-                Tên hiển thị <span style={{ color: '#EF4444' }}>*</span>
+                {t('sa.paymentAccounts.modalDisplayName')} <span style={{ color: '#EF4444' }}>*</span>
               </label>
               <input type="text" className="linput text-sm"
-                placeholder="VD: VNPay Production"
+                placeholder={t('sa.paymentAccounts.modalDisplayNamePlaceholder')}
                 value={displayName}
                 onChange={e => setDisplayName(e.target.value)} />
             </div>
@@ -175,8 +210,8 @@ function AccountFormModal({ initial, onClose, onSave }) {
           {/* Dynamic config fields theo method */}
           <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12 }}>
             <p className="text-xs font-semibold mb-3" style={{ color: 'var(--text-secondary)' }}>
-              Cấu hình {METHOD_LABELS[method]?.label}
-              {isEdit && <span style={{ color: 'var(--text-tertiary)', fontWeight: 400 }}> — để trống field nhạy cảm nếu không muốn thay đổi</span>}
+              {t('sa.paymentAccounts.modalConfigHeader', { label: getMethodLabel(method) })}
+              {isEdit && <span style={{ color: 'var(--text-tertiary)', fontWeight: 400 }}>{t('sa.paymentAccounts.modalConfigEditHint')}</span>}
             </p>
 
             <div className="space-y-3">
@@ -186,7 +221,7 @@ function AccountFormModal({ initial, onClose, onSave }) {
                   return (
                     <div key={f.key}>
                       <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>
-                        {f.label}
+                        {getFieldLabel(f.key, f.label)}
                       </label>
                       {qrPreview && (
                         <img src={qrPreview} alt="QR preview"
@@ -197,7 +232,7 @@ function AccountFormModal({ initial, onClose, onSave }) {
                         onClick={() => qrRef.current?.click()}
                         className="lbtn lbtn-secondary !h-8 text-xs">
                         <span className="icon text-sm">upload</span>
-                        {qrPreview ? 'Thay đổi ảnh QR' : 'Chọn ảnh QR'}
+                        {qrPreview ? t('sa.paymentAccounts.modalChangeQr') : t('sa.paymentAccounts.modalSelectQr')}
                       </button>
                       <input ref={qrRef} type="file" accept="image/*" className="hidden"
                         onChange={handleQrSelect} />
@@ -210,17 +245,17 @@ function AccountFormModal({ initial, onClose, onSave }) {
                   return (
                     <div key={f.key}>
                       <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>
-                        {f.label}{f.required && <span style={{ color: '#EF4444' }}> *</span>}
-                        <span className="ml-1" style={{ color: 'var(--text-tertiary)', fontWeight: 400 }}>(nhạy cảm)</span>
+                        {getFieldLabel(f.key, f.label)}{f.required && <span style={{ color: '#EF4444' }}> *</span>}
+                        <span className="ml-1" style={{ color: 'var(--text-tertiary)', fontWeight: 400 }}>{t('sa.paymentAccounts.modalSensitiveField')}</span>
                       </label>
                       <div className="relative">
                         <input
-                          type={visible ? 'text' : 'password'}
-                          className="linput text-sm"
-                          style={{ paddingRight: 40 }}
-                          placeholder={isEdit ? '(để trống = giữ nguyên)' : ''}
-                          value={configFields[f.key] ?? ''}
-                          onChange={setField(f.key)} />
+                           type={visible ? 'text' : 'password'}
+                           className="linput text-sm"
+                           style={{ paddingRight: 40 }}
+                           placeholder={isEdit ? t('sa.paymentAccounts.modalSensitivePlaceholder') : ''}
+                           value={configFields[f.key] ?? ''}
+                           onChange={setField(f.key)} />
                         <button type="button"
                           onClick={() => setShowPass(p => ({ ...p, [f.key]: !visible }))}
                           style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)',
@@ -236,7 +271,7 @@ function AccountFormModal({ initial, onClose, onSave }) {
                 return (
                   <div key={f.key}>
                     <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>
-                      {f.label}{f.required && <span style={{ color: '#EF4444' }}> *</span>}
+                      {getFieldLabel(f.key, f.label)}{f.required && <span style={{ color: '#EF4444' }}> *</span>}
                     </label>
                     <input type={f.type === 'url' ? 'url' : 'text'}
                       className="linput text-sm"
@@ -253,15 +288,15 @@ function AccountFormModal({ initial, onClose, onSave }) {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>
-                Ghi chú
+                {t('sa.paymentAccounts.modalNote')}
               </label>
               <input type="text" className="linput text-sm"
-                placeholder="Ghi chú về tài khoản này"
+                placeholder={t('sa.paymentAccounts.modalNotePlaceholder')}
                 value={note} onChange={e => setNote(e.target.value)} />
             </div>
             <div>
               <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>
-                Thứ tự sắp xếp
+                {t('sa.paymentAccounts.modalSort')}
               </label>
               <input type="number" className="linput text-sm"
                 value={sortOrder} min={0}
@@ -273,11 +308,11 @@ function AccountFormModal({ initial, onClose, onSave }) {
           <div className="flex gap-5">
             <label className="flex items-center gap-2 cursor-pointer text-sm" style={{ color: 'var(--text-secondary)' }}>
               <input type="checkbox" checked={isActive} onChange={e => setIsActive(e.target.checked)} />
-              Đang hoạt động
+              {t('sa.paymentAccounts.modalActive')}
             </label>
             <label className="flex items-center gap-2 cursor-pointer text-sm" style={{ color: 'var(--text-secondary)' }}>
               <input type="checkbox" checked={isDefault} onChange={e => setIsDefault(e.target.checked)} />
-              Mặc định cho phương thức này
+              {t('sa.paymentAccounts.modalDefault')}
             </label>
           </div>
         </div>
@@ -286,12 +321,12 @@ function AccountFormModal({ initial, onClose, onSave }) {
           <button onClick={onClose}
             className="px-4 py-2 rounded-xl text-sm font-medium"
             style={{ background: 'var(--bg-elevated)', color: 'var(--text-secondary)' }}>
-            Hủy
+            {t('sa.paymentAccounts.modalCancel')}
           </button>
           <button onClick={handleSave} disabled={loading}
             className="px-4 py-2 rounded-xl text-sm font-medium disabled:opacity-50"
             style={{ background: 'var(--primary-500)', color: 'white' }}>
-            {loading ? 'Đang lưu...' : isEdit ? 'Lưu thay đổi' : 'Thêm mới'}
+            {loading ? t('sa.paymentSettings.saving') : isEdit ? t('sa.paymentAccounts.modalSave') : t('sa.paymentAccounts.modalAdd')}
           </button>
         </div>
       </div>
@@ -300,6 +335,7 @@ function AccountFormModal({ initial, onClose, onSave }) {
 }
 
 export default function SaPaymentAccountsPage() {
+  const { t } = useTranslation()
   const [accounts, setAccounts] = useState([])
   const [loading,  setLoading]  = useState(true)
   const [error,    setError]    = useState('')
@@ -307,13 +343,23 @@ export default function SaPaymentAccountsPage() {
   const [modal,    setModal]    = useState(null) // null | { type: 'create' | 'edit', data? }
   const [deleting, setDeleting] = useState(null)
 
+  const getMethodLabel = (methodKey) => {
+    switch (methodKey) {
+      case 'bank_transfer': return t('paymentMethod.bank_transfer', 'Chuyển khoản ngân hàng');
+      case 'vietqr': return t('paymentMethod.vietqr', 'VietQR');
+      case 'momo': return t('paymentMethod.momo', 'MoMo');
+      case 'vnpay': return t('paymentMethod.vnpay', 'VNPay');
+      default: return methodKey;
+    }
+  }
+
   const load = useCallback(() => {
     setLoading(true)
     axios.get('/api/system/payment-accounts')
       .then(r => setAccounts(r.data.data ?? []))
-      .catch(() => setError('Không thể tải danh sách tài khoản'))
+      .catch(() => setError(t('common.cannotLoadData')))
       .finally(() => setLoading(false))
-  }, [])
+  }, [t])
 
   useEffect(() => { load() }, [load])
 
@@ -322,10 +368,10 @@ export default function SaPaymentAccountsPage() {
   const handleSave = async formData => {
     if (modal?.type === 'edit') {
       await axios.put(`/api/system/payment-accounts/${modal.data.id}`, formData)
-      showFlash('Đã cập nhật tài khoản thanh toán')
+      showFlash(t('sa.paymentAccounts.toastUpdated'))
     } else {
       await axios.post('/api/system/payment-accounts', formData)
-      showFlash('Đã thêm tài khoản thanh toán')
+      showFlash(t('sa.paymentAccounts.toastAdded'))
     }
     setModal(null)
     load()
@@ -335,10 +381,10 @@ export default function SaPaymentAccountsPage() {
     setDeleting(id)
     try {
       await axios.delete(`/api/system/payment-accounts/${id}`)
-      showFlash('Đã xóa tài khoản thanh toán')
+      showFlash(t('sa.paymentAccounts.toastDeleted'))
       load()
     } catch {
-      setError('Không thể xóa')
+      setError(t('sa.paymentAccounts.errorDelete'))
     } finally {
       setDeleting(null)
     }
@@ -357,10 +403,10 @@ export default function SaPaymentAccountsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
-            Tài khoản thanh toán hệ thống
+            {t('sa.paymentAccounts.title')}
           </h1>
           <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
-            Quản lý phương thức thanh toán cho gói dịch vụ
+            {t('sa.paymentAccounts.subtitle')}
           </p>
         </div>
         <button
@@ -368,7 +414,7 @@ export default function SaPaymentAccountsPage() {
           className="lbtn lbtn-primary text-sm"
           style={{ height: 36 }}>
           <span className="icon text-base">add</span>
-          Thêm tài khoản
+          {t('sa.paymentAccounts.addBtn')}
         </button>
       </div>
 
@@ -400,8 +446,8 @@ export default function SaPaymentAccountsPage() {
         <div className="py-16 text-center"
           style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 16 }}>
           <span className="icon text-4xl block mb-3" style={{ color: 'var(--text-tertiary)' }}>payments</span>
-          <p className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Chưa có tài khoản thanh toán</p>
-          <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>Nhấn "Thêm tài khoản" để bắt đầu</p>
+          <p className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>{t('sa.paymentAccounts.noData')}</p>
+          <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>{t('sa.paymentAccounts.addHint')}</p>
         </div>
       ) : (
         <div className="grid gap-3">
@@ -417,15 +463,15 @@ export default function SaPaymentAccountsPage() {
                     <span className="font-medium" style={{ color: 'var(--text-primary)' }}>{a.displayName}</span>
                     {a.isDefault && (
                       <span className="text-xs px-1.5 py-0.5 rounded-full font-medium"
-                        style={{ background: '#EDE9FE', color: '#7C3AED' }}>Mặc định</span>
+                        style={{ background: '#EDE9FE', color: '#7C3AED' }}>{t('sa.paymentAccounts.defaultBadge')}</span>
                     )}
                     {!a.isActive && (
                       <span className="text-xs px-1.5 py-0.5 rounded-full"
-                        style={{ background: '#FEE2E2', color: '#991B1B' }}>Tắt</span>
+                        style={{ background: '#FEE2E2', color: '#991B1B' }}>{t('sa.paymentAccounts.inactiveBadge')}</span>
                     )}
                   </div>
                   <div className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
-                    {m.label}
+                    {getMethodLabel(a.method)}
                     {a.note && <span> · {a.note}</span>}
                   </div>
                 </div>
@@ -434,14 +480,14 @@ export default function SaPaymentAccountsPage() {
                     onClick={() => setModal({ type: 'edit', data: a })}
                     className="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
                     style={{ background: 'var(--bg-elevated)', color: 'var(--text-secondary)' }}>
-                    Sửa
+                    {t('sa.paymentAccounts.btnEdit')}
                   </button>
                   <button
                     disabled={deleting === a.id}
                     onClick={() => handleDelete(a.id)}
                     className="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
                     style={{ background: '#FEE2E2', color: '#991B1B' }}>
-                    {deleting === a.id ? '...' : 'Xóa'}
+                    {deleting === a.id ? '...' : t('sa.paymentAccounts.btnDelete')}
                   </button>
                 </div>
               </div>

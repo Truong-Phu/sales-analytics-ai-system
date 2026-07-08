@@ -181,6 +181,39 @@ export default function CustomersPage() {
   const { t } = useTranslation()
   const { user } = useAuth()
   const [data,    setData]    = useState(null)
+
+  const isPrivileged = ['Owner', 'SuperAdmin', 'DataIT'].includes(user?.role)
+
+  const displayPhone = (rawPhone) => {
+    if (!rawPhone) return '—'
+    if (isPrivileged) return rawPhone
+    const s = String(rawPhone).trim()
+    if (s.length >= 7) {
+      return s.slice(0, 3) + '****' + s.slice(-3)
+    }
+    return s
+  }
+
+  const displayEmail = (rawEmail) => {
+    if (!rawEmail) return '—'
+    if (isPrivileged) return rawEmail
+    const s = String(rawEmail).trim()
+    const atIdx = s.indexOf('@')
+    if (atIdx > 1) {
+      return s[0] + '***' + s.slice(atIdx)
+    }
+    return s
+  }
+
+  const displayAddress = (rawAddr) => {
+    if (!rawAddr) return '—'
+    if (isPrivileged) return rawAddr
+    const parts = rawAddr.split(',')
+    if (parts.length > 1) {
+      return '******, ' + parts.slice(1).join(',').trim()
+    }
+    return '******'
+  }
   const [loading, setLoading] = useState(true)
   const [search,        setSearch]        = useState('')
   const [segment,       setSegment]       = useState('all')
@@ -323,8 +356,8 @@ export default function CustomersPage() {
     exportToCsv(`khach_hang_${new Date().toISOString().slice(0, 10)}.csv`, items.map(c => ({
       'Mã KH':         c.customer_code ?? '',
       'Tên khách hàng': c.full_name ?? c.fullName ?? '',
-      'SĐT':           c.phone ?? c.phone_number ?? '',
-      'Email':         c.email ?? '',
+      'SĐT':           displayPhone(c.phone ?? c.phone_number ?? ''),
+      'Email':         displayEmail(c.email ?? ''),
       'Tỉnh/thành':    c.province ?? '',
       'Phân khúc':     c.rfm_segment ?? c.segment_label ?? '',
       'Số đơn hàng':   c.total_orders ?? c.totalOrders ?? 0,
@@ -555,7 +588,7 @@ export default function CustomersPage() {
                         <div>
                           <div className="font-medium text-sm" style={{ color: 'var(--text-primary)' }}>{c.full_name ?? c.fullName}</div>
                           {(c.phone ?? c.phone_number) && (
-                            <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{c.phone ?? c.phone_number}</div>
+                            <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{displayPhone(c.phone ?? c.phone_number)}</div>
                           )}
                         </div>
                       </div>
@@ -623,9 +656,9 @@ export default function CustomersPage() {
       {/* Detail drawer — trượt từ bên phải */}
       {selected && (() => {
         const fullName    = selected.full_name ?? selected.fullName ?? '?'
-        const phone       = selected.phone ?? selected.phone_number ?? selected.phoneNumber
-        const email       = selected.email
-        const address     = selected.address
+        const phone       = displayPhone(selected.phone ?? selected.phone_number ?? selected.phoneNumber)
+        const email       = displayEmail(selected.email)
+        const address     = displayAddress([selected.address, selected.district, selected.ward, selected.province].filter(v => v && v !== '—').join(', ') || selected.address || '—')
         const rfmSeg      = selected.rfm_segment ?? selected.rfmSegment
         const seg         = resolveSegment(rfmSeg ?? selected.segment_label)
         const segLabel    = t(`customers.segment.${seg}`, seg)
@@ -696,9 +729,9 @@ export default function CustomersPage() {
                    style={{ color: 'var(--text-tertiary)' }}>{t('customers.contactInfo', 'Thông tin liên hệ')}</p>
                 <div className="space-y-2.5">
                   {[
-                    { icon: 'email',       label: email ?? '—' },
-                    { icon: 'phone',       label: phone ?? '—' },
-                    { icon: 'location_on', label: [selected.address, selected.district, selected.ward, selected.province].filter(v => v && v !== '—').join(', ') || address || '—' },
+                    { icon: 'email',       label: email },
+                    { icon: 'phone',       label: phone },
+                    { icon: 'location_on', label: address },
                     ...(primaryChan ? [{ icon: CHANNEL_ICON[primaryChan] ?? 'store', label: t('customers.primaryChannelColon', 'Kênh chính: {{channel}}', { channel: primaryChan }) }] : []),
                   ].map(item => (
                     <div key={item.icon} className="flex items-center gap-3 text-sm">

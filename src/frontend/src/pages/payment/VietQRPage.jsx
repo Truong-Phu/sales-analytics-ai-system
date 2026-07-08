@@ -68,12 +68,14 @@ export default function VietQRPage() {
   useEffect(() => { load() }, [load])
 
   useEffect(() => {
-    if (data?.transaction?.status !== 'Pending') return
+    const currentStatus = String(data?.transaction?.status || '').toUpperCase()
+    if (currentStatus !== 'PENDING') return
     const id = setInterval(async () => {
       try {
         const res = await api.get(`/api/payment/vietqr/${txId}`)
         setData(res.data)
-        if (res.data?.transaction?.status === 'Paid') {
+        const nextStatus = String(res.data?.transaction?.status || '').toUpperCase()
+        if (nextStatus === 'PAID') {
           setToast(t('vietqr.confirmedToast'))
           clearInterval(id)
         }
@@ -111,7 +113,7 @@ export default function VietQRPage() {
 
   const tx  = data?.transaction
   const qr  = data?.data
-  const isPaid = tx?.status === 'Paid'
+  const isPaid = String(tx?.status || '').toUpperCase() === 'PAID'
 
   const BANK_ROWS = qr ? [
     { label: t('vietqr.labelBank'),    value: qr.bankName },
@@ -147,11 +149,25 @@ export default function VietQRPage() {
       </div>
 
       {isPaid ? (
-        <div className="p-6 rounded-2xl text-center"
+        <div className="p-6 rounded-2xl text-center space-y-4"
           style={{ background: 'rgba(16,185,129,0.08)', border: '2px solid rgba(16,185,129,0.3)' }}>
-          <span className="icon text-5xl block mb-3" style={{ color: '#10B981' }}>check_circle</span>
-          <p className="font-bold text-lg" style={{ color: '#10B981' }}>{t('vietqr.successMsg')}</p>
-          <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>{fmtVND(tx?.amount)}</p>
+          <div>
+            <span className="icon text-5xl block mb-3" style={{ color: '#10B981' }}>check_circle</span>
+            <p className="font-bold text-lg" style={{ color: '#10B981' }}>{t('vietqr.successMsg')}</p>
+            <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>{fmtVND(tx?.amount)}</p>
+          </div>
+          <div className="flex flex-col gap-2 pt-2 border-t border-dashed" style={{ borderColor: 'rgba(16,185,129,0.2)' }}>
+            <button onClick={() => navigate('/pos')}
+              className="w-full py-2.5 rounded-xl text-sm font-semibold text-white transition-colors"
+              style={{ background: '#10B981' }}>
+              Quay lại quầy bán hàng (POS)
+            </button>
+            <button onClick={() => navigate('/orders')}
+              className="w-full py-2.5 rounded-xl text-sm font-medium border transition-colors"
+              style={{ borderColor: 'rgba(16,185,129,0.3)', color: '#10B981', background: 'transparent' }}>
+              Xem danh sách đơn hàng
+            </button>
+          </div>
         </div>
       ) : (
         <>

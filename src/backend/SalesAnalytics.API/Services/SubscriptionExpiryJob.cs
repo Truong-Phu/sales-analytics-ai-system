@@ -63,7 +63,7 @@ public class SubscriptionExpiryJob : BackgroundService
                 sub.Status          = "active";
                 sub.AiEnabled       = false;
                 sub.AdvancedReports = false;
-                sub.MaxChannels     = 2;
+                sub.MaxChannels     = 1;
                 sub.MaxUsers        = 3;
                 sub.TrialEndsAt     = null;
                 sub.ExpiresAt       = null;
@@ -108,7 +108,7 @@ public class SubscriptionExpiryJob : BackgroundService
                 sub.Status          = "active";
                 sub.AiEnabled       = false;
                 sub.AdvancedReports = false;
-                sub.MaxChannels     = 2;
+                sub.MaxChannels     = 1;
                 sub.MaxUsers        = 3;
                 sub.ExpiresAt       = null;
                 sub.GraceEndsAt     = null;

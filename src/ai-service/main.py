@@ -246,6 +246,25 @@ def connector_health():
         }
 
 
+def run_scraper_etl_pipeline():
+    """Tự động chạy chuỗi ETL làm sạch và load DW cho dữ liệu cào Google/Facebook."""
+    try:
+        import sys
+        from pathlib import Path
+        src_dir = Path(__file__).resolve().parent
+        if str(src_dir) not in sys.path:
+            sys.path.insert(0, str(src_dir))
+        
+        from etl.scheduler import raw_clean_job, raw_normalize_job, raw_load_dw_job
+        logger.info("Bắt đầu chạy tự động ETL Scraper sau cào dữ liệu...")
+        raw_clean_job()
+        raw_normalize_job()
+        raw_load_dw_job()
+        logger.info("Chạy tự động ETL Scraper hoàn tất.")
+    except Exception as e:
+        logger.error("Lỗi tự động chạy ETL Scraper: %s", e)
+
+
 @app.post("/scrape/facebook", tags=["Scraper"])
 async def scrape_facebook(company_id: str, background_tasks: BackgroundTasks):
     """
@@ -278,6 +297,10 @@ async def scrape_facebook(company_id: str, background_tasks: BackgroundTasks):
 
         posts_found = result.get("total_scraped", 0)
         inserted    = result.get("inserted", 0)
+        
+        # Tự động trigger ETL làm sạch và load DW
+        background_tasks.add_task(run_scraper_etl_pipeline)
+
         return {
             "success":          True,
             "company_id":       company_id,
@@ -406,7 +429,7 @@ def feedback_summary(company_id: str = ""):
 
 
 @app.post("/scrape/google", tags=["Scraper"])
-async def scrape_google(company_id: str):
+async def scrape_google(company_id: str, background_tasks: BackgroundTasks):
     """
     Kích hoạt scrape Google Search thủ công cho một tenant.
     Đọc keywords từ bảng scraper_keywords theo company_id.
@@ -477,6 +500,9 @@ async def scrape_google(company_id: str):
                 "Scrape hoàn tất nhưng không thu thập được kết quả. "
                 "Có thể Google/DDG đang giới hạn hoặc chưa có keywords active."
             )
+
+        # Tự động trigger ETL làm sạch và load DW
+        background_tasks.add_task(run_scraper_etl_pipeline)
 
         return {
             "success":            status in ("success", "partial"),
@@ -582,4 +608,6 @@ def get_trends_summary(company_id: str = "", days: int = 30):
 
 @app.get("/", include_in_schema=False)
 def root():
+    # reload trigger for automatic scraper etl integration
     return {"message": "Sales Analytics AI Service – truy cập /docs để xem API"}
+

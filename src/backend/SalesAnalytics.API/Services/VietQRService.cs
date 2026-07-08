@@ -15,11 +15,11 @@ public class VietQRService
 
     public VietQRService(AppDbContext db) => _db = db;
 
-    public async Task<VietQRInfoDto?> GetVietQRAsync(string paymentCode)
+    public async Task<VietQRInfoDto?> GetVietQRAsync(string paymentCode, string methodKey = "vietqr")
     {
         // Ưu tiên tài khoản is_default, sau đó sort_order
         var account = await _db.SystemPaymentAccounts
-            .Where(a => a.Method == "vietqr" && a.IsActive)
+            .Where(a => a.Method == methodKey.ToLower() && a.IsActive)
             .OrderBy(a => a.IsDefault ? 0 : 1)
             .ThenBy(a => a.SortOrder)
             .FirstOrDefaultAsync();
@@ -33,19 +33,27 @@ public class VietQRService
         var accountName   = GetStr(cfg, "account_name");
         var bankName      = GetStr(cfg, "bank_name") ?? "Ngân hàng";
 
-        if (string.IsNullOrEmpty(bankBin) || string.IsNullOrEmpty(accountNumber)) return null;
+        if (string.IsNullOrEmpty(accountNumber)) return null;
 
         var tx = await _db.PaymentTransactions
             .FirstOrDefaultAsync(t => t.PaymentCode == paymentCode);
         if (tx is null) return null;
 
-        var qrUrl = $"https://img.vietqr.io/image/{bankBin}-{accountNumber}-compact2.png" +
+        string? qrUrl = null;
+        if (!string.IsNullOrEmpty(bankBin))
+        {
+            qrUrl = $"https://img.vietqr.io/image/{bankBin}-{accountNumber}-compact2.png" +
                     $"?amount={(long)tx.Amount}" +
                     $"&addInfo={Uri.EscapeDataString(paymentCode)}" +
                     $"&accountName={Uri.EscapeDataString(accountName ?? "")}";
+        }
+        else
+        {
+            qrUrl = GetStr(cfg, "qr_image");
+        }
 
         return new VietQRInfoDto(
-            QrDataUrl      : qrUrl,
+            QrDataUrl      : qrUrl ?? "",
             BankName       : bankName,
             BankBin        : bankBin,
             AccountNumber  : accountNumber,

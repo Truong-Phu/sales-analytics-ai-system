@@ -6,29 +6,33 @@ import axios from '../../api/axios'
 
 // ── Plan comparison shown on left panel ──────────────────────────────────────
 const PLAN_FEATURES = [
-  { label: 'Kênh kết nối',    free: '2 kênh',      pro: 'Không giới hạn' },
-  { label: 'Thành viên',      free: '3 người',      pro: 'Không giới hạn' },
-  { label: 'AI Dự báo',       free: '—',            pro: '✓', proBold: true },
-  { label: 'Báo cáo nâng cao',free: '—',            pro: '✓', proBold: true },
-  { label: 'Xuất PDF',        free: '10/tháng',     pro: 'Không giới hạn' },
-  { label: 'Hỗ trợ',         free: 'Email',         pro: 'Ưu tiên 24/7' },
+  { label: 'Kênh kết nối',    free: '1 kênh',      pro: '5 kênh',        ent: 'Không giới hạn' },
+  { label: 'Thành viên',      free: '3 người',      pro: '20 người',       ent: 'Không giới hạn' },
+  { label: 'AI Dự báo',       free: '—',            pro: '✓', proBold: true, ent: '✓', entBold: true },
+  { label: 'Báo cáo nâng cao',free: '—',            pro: '✓', proBold: true, ent: '✓', entBold: true },
+  { label: 'Xuất PDF',        free: '10/tháng',     pro: 'Không giới hạn',  ent: 'Không giới hạn' },
+  { label: 'Hỗ trợ',         free: 'Email',         pro: 'Ưu tiên 24/7',    ent: 'SLA riêng' },
 ]
 
 function PlanTable() {
   return (
     <div className="mt-6 rounded-xl overflow-hidden border border-white/10">
-      <div className="grid grid-cols-3 text-xs font-semibold bg-white/10 px-3 py-2">
+      <div className="grid grid-cols-4 text-xs font-semibold bg-white/10 px-3 py-2">
         <div className="text-white/70">Tính năng</div>
         <div className="text-center text-white/70">Free</div>
         <div className="text-center text-emerald-300">Pro</div>
+        <div className="text-center text-yellow-300">Enterprise</div>
       </div>
       {PLAN_FEATURES.map((f, i) => (
-        <div key={i} className={`grid grid-cols-3 px-3 py-2 text-xs border-t border-white/5
+        <div key={i} className={`grid grid-cols-4 px-3 py-2 text-xs border-t border-white/5
           ${i % 2 === 0 ? 'bg-white/5' : ''}`}>
           <div className="text-white/80">{f.label}</div>
           <div className="text-center text-white/60">{f.free}</div>
           <div className={`text-center ${f.proBold ? 'text-emerald-300 font-semibold' : 'text-white/80'}`}>
             {f.pro}
+          </div>
+          <div className={`text-center ${f.entBold ? 'text-yellow-300 font-semibold' : 'text-white/80'}`}>
+            {f.ent}
           </div>
         </div>
       ))}
