@@ -84,26 +84,39 @@ RESEND_API_KEY=your_resend_api_key       # Lấy tại: resend.com (tùy chọn)
 ### Bước 2 — Khởi tạo cơ sở dữ liệu
 
 ```bash
-# Tạo database PostgreSQL
+# 1. Tạo database PostgreSQL
 psql -U postgres -c "CREATE DATABASE sales_analytics_ai_db;"
 
-# Chạy script khởi tạo schema và dữ liệu mẫu
-psql -U postgres -d sales_analytics_ai_db -f docs/ScriptSQL/init.sql
+# 2. Khôi phục cơ sở dữ liệu từ file backup (đã bao gồm toàn bộ Schema, Indexes và hơn 9.400 đơn hàng thực nghiệm)
+psql -U postgres -d sales_analytics_ai_db -f docs/msas_db_backup.sql
 ```
 
-### Bước 3 — Cài đặt dependencies Backend
+> **Mẹo khôi phục bằng giao diện pgAdmin 4:**
+> 1. Mở pgAdmin 4, tạo một database mới tên là `sales_analytics_ai_db`.
+> 2. Click chuột phải vào database vừa tạo -> Chọn **Query Tool**.
+> 3. Mở tệp tin `docs/msas_db_backup.sql` bằng Query Tool và nhấn nút **Execute/Play (F5)** để chạy và khôi phục toàn bộ cấu trúc bảng cũng như dữ liệu mẫu.
+
+### Bước 3 — Cài đặt và cấu hình bảo mật Backend (User Secrets)
 
 ```bash
 cd src/backend/SalesAnalytics.API
 dotnet restore
+
+# 1. Cấu hình chuỗi kết nối cơ sở dữ liệu local (thay your_password bằng mật khẩu Postgres của bạn)
+dotnet user-secrets set "ConnectionStrings:Default" "Host=localhost;Port=5432;Database=sales_analytics_ai_db;Username=postgres;Password=your_password"
+
+# 2. Cấu hình khóa JWT (điền chuỗi bí mật dài ngẫu nhiên bất kỳ trên 32 ký tự)
+dotnet user-secrets set "Jwt:Secret" "YOUR_RANDOM_SECRET_KEY_AT_LEAST_32_CHARS"
+
+# 3. Cấu hình các API Key dịch vụ AI & Email (Tùy chọn nếu muốn chạy tính năng AI/Email thật)
+dotnet user-secrets set "Gemini:ApiKey" "your_gemini_api_key"        # Lấy tại aistudio.google.com
+dotnet user-secrets set "Groq:ApiKey" "your_groq_api_key"            # Lấy tại console.groq.com
+dotnet user-secrets set "Resend:ApiKey" "your_resend_api_key"        # Lấy tại resend.com
+dotnet user-secrets set "Resend:OtpSalt" "your_otp_salt_value"
+dotnet user-secrets set "Encryption:Key" "5898e48c97c09104e3f3d2692c83709936a42c127024d0cc87420c39215242f4"
 ```
 
-Cấu hình `appsettings.Development.json` (nếu dùng User Secrets):
-
-```bash
-dotnet user-secrets set "ConnectionStrings:DefaultConnection" "Host=localhost;Port=5432;Database=sales_analytics_ai_db;Username=postgres;Password=your_password"
-dotnet user-secrets set "JwtSettings:SecretKey" "your_secret_key"
-```
+> **Mẹo kiểm tra nhanh:** Bạn có thể chạy script `powershell -ExecutionPolicy Bypass -File .\verify-user-secrets.local.ps1` ở thư mục gốc của dự án để kiểm tra xem đã thiết lập đầy đủ và chính xác các khóa này chưa.
 
 ### Bước 4 — Cài đặt dependencies AI Service & ETL
 
@@ -243,9 +256,8 @@ graduation_thesis/
 │       ├── offline_etl.py    # Pipeline 1: xử lý lịch sử
 │       └── auto_sync.py      # Pipeline 2: tăng dần 30 phút
 ├── docs/
-│   ├── ScriptSQL/            # Script khởi tạo DB
-│   ├── Report.docx           # Báo cáo khóa luận
-│   └── SRS.docx              # Tài liệu đặc tả yêu cầu
+│   ├── NguyenTruongPhu_MSAS_Final.pdf   # Báo cáo khóa luận chính thức (PDF)
+│   └── msas_db_backup.sql               # File backup cơ sở dữ liệu (Schema + Seed Data)
 ├── notebooks/                # Jupyter Notebook train mô hình AI
 ├── .env.example              # Mẫu cấu hình biến môi trường
 ├── start_all.bat             # Script khởi động toàn hệ thống
