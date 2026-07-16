@@ -117,3 +117,4 @@ README*.md
 # Force GitHub cache update
 docs/*
 !docs/NguyenTruongPhu_MSAS_Final.pdf
+!docs/msas_db_backup.sql
